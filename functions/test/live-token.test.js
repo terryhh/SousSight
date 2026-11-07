@@ -128,7 +128,7 @@ test('unexpected provider errors do not leak secrets into response or logs', asy
   assert.deepEqual(calls.at(-1), ['failure', 'temporarily-unavailable']);
 });
 
-test('provider request locks model and audio, bounds lifetime, keeps key in server header', async () => {
+test('REST AuthToken wire payload locks only model and audio while preserving client setup', async () => {
   const token = await mintGoogleToken({
     apiKey: 'server-secret', nowMs,
     fetchImpl: async (url, options) => {
@@ -141,10 +141,11 @@ test('provider request locks model and audio, bounds lifetime, keeps key in serv
         uses: 1,
         expireTime: '2026-11-07T21:30:00.000Z',
         newSessionExpireTime: '2026-11-07T21:01:00.000Z',
-        liveConnectConstraints: {
+        bidiGenerateContentSetup: {
           model: `models/${LIVE_MODEL}`,
-          config: { responseModalities: ['AUDIO'] },
+          generationConfig: { responseModalities: ['AUDIO'] },
         },
+        fieldMask: 'model,generationConfig.responseModalities',
       });
       return new Response(JSON.stringify({ name: 'auth_tokens/short-lived' }), { status: 200 });
     },
@@ -210,7 +211,7 @@ test('server-selected model and API version are reflected in constraints and cli
     apiKey: 'server-secret', nowMs, model: 'gemini-test-live', apiVersion: 'v1alpha',
     fetchImpl: async (url, options) => {
       assert.equal(url, 'https://generativelanguage.googleapis.com/v1alpha/auth_tokens');
-      assert.equal(JSON.parse(options.body).liveConnectConstraints.model, 'models/gemini-test-live');
+      assert.equal(JSON.parse(options.body).bidiGenerateContentSetup.model, 'models/gemini-test-live');
       return new Response(JSON.stringify({ name: 'auth_tokens/configured' }));
     },
   });

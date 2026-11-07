@@ -1,5 +1,6 @@
 // Current Gemini Live ephemeral-token REST contract, checked 2026-11-07:
-// https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens
+// https://ai.google.dev/api/live#AuthToken
+// liveConnectConstraints is an SDK option, not the REST AuthToken schema.
 // Only the constrained, short-lived token crosses into the browser.
 export const LIVE_MODEL = 'gemini-3.8-live';
 export const LIVE_API_VERSION = 'v1beta';
@@ -27,10 +28,12 @@ export function tokenConfiguration(nowMs, model = LIVE_MODEL) {
     uses: 1,
     expireTime: new Date(nowMs + 30 * 60_000).toISOString(),
     newSessionExpireTime: new Date(nowMs + 60_000).toISOString(),
-    liveConnectConstraints: {
+    bidiGenerateContentSetup: {
       model: `models/${model}`,
-      config: { responseModalities: ['AUDIO'] },
+      generationConfig: { responseModalities: ['AUDIO'] },
     },
+    // Lock only these server choices; retain client tools, instructions and resumption.
+    fieldMask: 'model,generationConfig.responseModalities',
   };
 }
 
