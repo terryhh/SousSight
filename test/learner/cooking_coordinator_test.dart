@@ -309,7 +309,10 @@ void main() {
       const LiveToolCall(
         id: 'question',
         name: 'ask_cook',
-        arguments: {'question': 'Is your yogurt plain?'},
+        arguments: {
+          'question': 'Is your yogurt plain?',
+          'reason': 'The recipe needs unsweetened yogurt.',
+        },
       ),
     );
     await _flush();
