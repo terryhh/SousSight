@@ -8,6 +8,8 @@ The cook supplies human direction. The coach asks targeted questions when facts 
 - [AGY task for the research and substitution experience](docs/handoffs/AGY-COOKING-RESEARCH.md)
 - [Backend setup and messaging contract](functions/README.md)
 - [Live transport integration](lib/live/README.md)
+- [Infrastructure costs and credit coverage](docs/COST-LEDGER.md)
+- [Teardown plan](docs/TEARDOWN.md)
 
 ## Run a rehearsal
 

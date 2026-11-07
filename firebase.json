@@ -23,23 +23,61 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "functions": [{
-    "source": "functions",
-    "codebase": "default",
-    "runtime": "nodejs22",
-    "ignore": ["node_modules", ".git", "*.log", "test"]
-  }],
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "*.log",
+        "test"
+      ]
+    }
+  ],
   "hosting": {
     "public": "build/web",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-    "rewrites": [
-      {"source": "/api/live-token", "function": {"functionId": "liveToken", "region": "us-central1"}},
-      {"source": "/api/dinner-ready", "function": {"functionId": "dinnerReady", "region": "us-central1"}},
-      {"source": "**", "destination": "/index.html"}
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
     ],
-    "headers": [{
-      "source": "/index.html",
-      "headers": [{"key": "Cache-Control", "value": "no-cache"}]
-    }]
+    "rewrites": [
+      {
+        "source": "/api/live-token",
+        "function": {
+          "functionId": "liveToken",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/dinner-ready",
+        "function": {
+          "functionId": "dinnerReady",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
+  },
+  "auth": {
+    "providers": {
+      "anonymous": true
+    }
   }
 }
