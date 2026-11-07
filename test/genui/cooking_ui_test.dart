@@ -92,7 +92,7 @@ void main() {
       throwsFormatException,
     );
     expect(controller.components, original);
-    expect(controller.catalog.items.length, 7);
+    expect(controller.catalog.items.length, 8);
   });
 
   test('timer repeats and layout morphs preserve original deadline', () {
@@ -271,6 +271,91 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pump();
     expect(find.text('0:03'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  test(
+    'cook questions require 2-4 distinct choices and no model selection',
+    () {
+      Map<String, dynamic> question(List<Map<String, dynamic>> options) =>
+          panel({
+            'id': 'clarify',
+            'component': 'cookQuestion',
+            'title': 'One quick question',
+            'question': 'Are the chickpeas already cooked?',
+            'options': options,
+          });
+      final choices = [
+        {'id': 'yes', 'label': 'Yes, canned and drained'},
+        {'id': 'unsure', 'label': 'I am not sure'},
+      ];
+      expect(validateCookingUi(question(choices)), hasLength(2));
+      expect(
+        () => validateCookingUi(question([choices.first])),
+        throwsFormatException,
+      );
+      expect(
+        () => validateCookingUi(question([choices.first, choices.first])),
+        throwsFormatException,
+      );
+      expect(
+        () => validateCookingUi(
+          question([
+            {...choices.first, 'selected': true},
+            choices.last,
+          ]),
+        ),
+        throwsFormatException,
+      );
+      expect(
+        () => validateCookingUi(
+          panel({
+            'id': 'cue',
+            'component': 'stepCue',
+            'title': 'Ask',
+            'body': 'Ask someone.',
+            'action': 'request_help',
+          }),
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
+  testWidgets('cook question waits for explicit answer before dispatch', (
+    tester,
+  ) async {
+    final events = <CookingUiAction>[];
+    final controller = CookingUiController(onAction: events.add);
+    controller.applyToolPayload(
+      panel({
+        'id': 'clarify',
+        'component': 'cookQuestion',
+        'title': 'One quick question',
+        'question': 'Are the chickpeas already cooked?',
+        'options': [
+          {'id': 'yes', 'label': 'Yes, canned and drained'},
+          {'id': 'unsure', 'label': 'I am not sure'},
+        ],
+      }),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: CookingSurface(controller: controller)),
+      ),
+    );
+    expect(find.text('Are the chickpeas already cooked?'), findsOneWidget);
+    expect(events, isEmpty);
+    expect(controller.confirmedIngredients, isEmpty);
+    await tester.tap(find.text('I am not sure'));
+    expect(events.single.name, 'cook_answer');
+    expect(events.single.context, {
+      'question': 'Are the chickpeas already cooked?',
+      'answer': 'I am not sure',
+      'optionId': 'unsure',
+    });
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();

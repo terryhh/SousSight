@@ -12,8 +12,12 @@ Allowed components and properties:
 - CookingColumn: children (list of component IDs).
 - ingredientChecklist: title, items (list of {id, label}). These are candidates;
   only the cook can confirm an ingredient is present. Do not send checked states.
-- stepCue: title, body, optional action (check_now, next_step, request_help,
+- stepCue: title, body, optional action (check_now, next_step, ask_cook,
   or start_watch), optional actionLabel.
+- cookQuestion: title, question, options (2-4 objects with id and label). Use this
+  to ask the cook for a missing fact instead of guessing. Keep the options neutral,
+  and include an unsure option when appropriate. The cook can also answer by voice
+  or text. Only the cook's selection counts as an answer.
 - comparison: title, observed, target, cue. Describe visible differences only.
 - watchStatus: title, body, status (watching, check_now, paused).
 - cookingTimer: timerId, label. Display an existing timer started by start_timer;
@@ -23,6 +27,9 @@ Use 1-12 visible components, concise text, stable IDs, and no URLs or HTML.
 Timers keep running through workspace changes. Use a new timerId for a new timer.
 Never claim camera vision proves food safety, allergen absence, or internal
 temperature. A visual watch cue asks the cook to check, not a guarantee of doneness.
+The cook is the human in the loop. Ask them clarifying questions when facts are
+missing; research factual questions when useful. Do not route to an external
+instructor or invent a human expert who will answer later.
 Example uiJson:
 {"components":[{"id":"root","component":"CookingColumn","children":["mash","watch"]},{"id":"mash","component":"stepCue","title":"Mash chickpeas","body":"Leave some small chunks for texture.","action":"check_now","actionLabel":"Check my bowl"},{"id":"watch","component":"watchStatus","title":"Watching the texture","body":"Keep the bowl in view.","status":"watching"}]}
 ''';
@@ -63,12 +70,7 @@ const demoCookingUi = <String, dynamic>{
   ],
 };
 
-const cookingActions = {
-  'check_now',
-  'next_step',
-  'request_help',
-  'start_watch',
-};
+const cookingActions = {'check_now', 'next_step', 'ask_cook', 'start_watch'};
 
 /// Reject malformed or excessive model output before the GenUI runtime mutates.
 /// This also prevents cyclic layouts and model-written confirmation states.
@@ -184,6 +186,29 @@ void _validateComponent(Map<String, dynamic> data) {
       if (data.containsKey('action') &&
           !cookingActions.contains(data['action'])) {
         throw const FormatException('Unknown cooking action.');
+      }
+    case 'cookQuestion':
+      fields = {'title', 'question', 'options'};
+      _text(data, 'title');
+      _text(data, 'question');
+      final options = data['options'];
+      if (options is! List || options.length < 2 || options.length > 4) {
+        throw const FormatException(
+          'A cook question needs 2-4 answer choices.',
+        );
+      }
+      final ids = <String>{};
+      for (final option in options) {
+        if (option is! Map<String, dynamic> ||
+            option.keys.any((key) => key != 'id' && key != 'label')) {
+          throw const FormatException(
+            'Each answer choice needs only id and label.',
+          );
+        }
+        if (!ids.add(requireUiId(option['id'], 'option ID'))) {
+          throw const FormatException('Duplicate answer choice ID.');
+        }
+        _text(option, 'label');
       }
     case 'comparison':
       fields = {'title', 'observed', 'target', 'cue'};

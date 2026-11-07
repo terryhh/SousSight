@@ -115,6 +115,60 @@ Catalog buildCookingCatalog(CookingUiController controller) {
       },
     ),
     CatalogItem(
+      name: 'cookQuestion',
+      dataSchema: _schema(
+        {
+          'title': S.string(),
+          'question': S.string(),
+          'options': S.list(
+            items: _schema(
+              {'id': S.string(), 'label': S.string()},
+              ['id', 'label'],
+            ),
+          ),
+        },
+        ['title', 'question', 'options'],
+      ),
+      widgetBuilder: (context) {
+        final data = _data(context);
+        return _Panel(
+          icon: Icons.chat_bubble_outline,
+          title: data['title'] as String,
+          eyebrow: 'LET’S CHECK WITH YOU',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 14,
+            children: [
+              Text(
+                data['question'] as String,
+                style: const TextStyle(height: 1.5),
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final option in data['options'] as List)
+                    OutlinedButton(
+                      onPressed: () =>
+                          controller.dispatch('cook_answer', context.id, {
+                            'question': data['question'],
+                            'answer': option['label'],
+                            'optionId': option['id'],
+                          }),
+                      child: Text((option as Map)['label'] as String),
+                    ),
+                ],
+              ),
+              const Text(
+                'You can also answer by voice or text.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+    CatalogItem(
       name: 'comparison',
       dataSchema: _schema(
         {
@@ -377,13 +431,13 @@ class _TimerPanel extends StatelessWidget {
 String _actionLabel(String action) => switch (action) {
   'check_now' => 'Check my bowl',
   'next_step' => 'Next step',
-  'request_help' => 'Ask an instructor',
+  'ask_cook' => 'Let’s clarify',
   _ => 'Watch with me',
 };
 
 IconData _actionIcon(String action) => switch (action) {
   'check_now' => Icons.camera_alt_outlined,
   'next_step' => Icons.arrow_forward,
-  'request_help' => Icons.support_agent,
+  'ask_cook' => Icons.chat_bubble_outline,
   _ => Icons.visibility_outlined,
 };
