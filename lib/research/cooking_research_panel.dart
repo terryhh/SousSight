@@ -72,6 +72,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
   late List<String> _confirmedFacts;
 
   CookingResearchResult? _result;
+  CookingResearchQuery? _resultQuery;
   String? _errorMessage;
   bool _isLoading = false;
   bool _isExpanded = true;
@@ -85,8 +86,8 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
   @override
   void initState() {
     super.initState();
-    _syncFromWidgetQuery(widget.query, resetConfirmationDraft: true);
-    _runResearch(_activeQuery);
+    _syncFromWidgetQuery(widget.query, clearResultAndDrafts: true);
+    _runResearch(_activeQuery, clearExistingResult: true);
   }
 
   @override
@@ -95,13 +96,8 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
     final queryChanged = !_queriesEqual(oldWidget.query, widget.query);
     final clientChanged = !identical(oldWidget.client, widget.client);
     if (queryChanged || clientChanged) {
-      final questionChanged =
-          oldWidget.query.question.trim() != widget.query.question.trim();
-      _syncFromWidgetQuery(
-        widget.query,
-        resetConfirmationDraft: questionChanged,
-      );
-      _runResearch(_activeQuery);
+      _syncFromWidgetQuery(widget.query, clearResultAndDrafts: true);
+      _runResearch(_activeQuery, clearExistingResult: true);
     }
   }
 
@@ -116,7 +112,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
 
   void _syncFromWidgetQuery(
     CookingResearchQuery incoming, {
-    required bool resetConfirmationDraft,
+    required bool clearResultAndDrafts,
   }) {
     _confirmedFacts = List<String>.from(incoming.confirmedIngredients);
     _activeQuery = CookingResearchQuery(
@@ -125,7 +121,10 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
       confirmedIngredients: List<String>.unmodifiable(_confirmedFacts),
     );
     _clarificationError = null;
-    if (resetConfirmationDraft) {
+    if (clearResultAndDrafts) {
+      _result = null;
+      _resultQuery = null;
+      _errorMessage = null;
       _clarificationController.clear();
       _confirmationController.clear();
       _lastConfirmedFact = null;
@@ -133,13 +132,20 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
     }
   }
 
-  Future<void> _runResearch(CookingResearchQuery requestQuery) async {
+  Future<void> _runResearch(
+    CookingResearchQuery requestQuery, {
+    required bool clearExistingResult,
+  }) async {
     final generation = ++_requestGeneration;
     setState(() {
       _activeQuery = requestQuery;
       _isLoading = true;
       _errorMessage = null;
       _clarificationError = null;
+      if (clearExistingResult) {
+        _result = null;
+        _resultQuery = null;
+      }
     });
 
     try {
@@ -150,15 +156,9 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
       }
       setState(() {
         _result = response;
+        _resultQuery = requestQuery;
         _isLoading = false;
         _errorMessage = null;
-        if (_confirmationController.text.trim().isEmpty &&
-            response.clarifyingQuestion == null) {
-          _confirmationController.text = _suggestEditableFactDraft(
-            requestQuery,
-            response,
-          );
-        }
       });
     } catch (error) {
       if (!mounted || generation != _requestGeneration) {
@@ -186,21 +186,10 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
     return 'Could not complete the cooking search right now. Check your connection or retry.';
   }
 
-  String _suggestEditableFactDraft(
-    CookingResearchQuery query,
-    CookingResearchResult result,
-  ) {
-    final qLower = query.question.toLowerCase();
-    if (qLower.contains('lemon') && qLower.contains('vinegar')) {
-      return 'Using 1 tbsp vinegar instead of lemon juice';
-    }
-    return '';
-  }
-
   void _retryCurrentQuestion() {
     // Re-dispatch the exact active query (preserving original question and
     // confirmed facts) with a new generation token.
-    _runResearch(_activeQuery);
+    _runResearch(_activeQuery, clearExistingResult: false);
   }
 
   void _submitClarification() {
@@ -225,7 +214,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
       currentStep: _activeQuery.currentStep,
       confirmedIngredients: List<String>.unmodifiable(_confirmedFacts),
     );
-    _runResearch(followUpQuery);
+    _runResearch(followUpQuery, clearExistingResult: true);
   }
 
   void _confirmFact() {
@@ -247,6 +236,12 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
     widget.onCookConfirmed(fact);
   }
 
+  bool get _hasMatchingResult =>
+      _result != null &&
+      _resultQuery != null &&
+      _resultQuery!.question == _activeQuery.question &&
+      _resultQuery!.currentStep == _activeQuery.currentStep;
+
   @override
   void dispose() {
     _clarificationController.dispose();
@@ -257,9 +252,10 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final validCitations = _result == null
+    final activeResult = _hasMatchingResult ? _result : null;
+    final validCitations = activeResult == null
         ? const <CookingCitation>[]
-        : filterValidHttpsCitations(_result!.citations);
+        : filterValidHttpsCitations(activeResult.citations);
 
     return Align(
       alignment: Alignment.topCenter,
@@ -286,7 +282,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
                 _buildQuestionBox(theme),
                 if (!_isExpanded) ...[
                   const SizedBox(height: 10),
-                  _buildCollapsedSummary(theme),
+                  _buildCollapsedSummary(theme, activeResult),
                 ] else ...[
                   if (_confirmedFacts.isNotEmpty) ...[
                     const SizedBox(height: 12),
@@ -300,9 +296,9 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
                     const SizedBox(height: 16),
                     _buildErrorState(theme, _errorMessage!),
                   ],
-                  if (_result != null) ...[
+                  if (activeResult != null) ...[
                     const SizedBox(height: 16),
-                    _buildResultSection(theme, _result!, validCitations),
+                    _buildResultSection(theme, activeResult, validCitations),
                   ],
                 ],
               ],
@@ -353,7 +349,8 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
           key: const Key('research_toggle_collapse_button'),
           onPressed: () => setState(() => _isExpanded = !_isExpanded),
           constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          tooltip: _isExpanded ? 'Minimize research panel' : 'Expand research panel',
+          tooltip:
+              _isExpanded ? 'Minimize research panel' : 'Expand research panel',
           icon: Icon(
             _isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
           ),
@@ -403,12 +400,15 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
     );
   }
 
-  Widget _buildCollapsedSummary(ThemeData theme) {
+  Widget _buildCollapsedSummary(
+    ThemeData theme,
+    CookingResearchResult? activeResult,
+  ) {
     final statusText = _isLoading
         ? 'Searching grounded cooking sources… (pending result preserved)'
         : _errorMessage != null
         ? 'Search paused with an error. Expand to retry.'
-        : _result != null
+        : activeResult != null
         ? 'Answer ready. Expand to review details and sources.'
         : 'Expand to view cooking research.';
     return InkWell(
@@ -532,7 +532,9 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
       decoration: BoxDecoration(
         color: theme.colorScheme.errorContainer.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.4)),
+        border: Border.all(
+          color: theme.colorScheme.error.withValues(alpha: 0.4),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

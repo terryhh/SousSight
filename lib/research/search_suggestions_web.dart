@@ -1,5 +1,19 @@
+import 'dart:js_interop';
+
 import 'package:flutter/material.dart';
-import 'package:web/web.dart' as web;
+
+extension type _HtmlStyleDeclaration._(JSObject _) implements JSObject {
+  external set border(String value);
+  external set width(String value);
+  external set height(String value);
+}
+
+extension type _HtmlIFrameElement._(JSObject _) implements JSObject {
+  external set title(String value);
+  external set referrerPolicy(String value);
+  external _HtmlStyleDeclaration get style;
+  external void setAttribute(String qualifiedName, String value);
+}
 
 /// Renders only Google's provider-returned `searchEntryPoint.renderedContent`.
 /// Never pass model prose, A2UI properties, or arbitrary user HTML here.
@@ -21,7 +35,7 @@ class SearchSuggestions extends StatelessWidget {
         key: ValueKey<String>(content),
         tagName: 'iframe',
         onElementCreated: (element) {
-          final frame = element as web.HTMLIFrameElement;
+          final frame = _HtmlIFrameElement._(element as JSObject);
           frame.title = 'Google Search suggestions';
           frame.setAttribute(
             'sandbox',

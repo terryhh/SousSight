@@ -27,18 +27,25 @@ void main() {
     confirmedIngredients: <String>['1 can chickpeas', '2 tbsp tahini'],
   );
 
-  Widget wrapWidget(Widget child, {Size surfaceSize = const Size(900, 900)}) {
+  Future<void> configureViewport(
+    WidgetTester tester, {
+    Size size = const Size(960, 1200),
+  }) async {
+    await tester.binding.setSurfaceSize(size);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+  }
+
+  Widget wrapWidget(Widget child) {
     return MaterialApp(
-      home: MediaQuery(
-        data: MediaQueryData(size: surfaceSize),
-        child: Scaffold(body: SingleChildScrollView(child: child)),
-      ),
+      home: Scaffold(body: SingleChildScrollView(child: child)),
     );
   }
 
   testWidgets(
     'shows loading then clarification, and submitting clarification preserves original question and confirmed facts',
     (WidgetTester tester) async {
+      await configureViewport(tester);
+
       final firstCompleter = Completer<CookingResearchResult>();
       final secondCompleter = Completer<CookingResearchResult>();
 
@@ -62,7 +69,10 @@ void main() {
       );
 
       // 1. Loading state and original question are visible immediately.
-      expect(find.byKey(const Key('research_loading_indicator')), findsOneWidget);
+      expect(
+        find.byKey(const Key('research_loading_indicator')),
+        findsOneWidget,
+      );
       expect(
         find.text("I don't have lemon—can I use vinegar?"),
         findsOneWidget,
@@ -71,23 +81,30 @@ void main() {
       // 2. Complete with a clarifying question.
       firstCompleter.complete(
         const CookingResearchResult(
-          answer: 'Vinegar can substitute for lemon juice depending on the variety.',
+          answer:
+              'Vinegar can substitute for lemon juice depending on the variety.',
           clarifyingQuestion: 'Which vinegar do you have on hand?',
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('research_clarification_card')), findsOneWidget);
+      expect(
+        find.byKey(const Key('research_clarification_card')),
+        findsOneWidget,
+      );
       expect(find.text('Which vinegar do you have on hand?'), findsOneWidget);
 
       // 3. Submit cook's clarification answer.
-      await tester.enterText(
-        find.byKey(const Key('research_clarification_input')),
-        'Apple cider vinegar',
+      final clarificationInput = find.byKey(
+        const Key('research_clarification_input'),
       );
-      await tester.tap(
-        find.byKey(const Key('research_clarification_submit_button')),
+      final clarificationSubmit = find.byKey(
+        const Key('research_clarification_submit_button'),
       );
+      await tester.ensureVisible(clarificationInput);
+      await tester.enterText(clarificationInput, 'Apple cider vinegar');
+      await tester.ensureVisible(clarificationSubmit);
+      await tester.tap(clarificationSubmit);
       await tester.pump();
 
       expect(client.calls, hasLength(2));
@@ -104,6 +121,9 @@ void main() {
 
       // Clarifying does not automatically fire onCookConfirmed for a substitution.
       expect(confirmedFacts, isEmpty);
+
+      // Previous clarification/answer is cleared while the follow-up loads.
+      expect(find.byKey(const Key('research_answer_text')), findsNothing);
 
       // 4. Complete the follow-up research call with a cited answer.
       secondCompleter.complete(
@@ -138,6 +158,8 @@ void main() {
   testWidgets(
     'rejects stale late response when a newer question is provided',
     (WidgetTester tester) async {
+      await configureViewport(tester);
+
       final oldCompleter = Completer<CookingResearchResult>();
       final newCompleter = Completer<CookingResearchResult>();
 
@@ -209,8 +231,104 @@ void main() {
   );
 
   testWidgets(
+    'clears completed question A answer, citations, and clarification when switching to pending or failed question B',
+    (WidgetTester tester) async {
+      await configureViewport(tester);
+
+      final questionBCompleter = Completer<CookingResearchResult>();
+      final client = _TestResearchClient((query) async {
+        if (query.question == initialQuery.question) {
+          return CookingResearchResult(
+            answer: 'Completed answer for Question A.',
+            clarifyingQuestion: 'Clarification from Question A?',
+            citations: <CookingCitation>[
+              CookingCitation(
+                title: 'Question A Citation',
+                uri: Uri.parse('https://extension.example.edu/question-a'),
+              ),
+            ],
+          );
+        }
+        return questionBCompleter.future;
+      });
+
+      await tester.pumpWidget(
+        wrapWidget(
+          CookingResearchPanel(
+            client: client,
+            query: initialQuery,
+            onCookConfirmed: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Completed answer for Question A.'), findsOneWidget);
+      expect(find.text('Clarification from Question A?'), findsOneWidget);
+      expect(find.text('Question A Citation'), findsOneWidget);
+
+      const questionB = CookingResearchQuery(
+        question: 'Question B: Can I toast the wrap in a dry skillet?',
+        currentStep: 'Step 4: Warm wraps',
+        confirmedIngredients: <String>['Whole wheat tortillas'],
+      );
+
+      // Switch to Question B while B is pending.
+      await tester.pumpWidget(
+        wrapWidget(
+          CookingResearchPanel(
+            client: client,
+            query: questionB,
+            onCookConfirmed: (_) {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Question B is shown in loading state; Question A's answer, citations,
+      // clarification, and confirmation controls must be cleared immediately.
+      expect(
+        find.text('Question B: Can I toast the wrap in a dry skillet?'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('research_loading_indicator')),
+        findsOneWidget,
+      );
+      expect(find.text('Completed answer for Question A.'), findsNothing);
+      expect(find.text('Clarification from Question A?'), findsNothing);
+      expect(find.text('Question A Citation'), findsNothing);
+      expect(
+        find.byKey(const Key('research_clarification_card')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const Key('research_confirmation_section')),
+        findsNothing,
+      );
+
+      // Fail Question B; Question A's stale content must remain cleared.
+      questionBCompleter.completeError(
+        TimeoutException('Question B timed out'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('research_error_container')), findsOneWidget);
+      expect(find.text('Completed answer for Question A.'), findsNothing);
+      expect(find.text('Clarification from Question A?'), findsNothing);
+      expect(find.text('Question A Citation'), findsNothing);
+      expect(
+        find.byKey(const Key('research_clarification_card')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
     'validates citations to allow only valid HTTPS links and distinguishes uncited answers',
     (WidgetTester tester) async {
+      await configureViewport(tester);
+
       final openedCitations = <CookingCitation>[];
 
       final client = _TestResearchClient((_) async {
@@ -259,7 +377,11 @@ void main() {
       expect(find.text('JavaScript URI'), findsNothing);
       expect(find.text('Credentials in URI'), findsNothing);
 
-      await tester.tap(find.byKey(const Key('research_citation_button_0')));
+      final citationButton = find.byKey(
+        const Key('research_citation_button_0'),
+      );
+      await tester.ensureVisible(citationButton);
+      await tester.tap(citationButton);
       await tester.pump();
 
       expect(openedCitations, hasLength(1));
@@ -273,6 +395,8 @@ void main() {
   testWidgets(
     'distinguishes uncited answers without fabricating sources',
     (WidgetTester tester) async {
+      await configureViewport(tester);
+
       final client = _TestResearchClient((_) async {
         return const CookingResearchResult(
           answer: 'Uncited answer text.',
@@ -306,6 +430,8 @@ void main() {
   testWidgets(
     'retry preserves the original question and confirmed facts after failure',
     (WidgetTester tester) async {
+      await configureViewport(tester);
+
       var attempts = 0;
       final client = _TestResearchClient((query) async {
         attempts++;
@@ -334,7 +460,9 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.byKey(const Key('research_retry_button')));
+      final retryButton = find.byKey(const Key('research_retry_button'));
+      await tester.ensureVisible(retryButton);
+      await tester.tap(retryButton);
       await tester.pumpAndSettle();
 
       expect(client.calls, hasLength(2));
@@ -348,12 +476,21 @@ void main() {
   );
 
   testWidgets(
-    'fires onCookConfirmed only after explicit review and edit in the confirmation field',
+    'leaves confirmation input empty on reverse or declined substitution answers and fires onCookConfirmed only after explicit entry',
     (WidgetTester tester) async {
+      await configureViewport(tester);
+
       final confirmed = <String>[];
+      const reverseQuery = CookingResearchQuery(
+        question: 'Can I use lemon instead of vinegar?',
+        currentStep: 'Step 2: Whisk dressing',
+        confirmedIngredients: <String>['1 can chickpeas'],
+      );
+
       final client = _TestResearchClient((_) async {
         return const CookingResearchResult(
-          answer: 'You can use 1 tbsp apple cider vinegar instead of lemon.',
+          answer:
+              'Do not substitute vinegar here; keep the recipe as written or skip the acid.',
         );
       });
 
@@ -361,26 +498,44 @@ void main() {
         wrapWidget(
           CookingResearchPanel(
             client: client,
-            query: initialQuery,
+            query: reverseQuery,
             onCookConfirmed: confirmed.add,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // Never fires automatically on load.
+      // Never pre-populates an invented substitution draft from question keywords.
+      final confirmationField = tester.widget<TextField>(
+        find.byKey(const Key('research_confirmation_input')),
+      );
+      expect(confirmationField.controller?.text, isEmpty);
       expect(confirmed, isEmpty);
 
-      // Cook edits the confirmation field and clicks Confirm.
-      await tester.enterText(
-        find.byKey(const Key('research_confirmation_input')),
-        'Using 1 tbsp apple cider vinegar instead of lemon juice',
+      // Tapping Confirm while empty shows a validation prompt and does not fire callback.
+      final confirmButton = find.byKey(
+        const Key('research_confirm_fact_button'),
       );
-      await tester.tap(find.byKey(const Key('research_confirm_fact_button')));
+      await tester.ensureVisible(confirmButton);
+      await tester.tap(confirmButton);
+      await tester.pump();
+      expect(confirmed, isEmpty);
+
+      // Cook explicitly types and reviews the exact fact before confirming.
+      final confirmationInput = find.byKey(
+        const Key('research_confirmation_input'),
+      );
+      await tester.ensureVisible(confirmationInput);
+      await tester.enterText(
+        confirmationInput,
+        'Using 1 tbsp fresh lemon juice instead of white wine vinegar',
+      );
+      await tester.ensureVisible(confirmButton);
+      await tester.tap(confirmButton);
       await tester.pump();
 
       expect(confirmed, <String>[
-        'Using 1 tbsp apple cider vinegar instead of lemon juice',
+        'Using 1 tbsp fresh lemon juice instead of white wine vinegar',
       ]);
       expect(
         find.byKey(const Key('research_confirmed_feedback_text')),
