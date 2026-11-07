@@ -1,194 +1,154 @@
-# SousSight design spec
+# SousSight design specification
 
-DevFest Hackathon 2026, Devs Track: "Fix the Handoff". Last updated Sat Nov 7, 2026.
+Updated November 7, 2026 for the DevFest Orlando submission. This document is the current product direction; earlier handoffs describe an older design.
 
-## Thesis
+## Product
 
-SousSight is a live cooking companion: show it your ingredients, talk while you cook, and ask “am I doing this right?” Gemini sees sampled camera frames and hears the cook; GenUI composes the working Flutter web interface as the task changes. Timers and visible-readiness watches appear when needed. A recipe card becomes a two-way handoff: when the cook needs human help, the current step, question, and selected evidence go to an instructor, whose reviewed answer can help the next learner.
+SousSight is a live cooking companion. The cook shows ingredients and the bowl to the camera, talks through a recipe, and asks “am I doing this right?” Gemini uses sampled video and microphone audio to give short spoken guidance and compose useful Flutter panels as the task changes.
 
-**Product direction restored November 7:** Live video, bidirectional audio, dynamic A2UI surfaces, a real timer, and opt-in watch alerts are core. Earlier decisions to cut or defer them are superseded by the user's explicit preference. Dinner-ready messaging to a chosen household contact remains part of the Vonage scope.
+**The cook is the human in the loop.** When context is missing, the coach asks the cook a precise question. When an answer needs outside information, it performs a separate Google Search grounded request and presents returned sources. The cook confirms ingredients, substitutions, progress, and messages. There is no external instructor, board, help queue, or routing requirement in this submission.
 
-- AI is the triage and context builder. People own the answers. (Augmentation, not replacement.)
-- Learning comes first. The learner predicts before the coach checks, and every verdict names the visual cue to learn.
-- Local context: UCF Knights Pantry gives out produce, and "students just didn't know what to do with it" (UCF Pegasus, Fall 2022). FreshU demos send students home with a recipe card. We use FreshU as a model, **not** as a partner.
+Live vision, bidirectional audio, GenUI/A2UI panels, real timers, optional visual watches, and a reviewed dinner-ready message are core features. Keep those features central when making implementation tradeoffs.
 
-## Demo arc (about 3 minutes)
+## Community use
 
-1. **Predict, then check the mash.** The learner taps "Not yet", then "Am I doing this right?". The coach replies "Not yet, about half the chickpeas are still whole" and names the cue. The learner mashes and checks again, and gets a match.
-2. **Unreviewed substitution, routed to the right human.** The checklist shows lemon as Missing. The learner asks "Can I use vinegar?". It isn't a reviewed swap, so a help sheet opens with a Gemini summary and photos. Routing rules pick Marcus (substitutions, available).
-   - The board card shows *why* Marcus was picked.
-   - Marcus gets a Vonage message.
-   - Marcus accepts and writes the answer.
-   - The learner taps "This solved it".
-   - Marcus ticks **Make reusable**.
-   - The next learner sees the swap credited to Marcus. No handoff needed.
-3. **Safety question, no owner available.** The learner asks "My roommate has a sesame allergy, is this OK?". The coach gives a fixed reply ("can't judge allergens from a photo"). The request routes to the allergens skill. Priya, the only allergens instructor, is offline, so the card lands in the red **Needs owner** lane, showing its age and a next step. A forced failed delivery shows "Message failed, status still visible in the app".
-4. **Close.** Explain the routing and storage choices and the measured accuracy. The learner sends a "Thanks, Chef!" message with a photo of the wrap.
+The intended audience is a novice cook turning affordable pantry ingredients into a meal, including Central Florida students and households. The first recipe uses canned chickpeas and prepared vegetables so the demonstration can focus on learning visual cues without a stove.
 
-## Scope
+[UCF's FreshU cooking demonstrations](https://whps.sswb.ucf.edu/cooking-demos-classes/) and [UCF's account of helping students use pantry produce](https://www.ucf.edu/pegasus/how-does-your-garden-grow/) illustrate the local problem this project aims to help: receiving ingredients or a recipe does not necessarily provide confidence during preparation. These are community context, not partnerships or evidence that SousSight has been validated by UCF. Food waste reduction, cooking confidence, and successful substitutions are outcomes to measure, not established results.
 
-| ID | Capability | Status |
-|---|---|---|
-| B | Reviewed recipe (`assets/recipes/chickpea_wrap_v1.json`), one active step with its cue | core |
-| C | Still-photo checkpoint vs reviewed target, structured outcome, validated (`core/triggers.dart`) | core |
-| D | Predict-then-check: self-rating before the verdict; the verdict names the cue | core |
-| L | Handoff: request packet, Gemini triage, rules routing, human accept, board lanes | core |
-| M | Deterministic handoff gates: unreviewed substitution, 2 inconclusive results, safety keywords | core |
-| N | Knowledge loop: approve an answer as a reviewed substitution | core |
-| P | Vonage Messages API notifications + failed-delivery state | core |
-| K/S | Persistence, revision guard, idempotent request IDs, offline intake | core |
-| I | Timer pops up for timed steps (`timerSeconds`); deadline stored, never a countdown | core |
-| A | Ingredient checklist populated from confirmed recipe facts and visible suggestions | core |
-| E/F | Gemini Live: sampled camera video, microphone input, spoken responses, transcription and tool calls | core |
-| J | GenUI 0.10.4 / A2UI: Gemini composes cooking panels from a trusted Flutter catalog | core |
-| W | Opt-in visible-readiness watch, explicit observation requests, audible/visible alert, uncertain/paused states | core |
-| V | Vonage dinner-ready message draft; cook confirms recipient and send | core |
-| R/T | Duplicate "+1", Spanish↔English summary | stretch |
+## Demonstration
 
-Watch mode observes visual cues such as even mixing or coarse texture. It does not certify internal temperature, allergens, freshness, or safe doneness. The camera runs at the Live API's supported sampled-frame rate, rather than promising arbitrary full-motion video or sub-400ms responses. A timer finishing is a time alert, not a visual or safety verdict.
+Use one staged Smashed Chickpea Salad Wrap session and make the mode visible.
+
+1. **Show and confirm.** Connect the camera and microphone. Show the ingredients, confirm the checklist, and tell the coach what is missing. The coach asks a targeted question if an ingredient or quantity is uncertain.
+2. **Check a visible technique.** Show partially mashed chickpeas, choose Ready / Not yet / Not sure, then ask for a check. The workspace changes to a comparison or step-cue panel. Mash again and show the changed bowl. The coach describes the visible cue rather than simply saying “good.”
+3. **Create useful tools.** Ask for a short, explicitly labelled demonstration timer and watch for an evenly mixed bowl. The countdown runs on the client. A watch requests new visual observations and alerts the cook when it looks ready for their check.
+4. **Research a missing ingredient.** Ask whether the available vinegar can replace lemon in this recipe. Show the source-backed answer and any cook clarification. A suggested substitute does not automatically become a confirmed ingredient.
+5. **Call everyone to the table.** Open the dinner-ready draft, review the configured household recipient and exact message, and explicitly confirm. With messaging disabled, demonstrate the clearly labelled rehearsal result. With a configured Vonage account, show provider acceptance accurately as delivery unconfirmed.
+
+The five-minute onion timer remains a genuine five-minute recipe timer. Do not shorten it silently or present an edited countdown as proof of cooking readiness. Use an explicitly requested short timer when demonstrating expiration within three minutes.
+
+## Current implementation and limits
+
+| Capability | Implementation / current limit |
+|---|---|
+| Recipe | One bundled `chickpea_wrap_v1` recipe, four steps. General recipe import is outside the current build. |
+| Live vision and voice | Browser camera frames, microphone PCM, streamed spoken responses, transcription, and tool calls. Real hardware and deployed model connectivity still need a smoke test. |
+| Dynamic workspace | GenUI 0.10.4 renders validated A2UI components from a cooking catalog. The model chooses composition and content; it does not generate executable Dart or arbitrary HTML. |
+| Check my bowl | Active cook flow asks Live to compare the latest frame with the current recipe cue. It is not a measured vision accuracy benchmark. |
+| Cook questions | `ask_cook` presents a specific missing fact; explicit answers are saved as cook-confirmed context. |
+| Research | Separate Gemini 3.8 Flash request with Google Search. Sources come from provider grounding metadata; the real client rejects answers without usable sources. |
+| Timers | Absolute deadlines drive countdowns. Multiple timers can run in memory; only the latest timer ID, label, and deadline are saved in the cooking session for reload. |
+| Watch | Opt-in visual goal, fresh-frame checks, periodic model prompts, and watch IDs to reject stale results. It pauses when the session ends or the tab becomes hidden. |
+| Dinner notification | Cook-reviewed request to an authenticated backend; Vonage sending is disabled by default. Provider acceptance is not confirmed delivery. |
+| Rehearsal | `FAKE_BACKEND=true` uses simulated AI and in-memory services. It does not capture camera/audio, run a real watch, search Google, or send a message. |
+| Reference assets | Existing target JPEGs are small placeholders. Recipe fixture fields saying `Recipe reviewer` are not evidence of a real human review. |
+
+Structured assessment and triage code from the earlier foundation remains in `lib/ai/` and the shared service container. The current cook UI uses the Live flow above. Do not describe an inactive still-image comparison path, legacy routing code, placeholder photos, or seeded reviewer names as demonstrated product functionality. Replace reference assets and establish a documented recipe review before claiming reviewed visual targets.
 
 ## Architecture
 
-One Flutter codebase with two **web** entrypoints, served from Firebase Hosting over HTTPS. Phones open the learner URL in a browser. Android and iOS builds remain possible later; the code stays platform-neutral.
+One Flutter web application serves the cooking experience. `lib/main.dart` forwards to `lib/main_learner.dart`; the build script compiles that cook entrypoint into `build/web`. Firebase Hosting serves that directory over HTTPS. Historical board entrypoints are not built or deployed by the current script.
 
+```text
+lib/app/       application services and dependency injection
+lib/core/      recipe/session models, research contract, fakes
+lib/data/      Firebase Auth, Firestore, App Check, API clients
+lib/ai/        grounded research plus existing structured-model clients
+lib/live/      browser media, Live transport, tools, lifecycle and watch control
+lib/genui/     trusted cooking catalog, validated surfaces, timers
+lib/learner/   cooking screen, coordinator, labelled rehearsal transport
+lib/research/  sister's AGY research/substitution experience (separate task)
+functions/    protected Live-token and dinner-ready endpoints
+tool/         local build tooling
 ```
-lib/
-  core/        models, state machine, routing, triggers, service interfaces, fakes  (no Firebase)
-  data/        Firestore + Auth implementations of core/services.dart, App Check init
-  ai/          Gemini via Firebase AI Logic: assessment + triage clients, prompts, schemas
-  live/        Gemini Live transports, browser camera/microphone/playback, session lifecycle
-  genui/       validated A2UI cooking catalog, dynamic surfaces, persistent timer state
-  learner/     learner UI (phone)          main_learner.dart
-  board/       instructor board UI (web)   main_board.dart
-functions/     Cloud Functions (TypeScript): Vonage notifications
-tool/seed.mjs  seeds recipe + demo roster (firebase-admin)
-```
 
-- **Model calls happen only on the learner device.** The board makes no AI calls.
-  - `gemini-3.8-flash`: checkpoint assessment (structured output).
-  - `gemini-3.5-flash-lite`: triage, classification and summary.
-  - Model IDs live in `lib/ai/ai_config.dart`.
-- **Always use `FirebaseAI.googleAI()`.** `vertexAI()` no longer exists in firebase_ai 5.x.
-- **App Check is enforced for AI Logic**, so the learner app activates it before any model call:
-  `FirebaseAppCheck.instance.activate(providerWeb: WebDebugProvider(debugToken: ...))` in debug builds, with `ReCaptchaEnterpriseProvider(siteKey)` otherwise.
-  - Pass the debug token with `--dart-define=APPCHECK_DEBUG_TOKEN=...`.
-  - Register it in the console under App Check → web app → Manage debug tokens.
-  - Never commit it.
-- **Fake backend:** `--dart-define=FAKE_BACKEND=true` swaps in `core/fakes.dart`, so either UI runs with no Firebase.
+The data and UI layers use injectable interfaces so rehearsal and tests do not require credentials. No model response is allowed to directly submit a dinner notification or silently mark a step complete.
 
-## Firestore
+### Live transport
 
-Field names are the `toMap()` keys in `lib/core/models.dart`, and the models are the source of truth. The data layer converts `DateTime` ↔ `Timestamp` and `Uint8List` ↔ `Blob`.
+For web, the app calls `POST /api/live-token` with a Firebase ID token and App Check token. The backend verifies both, applies a per-user attempt limit, and mints a short-lived Gemini token using a server-side `GEMINI_API_KEY` secret. The response supplies the model and API version; the browser does not embed a long-lived Gemini key.
 
-| Path | Model | Notes |
-|---|---|---|
-| `recipes/{recipeId}` | `Recipe.toMap()` | Seeded. Clients may only append to `reviewedSubstitutions` (instructors). |
-| `sessions/{sessionId}` | `CookingSession` | Owner-only. `revision` bumps on every learner-confirmed change. |
-| `sessions/{id}/checkpoints/{cpId}` | `CheckpointRecord` | Photo is a ≤768px JPEG Blob (~60-150 KB). No Cloud Storage. |
-| `requests/{requestId}` | `HelpRequest` | ID is a client UUID (idempotent). Holds ≤2 thumbnails (≤512px) so instructors never read sessions. `notify` is written by Functions only. |
-| `instructors/{id}` | `Instructor` | Admin-seeded; read by signed-in users. Clients may change only `available`, and only on their own doc (coordinator: any). |
-| `config/demo` | `{notifyEnabled, forceNotifyFailure, channel}` | Coordinator-writable demo switches. |
+The current backend contract selects `gemini-3.8-live` and `v1beta`. The token is single-use for starting a session, with a 60-second new-session window and 30-minute expiry. The browser connects to the constrained Live WebSocket endpoint with `access_token`, supplies the cooking context and function schemas, and requests audio plus transcription. The current [ephemeral-token guide](https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens) and [Google's Live migration guide](https://github.com/google-gemini/gemini-skills/blob/main/skills/gemini-live-api-dev/references/migration.md) are the model/protocol references. Older examples still mention v1alpha; verify the actual deployed connection rather than treating compilation as proof.
 
-**Auth:**
-- Learners sign in anonymously.
-- Instructors sign in with email and password. `instructors/{uid}` links the account to a roster entry.
-- Demo roster members without a login (e.g. Priya) are data-only, labeled "Demo data".
+The Firebase AI Logic 5.1 browser Live implementation does not attach App Check headers to its WebSocket. The [tracked Firebase issue](https://github.com/firebase/firebase-js-sdk/issues/10018) explains why the browser uses the protected ephemeral-token route. `FirebaseLiveTransport` remains a separate adapter for SDK-supported clients, with its separately configured model. Standard grounded research uses Firebase AI Logic's HTTPS path.
 
-**Request lifecycle:** see the header of `core/request_machine.dart`. Every board and learner action runs the pure transition inside `RequestRepository.transact`.
+Browser media behavior:
 
-**Routing:** `core/routing.dart`. An instructor is eligible if they are available and cover the needed skill. Ties go to the lowest open load, then the least recently assigned. Gemini picks the *category*; the rules pick the *owner*; a person *accepts*. Decline reroutes; no match leaves the card in Needs owner.
+- One JPEG frame per second, maximum dimension 768 pixels; the UI preview shows the latest sampled frame.
+- Mono PCM16 little-endian microphone input at 16 kHz, including resampling from the browser's capture rate.
+- Queued PCM16 speech playback at 24 kHz; interruption clears queued speech.
+- User gesture starts camera/audio. Mute gates the microphone while camera frames continue. Stop, page hide, permission failure, or disconnected capture tracks clean up capture resources.
+- The receiver remains active after `turnComplete`. Session resumption is attempted when a valid handle is available. Text and tool acknowledgements wait through a brief reconnection; stale camera/audio packets may be dropped.
+- No promise of sub-300ms latency, arbitrary full-motion video, exact spatial measurements, or unattended background monitoring.
 
-## AI contracts (`lib/ai/`)
+### Live tools and GenUI
 
-**Assessment** (`gemini-3.8-flash`, `responseMimeType: application/json` + `responseSchema`):
-- Inputs, each labeled in text:
-  - IMAGE 1 TARGET (asset)
-  - IMAGE 2 CURRENT
-  - optional IMAGE 3 PREVIOUS
-  - step instruction, checkpoint target, cue list, confirmed facts
-- Schema: `outcome` enum(matchesTarget, adjust, uncertain, needBetterView), `observations` string[] (≤3, visible facts only), `cue`, `suggestedAction`, `adjustmentId` enum(checkpoint.allowedAdjustments) nullable, `confidence` enum(low, medium, high), `outOfScope` bool, `outOfScopeReason`.
-- System rules:
-  - Judge appearance for this technique only.
-  - Never judge safety, doneness, freshness or allergens; set `outOfScope` instead.
-  - If the bowl is not clearly visible, return needBetterView.
-  - If unsure, return uncertain.
-- Always run `validateAssessment()` before display.
-- Discard stale results with `isStale()`.
+Live tool calls are schema checked before reaching application state. Tool IDs prevent a duplicate model call from running the same action twice. The GenUI layer validates component names, IDs, fields, actions, and tree structure before rendering.
 
-**Triage** (`gemini-3.5-flash-lite`, structured):
-- Schema: `category` enum(technique, substitution, safetyAllergen, equipment, other), `urgency`, `summaryForInstructor` (≤60 words: question, step, what was tried, what the AI could not judge), `aiUncertainty`, `englishQuestion`, `clarifyingQuestion`, `language`.
-- `isSafetyQuestion()` overrides the category to safetyAllergen.
-- Triage runs after `submit()`. A request can sit in `submitted` while the learner is offline.
+| Tool | Host behavior |
+|---|---|
+| `show_cooking_ui` | Validate the `uiJson` component tree and update the cooking workspace. |
+| `start_timer` | Start a host-owned timer using ID, label, and 1–7200 seconds; persist the latest timer deadline. |
+| `watch_cooking` | Start the requested visible goal and return a new `watchId`. |
+| `report_readiness` | Require that exact active `watchId` and a fresh frame; show watching / uncertain / looks-ready-for-your-check. |
+| `ask_cook` | Present the missing question and reason; the cook supplies the answer. |
+| `research_cooking` | Run the separate grounded research client and return its answer and sources. |
+| `check_now` | Invite the cook to make a prediction and request a deliberate visual check. |
+| `next_step` | Suggest progression; the cook confirms using the step action. |
+| `dinner_ready` | Open an editable message draft. Sending requires a separate explicit action. |
 
-## Learner app (phone, web)
+The catalog contains cooking layouts and panels such as ingredient checklists, step cues, comparisons, cook questions, watch status, timers, and dinner-ready drafts. A stable timer keeps its actual deadline even when the model replaces surrounding UI. The catalog, not arbitrary model output, owns available actions.
 
-- **Fixed chrome:**
-  - Top bar: recipe title, step n/N, progress.
-  - Bottom bar: **Am I doing this right?** (capture), **Ask an instructor** (with a request status badge), and the mic (stretch).
-  - Camera preview always visible above the working panel.
-- **Screens and panels:**
-  - **Start:** recipe card. The one-recipe scope is stated.
-  - **Checklist:** Have / Missing per ingredient. Missing shows the reviewed swaps and "Ask about another substitute".
-  - **Step:** instruction, cue, target photo, timer card if `timerSeconds`.
-  - **Predict chips** (Ready / Not yet / Not sure), required before capture.
-  - **Verdict card:** outcome chip, "You said X · Coach: Y", observations, cue, action button.
-  - **Help sheet:** question, summary preview, the exact thumbnails that will be shared, routing preview. Send creates the request.
-  - **Request status:** timeline, next step, add details, cancel, and "This solved it" / "Still stuck".
-  - **Done:** recap of cues learned and instructor tips.
-- **Capture:** use the `camera` plugin for a still, then downscale to 768px JPEG q75 (`package:image`). Thumbnails are 512px q70.
+### Watch semantics
 
-## Instructor board (projector, web)
+Watch mode concerns an observable technique cue: coarse chickpea texture, dressing spread evenly, or a similar visible change. Every watch receives a new ID. The application asks for a fresh observation about every eight seconds while the connection is listening and the camera frame is fresh. Reports for a stopped, replaced, or previous-step watch are rejected, including cached duplicate tool results. A slow result cannot stop a newer watch.
 
-- **Lanes:** Needs owner (red, with age timer) | With instructor (Suggested / Accepted badges) | Answered | Resolved.
-- **Card:** question, category/skill chips, summary, **AI could not judge** line, thumbnails, step, routing "why", history timeline, notification chips (sent ✓ / failed ✗).
-- **Signed-in instructor:**
-  - Availability toggle.
-  - Accept, Decline (with reason), Answer box.
-  - **Make reusable** checkbox on answered substitution requests.
-- **Coordinator:**
-  - Assign on Needs-owner cards.
-  - Toggle availability for demo roster members.
-  - `config/demo` switches.
-  - Reset demo.
-- The roster is labeled "Demo data". Large type so it's readable from 5 m.
+The first accepted ready report produces “Looks ready for your check” and a visible alert. The screen can chime while live audio playback is active. Timers likewise show expiration and can chime during an active live session. Background browser execution, a closed tab, or an inactive audio context is not a reliable alarm service.
 
-## Vonage (`functions/`)
+Appearance, elapsed time, and food safety are distinct. An image cannot establish internal temperature, allergen absence, freshness, or safe storage. The coach asks the cook for relevant facts and can research authoritative guidance; it must not certify that food is safe from the camera.
 
-- A Firestore trigger on `requests/{id}` writes, comparing before and after `status`. It sends:
-  - `instructorRouted`, on → suggested (to the suggested instructor);
-  - `learnerAccepted`, on → accepted;
-  - `learnerAnswered`, on → answered.
-- `sendThanks` is a callable function: the learner's "Thanks, Chef!" message to the instructor who helped.
-- **Channel:** Vonage Messages API, `config/demo.channel` = `whatsapp` (sandbox `https://messages-sandbox.nexmo.com/v1/messages`) or `sms`.
-- **Phone numbers:** `instructorContacts/{id}` and `learnerContacts/{uid}` (admin-only), E.164 without `+`.
-- **Secrets:** `VONAGE_API_KEY` and `VONAGE_API_SECRET`, via `defineSecret`.
-- **Idempotent:** skip if `notify.<kind>.state == sent`.
-- **Failures:** on error, or when `forceNotifyFailure` is set, write `notify.<kind> = {state: failed, error}`. The board shows it, and the in-app status still updates.
-- **Sandbox limits:** 100 messages/month and 1 msg/s, so use `notifyEnabled=false` during rehearsals. The WhatsApp 24h window means demo phones should message the sandbox on Sunday morning.
-- Requires the Blaze plan.
+### Research and confirmation
 
-## PR stack
+The separate `CookingResearchClient` accepts a question, the current step, and confirmed ingredients. The real implementation uses `FirebaseAI.googleAI()`, `gemini-3.8-flash`, and `Tool.googleSearch()` in a dedicated HTTPS call. It keeps search separate from the Live custom-function setup to avoid unsupported tool combinations.
 
-1. `stack/01-foundation`: scaffold, this spec, core models/state machine/routing/triggers, fakes, tests.
-2. `stack/02-data`: Firestore/Auth repos, App Check init, rules, seed.
-3. `stack/03-ai`: assessment and triage clients, prompts, schemas.
-4. `stack/04-board`: instructor board.
-5. `stack/05-learner`: learner app.
-6. `stack/06-vonage`: Cloud Functions.
-7. `stack/07-integration`: wire real backends, hosting deploy, smoke test.
+Citations are HTTPS links taken from grounding metadata, never extracted from model-authored prose. Google-provided search suggestions are preserved in an isolated renderer. Failure, timeout, and a missing usable source are explicit states. The cook may clarify context or retry; late results must not overwrite a newer question.
 
-Each PR stacks on the previous one. Directories don't overlap, so rebases stay trivial.
+The sister's [AGY task](handoffs/AGY-COOKING-RESEARCH.md) adds a focused research panel, clarification flow, and editable substitution confirmation through the provider-independent contract. It must not silently change the recipe or claim that a substitution has been reviewed by someone else.
 
-## Console checklist (humans)
+## Persistence and privacy boundaries
 
-1. Firebase console → AI Logic → Get started → Gemini Developer API.
-2. App Check:
-   - Register the web app.
-   - Manage debug tokens → add one UUID and share it out-of-band.
-   - The AI Logic App Check enforcement is already on.
-3. Authentication: enable Anonymous and Email/Password. Create instructor accounts (ana@, marcus@, coordinator@ demo emails).
-4. Upgrade to Blaze with a budget alert (needed for Functions/Vonage).
-5. Vonage dashboard:
-   - Messages API Sandbox → allowlist demo phones on WhatsApp.
-   - Copy the API key and secret.
-   - Ask the Vonage advocate at the venue if blocked.
+Anonymous Firebase Auth identifies the cook. Firestore sessions are owner-scoped and contain the current recipe step, completed steps, confirmed ingredient states and facts, revision, and the latest timer metadata. Confirmed mutations increment `revision` and update the timestamp. The bundled recipe remains available when a remote recipe is absent; deployed access and offline behavior still need verification.
+
+Live image/audio streams go to Gemini during the active connection. The browser bridge does not write continuous recordings to Firestore. Current transcripts are held in memory for the display. Existing checkpoint model/storage support is separate from continuous media capture.
+
+Backend-only Firestore collections hold token quotas and dinner-message idempotency records. Clients must not be able to read or write those ledgers. No long-lived Gemini or Vonage secret belongs in Flutter source, Dart defines, or web assets.
+
+## Dinner-ready messaging
+
+`POST /api/dinner-ready` receives the session ID, a stable notification ID, the cook-approved recipient, and the exact approved message. It verifies Firebase Auth, App Check, and session ownership, and checks the configured recipient allowlist before any provider request.
+
+The backend defaults to `ENABLE_DINNER_MESSAGES=false`. WhatsApp uses the Vonage Messages Sandbox; SMS uses the production Messages API with the appropriate sender/account setup. Keep channel and account details in [functions/README.md](../functions/README.md), including secret names, sandbox enrollment, and rate limits.
+
+A transaction claims the notification before contacting Vonage. A second ID cannot bypass an existing announcement for the same meal and recipient. Pending or ambiguous outcomes are not automatically retried. The UI distinguishes rehearsal, provider rejection, uncertain status, and provider acceptance with delivery unconfirmed. Delivery callbacks are not implemented in this build, so do not display a delivered receipt.
+
+## Build and release shape
+
+The application artifact is `build/web`, produced by `tool/build_web.sh`. Hosting needs rewrites for `/api/live-token` and `/api/dinner-ready` before the single-page-app fallback. The token and dinner functions run in `us-central1`. Keep runtime secrets in Secret Manager and service settings on the backend; the web build only receives public configuration and development-only App Check settings.
+
+Continue the existing stack with small reviewable commits. The foundation and data layers remain the base, followed by structured AI, live cooking, dynamic UI, the cook application, protected backend functions, and integration checks. Historical board branches are not the current product plan. The AGY research task has separate file ownership and joins the stack through its draft PR.
+
+## Acceptance and remaining validation
+
+Before calling the submission demo ready:
+
+- Run static analysis, focused Dart tests, browser media tests, backend tests, and the web build for the integrated cook entrypoint. Report sandbox or environment blocks separately from passing tests.
+- Exercise the actual hosted app on a phone: permissions, camera framing, two or more spoken turns, interruption, mute, disconnect, hide/resume, and a generated interactive panel.
+- Verify the deployed token endpoint, App Check, anonymous Auth, Gemini 3.8 Live setup, Google Search grounding, Firestore rules, and session resume with real services.
+- Check a timer across panel replacement and reload. Verify the latest timer restores, and state plainly that other in-memory timers do not yet restore.
+- Switch or stop a watch before an old observation returns; confirm it cannot update the new step. Never show a rehearsal watch as an actual observation.
+- Review the recipe and replace placeholder target images before making any reviewed-target claim. Record what was actually tested rather than inventing accuracy metrics.
+- Test dinner messaging with an explicitly approved recipient and text. Verify duplicate/ambiguous requests do not resend, and label submission versus delivery accurately.
+- Check phone and desktop layouts, readable transcripts, keyboard operation, and visible errors.
+
+Production services, real camera/audio behavior, verified recipe review, and end-to-end provider delivery have not been established by the current local build. Keep those as explicit release checks, not implied completed work.
