@@ -86,7 +86,12 @@ export async function sendVonageDinner({ request, channel, credentials, fetchImp
     return { status: 'failed', reason: 'not-configured' };
   }
   let from;
-  try { from = normalizeRecipient(credentials.from); }
+  // The dashboard's SMS trial example uses this exact backend-only sender.
+  // This is not a general alphanumeric sender allowance.
+  try {
+    from = channel === 'sms' && credentials.from === 'Vonage APIs'
+      ? credentials.from : normalizeRecipient(credentials.from);
+  }
   catch { return { status: 'failed', reason: 'invalid-sender' }; }
   const endpoint = channel === 'whatsapp'
     ? 'https://messages-sandbox.nexmo.com/v1/messages'

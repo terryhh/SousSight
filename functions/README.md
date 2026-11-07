@@ -89,7 +89,8 @@ Configuration:
   `VONAGE_ALLOWED_TO` (comma-separated allowed phone numbers with country codes).
 - `DINNER_CHANNEL=whatsapp` by default uses the Messages Sandbox. `sms` uses the
   production Messages API; SMS is not a Sandbox channel. Configure the appropriate
-  sender and US messaging registration before choosing SMS.
+  sender and US messaging registration for ordinary US traffic. The account's
+  dashboard trial example has a separate, limited path described below.
 - `ENABLE_DINNER_MESSAGES=false` by default. Only the exact value `true` enables
   a provider request. Deploying code does not itself opt into sending messages.
 - Allowed origins reuse `LIVE_ALLOWED_ORIGINS`.
@@ -116,6 +117,45 @@ start a fresh cooking session for the real-send rehearsal after enabling message
 No network retry loop is built into this integration, and tests inject the provider
 transport so they never send a message.
 
+
+## SMS trial setup without an account upgrade
+
+The [dashboard SMS example](https://developer.vonage.com/en/dashboard/build/messaging/send-sms)
+uses the Messages API with Basic API key/secret authentication and the sender
+`Vonage APIs`. SousSight accepts that exact backend-configured sender for SMS
+only; WhatsApp and other sender values still require a numeric phone number.
+Recipients always require a phone number and the server allowlist. This exception
+does not establish approval to use arbitrary sender names or an unregistered US
+local number. Vonage describes its limited dashboard trial campaign in the
+[trial guide](https://api.support.vonage.com/hc/en-us/articles/14841470272540-Understanding-the-10DLC-Trial-Campaign-in-SMS-API).
+
+Terry reported a successful Vonage trial SMS on November 7, 2026 and a trial balance
+change from approximately $2.00 to $1.99. The supplied dashboard code uses the
+sender above. This is user-reported provider evidence; the SousSight endpoint
+has not been verified live. Automated tests inject transport and consume no
+Vonage credit. No upgrade, top-up or additional send is authorized by this setup.
+Reserve live sends for explicitly authorized, cook-reviewed tests.
+
+Enter the four secrets interactively in your own terminal, not in chat, command
+arguments, GitHub, Dart defines or browser assets:
+
+```sh
+firebase functions:secrets:set VONAGE_API_KEY --project devfest-flutter-a59e8
+firebase functions:secrets:set VONAGE_API_SECRET --project devfest-flutter-a59e8
+firebase functions:secrets:set VONAGE_FROM --project devfest-flutter-a59e8
+firebase functions:secrets:set VONAGE_ALLOWED_TO --project devfest-flutter-a59e8
+```
+
+For this trial, enter `Vonage APIs` exactly for `VONAGE_FROM`. For
+`VONAGE_ALLOWED_TO`, enter only the registered/verified receiving phone number,
+including country code, without spaces. It is not the purchased sender number.
+Use the actual key and secret from the same dashboard account. Do not add
+`--force`, which can update functions to use new secret versions.
+
+The GitHub deployment variable is `DINNER_CHANNEL=sms`. Keep
+`DINNER_SERVICE_READY=false` until credentials and deployment prerequisites have
+been verified, and keep `ENABLE_DINNER_MESSAGES=false` until a real test is
+explicitly authorized. Changing the channel alone does not deploy or send.
 
 ## Deploy Live before dinner credentials are ready
 
