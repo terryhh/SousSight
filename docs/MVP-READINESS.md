@@ -65,3 +65,11 @@ Reviewed merged token configuration uses one session, 30-minute token expiry, on
 ## Bounded synthetic follow-up diagnostics
 
 2026-11-07: Three bounded synthetic diagnostics used the hosted protected-token path without user media. Transcript request at maxOutputTokens 180 returned one text fragment and no audio (failed diagnostic; usage unavailable). Retry at 512 returned 465,600 audio bytes in 11,195 ms; reported usage 580 prompt + 248 response = 828 total, thoughts 89. A real GenUI tool probe (gemini-3.8-live/v1beta) returned a valid-looking root, stepCue and two-option cookQuestion in 1,780 ms; reported usage 1,205 prompt + 150 response = 1,355 total, thoughts 252. These are provider-reported fields, not additive recomputations. The payload is stored only in a temporary local diagnostic file; widget/render validation and hosted UI verification remain pending. All temporary Auth/debug App Check registrations were cleaned up. Dollar costs are unknown. Deployment run 42424326318 succeeded; SS-003 remains open until actual generated UI validation.
+
+## Subsequent user confirmation and fixture replay
+
+2026-11-07: Terry confirmed that he heard the coach clearly during the earlier brief real camera/microphone test. This verifies audible desktop coach playback only; distinct microphone recognition remains unverified.
+
+2026-11-07: Fresh Incognito Chrome after successful run 42424326318 displayed the correct full-width CAMERA OFF placeholder. A normal tab still showed older layout, consistent with a stale-cache hypothesis rather than proof of its cause; a cache-header fix is being prepared.
+
+2026-11-07: PR #54 replays the actual model-generated GenUI fixture with 110 passing Flutter tests; an additional 19 coordinator tests pass. This verifies local widget/render behavior against the real fixture, not hosted generated-panel behavior. SS-003 remains InProgress. PR #53 transcript/workspace fix passed CI and merged; hosted verification remains pending.
