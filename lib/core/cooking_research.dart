@@ -27,6 +27,7 @@ class CookingResearchResult {
   final String answer;
   final List<CookingCitation> citations;
   final String? clarifyingQuestion;
+
   /// Unmodified provider attribution, rendered in an isolated browser surface.
   final String? searchSuggestionsHtml;
 }

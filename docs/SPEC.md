@@ -4,7 +4,9 @@ DevFest Hackathon 2026, Devs Track: "Fix the Handoff". Last updated Sat Nov 7, 2
 
 ## Thesis
 
-A recipe card is a one-way handoff. SousSight makes it two-way. The coach checks what it can see against an instructor-reviewed target. Anything it shouldn't judge goes to the right human instructor, with the evidence attached. That instructor's answer then becomes reviewed guidance that the coach reuses for the next learner.
+SousSight is a live cooking companion: show it your ingredients, talk while you cook, and ask “am I doing this right?” Gemini sees sampled camera frames and hears the cook; GenUI composes the working Flutter web interface as the task changes. Timers and visible-readiness watches appear when needed. A recipe card becomes a two-way handoff: when the cook needs human help, the current step, question, and selected evidence go to an instructor, whose reviewed answer can help the next learner.
+
+**Product direction restored November 7:** Live video, bidirectional audio, dynamic A2UI surfaces, a real timer, and opt-in watch alerts are core. Earlier decisions to cut or defer them are superseded by the user's explicit preference. Dinner-ready messaging to a chosen household contact remains part of the Vonage scope.
 
 - AI is the triage and context builder. People own the answers. (Augmentation, not replacement.)
 - Learning comes first. The learner predicts before the coach checks, and every verdict names the visual cue to learn.
@@ -35,14 +37,15 @@ A recipe card is a one-way handoff. SousSight makes it two-way. The coach checks
 | N | Knowledge loop: approve an answer as a reviewed substitution | core |
 | P | Vonage Messages API notifications + failed-delivery state | core |
 | K/S | Persistence, revision guard, idempotent request IDs, offline intake | core |
-| I | Timer pops up for timed steps (`timerSeconds`); deadline stored, never a countdown | stretch 1 |
-| A | Ingredient checklist (Have / Missing / Substituted). Photo prefill is optional | stretch |
-| E/F | Gemini Live, audio-only, push-to-talk; tools: check_now, start_timer, next_step, draft_help_request | stretch 2 |
-| J | GenUI 0.10.4, custom 3-item catalog, for free-form questions only | stretch 3 |
+| I | Timer pops up for timed steps (`timerSeconds`); deadline stored, never a countdown | core |
+| A | Ingredient checklist populated from confirmed recipe facts and visible suggestions | core |
+| E/F | Gemini Live: sampled camera video, microphone input, spoken responses, transcription and tool calls | core |
+| J | GenUI 0.10.4 / A2UI: Gemini composes cooking panels from a trusted Flutter catalog | core |
+| W | Opt-in visible-readiness watch, explicit observation requests, audible/visible alert, uncertain/paused states | core |
+| V | Vonage dinner-ready message draft; cook confirms recipient and send | core |
 | R/T | Duplicate "+1", Spanish↔English summary | stretch |
-| — | Continuous Live video, watch-and-alarm, AI-drafted instructor replies | **cut** (see review) |
 
-The cut watch mode is replaced by a nudge: after the learner has spent N seconds on a checkpoint step, the coach asks "Ready to check? What do you think?" and opens predict-then-check.
+Watch mode observes visual cues such as even mixing or coarse texture. It does not certify internal temperature, allergens, freshness, or safe doneness. The camera runs at the Live API's supported sampled-frame rate, rather than promising arbitrary full-motion video or sub-400ms responses. A timer finishing is a time alert, not a visual or safety verdict.
 
 ## Architecture
 
@@ -53,6 +56,8 @@ lib/
   core/        models, state machine, routing, triggers, service interfaces, fakes  (no Firebase)
   data/        Firestore + Auth implementations of core/services.dart, App Check init
   ai/          Gemini via Firebase AI Logic: assessment + triage clients, prompts, schemas
+  live/        Gemini Live transports, browser camera/microphone/playback, session lifecycle
+  genui/       validated A2UI cooking catalog, dynamic surfaces, persistent timer state
   learner/     learner UI (phone)          main_learner.dart
   board/       instructor board UI (web)   main_board.dart
 functions/     Cloud Functions (TypeScript): Vonage notifications
