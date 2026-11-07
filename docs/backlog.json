@@ -21,8 +21,9 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Anonymous Auth enabled; tested private Firestore rules and indexes deployed to devfest-flutter-a59e8. Firebase AI Logic and Gemini Developer APIs enabled; AI Logic App Check enforcement verified ENFORCED.",
-        "2026-11-07: Production web App Check provider and hosted real-service verification remain pending."
+        "2026-11-07: Anonymous Auth and tested private Firestore rules/indexes deployed. Firebase AI Logic and Gemini Developer APIs enabled; AI Logic App Check remains ENFORCED.",
+        "2026-11-07: Production reCAPTCHA Enterprise web provider registered for the two Hosting domains; dedicated Gemini server key stored in Secret Manager. No debug token published.",
+        "2026-11-07: Real Auth/App Check and AI Logic request smoke succeeded; the AI request recorded 5 prompt / 17 total tokens. Response content was not asserted. This is not production-browser attestation or live camera/voice verification."
       ],
       "assignee": "terryhh"
     },
@@ -360,7 +361,10 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: User selected GitHub Actions for CD; workflow and scoped Google identity setup are in progress. No successful production workflow claimed."
+        "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
+        "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
+        "Both default runtime accounts have pre-existing Editor roles. The deployer has no Owner/Editor role, but its permitted runtime impersonation means the effective deployment path is not globally least privilege.",
+        "2026-11-07: PR #37 passed CI and merged; FIREBASE_DEPLOY_ENABLED restored true before merge for rollout. Deployment verification remains pending. firebaseextensions.googleapis.com enabled for discovery; no extensions installed."
       ],
       "assignee": "terryhh"
     },
@@ -392,8 +396,8 @@
       "title": "Preserve explicit GitHub card assignees in backlog publishing",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Persist actual GitHub assignees for every backlog card. New issues use the manifest assignee; only existing unassigned issues are filled. Preserve any human assignment, including Jenna\u2019s work.",
       "acceptance": [
         "Every manifest task names one GitHub assignee; SS-005 is jennajh and other current tasks are terryhh.",
@@ -403,7 +407,75 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Publisher changes and ownership-preservation tests prepared; parent confirmed all existing project cards now have actual assignees."
+        "2026-11-07: PR #33 passed GitHub CI and merged to main. All 19 publisher tests pass, including explicit assignment, empty-card repair, preservation of human/Jenna assignments and a fresh ownership check.",
+        "2026-11-07: Issue #32 is closed and its project item is Done; GitHub assignee terryhh is preserved."
+      ]
+    },
+    {
+      "id": "SS-019",
+      "priority": "P0",
+      "title": "Make the cooking workspace responsive in mobile Chrome",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Make the Flutter web cooking companion usable in mobile Chrome before considering an APK. Preserve camera, two-way voice, GenUI panels, timers and reviewed dinner messages. Jenna retains her assigned research-panel files.",
+      "acceptance": [
+        "Header, camera placeholder and cooking panels fit 320\u2013430px widths and enlarged text without overflow.",
+        "Live camera/microphone and cooking controls have usable touch targets.",
+        "Dinner review remains scrollable with the phone keyboard open.",
+        "Narrow viewport regression tests and static analysis pass.",
+        "Real Android Chrome camera/microphone permissions, audio and keyboard interactions are checked on a phone before claiming device verification."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Mobile PR #35 (1315dbd) has 88 passing local Flutter tests including seven responsive-layout cases; analysis and web build pass. GitHub CI passed and PR #35 merged.",
+        "Issue #34 is assigned terryhh and In progress. Physical Android Chrome permissions/audio/keyboard checks remain outstanding; APK delivery is deferred."
+      ]
+    },
+    {
+      "id": "SS-020",
+      "title": "Isolate Live deployment from unconfigured Vonage secrets",
+      "priority": "P0",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Production deployment attempt 2 failed because Firebase CLI discovers all exports and resolves Vonage secrets even when only liveToken is selected. Deploy Live without unavailable dinner credentials, preserving the disabled dinner service and its future deployment path.",
+      "acceptance": [
+        "Live-only package discovery contains only liveToken and no Vonage secret parameters.",
+        "Full package discovery still contains both functions and proper secret bindings.",
+        "Workflow uploads the same entrypoint it analyzed.",
+        "Backend tests and CI pass before merge."
+      ],
+      "dependsOn": [
+        "SS-016"
+      ],
+      "evidence": [
+        "2026-11-07: PR #37 (6e10262) introduces separate deployment entrypoints. All 23 backend tests pass locally, including installed Firebase SDK manifest discovery. GitHub CI passed and PR merged; deployed-run verification remains pending.",
+        "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets."
+      ]
+    },
+    {
+      "id": "SS-021",
+      "title": "Set up Vonage account and delivery configuration",
+      "priority": "P0",
+      "owner": "Jenna (jennajh)",
+      "assignee": "jennajh",
+      "status": "Todo",
+      "verified": false,
+      "description": "Set up the Vonage account and delivery configuration for reviewed dinner-ready messages. Terry explicitly assigned this provider setup to Jenna. SS-007 remains Terry/Codex integration work. Share only secret locations, never credentials or private recipient details.",
+      "acceptance": [
+        "Confirm the supported channel (currently WhatsApp), sending identity, test recipient, and any required Vonage account/channel approval.",
+        "Configure real `VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM`, and `VONAGE_ALLOWED_TO` in Google Secret Manager for `devfest-flutter-a59e8`; share secret locations only, never values in GitHub or browser code.",
+        "Document applicable Vonage charges/free credits and any sender/channel restrictions before a paid test.",
+        "Coordinate with Terry on deployment readiness. Keep `DINNER_SERVICE_READY=false` until prerequisites are verified and `ENABLE_DINNER_MESSAGES=false` until sending is explicitly authorized.",
+        "After authorization, verify one cook-reviewed test message and record its result without credentials or private recipient details. Never send automatically or claim a disabled send succeeded."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Issue #39 created and assigned jennajh with project status Backlog; assigned does not mean started.",
+        "DINNER_SERVICE_READY and ENABLE_DINNER_MESSAGES remain false until their respective prerequisites and authorization are satisfied. No automatic or unreviewed send is authorized."
       ]
     }
   ]
