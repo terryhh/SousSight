@@ -73,3 +73,7 @@ Reviewed merged token configuration uses one session, 30-minute token expiry, on
 2026-11-07: Fresh Incognito Chrome after successful run 42424326318 displayed the correct full-width CAMERA OFF placeholder. A normal tab still showed older layout, consistent with a stale-cache hypothesis rather than proof of its cause; a cache-header fix is being prepared.
 
 2026-11-07: PR #54 replays the actual model-generated GenUI fixture with 110 passing Flutter tests; an additional 19 coordinator tests pass. This verifies local widget/render behavior against the real fixture, not hosted generated-panel behavior. SS-003 remains InProgress. PR #53 transcript/workspace fix passed CI and merged; hosted verification remains pending.
+
+## Board and integration handoff
+
+Jenna’s SS-005 independent panel/demo is Done, with eight widget tests, analysis and demo web build verified; PR #57 brings it to main. Shared learner wiring is SS-026/#58, Terry-owned and In progress. SS-027/#59 optional Google sign-in is Backlog only. Board read-back: 11 Done, 12 In progress, 0 In review, 4 Backlog; all assigned. PRs #53/#54/#55 merged; dynamic-workspace run 42425656543 succeeded, with hosted panel acceptance still pending.
