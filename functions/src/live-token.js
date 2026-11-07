@@ -15,24 +15,35 @@ export class TokenRequestError extends Error {
   }
 }
 
-export function tokenConfiguration(nowMs) {
+function validateLiveSettings(model, apiVersion) {
+  if (typeof model !== 'string' || !/^gemini-[a-zA-Z0-9._-]+$/.test(model) ||
+      !['v1alpha', 'v1beta'].includes(apiVersion)) {
+    throw new TokenRequestError('not-configured', 503, 'Live coaching configuration is invalid.');
+  }
+}
+
+export function tokenConfiguration(nowMs, model = LIVE_MODEL) {
   return {
     uses: 1,
     expireTime: new Date(nowMs + 30 * 60_000).toISOString(),
     newSessionExpireTime: new Date(nowMs + 60_000).toISOString(),
     liveConnectConstraints: {
-      model: `models/${LIVE_MODEL}`,
+      model: `models/${model}`,
       config: { responseModalities: ['AUDIO'] },
     },
   };
 }
 
-export async function mintGoogleToken({ apiKey, nowMs, fetchImpl = fetch }) {
+export async function mintGoogleToken({
+  apiKey, nowMs, model = LIVE_MODEL, apiVersion = LIVE_API_VERSION, fetchImpl = fetch,
+}) {
   if (typeof apiKey !== 'string' || apiKey.length === 0) {
     throw new TokenRequestError('not-configured', 503, 'Live coaching is not configured yet.');
   }
-  const config = tokenConfiguration(nowMs);
-  const response = await fetchImpl(TOKEN_ENDPOINT, {
+  validateLiveSettings(model, apiVersion);
+  const config = tokenConfiguration(nowMs, model);
+  const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/auth_tokens`;
+  const response = await fetchImpl(endpoint, {
     method: 'POST',
     headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
@@ -50,8 +61,8 @@ export async function mintGoogleToken({ apiKey, nowMs, fetchImpl = fetch }) {
   }
   return {
     token: data.name,
-    model: LIVE_MODEL,
-    apiVersion: LIVE_API_VERSION,
+    model,
+    apiVersion,
     expiresAt: config.expireTime,
     newSessionExpiresAt: config.newSessionExpireTime,
   };

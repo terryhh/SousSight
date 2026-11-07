@@ -18,6 +18,14 @@ Request: `POST` with an empty JSON object, `Authorization: Bearer <ID token>`, a
 }
 ```
 
+`LIVE_MODEL` and `LIVE_API_VERSION` are server-side Firebase string parameters.
+Their defaults are `gemini-3.8-live` and `v1beta`, verified against the current
+Google ephemeral-token guide. Change these at deployment when switching supported
+models; the response passes the same settings to the browser. API versions are
+limited to `v1alpha` and `v1beta`; model names must be unprefixed `gemini-*` IDs.
+The endpoint rejects invalid deployment settings before calling Google. Browser
+requests cannot override these parameters.
+
 The browser must start the connection within 60 seconds; the token expires after
 30 minutes and may start one session. Model and AUDIO output are locked on the
 server. The client supplies recipe-specific instructions, tools, transcription,
@@ -42,8 +50,9 @@ identities.
 Errors use `{ "error": { "code": "...", "message": "..." } }`. A 429 includes
 `Retry-After` and `error.retryAfterSeconds`. Every response is `no-store`.
 
-Run `npm install` to resolve the pinned Firebase dependencies and commit the
-resulting lockfile when registry access is available. Unit checks have no installed
+Run `npm ci` on Node 22 to install the pinned Firebase dependencies from the
+committed lockfile. `functions/.gitignore` excludes dependency folders and local
+Firebase environment/secret files from Git. Unit checks have no installed
 dependencies: `node --test test/*.test.js` and `npm run check`. These cover auth,
 quota, provider payloads, and errors through injected boundaries; they do not
 verify an actual Gemini WebSocket connection or deployed IAM/Firestore rules.

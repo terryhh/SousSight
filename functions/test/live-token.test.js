@@ -203,3 +203,29 @@ test('quota reservation uses transaction serialization and hashed user IDs', asy
   assert.equal(docs.size, 1);
   assert.equal([...docs.values()][0].count, 1);
 });
+
+
+test('server-selected model and API version are reflected in constraints and client metadata', async () => {
+  const token = await mintGoogleToken({
+    apiKey: 'server-secret', nowMs, model: 'gemini-test-live', apiVersion: 'v1alpha',
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'https://generativelanguage.googleapis.com/v1alpha/auth_tokens');
+      assert.equal(JSON.parse(options.body).liveConnectConstraints.model, 'models/gemini-test-live');
+      return new Response(JSON.stringify({ name: 'auth_tokens/configured' }));
+    },
+  });
+  assert.equal(token.model, 'gemini-test-live');
+  assert.equal(token.apiVersion, 'v1alpha');
+});
+
+test('invalid deployment settings fail before any provider request', async () => {
+  for (const settings of [
+    { model: '' }, { model: '../other' }, { model: 'models/gemini-live' },
+    { apiVersion: '../v1beta' }, { apiVersion: 'v9' },
+  ]) {
+    await assert.rejects(mintGoogleToken({
+      apiKey: 'server-secret', nowMs, ...settings,
+      fetchImpl: async () => assert.fail('invalid settings must not reach provider'),
+    }), { code: 'not-configured', status: 503 });
+  }
+});
