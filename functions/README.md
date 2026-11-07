@@ -115,3 +115,27 @@ dashboard before taking any manual action. Dry-run attempts are terminal too:
 start a fresh cooking session for the real-send rehearsal after enabling messages.
 No network retry loop is built into this integration, and tests inject the provider
 transport so they never send a message.
+
+
+## Deploy Live before dinner credentials are ready
+
+Firebase CLI analyzes the complete package entrypoint before applying `--only`
+function filters. A full entrypoint therefore requires Vonage secret parameters
+even when only `liveToken` is selected.
+
+The production workflow selects `functions/package.json` `main` as
+`src/live-index.js` when `DINNER_SERVICE_READY=false`. That package entrypoint
+exports only `liveToken`, declares only Gemini/Live parameters, and remains in the
+uploaded source so runtime loading matches discovery. The workflow also omits the
+dinner Hosting rewrite and dinner deployment target. No placeholder Vonage secrets
+are needed and dinner sending stays disabled.
+
+When all real Vonage secrets are configured, set `DINNER_SERVICE_READY=true` to use
+`src/index.js`, which exports both functions. `ENABLE_DINNER_MESSAGES=false` remains
+the independent default until sending is explicitly enabled. A full local deployment
+uses the committed full entrypoint by default; do not assume `--only liveToken`
+removes dinner configuration requirements.
+
+`npm test` includes isolated packaged-entrypoint tests using the installed Firebase
+Functions discovery loader. They check Live-only secret isolation and full dinner
+secret bindings. These are local discovery tests, not a successful cloud deployment.

@@ -3,10 +3,12 @@
   "private": true,
   "type": "module",
   "main": "src/index.js",
-  "engines": { "node": "22" },
+  "engines": {
+    "node": "22"
+  },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check src/index.js && node --check src/live-token.js && node --check src/token-quota.js && node --check src/dinner-ready.js"
+    "check": "node --check src/index.js && node --check src/live-token.js && node --check src/token-quota.js && node --check src/dinner-ready.js && node --check src/live-index.js && node --check src/dinner-index.js && node --check src/firebase-app.js"
   },
   "dependencies": {
     "firebase-admin": "14.5.0",
