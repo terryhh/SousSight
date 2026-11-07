@@ -42,6 +42,7 @@ Each linked card contains acceptance criteria and dated evidence; `docs/backlog.
 | [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | Backlog | None |
 | [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | Backlog | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006 |
 | [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Backlog | None |
+| [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | InProgress | None |
 
 ## Integration and release gates
 

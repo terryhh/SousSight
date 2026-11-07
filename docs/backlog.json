@@ -554,6 +554,26 @@
         "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/42 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
       ]
+    },
+    {
+      "id": "SS-025",
+      "priority": "P1",
+      "title": "Cover reconnect, media lifecycle and reviewed-send regressions",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Add focused critical-flow regression tests while production deployment proceeds. Tracks #46; preserve Jenna-owned implementation and physical acceptance.",
+      "acceptance": [
+        "Live resumption queues tool replies until replacement setup and stopping during reconnect cannot reopen capture.",
+        "Browser hidden-tab, page-hide and track-ended events release media and suppress stale frames.",
+        "Dinner draft/cancel sends nothing; explicit confirmation sends edited content once; duplicate taps and uncertain outcomes do not automatically retry.",
+        "Affected tests and CI pass; no real message is sent by tests."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Coverage audit identified these three runtime gaps. Assigned #46 to terryhh, In progress; implementation in isolated branches."
+      ]
     }
   ]
 }
