@@ -93,6 +93,7 @@ class _CookingScreenState extends State<CookingScreen>
 
   void _onChange() {
     if (!mounted) return;
+    if (cook.alert == null) _announcedAlert = null;
     if (cook.alert != null && cook.alert != _announcedAlert) {
       _announcedAlert = cook.alert;
       if (cook.alert == 'Dinner-ready draft is ready to review.') {
@@ -148,12 +149,13 @@ class _CookingScreenState extends State<CookingScreen>
       await cook.say(text);
       if (cook.live.isActive) _message.clear();
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Could not save that answer. Please try again.'),
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => _messagePending = false);
     }
@@ -192,10 +194,11 @@ class _CookingScreenState extends State<CookingScreen>
                       builder: (context, constraints) {
                         final left = _cameraColumn();
                         final right = _workspace();
-                        if (constraints.maxWidth < 850)
+                        if (constraints.maxWidth < 850) {
                           return Column(
                             children: [left, const SizedBox(height: 24), right],
                           );
+                        }
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -724,7 +727,7 @@ class _CookingScreenState extends State<CookingScreen>
                   controller: message,
                   enabled: !sending && result == null,
                   maxLines: 3,
-                  maxLength: 500,
+                  maxLength: 320,
                   decoration: const InputDecoration(labelText: 'Message'),
                 ),
                 if (validationError != null) Text(validationError!),
@@ -765,13 +768,15 @@ class _CookingScreenState extends State<CookingScreen>
                           message: message.text.trim(),
                           demo: widget.isDemo,
                         );
-                        if (context.mounted)
+                        if (context.mounted) {
                           update(() => result = response.explanation);
+                        }
                       } catch (_) {
-                        if (context.mounted)
+                        if (context.mounted) {
                           update(
                             () => result = 'Message status could not be confirmed. No automatic resend will occur.',
                           );
+                        }
                       } finally {
                         if (context.mounted) update(() => sending = false);
                       }

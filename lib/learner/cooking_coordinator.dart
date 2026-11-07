@@ -49,6 +49,7 @@ class CookingCoordinator extends ChangeNotifier {
   bool _disposed = false;
   bool _wasWatching = false;
   int _researchEpoch = 0;
+  int _timerSequence = 0;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
 
   RecipeStep get step =>
@@ -247,8 +248,19 @@ $cookingUiInstructions
     }
   }
 
-  Future<void> startStepTimer() =>
-      startTimer('step-${step.id}', step.title, step.timerSeconds ?? 60);
+  Future<void> startStepTimer() {
+    final prefix = 'step-${step.id}';
+    for (final timer in ui.timers) {
+      if (timer.id == prefix || timer.id.startsWith('$prefix-')) {
+        return startTimer(timer.id, timer.label, step.timerSeconds ?? 60);
+      }
+    }
+    return startTimer(
+      '$prefix-${services.clock().millisecondsSinceEpoch}-${_timerSequence++}',
+      step.title,
+      step.timerSeconds ?? 60,
+    );
+  }
 
   Future<void> startTimer(String id, String label, int seconds) async {
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
@@ -315,6 +327,8 @@ $cookingUiInstructions
 
   Future<CookingResearchResult?> researchQuestionNow(String question) async {
     final epoch = ++_researchEpoch;
+    final requestedRevision = session?.revision;
+    final requestedStepId = step.id;
     researching = true;
     researchQuestion = question;
     researchResult = null;
@@ -328,6 +342,11 @@ $cookingUiInstructions
         ),
       );
       if (_disposed || epoch != _researchEpoch) return null;
+      if (session?.revision != requestedRevision ||
+          step.id != requestedStepId) {
+        alert = 'Your cooking context changed during the search. Research the question again with the updated facts.';
+        return null;
+      }
       researchResult = result;
       return result;
     } catch (_) {
@@ -378,11 +397,12 @@ $cookingUiInstructions
         });
       case 'research_cooking':
         final result = await researchQuestionNow(a['question'] as String);
-        if (result == null)
+        if (result == null) {
           return {
             'ok': false,
             'error': 'Research unavailable. Ask the cook for more context; do not invent an answer.',
           };
+        }
         return {
           'ok': true,
           'answer': result.answer,
@@ -418,6 +438,7 @@ $cookingUiInstructions
   void _onUiAction(CookingUiAction action) {
     unawaited(
       _handleUiAction(action).catchError((Object _) {
+        if (_disposed) return;
         _restoreIngredients();
         error = 'That change could not be saved. Please try again.';
         _notify();
@@ -429,7 +450,6 @@ $cookingUiInstructions
     switch (action.name) {
       case 'ingredient_confirmed':
         final id = action.context['ingredientId'] as String;
-        if (!recipe.ingredients.any((ingredient) => ingredient.id == id)) break;
         final confirmed = action.context['confirmed'] == true;
         await _save(
           (current) => current.copyWith(
@@ -439,10 +459,11 @@ $cookingUiInstructions
             },
           ),
         );
-        if (live.isActive)
+        if (live.isActive) {
           await live.sendText(
             'The cook confirmed ingredient $id is ${confirmed ? 'available' : 'missing'}.',
           );
+        }
       case 'cook_answer':
         await confirmCookAnswer(
           action.context['question'] as String,

@@ -33,8 +33,9 @@ Future<DinnerMessageResult> sendDinnerMessage({
       : Uri.parse(configured);
   final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
   final appCheck = await FirebaseAppCheck.instance.getToken();
-  if (idToken == null || appCheck == null)
+  if (idToken == null || appCheck == null) {
     throw StateError('Sign-in required.');
+  }
   final response = await http
       .post(
         endpoint,
@@ -51,8 +52,9 @@ Future<DinnerMessageResult> sendDinnerMessage({
         }),
       )
       .timeout(const Duration(seconds: 25));
-  if (response.statusCode != 200)
+  if (response.statusCode != 200) {
     throw StateError('Message request unavailable (${response.statusCode}).');
+  }
   final json = jsonDecode(response.body) as Map<String, dynamic>;
   return DinnerMessageResult(
     json['status'] as String,

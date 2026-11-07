@@ -29,8 +29,9 @@ class _SousSightBootstrapState extends State<SousSightBootstrap> {
   Widget build(BuildContext context) => FutureBuilder<AppServices>(
     future: _services,
     builder: (context, snapshot) {
-      if (snapshot.hasData)
+      if (snapshot.hasData) {
         return CookingApp(services: snapshot.data!, isDemo: kFakeBackend);
+      }
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: cookingTheme,
