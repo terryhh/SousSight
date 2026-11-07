@@ -9,3 +9,8 @@
 - Credentials stay out of Git and browser bundles. Clearly label simulated demo behavior.
 
 The user's November 7 corrections supersede the older instructor-centric handoff and design.
+
+## Infrastructure cost control
+
+- Terry authorizes credits/free allowances only, with $0 out-of-pocket spend. Verify credit eligibility, remaining balance and expiry before paid usage. Do not treat budget alerts or delayed spend caps as a guaranteed ceiling; do not link paid billing or buy Gemini Prepay funds under the current zero-spend constraint.
+- Keep `docs/COST-LEDGER.md` current after infrastructure changes and live tests, distinguishing estimates, verified billed amounts and unknowns. Track shutdown in `docs/TEARDOWN.md`; execute deletion only on explicit teardown authorization with retention decisions.

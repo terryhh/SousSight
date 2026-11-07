@@ -280,6 +280,46 @@
       "evidence": [
         "Structured assessment client at aded94a; target assets were placeholder images in the source handoff. Real image quality/model behavior is unverified."
       ]
+    },
+    {
+      "id": "SS-014",
+      "priority": "P0",
+      "title": "Maintain infrastructure cost and credit ledger",
+      "owner": "Terry + Codex",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Maintain docs/COST-LEDGER.md for devfest-flutter-a59e8. User authorizes no out-of-pocket spend; verify eligible credit coverage before any paid operations.",
+      "acceptance": [
+        "Record resource inventory, provisioning changes, verified charges separately from estimates, and verification dates.",
+        "Verify remaining $300 welcome and $10 Developer Program credits, scope, redemption and expiry without committing sensitive billing data.",
+        "Record supported spend caps and quotas before paid traffic; do not purchase Prepay credit or link billing without coverage and authorization.",
+        "Reconcile usage after live tests and after teardown, including delayed charges."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "Initial ledger records billing disabled with no linked account, credit balances unverified, and completed Auth/Firestore/AI API setup."
+      ]
+    },
+    {
+      "id": "SS-015",
+      "priority": "P0",
+      "title": "Review and execute infrastructure teardown after the demo",
+      "owner": "Terry + Codex",
+      "status": "Todo",
+      "verified": false,
+      "description": "Use docs/TEARDOWN.md when Terry declares the demo finished. This card does not authorize deleting live data or resources now. Preserve Jenna work and other projects.",
+      "acceptance": [
+        "Review the staged shutdown plan and decide what data and configuration must be retained.",
+        "Stop billable traffic and messaging before removing project-scoped runtime resources.",
+        "Obtain explicit approval before irreversible data deletion; do not delete shared billing resources.",
+        "Verify removed or disabled resources and reconcile residual and delayed costs in docs/COST-LEDGER.md."
+      ],
+      "dependsOn": [
+        "SS-014"
+      ],
+      "evidence": [
+        "Teardown planning requested; no teardown executed."
+      ]
     }
   ]
 }
