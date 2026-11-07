@@ -187,9 +187,10 @@ jobs:
           export_environment_variables: true
       - name: Deploy reviewed production resources
         run: |
-          targets=auth,firestore,functions:liveToken,hosting
+          # Auth provider provisioning is a one-time setup prerequisite.
+          targets=firestore,functions:liveToken,hosting
           if [[ "$DINNER_SERVICE_READY" == true ]]; then
-            targets=auth,firestore,functions:liveToken,functions:dinnerReady,hosting
+            targets=firestore,functions:liveToken,functions:dinnerReady,hosting
           fi
           firebase deploy --project "$FIREBASE_PROJECT" --only "$targets" --non-interactive
       - name: Check Hosting response
