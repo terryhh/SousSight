@@ -9,6 +9,7 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 - The simulated rehearsal web build and Wasm compatibility dry run pass. These do not establish camera, microphone, Gemini or notification behavior.
 - Backend dependencies are locked; clean offline npm installation succeeds. 21 backend tests pass on Node 22.23.4, syntax checks pass, and both function exports load using installed Firebase SDKs. npm audit reports zero vulnerabilities at validation time. Live model/API version are validated deployment parameters.
 - Local build configuration contains an App Check debug token but no production reCAPTCHA site key. No token value was copied or published. A production build remains blocked on configuration.
+- All 10 Firestore emulator security scenarios pass. Actual repository rules compile unchanged; tests verify owner isolation, checkpoint privacy/size, session validation and server-only ledger denial. See `test/rules/README.md`. This is emulator verification, not production deployment.
 - Firebase CLI can list the active project and its default Hosting site, `devfest-flutter-a59e8`.
 - Hosting root returned HTTP 404. Listing deployed functions failed without a useful diagnostic; deployment state is not established.
 - Interactive browser verification was unavailable because the browser access host was unavailable.
@@ -24,4 +25,4 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 
 ## Ownership and integration
 
-Current implementation stack remains #8 → #9 → #10 → #11 → #12; #7 is the corrected research assignment. #7 and #8 now target main because their parent data layer merged. Keep service implementation drafts until the live checks are recorded. The old instructor-board handoff merged as #3, but the active cook-led stack removes it.
+MVP validation PR #24 is stacked above #12. Current implementation stack remains #8 → #9 → #10 → #11 → #12; #7 is the corrected research assignment. #7 and #8 now target main because their parent data layer merged. Keep service implementation drafts until the live checks are recorded. The old instructor-board handoff merged as #3, but the active cook-led stack removes it.
