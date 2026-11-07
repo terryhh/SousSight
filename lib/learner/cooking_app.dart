@@ -20,6 +20,17 @@ import 'demo_live.dart';
 
 final cookingTheme = ThemeData(
   useMaterial3: true,
+  materialTapTargetSize: MaterialTapTargetSize.padded,
+  visualDensity: VisualDensity.standard,
+  filledButtonTheme: FilledButtonThemeData(
+    style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+  ),
+  outlinedButtonTheme: OutlinedButtonThemeData(
+    style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+  ),
+  textButtonTheme: TextButtonThemeData(
+    style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+  ),
   colorScheme: ColorScheme.fromSeed(
     seedColor: const Color(0xff285b43),
     primary: const Color(0xff285b43),
@@ -240,31 +251,39 @@ class _CookingScreenState extends State<CookingScreen>
             ),
           ),
           const SizedBox(width: 12),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'SousSight',
-                style: TextStyle(
-                  fontSize: 27,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1,
+          const Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SousSight',
+                  style: TextStyle(
+                    fontSize: 27,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
                 ),
-              ),
-              Text(
-                'A little guidance. A lot more confidence.',
-                style: TextStyle(fontSize: 12),
-              ),
-            ],
+                Text(
+                  'A little guidance. A lot more confidence.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-      Chip(
-        avatar: const Icon(Icons.auto_awesome, size: 17),
-        label: Text(
-          widget.isDemo
-              ? 'Interactive rehearsal'
-              : 'Your live cooking companion',
+      DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xffe4ebdf),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Text(
+            widget.isDemo
+                ? 'Interactive rehearsal'
+                : 'Your live cooking companion',
+          ),
         ),
       ),
     ],
@@ -299,86 +318,88 @@ class _CookingScreenState extends State<CookingScreen>
       const SizedBox(height: 20),
       ClipRRect(
         borderRadius: BorderRadius.circular(26),
-        child: AspectRatio(
-          aspectRatio: 4 / 3,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (cook.live.latestFrame case final frame?)
-                Image.memory(frame, fit: BoxFit.cover, gaplessPlayback: true)
-              else
-                Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [Color(0xff214937), Color(0xff102d24)],
-                    ),
-                  ),
-                  child: const Padding(
-                    padding: EdgeInsets.all(30),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.soup_kitchen_outlined,
-                          size: 76,
-                          color: Color(0xffefce98),
-                        ),
-                        SizedBox(height: 18),
-                        Text(
-                          'Your counter is the canvas',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 23,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(height: 10),
-                        Text(
-                          'Connect your camera and microphone\nso we can cook together.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: Color(0xffc8d8c9),
-                            height: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
+        child: Stack(
+          children: [
+            if (cook.live.latestFrame case final frame?)
+              AspectRatio(
+                aspectRatio: 4 / 3,
+                child: Image.memory(
+                  frame,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
+              )
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xff214937), Color(0xff102d24)],
                   ),
                 ),
-              Positioned(
-                top: 16,
-                left: 16,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: .6),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Text(
-                      widget.isDemo
-                          ? 'SIMULATED'
-                          : cook.live.isActive
-                          ? _liveLabel
-                          : 'CAMERA OFF',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1,
+                child: const Padding(
+                  padding: EdgeInsets.fromLTRB(24, 70, 24, 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.soup_kitchen_outlined,
+                        size: 76,
+                        color: Color(0xffefce98),
                       ),
+                      SizedBox(height: 18),
+                      Text(
+                        'Your counter is the canvas',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 10),
+                      Text(
+                        'Connect your camera and microphone\nso we can cook together.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Color(0xffc8d8c9), height: 1.5),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: .6),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    widget.isDemo
+                        ? 'SIMULATED'
+                        : cook.live.isActive
+                        ? _liveLabel
+                        : 'CAMERA OFF',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1,
                     ),
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       const SizedBox(height: 14),
@@ -704,6 +725,11 @@ class _CookingScreenState extends State<CookingScreen>
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
           title: const Text('Dinner is ready'),
+          scrollable: true,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
           content: SizedBox(
             width: 420,
             child: Column(
