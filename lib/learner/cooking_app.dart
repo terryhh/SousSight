@@ -346,6 +346,7 @@ class _CookingScreenState extends State<CookingScreen>
               )
             else
               Container(
+                width: double.infinity,
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
