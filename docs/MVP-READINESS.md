@@ -8,10 +8,12 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 - Flutter analysis passes with no issues; three browser-media tests pass.
 - The simulated rehearsal web build and Wasm compatibility dry run pass. These do not establish camera, microphone, Gemini or notification behavior.
 - Backend dependencies are locked; clean offline npm installation succeeds. 21 backend tests pass on Node 22.23.4, syntax checks pass, and both function exports load using installed Firebase SDKs. npm audit reports zero vulnerabilities at validation time. Live model/API version are validated deployment parameters.
-- Local build configuration contains an App Check debug token but no production reCAPTCHA site key. No token value was copied or published. A production build remains blocked on configuration.
+- Production reCAPTCHA Enterprise App Check is registered for the two Hosting domains, and the dedicated Gemini server key is in Secret Manager. Local debug tokens remain out of published builds.
 - All 10 Firestore emulator security scenarios pass. Actual repository rules compile unchanged; tests verify owner isolation, checkpoint privacy/size, session validation and server-only ledger denial. See `test/rules/README.md`. This is emulator verification, not production deployment.
 - Firebase CLI can list the active project and its default Hosting site, `devfest-flutter-a59e8`.
-- Hosting root returned HTTP 404. Listing deployed functions failed without a useful diagnostic; deployment state is not established.
+- Initial Hosting root returned HTTP 404. GitHub production deployment run 42419680055, attempt 2, failed because Firebase CLI required missing VONAGE_API_KEY despite selecting liveToken only. A separate deployment-path fix is in progress; a successful production release and deployed Live token endpoint are not yet established. Redundant run 42420643671 was canceled until the fix is ready.
+- Real Auth/App Check and an AI Logic request smoke succeeded (5 prompt / 17 total tokens). Response content was not asserted. This does not verify a Live session or production-browser attestation.
+- GitHub OIDC is scoped to this repository/main/approved events, with a main-only production environment. Both pre-existing default runtime accounts have Editor; the approved actAs grants mean the effective deployment path is not globally least privilege. See `docs/AUTODEPLOY.md`.
 - Interactive browser verification was unavailable because the browser access host was unavailable.
 
 ## Live acceptance sequence
@@ -25,4 +27,4 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 
 ## Ownership and integration
 
-MVP validation PR #24 is stacked above #12. Current implementation stack remains #8 → #9 → #10 → #11 → #12; #7 is the corrected research assignment. #7 and #8 now target main because their parent data layer merged. Keep service implementation drafts until the live checks are recorded. The old instructor-board handoff merged as #3, but the active cook-led stack removes it.
+The prepared implementation stack, MVP validation #24, obsolete-handoff cleanup #25, infrastructure record #28, delivery configuration #31 and assignee preservation #33 are merged. SS-018/#32 is closed and Done after CI. Merges and local tests do not establish live end-to-end acceptance. Chrome on Android and desktop web are the MVP targets; APK work is deferred. Jenna retains SS-005 and its research-panel implementation.

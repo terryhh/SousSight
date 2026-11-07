@@ -21,8 +21,9 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Anonymous Auth enabled; tested private Firestore rules and indexes deployed to devfest-flutter-a59e8. Firebase AI Logic and Gemini Developer APIs enabled; AI Logic App Check enforcement verified ENFORCED.",
-        "2026-11-07: Production web App Check provider and hosted real-service verification remain pending."
+        "2026-11-07: Anonymous Auth and tested private Firestore rules/indexes deployed. Firebase AI Logic and Gemini Developer APIs enabled; AI Logic App Check remains ENFORCED.",
+        "2026-11-07: Production reCAPTCHA Enterprise web provider registered for the two Hosting domains; dedicated Gemini server key stored in Secret Manager. No debug token published.",
+        "2026-11-07: Real Auth/App Check and AI Logic request smoke succeeded; the AI request recorded 5 prompt / 17 total tokens. Response content was not asserted. This is not production-browser attestation or live camera/voice verification."
       ],
       "assignee": "terryhh"
     },
@@ -360,7 +361,9 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: User selected GitHub Actions for CD; workflow and scoped Google identity setup are in progress. No successful production workflow claimed."
+        "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
+        "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
+        "Both default runtime accounts have pre-existing Editor roles. The deployer has no Owner/Editor role, but its permitted runtime impersonation means the effective deployment path is not globally least privilege."
       ],
       "assignee": "terryhh"
     },
@@ -392,8 +395,8 @@
       "title": "Preserve explicit GitHub card assignees in backlog publishing",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Persist actual GitHub assignees for every backlog card. New issues use the manifest assignee; only existing unassigned issues are filled. Preserve any human assignment, including Jenna\u2019s work.",
       "acceptance": [
         "Every manifest task names one GitHub assignee; SS-005 is jennajh and other current tasks are terryhh.",
@@ -403,7 +406,29 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Publisher changes and ownership-preservation tests prepared; parent confirmed all existing project cards now have actual assignees."
+        "2026-11-07: PR #33 passed GitHub CI and merged to main. All 19 publisher tests pass, including explicit assignment, empty-card repair, preservation of human/Jenna assignments and a fresh ownership check.",
+        "2026-11-07: Issue #32 is closed and its project item is Done; GitHub assignee terryhh is preserved."
+      ]
+    },
+    {
+      "id": "SS-019",
+      "priority": "P0",
+      "title": "Make the cooking workspace responsive in mobile Chrome",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Make the Flutter web cooking companion usable in mobile Chrome before considering an APK. Preserve camera, two-way voice, GenUI panels, timers and reviewed dinner messages. Jenna retains her assigned research-panel files.",
+      "acceptance": [
+        "Header, camera placeholder and cooking panels fit 320\u2013430px widths and enlarged text without overflow.",
+        "Live camera/microphone and cooking controls have usable touch targets.",
+        "Dinner review remains scrollable with the phone keyboard open.",
+        "Narrow viewport regression tests and static analysis pass.",
+        "Real Android Chrome camera/microphone permissions, audio and keyboard interactions are checked on a phone before claiming device verification."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Issue #34 created, assigned terryhh, Project In progress. Mobile UI work is underway; APK delivery is deferred and physical phone checks remain outstanding."
       ]
     }
   ]

@@ -18,6 +18,14 @@ The deployment job builds `lib/main_learner.dart` again with `FAKE_BACKEND=false
 6. Create the GitHub environment `production`, restricting deployment branches to `main`. Protect `main` with review and the `Tests and rehearsal build` check; review workflow changes carefully. Required environment reviewers are optional, but enabling them makes deployments wait for approval instead of being fully automatic.
 7. Set the variables below. Enable `FIREBASE_DEPLOY_ENABLED` only after the prerequisites are verified. The workflow can be merged with the gate unset: tests run and deployment is skipped.
 
+## Verified setup and current run
+
+As of November 7, the scoped GitHub WIF provider, main-only production environment, deployment variables, production reCAPTCHA Enterprise provider and dedicated Gemini server secret are configured. Validation passed and deployment is enabled. Production run [42419680055](https://github.com/terryhh/SousSight/actions/runs/42419680055), attempt 2, failed after the approved runtime actAs permission change: Firebase CLI required missing VONAGE_API_KEY even when only liveToken was selected. The optional-dinner deployment strategy therefore needs isolation beyond the function filter. A backend fix is in progress; no successful release is claimed. Redundant run 42420643671 was canceled while this blocker is resolved.
+
+The deployed identity permissions are not globally least privilege. Both existing default Compute Engine and App Engine runtime accounts have project Editor. Terry explicitly approved the deployer actAs grant on the App Engine default account after being informed of that broad existing role. Granting actAs permits deploying code under that runtime identity. The deployer itself has no Owner/Editor role, but this does not remove the effective privilege exposure. Any later replacement with dedicated runtime accounts needs separate reviewed deployment and compatibility verification; do not silently strip existing roles.
+
+A real Auth/App Check and AI Logic request smoke succeeded with 5 prompt / 17 total tokens, but response content was not asserted. This does not verify Android Chrome camera/voice or the deployed Live token path.
+
 ## GitHub variables
 
 Use repository or `production` environment variables for values consumed by deployment steps. `FIREBASE_DEPLOY_ENABLED` must be a repository variable because the job condition is evaluated before the environment is entered.
