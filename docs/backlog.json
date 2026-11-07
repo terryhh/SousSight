@@ -429,7 +429,7 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Mobile PR #35 (1315dbd) has 88 passing local Flutter tests including seven responsive-layout cases; analysis and web build pass. GitHub CI remains pending.",
+        "2026-11-07: Mobile PR #35 (1315dbd) has 88 passing local Flutter tests including seven responsive-layout cases; analysis and web build pass. GitHub CI passed and PR #35 merged.",
         "Issue #34 is assigned terryhh and In progress. Physical Android Chrome permissions/audio/keyboard checks remain outstanding; APK delivery is deferred."
       ]
     },
