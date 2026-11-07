@@ -47,3 +47,62 @@ resulting lockfile when registry access is available. Unit checks have no instal
 dependencies: `node --test test/*.test.js` and `npm run check`. These cover auth,
 quota, provider payloads, and errors through injected boundaries; they do not
 verify an actual Gemini WebSocket connection or deployed IAM/Firestore rules.
+
+## Dinner-ready notifications
+
+`dinnerReady` is a second HTTPS function in `us-central1`; rewrite Hosting
+`/api/dinner-ready` to it. It sends only after the cook reviews and confirms the
+recipient and exact message in the app. A model/tool call must only open that
+review; it must not submit this endpoint automatically.
+
+Request: `POST` with the same Auth/App Check headers as the token endpoint:
+
+```json
+{
+  "sessionId": "SESSION_ID",
+  "notificationId": "STABLE_UUID_FOR_THIS_ATTEMPT",
+  "recipient": "+14075550100",
+  "message": "Dinner is ready! Chickpea wraps are on the table."
+}
+```
+
+Success returns `{notificationId, status, channel, duplicate, reason}`. Status is
+`submitted` (provider accepted, **delivery unconfirmed**), `skipped` (dry-run),
+`failed` (known rejection/configuration problem), or `unknown` (ambiguous outcome).
+Never label `submitted` as delivered. This demo does not accept delivery callbacks;
+adding that later requires signature verification and correlation with the stored
+provider UUID. The [Vonage status guide](https://developer.vonage.com/en/messages/concepts/messages-status-callbacks)
+describes the distinction between submission, delivery and rejection.
+
+Configuration:
+
+- Secret Manager: `VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM`, and
+  `VONAGE_ALLOWED_TO` (comma-separated allowed phone numbers with country codes).
+- `DINNER_CHANNEL=whatsapp` by default uses the Messages Sandbox. `sms` uses the
+  production Messages API; SMS is not a Sandbox channel. Configure the appropriate
+  sender and US messaging registration before choosing SMS.
+- `ENABLE_DINNER_MESSAGES=false` by default. Only the exact value `true` enables
+  a provider request. Deploying code does not itself opt into sending messages.
+- Allowed origins reuse `LIVE_ALLOWED_ORIGINS`.
+
+The [Vonage Sandbox guide](https://developer.vonage.com/en/messages/concepts/messages-api-sandbox)
+requires the recipient to join the Sandbox allowlist under the same API key and
+an active WhatsApp 24-hour messaging window. It has a one-message-per-second rate
+limit and a 100-message monthly allowance. The server allowlist is an additional
+restriction; it does not enroll a number in Vonage. Account-level Basic auth is
+supported for this demo; [Vonage recommends JWT for most production uses](https://developer.vonage.com/en/messages/technical-details).
+
+The service checks session ownership inside the Firestore claim transaction.
+It creates `_dinnerNotifications/{hashedUidAndNotificationId}` before calling the
+provider, and `_dinnerMealClaims/{hashedUidSessionRecipient}` prevents a fresh ID
+from bypassing an existing meal announcement. Keep both collections denied to
+client SDKs. Only hashes, IDs, channel, status and timestamps are stored; message
+content and recipient numbers are not written to the ledger.
+
+Retain the notification ID across network retries. Changed content with the same
+ID returns 409. A second ID for the same meal/recipient also returns 409. Pending
+or unknown attempts never resend, even after a worker crash; inspect the Vonage
+dashboard before taking any manual action. Dry-run attempts are terminal too:
+start a fresh cooking session for the real-send rehearsal after enabling messages.
+No network retry loop is built into this integration, and tests inject the provider
+transport so they never send a message.
