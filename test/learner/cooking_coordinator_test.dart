@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:soussight/research/cooking_research_panel.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/core/fakes.dart';
@@ -229,6 +231,208 @@ void main() {
   tearDown(() async {
     await fixture.dispose();
   });
+
+  test('research panel joins the initial provider request and stays stable on rebuild', () async {
+    await fixture.initialize();
+    final pending = fixture.cook.researchQuestionNow('Can I use yogurt?');
+    final panel = fixture.cook.researchPanel!;
+    final displayed = panel.client.research(panel.query);
+    fixture.cook.clearAlert();
+    expect(fixture.cook.researchPanel, same(panel));
+    expect(fixture.cook.researchPanel!.client, same(panel.client));
+    expect(fixture.research.queries, hasLength(1));
+    const result = CookingResearchResult(answer: 'Ask about texture.');
+    fixture.research.pending.single.complete(result);
+    expect(await pending, same(result));
+    expect(await displayed, same(result));
+    expect(fixture.research.queries, hasLength(1));
+  });
+
+  test('panel follow-up keeps original query and cook clarification with one workspace refresh', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.texts.clear();
+    final initial = fixture.cook.researchQuestionNow('Can I use yogurt?');
+    final panel = fixture.cook.researchPanel!;
+    final displayed = panel.client.research(panel.query);
+    fixture.research.pending.single.complete(
+      const CookingResearchResult(
+        answer: 'Need the type.',
+        clarifyingQuestion: 'Which yogurt?',
+      ),
+    );
+    await initial;
+    await displayed;
+    fixture.transport.texts.clear();
+    final followUpQuery = CookingResearchQuery(
+      question: panel.query.question,
+      currentStep: panel.query.currentStep,
+      confirmedIngredients: [
+        ...panel.query.confirmedIngredients,
+        'Unsweetened plain yogurt',
+      ],
+    );
+    final followUp = panel.client.research(followUpQuery);
+    expect(fixture.research.queries, hasLength(2));
+    expect(fixture.research.queries.last, same(followUpQuery));
+    fixture.research.pending.last.complete(
+      const CookingResearchResult(answer: 'Use the confirmed plain yogurt.'),
+    );
+    await followUp;
+    expect(fixture.transport.texts, hasLength(1));
+    expect(
+      fixture.transport.texts.single,
+      contains('Use the confirmed plain yogurt.'),
+    );
+    expect(fixture.cook.session!.confirmedFacts, isEmpty);
+    await fixture.cook.confirmResearchFact(
+      panel,
+      'I will use unsweetened plain yogurt.',
+    );
+    expect(fixture.cook.session!.confirmedFacts, [
+      'I will use unsweetened plain yogurt.',
+    ]);
+    expect(fixture.transport.texts, hasLength(2));
+    expect(fixture.cook.researchPanel, isNull);
+  });
+
+  test('tool-originated research panel reuses the result without a second user turn', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.texts.clear();
+    fixture.transport.source.add(
+      const LiveToolCall(
+        id: 'panel-tool',
+        name: 'research_cooking',
+        arguments: {'question': 'Can I use yogurt?'},
+      ),
+    );
+    await _flush();
+    final panel = fixture.cook.researchPanel!;
+    final displayed = panel.client.research(panel.query);
+    fixture.research.pending.single.complete(
+      const CookingResearchResult(answer: 'Ask the cook which type.'),
+    );
+    await displayed;
+    await _flush();
+    expect(fixture.research.queries, hasLength(1));
+    expect(fixture.transport.responses, hasLength(1));
+    expect(fixture.transport.texts, isEmpty);
+  });
+
+  test(
+    'panel retry after failed initial request performs one new request',
+    () async {
+      await fixture.initialize();
+      final initial = fixture.cook.researchQuestionNow('What texture?');
+      final panel = fixture.cook.researchPanel!;
+      final displayed = expectLater(
+        panel.client.research(panel.query),
+        throwsStateError,
+      );
+      fixture.research.pending.single.completeError(StateError('Unavailable'));
+      expect(await initial, isNull);
+      await displayed;
+      final retried = panel.client.research(panel.query);
+      expect(fixture.research.queries, hasLength(2));
+      fixture.research.pending.last.complete(
+        const CookingResearchResult(answer: 'Small chunks.'),
+      );
+      expect((await retried).answer, 'Small chunks.');
+    },
+  );
+
+  test('stale panel context blocks follow-up result and explicit fact confirmation', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    final initial = fixture.cook.researchQuestionNow('How to drain?');
+    final panel = fixture.cook.researchPanel!;
+    final displayed = panel.client.research(panel.query);
+    fixture.research.pending.single.complete(
+      const CookingResearchResult(answer: 'Drain in a strainer.'),
+    );
+    await initial;
+    await displayed;
+    final followUp = expectLater(
+      panel.client.research(panel.query),
+      throwsStateError,
+    );
+    await fixture.cook.advanceStep();
+    fixture.transport.texts.clear();
+    fixture.research.pending.last.complete(
+      const CookingResearchResult(answer: 'Old prep advice.'),
+    );
+    await followUp;
+    expect(fixture.cook.researchPanel, isNull);
+    expect(fixture.transport.texts, isEmpty);
+    await fixture.cook.confirmResearchFact(panel, 'Old prep substitution');
+    expect(fixture.cook.session!.confirmedFacts, isEmpty);
+    await expectLater(panel.client.research(panel.query), throwsStateError);
+    expect(fixture.research.queries, hasLength(2));
+  });
+
+  testWidgets(
+    'research panel widget rebuild does not refetch and clarification uses the stable client',
+    (tester) async {
+      await tester.runAsync(fixture.initialize);
+      Widget view() => MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: AnimatedBuilder(
+              animation: fixture.cook,
+              builder: (context, _) {
+                final panel = fixture.cook.researchPanel;
+                if (panel == null) return const SizedBox();
+                return CookingResearchPanel(
+                  key: ObjectKey(panel),
+                  client: panel.client,
+                  query: panel.query,
+                  onCookConfirmed: (fact) =>
+                      unawaited(fixture.cook.confirmResearchFact(panel, fact)),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      final initial = fixture.cook.researchQuestionNow('Can I use yogurt?');
+      await tester.pumpWidget(view());
+      await tester.pump();
+      fixture.research.pending.single.complete(
+        const CookingResearchResult(
+          answer: 'Need one fact.',
+          clarifyingQuestion: 'Which yogurt?',
+        ),
+      );
+      await tester.pumpAndSettle();
+      await initial;
+      fixture.cook.clearAlert();
+      await tester.pumpWidget(view());
+      await tester.pumpAndSettle();
+      expect(fixture.research.queries, hasLength(1));
+      await tester.enterText(
+        find.byKey(const Key('research_clarification_input')),
+        'Plain yogurt',
+      );
+      await tester.ensureVisible(
+        find.byKey(const Key('research_clarification_submit_button')),
+      );
+      await tester.tap(
+        find.byKey(const Key('research_clarification_submit_button')),
+      );
+      await tester.pump();
+      expect(fixture.research.queries, hasLength(2));
+      expect(fixture.research.queries.last.confirmedIngredients, [
+        'Plain yogurt',
+      ]);
+      fixture.research.pending.last.complete(
+        const CookingResearchResult(answer: 'That is the type to evaluate.'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('That is the type to evaluate.'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   test(
     'fresh ingredients stay unconfirmed and dated sessions can connect',
