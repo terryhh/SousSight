@@ -168,6 +168,7 @@ class _Fixture {
   final research = _Research();
   DateTime now = DateTime.utc(2026, 11, 7, 21);
   late final CookingCoordinator cook;
+  bool _disposed = false;
 
   Future<void> initialize() async {
     await cook.initialize();
@@ -175,6 +176,8 @@ class _Fixture {
   }
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     await cook.live.stop();
     cook.dispose();
     await _flush();
@@ -404,4 +407,95 @@ void main() {
       expect(fixture.cook.live.watchId, isNull);
     },
   );
+
+  test(
+    'a cancelled step timer can restart with a new ID and one active deadline',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.startStepTimer();
+      final original = fixture.cook.ui.timers.single;
+      fixture.cook.ui.dismissTimer(original.id);
+      await _flush();
+      expect(fixture.cook.ui.timers, isEmpty);
+      expect(fixture.cook.session!.timerId, isNull);
+      expect(fixture.cook.session!.timerDeadline, isNull);
+      fixture.now = fixture.now.add(const Duration(seconds: 10));
+      await fixture.cook.startStepTimer();
+      final restarted = fixture.cook.ui.timers.single;
+      expect(restarted.id, isNot(original.id));
+      expect(restarted.deadline, fixture.now.add(const Duration(minutes: 1)));
+      expect(fixture.cook.session!.timerId, restarted.id);
+      fixture.now = fixture.now.add(const Duration(seconds: 5));
+      await fixture.cook.startStepTimer();
+      expect(fixture.cook.ui.timers, hasLength(1));
+      expect(fixture.cook.ui.timers.single.id, restarted.id);
+      expect(fixture.cook.ui.timers.single.deadline, restarted.deadline);
+    },
+  );
+
+  test('a failed pending confirmation after disposal does not touch the disposed UI', () async {
+    await fixture.initialize();
+    var notifications = 0;
+    fixture.cook.addListener(() {
+      notifications++;
+    });
+    fixture.sessions.updateGate = Completer<void>();
+    fixture.sessions.failNext = true;
+    fixture.cook.ui.confirmIngredient('ingredients', 'yogurt', true);
+    await _flush();
+    expect(fixture.sessions.updateCalls, 1);
+    await fixture.dispose();
+    final atDisposal = notifications;
+    fixture.sessions.updateGate!.complete();
+    // An attempted rollback into a disposed CookingUiController throws here
+    // as an unhandled Future error, which fails this test automatically.
+    await _flush();
+    expect(notifications, atDisposal);
+  });
+
+  test('cook-confirmed generated ingredients persist and enter later research context', () async {
+    await fixture.initialize();
+    expect(
+      _recipe.ingredients.any((ingredient) => ingredient.id == 'tomatoes'),
+      isFalse,
+    );
+    fixture.cook.ui.applyToolPayload({
+      'components': [
+        {
+          'id': 'root',
+          'component': 'CookingColumn',
+          'children': ['found'],
+        },
+        {
+          'id': 'found',
+          'component': 'ingredientChecklist',
+          'title': 'Also on your counter',
+          'items': [
+            {'id': 'tomatoes', 'label': 'Fresh tomatoes'},
+          ],
+        },
+      ],
+    });
+    expect(fixture.cook.confirmedIngredients, isEmpty);
+    fixture.cook.ui.confirmIngredient('found', 'tomatoes', true);
+    await _flush();
+    expect(
+      fixture.cook.session!.ingredients['tomatoes'],
+      IngredientStatus.have,
+    );
+    expect(fixture.cook.ui.confirmedIngredients, contains('tomatoes'));
+    expect(fixture.cook.confirmedIngredients, contains('tomatoes'));
+    expect(fixture.cook.cookingContext, contains('tomatoes'));
+    final pending = fixture.cook.researchQuestionNow(
+      'Can I add what is on my counter?',
+    );
+    expect(
+      fixture.research.queries.single.confirmedIngredients,
+      contains('tomatoes'),
+    );
+    fixture.research.pending.single.complete(
+      const CookingResearchResult(answer: 'A sourced answer.'),
+    );
+    await pending;
+  });
 }
