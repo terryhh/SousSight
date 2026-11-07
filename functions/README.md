@@ -139,3 +139,21 @@ removes dinner configuration requirements.
 `npm test` includes isolated packaged-entrypoint tests using the installed Firebase
 Functions discovery loader. They check Live-only secret isolation and full dinner
 secret bindings. These are local discovery tests, not a successful cloud deployment.
+
+
+## Ephemeral token wire format
+
+The backend sends the REST `AuthToken` resource, with
+`bidiGenerateContentSetup.model` and
+`bidiGenerateContentSetup.generationConfig.responseModalities`. The SDK option
+`liveConnectConstraints` is not a REST field and causes an upstream HTTP 400.
+The explicit `fieldMask` is `model,generationConfig.responseModalities`: it locks
+those server choices while permitting the browser's recipe instructions, tools,
+transcription and session resumption. Without this mask, the API replaces the
+entire browser setup with the token's setup.
+
+Sources: [AuthToken reference](https://ai.google.dev/api/live#AuthToken) and
+[official SDK wire conversion](https://github.com/googleapis/js-genai/blob/main/src/tokens.ts).
+A direct server-side diagnostic accepted this corrected request on November 7,
+2026. That verifies token minting only; a deployed backend and actual Live WebSocket
+session still need their own checks. The token was not persisted or logged.
