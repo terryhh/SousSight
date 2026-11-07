@@ -69,7 +69,6 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Rollout 42421669752 failed at Auth provisionFirebaseApp (403) after uploads; PR #48 passed CI and merged to omit repeated one-time Auth provisioning | Upload/build/artifact and private Actions usage may occur despite a failed release; no measured charge claimed | Not inspected | Gate enabled; run 42422724152 on main d350601 pending verification; no successful release established |
 | 2026-11-07 | Chrome rehearsal check at 360×740: layout, countdown and dinner review | Local simulated build only; no model call or message send | Not inspected | Timer visibly advanced from 4:59 to 4:48; physical camera/audio and hosted App Check remain unverified |
 | 2026-11-07 | One real Firebase AI Logic Google Search request with temporary Auth/App Check test identities | gemini-3.8-flash: 32 prompt + 172 candidate = 204 total tokens; search grounding may add charges, amount unreconciled | Not inspected | Nonempty answer, 3 source chunks and 5 supported segments returned; temporary identities removed; provider test, not physical UI acceptance |
-
 | 2026-11-07 | Corrected direct token mint and real Gemini Live WebSocket synthetic "Say ready" request returned audio | gemini-3.8-live / v1beta / maxOutputTokens 64; usage units not captured, amount unknown | Not inspected | No microphone/camera used; deployed token full path still pending rollout 42423984364 |
 
 ## Planning estimate — not a quote or cap
