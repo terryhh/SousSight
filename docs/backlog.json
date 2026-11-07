@@ -363,7 +363,8 @@
       "evidence": [
         "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
         "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
-        "Both default runtime accounts have pre-existing Editor roles. The deployer has no Owner/Editor role, but its permitted runtime impersonation means the effective deployment path is not globally least privilege."
+        "Both default runtime accounts have pre-existing Editor roles. The deployer has no Owner/Editor role, but its permitted runtime impersonation means the effective deployment path is not globally least privilege.",
+        "2026-11-07: FIREBASE_DEPLOY_ENABLED temporarily set false to avoid known-failing production deploys; separate Live-only package entrypoint fix is being reviewed. firebaseextensions.googleapis.com enabled for discovery; no extensions installed."
       ],
       "assignee": "terryhh"
     },
@@ -428,7 +429,8 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Issue #34 created, assigned terryhh, Project In progress. Mobile UI work is underway; APK delivery is deferred and physical phone checks remain outstanding."
+        "2026-11-07: Mobile PR #35 (1315dbd) has 88 passing local Flutter tests including seven responsive-layout cases; analysis and web build pass. GitHub CI remains pending.",
+        "Issue #34 is assigned terryhh and In progress. Physical Android Chrome permissions/audio/keyboard checks remain outstanding; APK delivery is deferred."
       ]
     }
   ]

@@ -6,6 +6,7 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 
 - 81 Flutter tests pass on Flutter 3.47.9 / Dart 3.13.7. The clarification persistence test now supplies a valid question tool payload, so it reaches the intended failure path.
 - Flutter analysis passes with no issues; three browser-media tests pass.
+- Mobile PR #35 has 88 passing local Flutter tests, including seven responsive-layout cases, plus analysis and web build. Its CI is pending and physical Android Chrome checks remain outstanding; this is not deployed-phone evidence.
 - The simulated rehearsal web build and Wasm compatibility dry run pass. These do not establish camera, microphone, Gemini or notification behavior.
 - Backend dependencies are locked; clean offline npm installation succeeds. 21 backend tests pass on Node 22.23.4, syntax checks pass, and both function exports load using installed Firebase SDKs. npm audit reports zero vulnerabilities at validation time. Live model/API version are validated deployment parameters.
 - Production reCAPTCHA Enterprise App Check is registered for the two Hosting domains, and the dedicated Gemini server key is in Secret Manager. Local debug tokens remain out of published builds.

@@ -41,7 +41,7 @@ Sources: [Google Cloud trial](https://cloud.google.com/signup-faqs), [Gemini bil
 
 ## GitHub Actions infrastructure
 
-A dedicated deployment identity now uses a Workload Identity Federation provider restricted to repository ID 1449678039, owner ID 14064284, main branch, and push/manual workflow events. No service-account key was created. The GitHub production environment allows main only. PR validation passed and the deployment gate is enabled. Production deployment run [42419680055](https://github.com/terryhh/SousSight/actions/runs/42419680055), attempt 2, failed because Firebase required the missing VONAGE_API_KEY even for the Live-only deployment selection. No successful production release is claimed. Redundant main run 42420643671 was canceled to conserve private-runner minutes while the isolation fix is prepared. GitHub private-repository Actions minutes are separate from GCP credits; no paid runner or Actions spending increase is authorized.
+A dedicated deployment identity now uses a Workload Identity Federation provider restricted to repository ID 1449678039, owner ID 14064284, main branch, and push/manual workflow events. No service-account key was created. The GitHub production environment allows main only. PR validation passed; the deployment gate is temporarily disabled (`FIREBASE_DEPLOY_ENABLED=false`) to prevent known-failing deployments until the separate-entrypoint fix is ready. Production deployment run [42419680055](https://github.com/terryhh/SousSight/actions/runs/42419680055), attempt 2, failed because Firebase required the missing VONAGE_API_KEY even for the Live-only deployment selection. No successful production release is claimed. Redundant main run 42420643671 was canceled to conserve private-runner minutes while the isolation fix is prepared. GitHub private-repository Actions minutes are separate from GCP credits; no paid runner or Actions spending increase is authorized.
 
 ### Runtime IAM limitation
 
@@ -64,6 +64,8 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Real Auth/App Check and AI Logic request smoke | Metered 5 prompt / 17 total tokens; monetary charge not calculated or reconciled | Not inspected | Request succeeded; response content not asserted; no Live audio/video or Vonage send |
 | 2026-11-07 | Approved actAs access on App Engine default runtime account; reran GitHub production deployment (attempt 2) | Build, artifact, deployment and runtime charges may occur; private Actions minutes separate | Not inspected | Attempt failed on missing Vonage secret; both default runtime accounts retain pre-existing Editor roles |
 
+| 2026-11-07 | Enabled firebaseextensions.googleapis.com for Firebase CLI discovery | API enablement only; no extension installed | Not inspected | No Firebase Extensions workload created |
+| 2026-11-07 | Temporarily disabled GitHub production deployment gate while separate-entrypoint fix is reviewed | Prevents repeated known-failing deployments; validation can continue | Not inspected | Re-enable only as part of the reviewed fix rollout |
 | 2026-11-07 | Canceled redundant main workflow run 42420643671 while deployment isolation is fixed | Avoids repeated private GitHub Actions usage; no estimate of incurred minutes | Not inspected | No successful production deployment or message send claimed |
 
 ## Planning estimate — not a quote or cap
