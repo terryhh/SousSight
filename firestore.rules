@@ -1,89 +1,139 @@
 rules_version = '2';
 
-// Instructor identity comes ONLY from this admin-deployed map (mirrors
-// demoInstructorEmails in lib/core/fakes.dart), so roles are never
-// self-assigned from a client. Learners are any other signed-in user,
-// including anonymous.
+// The cook is the human in the loop. Sessions, photos, and legacy questions
+// stay private to that cook. Email addresses never grant privileges.
 service cloud.firestore {
   match /databases/{database}/documents {
-
     function signedIn() { return request.auth != null; }
-    function email() { return request.auth.token.get('email', ''); }
-    function instructorId() {
-      return {
-        'ana@soussight.demo': 'ana',
-        'marcus@soussight.demo': 'marcus',
-        'priya@soussight.demo': 'priya',
-        'coordinator@soussight.demo': 'coordinator'
-      }.get(email(), null);
-    }
-    function isInstructor() { return signedIn() && instructorId() != null; }
-    function isCoordinator() { return isInstructor() && instructorId() == 'coordinator'; }
+    function owns(data) { return signedIn() && data.learnerId == request.auth.uid; }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    // Provision only through trusted Admin SDK code. This claim permits catalog
+    // maintenance, not access to another cook's private records.
+    function isCatalogEditor() {
+      return signedIn() && request.auth.token.get('soussightCatalogEditor', false) == true;
+    }
+    function shortText(value, maxLength) {
+      return value is string && value.size() <= maxLength;
+    }
+    function optionalText(value, maxLength) {
+      return value == null || shortText(value, maxLength);
+    }
 
     match /recipes/{recipeId} {
       allow read: if signedIn();
-      allow create, delete: if isCoordinator();
-      // Knowledge loop: instructors may only append reviewed substitutions.
-      allow update: if isCoordinator()
-        || (isInstructor() && changed().hasOnly(['reviewedSubstitutions']));
+      allow write: if isCatalogEditor();
     }
 
+    // Retained demo catalog contracts; none grants access to private cooking.
     match /instructors/{id} {
       allow read: if signedIn();
-      allow create, delete: if isCoordinator();
-      allow update: if isCoordinator()
-        || (isInstructor() && instructorId() == id && changed().hasOnly(['available']));
+      allow write: if isCatalogEditor();
     }
-
     match /config/{id} {
-      allow read: if signedIn();
-      allow write: if isCoordinator();
+      allow read: if signedIn() && id == 'demo';
+      allow write: if isCatalogEditor();
     }
 
-    // Phone numbers for Vonage: admin console / Functions only.
+    // Server-only credentials/contact records and function-owned ledgers. Admin
+    // SDK bypasses these rules; client custom claims never bypass these denials.
     match /instructorContacts/{id} { allow read, write: if false; }
     match /learnerContacts/{id} { allow read, write: if false; }
+    match /_liveTokenLimits/{id} { allow read, write: if false; }
+    match /_dinnerNotifications/{id} { allow read, write: if false; }
+    match /_dinnerMealClaims/{id} { allow read, write: if false; }
 
     match /sessions/{sessionId} {
-      allow read, update, delete: if signedIn() && resource.data.learnerId == request.auth.uid
-        || isCoordinator();
-      allow create: if signedIn() && request.resource.data.learnerId == request.auth.uid;
+      function validSession(data) {
+        return data.keys().hasAll([
+            'learnerId', 'recipeId', 'recipeVersion', 'ingredients',
+            'substitutions', 'currentStepId', 'completedStepIds', 'revision',
+            'createdAt', 'updatedAt'
+          ])
+          && data.keys().hasOnly([
+            'learnerId', 'recipeId', 'recipeVersion', 'ingredients',
+            'substitutions', 'currentStepId', 'completedStepIds', 'revision',
+            'createdAt', 'updatedAt', 'language', 'timerDeadline',
+            'timerLabel', 'timerId', 'confirmedFacts'
+          ])
+          && shortText(data.learnerId, 128)
+          && shortText(data.recipeId, 128) && data.recipeId.size() > 0
+          && data.recipeVersion is int && data.recipeVersion >= 1
+          && data.ingredients is map && data.ingredients.size() <= 64
+          && data.ingredients.values().hasOnly(['have', 'missing', 'substituted'])
+          && data.substitutions is list && data.substitutions.size() <= 64
+          && shortText(data.currentStepId, 128) && data.currentStepId.size() > 0
+          && data.completedStepIds is list && data.completedStepIds.size() <= 100
+          && data.revision is int && data.revision >= 0
+          && data.createdAt is timestamp && data.updatedAt is timestamp
+          && shortText(data.get('language', 'en'), 20)
+          && (data.get('timerDeadline', null) == null || data.timerDeadline is timestamp)
+          && optionalText(data.get('timerLabel', null), 160)
+          && optionalText(data.get('timerId', null), 128)
+          && data.get('confirmedFacts', []) is list
+          && data.get('confirmedFacts', []).size() <= 100;
+      }
+
+      allow read, delete: if owns(resource.data);
+      allow create: if owns(request.resource.data)
+        && validSession(request.resource.data)
+        && request.resource.data.revision == 0;
+      allow update: if owns(resource.data)
+        && validSession(request.resource.data)
+        && changed().hasOnly([
+          'ingredients', 'substitutions', 'currentStepId', 'completedStepIds',
+          'revision', 'updatedAt', 'language', 'timerDeadline', 'timerLabel',
+          'timerId', 'confirmedFacts'
+        ])
+        && request.resource.data.revision >= resource.data.revision;
 
       match /checkpoints/{cpId} {
-        function sessionOwner() {
-          return get(/databases/$(database)/documents/sessions/$(sessionId)).data.learnerId;
+        function ownsSession() {
+          return owns(get(/databases/$(database)/documents/sessions/$(sessionId)).data);
         }
-        allow read, write: if signedIn() && sessionOwner() == request.auth.uid;
-        allow delete: if isCoordinator();
+        function validCheckpoint(data) {
+          return data.keys().hasAll([
+              'sessionId', 'stepId', 'checkpointDefId', 'photoJpeg',
+              'capturedAt', 'selfRating', 'sessionRevision', 'learnerConfirmed'
+            ])
+            && data.keys().hasOnly([
+              'sessionId', 'stepId', 'checkpointDefId', 'photoJpeg',
+              'capturedAt', 'selfRating', 'sessionRevision', 'learnerConfirmed', 'assessment'
+            ])
+            && data.sessionId == sessionId
+            && shortText(data.stepId, 128) && shortText(data.checkpointDefId, 128)
+            && data.photoJpeg is bytes && data.photoJpeg.size() <= 786432
+            && data.capturedAt is timestamp
+            && data.selfRating in ['ready', 'notYet', 'notSure']
+            && data.sessionRevision is int && data.sessionRevision >= 0
+            && data.learnerConfirmed is bool
+            && (data.get('assessment', null) == null || data.assessment is map);
+        }
+        allow read, delete: if ownsSession();
+        allow create: if ownsSession() && validCheckpoint(request.resource.data);
+        allow update: if ownsSession() && validCheckpoint(request.resource.data)
+          && changed().hasOnly(['assessment', 'learnerConfirmed']);
       }
     }
 
+    // Legacy records remain available to their original cook for compatibility
+    // and deletion. There is no external instructor read or write capability.
     match /requests/{requestId} {
-      function isRequester() { return signedIn() && resource.data.learnerId == request.auth.uid; }
-
-      allow read: if isRequester() || isInstructor();
-      allow create: if signedIn()
-        && request.resource.data.learnerId == request.auth.uid
+      function sessionOwnedByRequester() {
+        return owns(get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data);
+      }
+      allow read, delete: if owns(resource.data);
+      allow create: if owns(request.resource.data)
+        && sessionOwnedByRequester()
         && request.resource.data.status == 'submitted'
         && !('notify' in request.resource.data);
-      allow delete: if isCoordinator();
-
-      // Clients never write `notify` (Cloud Functions do), and nothing moves
-      // back to 'submitted' (protects idempotent retries).
-      allow update: if !('notify' in changed())
+      allow update: if owns(resource.data)
+        && !changed().hasAny(['learnerId', 'sessionId', 'recipeId', 'stepId', 'createdAt', 'notify'])
         && request.resource.data.status != 'submitted'
-        && (
-          // Learner: triage/routing of their own submitted request, resolve,
-          // still stuck, cancel, add details.
-          (isRequester()
-            && request.resource.data.learnerId == resource.data.learnerId
-            && (resource.data.status == 'submitted'
-                || request.resource.data.status in ['resolved', 'accepted', 'cancelled']
-                || request.resource.data.status == resource.data.status))
-          // Instructors: accept, decline, answer, assign, reroute, approve.
-          || isInstructor()
-        );
+        && request.resource.data.status in [
+          'needsOwner', 'suggested', 'accepted', 'answered', 'resolved', 'cancelled'
+        ];
     }
+
+    match /{document=**} { allow read, write: if false; }
   }
 }
