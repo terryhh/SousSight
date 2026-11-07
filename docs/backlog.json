@@ -46,7 +46,8 @@
         "SS-008"
       ],
       "evidence": [
-        "Live implementation committed locally at 451fd2a; real service/device testing remains open."
+        "Live implementation committed locally at 451fd2a; real service/device testing remains open.",
+        "2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress."
       ],
       "assignee": "terryhh"
     },
@@ -68,7 +69,8 @@
         "SS-002"
       ],
       "evidence": [
-        "GenUI workspace and timer code at feb9542; cook clarification correction at a60db93; learner integration is ongoing."
+        "GenUI workspace and timer code at feb9542; cook clarification correction at a60db93; learner integration is ongoing.",
+        "2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress."
       ],
       "assignee": "terryhh"
     },
@@ -168,8 +170,8 @@
       "title": "Deploy and smoke-test protected ephemeral Live tokens",
       "priority": "P0",
       "owner": "Codex + Terry",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Complete dependencies, Hosting rewrite and deployment for /api/live-token, then verify a constrained browser connection.",
       "acceptance": [
         "Pinned Firebase dependencies install with a committed lockfile.",
@@ -185,7 +187,9 @@
         "2026-11-07: Backend deployment and a real ephemeral-token/Gemini connection remain pending.",
         "2026-11-07: liveToken is ACTIVE on Node 22 at https://livetoken-kbzslsx4pq-uc.a.run.app. A real protected Auth/App Check request reached upstream but returned 502 because SDK liveConnectConstraints was sent to REST. PR #51 corrects bidiGenerateContentSetup plus fieldMask; one corrected direct real token mint succeeded (token withheld), without audio. Deployed fix and WebSocket/audio verification remain required.",
         "2026-11-07: Token REST fix PR #51 passed CI and merged; rollout 42423984364 on main 4bb26bb is active. Real deployed WebSocket/audio verification remains outstanding.",
-        "2026-11-07: A corrected direct token mint followed by a real Gemini Live WebSocket synthetic \"Say ready\" request returned audio (gemini-3.8-live, v1beta, maxOutputTokens 64). No microphone or camera was used; usage units were not captured and the monetary amount is unknown. This does not verify the deployed token endpoint/full browser media path, which remains pending rollout 42423984364."
+        "2026-11-07: A corrected direct token mint followed by a real Gemini Live WebSocket synthetic \"Say ready\" request returned audio (gemini-3.8-live, v1beta, maxOutputTokens 64). No microphone or camera was used; usage units were not captured and the monetary amount is unknown. This does not verify the deployed token endpoint/full browser media path, which remains pending rollout 42423984364.",
+        "2026-11-07: PR #51 deployed successfully in run 42423984364. The real hosted /api/live-token path with Firebase Auth/App Check connected to Gemini Live and returned 38,402 audio bytes in 2,368 ms (gemini-3.8-live, v1beta). Usage: 561 prompt + 26 response = 587 total tokens; provider details reported prompt TEXT 314 / AUDIO 222, response AUDIO 26 and thoughts 18. These are reported fields, not an additive recomputation. Temporary test identities were deleted; dollar cost remains unknown.",
+        "Reviewed merged token configuration uses one session, 30-minute token expiry, one-minute new-session window, and a field mask locking the configured Live model and AUDIO output. Auth/App Check enforcement, transactional rate-limit tests and committed dependency lockfile remain verified; no permanent key is returned to the browser."
       ],
       "assignee": "terryhh"
     },

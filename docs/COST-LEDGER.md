@@ -69,7 +69,7 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Rollout 42421669752 failed at Auth provisionFirebaseApp (403) after uploads; PR #48 passed CI and merged to omit repeated one-time Auth provisioning | Upload/build/artifact and private Actions usage may occur despite a failed release; no measured charge claimed | Not inspected | Gate enabled; run 42422724152 on main d350601 pending verification; no successful release established |
 | 2026-11-07 | Chrome rehearsal check at 360×740: layout, countdown and dinner review | Local simulated build only; no model call or message send | Not inspected | Timer visibly advanced from 4:59 to 4:48; physical camera/audio and hosted App Check remain unverified |
 | 2026-11-07 | One real Firebase AI Logic Google Search request with temporary Auth/App Check test identities | gemini-3.8-flash: 32 prompt + 172 candidate = 204 total tokens; search grounding may add charges, amount unreconciled | Not inspected | Nonempty answer, 3 source chunks and 5 supported segments returned; temporary identities removed; provider test, not physical UI acceptance |
-| 2026-11-07 | Corrected direct token mint and real Gemini Live WebSocket synthetic "Say ready" request returned audio | gemini-3.8-live / v1beta / maxOutputTokens 64; usage units not captured, amount unknown | Not inspected | No microphone/camera used; deployed token full path still pending rollout 42423984364 |
+| 2026-11-07 | Corrected direct token mint and real Gemini Live WebSocket synthetic "Say ready" request returned audio | gemini-3.8-live / v1beta / maxOutputTokens 64; usage units not captured, amount unknown | Not inspected | No microphone/camera used; direct test only; deployed full path verified separately below |
 
 ## Planning estimate — not a quote or cap
 
@@ -103,6 +103,14 @@ Tracking: [SS-014 cost ledger](https://github.com/terryhh/SousSight/issues/26), 
 
 [Budget alerts](https://firebase.google.com/docs/projects/billing/budget-alerts), [supported spend caps and their limits](https://firebase.google.com/docs/projects/billing/spend-caps).
 
-2026-11-07: A corrected direct token mint followed by a real Gemini Live WebSocket synthetic "Say ready" request returned audio (gemini-3.8-live, v1beta, maxOutputTokens 64). No microphone or camera was used; usage units were not captured and the monetary amount is unknown. This does not verify the deployed token endpoint/full browser media path, which remains pending rollout 42423984364.
+2026-11-07: A corrected direct token mint followed by a real Gemini Live WebSocket synthetic "Say ready" request returned audio (gemini-3.8-live, v1beta, maxOutputTokens 64). No microphone or camera was used; usage units were not captured and the monetary amount is unknown. This does not verify the deployed token endpoint/full browser media path, which was verified separately after rollout 42423984364, as recorded below.
 
-Terry explicitly approved a brief camera/microphone test to Google Gemini after the fix deploys. That authorized test has not yet been performed. PR #52 desktop-layout fix passed CI and merged; its rollout follows the backend fix.
+Terry explicitly approved a brief camera/microphone test to Google Gemini after the fix deploys. That authorized test was subsequently performed with the limitations below. PR #52 desktop-layout fix passed CI and merged; its rollout follows the backend fix.
+
+## Deployed token and brief browser media verification
+
+2026-11-07: PR #51 deployed successfully in run 42423984364. The real hosted /api/live-token path with Firebase Auth/App Check connected to Gemini Live and returned 38,402 audio bytes in 2,368 ms (gemini-3.8-live, v1beta). Usage: 561 prompt + 26 response = 587 total tokens; provider details reported prompt TEXT 314 / AUDIO 222, response AUDIO 26 and thoughts 18. These are reported fields, not an additive recomputation. Temporary test identities were deleted; dollar cost remains unknown.
+
+Reviewed merged token configuration uses one session, 30-minute token expiry, one-minute new-session window, and a field mask locking the configured Live model and AUDIO output. Auth/App Check enforcement, transactional rate-limit tests and committed dependency lockfile remain verified; no permanent key is returned to the browser.
+
+2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress. Browser media usage units and dollar amount were not captured; reconcile actual charges after reporting catches up. No Vonage send occurred.
