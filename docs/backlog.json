@@ -49,7 +49,8 @@
         "Live implementation committed locally at 451fd2a; real service/device testing remains open.",
         "2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress.",
         "2026-11-07: Three bounded synthetic diagnostics used the hosted protected-token path without user media. Transcript request at maxOutputTokens 180 returned one text fragment and no audio (failed diagnostic; usage unavailable). Retry at 512 returned 465,600 audio bytes in 11,195 ms; reported usage 580 prompt + 248 response = 828 total, thoughts 89. A real GenUI tool probe (gemini-3.8-live/v1beta) returned a valid-looking root, stepCue and two-option cookQuestion in 1,780 ms; reported usage 1,205 prompt + 150 response = 1,355 total, thoughts 252. These are provider-reported fields, not additive recomputations. The payload is stored only in a temporary local diagnostic file; widget/render validation and hosted UI verification remain pending. All temporary Auth/debug App Check registrations were cleaned up. Dollar costs are unknown.",
-        "2026-11-07: Terry confirmed that he heard the coach clearly during the earlier brief real camera/microphone test. This verifies audible desktop coach playback only; distinct microphone recognition remains unverified."
+        "2026-11-07: Terry confirmed that he heard the coach clearly during the earlier brief real camera/microphone test. This verifies audible desktop coach playback only; distinct microphone recognition remains unverified.",
+        "2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue \"Quick-pickle the onion\", a real \"Pickle onions\" timer counting 4:57 \u2192 4:44 \u2192 4:34, then updated the workspace to comparison \"Mash texture check\" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured."
       ],
       "assignee": "terryhh"
     },
@@ -75,7 +76,9 @@
         "2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress.",
         "2026-11-07: Three bounded synthetic diagnostics used the hosted protected-token path without user media. Transcript request at maxOutputTokens 180 returned one text fragment and no audio (failed diagnostic; usage unavailable). Retry at 512 returned 465,600 audio bytes in 11,195 ms; reported usage 580 prompt + 248 response = 828 total, thoughts 89. A real GenUI tool probe (gemini-3.8-live/v1beta) returned a valid-looking root, stepCue and two-option cookQuestion in 1,780 ms; reported usage 1,205 prompt + 150 response = 1,355 total, thoughts 252. These are provider-reported fields, not additive recomputations. The payload is stored only in a temporary local diagnostic file; widget/render validation and hosted UI verification remain pending. All temporary Auth/debug App Check registrations were cleaned up. Dollar costs are unknown.",
         "2026-11-07: PR #54 replays the actual model-generated GenUI fixture with 110 passing Flutter tests; an additional 19 coordinator tests pass. This verifies local widget/render behavior against the real fixture, not hosted generated-panel behavior. SS-003 remains InProgress. PR #53 transcript/workspace fix passed CI and merged; hosted verification remains pending.",
-        "2026-11-07: PRs #53 and #54 merged. PR #56 stale-workspace guard remains under this existing card; no hosted generated-panel acceptance claimed."
+        "2026-11-07: PRs #53 and #54 merged. PR #56 stale-workspace guard remains under this existing card; no hosted generated-panel acceptance claimed.",
+        "2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue \"Quick-pickle the onion\", a real \"Pickle onions\" timer counting 4:57 \u2192 4:44 \u2192 4:34, then updated the workspace to comparison \"Mash texture check\" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured.",
+        "Explicit cook question/answer and deployed stale-step guard verification remain required; keep InProgress despite the now-verified real panel rendering criterion."
       ],
       "assignee": "terryhh"
     },
@@ -142,7 +145,8 @@
         "SS-003"
       ],
       "evidence": [
-        "Deadline-based timer and generated timer component at feb9542; lifecycle and real watcher behavior remain unverified."
+        "Deadline-based timer and generated timer component at feb9542; lifecycle and real watcher behavior remain unverified.",
+        "2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue \"Quick-pickle the onion\", a real \"Pickle onions\" timer counting 4:57 \u2192 4:44 \u2192 4:34, then updated the workspace to comparison \"Mash texture check\" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured."
       ],
       "assignee": "terryhh"
     },
@@ -623,7 +627,8 @@
       ],
       "evidence": [
         "2026-11-07: Terry/backend agent started the shared learner adapter in an isolated branch. Jenna\u2019s original implementation and ownership are preserved; depends on SS-005 and SS-004.",
-        "2026-11-07: https://github.com/terryhh/SousSight/issues/58 added to Terry project with actual terryhh assignee; stage read back."
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/58 added to Terry project with actual terryhh assignee; stage read back.",
+        "2026-11-07: PR #61 shared research integration has 129 passing Flutter tests; GitHub CI pending. No hosted integrated-panel acceptance claimed."
       ]
     },
     {
@@ -648,6 +653,27 @@
       "evidence": [
         "2026-11-07: User explicitly requested this card only. Backlog; no implementation or provider change started.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/59 added to Terry project with actual terryhh assignee; stage read back."
+      ]
+    },
+    {
+      "id": "SS-028",
+      "priority": "P0",
+      "title": "Keep input and stop controls stable during generated workspace updates",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Observed hosted dynamic-panel height changes moved the input before the cook could submit a question. Stabilize shared learner input and stop controls without editing Jenna-owned research files. Mobile agent is implementing this in a stack after PR #61; related SS-003/#13 and SS-019/#34.",
+      "acceptance": [
+        "Question input and stop controls remain predictably positioned and reachable as generated panels change height or content.",
+        "Preserve typed text, focus and selection through workspace updates; explicit submission sends exactly the intended question once.",
+        "Verify Android-sized Chrome viewport with keyboard open, enlarged text and scrolling; stopping remains immediately accessible and releases capture.",
+        "Add meaningful dynamic-update/focus regression coverage and verify hosted behavior after deployment; distinguish local widget checks from physical-device acceptance."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Root observed input displacement during a real hosted generated-workspace session. Terry/mobile agent started isolated implementation stacked after PR #61; no fix verification yet.",
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/63 created with terryhh assignee and Project In progress."
       ]
     }
   ]

@@ -76,4 +76,8 @@ Reviewed merged token configuration uses one session, 30-minute token expiry, on
 
 ## Board and integration handoff
 
-Jenna’s SS-005 independent panel/demo is Done, with eight widget tests, analysis and demo web build verified; PR #57 brings it to main. Shared learner wiring is SS-026/#58, Terry-owned and In progress. SS-027/#59 optional Google sign-in is Backlog only. Board read-back: 11 Done, 12 In progress, 0 In review, 4 Backlog; all assigned. PRs #53/#54/#55 merged; dynamic-workspace run 42425656543 succeeded, with hosted panel acceptance still pending.
+Jenna’s SS-005 independent panel/demo is Done, with eight widget tests, analysis and demo web build verified; PR #57 brings it to main. Shared learner wiring is SS-026/#58, Terry-owned and In progress. SS-027/#59 optional Google sign-in is Backlog only. Board after SS-028 addition: 11 Done, 13 In progress, 0 In review, 4 Backlog; all assigned. PRs #53/#54/#55 merged; dynamic-workspace run 42425656543 succeeded, with hosted panel acceptance still pending.
+
+## Hosted generated workspace verified
+
+2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue "Quick-pickle the onion", a real "Pickle onions" timer counting 4:57 → 4:44 → 4:34, then updated the workspace to comparison "Mash texture check" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured. SS-003 stays open for explicit cook clarification and deployed stale-step rejection. Stable input/stop controls are tracked separately in SS-028; research integration PR #61 has 129 passing Flutter tests with CI pending.
