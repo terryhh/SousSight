@@ -62,14 +62,26 @@ class CookingApp extends StatelessWidget {
   );
 }
 
+typedef DinnerMessageSender = Future<DinnerMessageResult> Function({
+  required String sessionId,
+  required String notificationId,
+  required String recipient,
+  required String message,
+  bool demo,
+});
+
 class CookingScreen extends StatefulWidget {
   const CookingScreen({
     super.key,
     required this.services,
     required this.isDemo,
+    this.createCoordinator,
+    this.sendDinner = sendDinnerMessage,
   });
   final AppServices services;
   final bool isDemo;
+  final CookingCoordinator Function()? createCoordinator;
+  final DinnerMessageSender sendDinner;
   @override
   State<CookingScreen> createState() => _CookingScreenState();
 }
@@ -87,17 +99,20 @@ class _CookingScreenState extends State<CookingScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    cook = CookingCoordinator(
-      services: widget.services,
-      isDemo: widget.isDemo,
-      research: widget.isDemo
-          ? FakeCookingResearchClient()
-          : GeminiCookingResearchClient(),
-      transportFactory: widget.isDemo
-          ? DemoLiveTransport.new
-          : () => EphemeralGeminiLiveTransport(tokenProvider: fetchLiveToken),
-      media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
-    );
+    cook =
+        widget.createCoordinator?.call() ??
+        CookingCoordinator(
+          services: widget.services,
+          isDemo: widget.isDemo,
+          research: widget.isDemo
+              ? FakeCookingResearchClient()
+              : GeminiCookingResearchClient(),
+          transportFactory: widget.isDemo
+              ? DemoLiveTransport.new
+              : () =>
+                    EphemeralGeminiLiveTransport(tokenProvider: fetchLiveToken),
+          media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
+        );
     cook.addListener(_onChange);
     unawaited(cook.initialize());
   }
@@ -774,6 +789,9 @@ class _CookingScreenState extends State<CookingScreen>
               onPressed: sending || result != null
                   ? null
                   : () async {
+                      // Guard the callback too: two taps can arrive before the
+                      // disabled button has rebuilt.
+                      if (sending || result != null) return;
                       if (!RegExp(r'^\+?[1-9][0-9]{7,14}$')
                               .hasMatch(recipient.text.trim()) ||
                           message.text.trim().isEmpty) {
@@ -787,7 +805,7 @@ class _CookingScreenState extends State<CookingScreen>
                         validationError = null;
                       });
                       try {
-                        final response = await sendDinnerMessage(
+                        final response = await widget.sendDinner(
                           sessionId: cook.session!.id,
                           notificationId: _notificationId,
                           recipient: recipient.text.trim(),
