@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "learnerId", "order": "ASCENDING"},
+        {"fieldPath": "recipeId", "order": "ASCENDING"}
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
