@@ -15,6 +15,8 @@ class TestMedia implements LiveMedia {
   int played = 0;
   int interruptions = 0;
   bool muted = false;
+  bool active = false;
+  Completer<void>? stopGate;
   @override
   Stream<Uint8List> get microphone => audio.stream;
   @override
@@ -24,11 +26,14 @@ class TestMedia implements LiveMedia {
   @override
   Future<void> start() async {
     starts++;
+    active = true;
   }
 
   @override
   Future<void> stop() async {
     stops++;
+    await stopGate?.future;
+    active = false;
   }
 
   @override
@@ -52,6 +57,7 @@ class TestTransport implements LiveTransport {
   final responses = <(LiveToolCall, Map<String, Object?>)>[];
   final texts = <String>[];
   Completer<void>? connectionGate;
+  Completer<void>? textGate;
   int framesSent = 0;
   int audioSent = 0;
   int closes = 0;
@@ -75,6 +81,7 @@ class TestTransport implements LiveTransport {
   @override
   Future<void> sendText(String text) async {
     texts.add(text);
+    await textGate?.future;
   }
 
   @override
@@ -212,25 +219,28 @@ void main() {
 
   test('readiness requires an active watch and a fresh frame', () async {
     await controller.start(cookingContext: 'wrap');
-    const ready = LiveToolCall(
-      id: 'r1',
-      name: 'report_readiness',
-      arguments: {
-        'state': 'ready',
-        'observation': 'Mixture looks evenly combined.',
-      },
+    transport.source.add(
+      const LiveToolCall(
+        id: 'r1',
+        name: 'report_readiness',
+        arguments: {
+          'watchId': 'inactive',
+          'state': 'ready',
+          'observation': 'Mixture looks evenly combined.',
+        },
+      ),
     );
-    transport.source.add(ready);
     await flush();
     expect(calls, isEmpty);
-    controller.startWatch('Evenly mixed');
+    final id = controller.startWatch('Evenly mixed');
     media.video.add(Uint8List(8));
     await flush();
     transport.source.add(
-      const LiveToolCall(
+      LiveToolCall(
         id: 'r2',
         name: 'report_readiness',
         arguments: {
+          'watchId': id,
           'state': 'ready',
           'observation': 'Mixture looks evenly combined.',
         },
@@ -239,15 +249,224 @@ void main() {
     await flush();
     expect(calls, hasLength(1));
     transport.source.add(
-      const LiveToolCall(
+      LiveToolCall(
         id: 'r3',
         name: 'report_readiness',
-        arguments: {'state': 'ready', 'observation': 'Still combined.'},
+        arguments: {
+          'watchId': id,
+          'state': 'ready',
+          'observation': 'Still combined.',
+        },
       ),
     );
     await flush();
     expect(calls, hasLength(1));
     expect(transport.responses.last.$2['alreadyReported'], true);
+  });
+
+  test(
+    'a readiness result for an old watch cannot update the new watch',
+    () async {
+      await controller.start(cookingContext: 'wrap');
+      final oldId = controller.startWatch('Mixed yogurt');
+      media.video.add(Uint8List(8));
+      await flush();
+      final currentId = controller.startWatch('Mashed chickpeas');
+      expect(currentId, isNot(oldId));
+      transport.source.add(
+        LiveToolCall(
+          id: 'old-report',
+          name: 'report_readiness',
+          arguments: {
+            'watchId': oldId,
+            'state': 'ready',
+            'observation': 'Yogurt looks mixed.',
+          },
+        ),
+      );
+      await flush();
+      expect(calls, isEmpty);
+      expect(transport.responses.single.$2['ok'], false);
+      expect(controller.watchId, currentId);
+      transport.source.add(
+        LiveToolCall(
+          id: 'current-report',
+          name: 'report_readiness',
+          arguments: {
+            'watchId': currentId,
+            'state': 'ready',
+            'observation': 'Chickpeas look mashed.',
+          },
+        ),
+      );
+      await flush();
+      expect(calls.single.id, 'current-report');
+    },
+  );
+
+  test(
+    'a cached old readiness result is rejected after switching watches',
+    () async {
+      await controller.start(cookingContext: 'wrap');
+      final oldId = controller.startWatch('Mixed yogurt');
+      media.video.add(Uint8List(8));
+      await flush();
+      final oldCall = LiveToolCall(
+        id: 'cached-report',
+        name: 'report_readiness',
+        arguments: {
+          'watchId': oldId,
+          'state': 'ready',
+          'observation': 'Yogurt looks mixed.',
+        },
+      );
+      transport.source.add(oldCall);
+      await flush();
+      expect(calls, hasLength(1));
+      controller.startWatch('Mashed chickpeas');
+      transport.source.add(oldCall);
+      await flush();
+      expect(calls, hasLength(1));
+      expect(transport.responses.last.$2['ok'], false);
+    },
+  );
+
+  test(
+    'watch tool returns a host id that subsequent reports must echo',
+    () async {
+      await controller.start(cookingContext: 'wrap');
+      transport.source.add(
+        const LiveToolCall(
+          id: 'watch',
+          name: 'watch_cooking',
+          arguments: {'goal': 'Evenly mixed'},
+        ),
+      );
+      await flush();
+      expect(controller.watchId, isNotNull);
+      expect(transport.responses.single.$2['watchId'], controller.watchId);
+      controller.stopWatch();
+      expect(controller.watchId, isNull);
+    },
+  );
+
+  test(
+    'old asynchronous readiness completion does not suppress the new watch',
+    () async {
+      final gate = Completer<Map<String, Object?>>();
+      controller.dispose();
+      controller = LiveCookingController(
+        transportFactory: () => transport,
+        media: media,
+        onToolCall: (call) async {
+          calls.add(call);
+          if (call.id == 'slow') return gate.future;
+          return {'ok': true};
+        },
+      );
+      await controller.start(cookingContext: 'wrap');
+      final oldId = controller.startWatch('Mixed yogurt');
+      media.video.add(Uint8List(8));
+      await flush();
+      transport.source.add(
+        LiveToolCall(
+          id: 'slow',
+          name: 'report_readiness',
+          arguments: {
+            'watchId': oldId,
+            'state': 'ready',
+            'observation': 'Yogurt looks mixed.',
+          },
+        ),
+      );
+      await flush();
+      final currentId = controller.startWatch('Mashed chickpeas');
+      gate.complete({'ok': true});
+      await flush();
+      expect(transport.responses.single.$2['ok'], false);
+      transport.source.add(
+        LiveToolCall(
+          id: 'current',
+          name: 'report_readiness',
+          arguments: {
+            'watchId': currentId,
+            'state': 'ready',
+            'observation': 'Chickpeas look mashed.',
+          },
+        ),
+      );
+      await flush();
+      expect(calls.map((c) => c.id), ['slow', 'current']);
+      expect(transport.responses.last.$2['alreadyReported'], isNot(true));
+    },
+  );
+
+  test(
+    'connect waits for previous media cleanup before starting capture',
+    () async {
+      await controller.start(cookingContext: 'wrap');
+      media.stopGate = Completer<void>();
+      final stopping = controller.stop();
+      transport = TestTransport();
+      final restarting = controller.start(cookingContext: 'new step');
+      await flush();
+      expect(media.starts, 1);
+      media.stopGate!.complete();
+      await stopping;
+      await restarting;
+      expect(media.starts, 2);
+      expect(media.active, true);
+      expect(controller.status, LiveCookingStatus.listening);
+    },
+  );
+
+  test(
+    'late send failure from a stopped session does not stop its replacement',
+    () async {
+      await controller.start(cookingContext: 'wrap');
+      final oldTransport = transport;
+      oldTransport.textGate = Completer<void>();
+      final sending = controller.sendText('a slow message');
+      await flush();
+      await controller.stop();
+      transport = TestTransport();
+      await controller.start(cookingContext: 'new step');
+      oldTransport.textGate!.completeError(StateError('Old connection failed'));
+      await sending;
+      expect(controller.status, LiveCookingStatus.listening);
+      expect(transport.closes, 0);
+      expect(media.active, true);
+    },
+  );
+
+  test(
+    'duplicate Connect then Stop cannot start an unexpected replacement',
+    () async {
+      transport.connectionGate = Completer<void>();
+      final first = controller.start(cookingContext: 'wrap');
+      await flush();
+      final duplicate = controller.start(cookingContext: 'wrap');
+      await controller.stop();
+      transport.connectionGate!.complete();
+      await first;
+      await duplicate;
+      expect(media.starts, 1);
+      expect(controller.status, LiveCookingStatus.idle);
+    },
+  );
+
+  test('disposing while a reconnect waits cannot restart capture', () async {
+    transport.connectionGate = Completer<void>();
+    final first = controller.start(cookingContext: 'wrap');
+    await flush();
+    await controller.stop();
+    final replacement = controller.start(cookingContext: 'wrap');
+    controller.dispose();
+    transport.connectionGate!.complete();
+    await first;
+    await replacement;
+    expect(media.starts, 1);
+    expect(controller.status, LiveCookingStatus.idle);
   });
 
   test('cancelled queued tools do not execute', () async {

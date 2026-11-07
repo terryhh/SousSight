@@ -26,7 +26,9 @@ input is PCM16 little-endian at 16 kHz; model playback is PCM16 at 24 kHz.
 
 Listen to controller changes for status, user/coach transcripts, frame, error,
 and notice. `setMicrophoneMuted`, `startWatch`, `stopWatch`, and `sendText` are
-available. Watch mode explicitly requests fresh visual observations every 8s;
+available. Each watch has a unique `watchId`, returned from `startWatch` and echoed in the
+`watch_cooking` tool response. Readiness must carry that ID; results from a
+previous watch are rejected. Watch mode requests fresh visual observations every 8s;
 it does not assume that silent video will automatically trigger responses.
 Readiness reports require a fresh frame and active watch, and only the first
 ready report reaches the host per watch. A timer or appearance report never
@@ -36,7 +38,7 @@ Host tool handler names:
 - `show_cooking_ui`: `uiJson` containing a components array; pass through GenUI validator.
 - `start_timer`: `id`, `label`, integer `seconds` (1–7200).
 - `watch_cooking`: `goal`; controller starts watch, host updates panel.
-- `report_readiness`: `state` watching/ready/uncertain, `observation`.
+- `report_readiness`: `watchId`, `state` watching/ready/uncertain, `observation`.
 - `ask_cook`: `question`, `reason`; show a targeted question to the cook.
 - `research_cooking`: `question`; delegate to a separate grounded Google Search model.
 - `check_now`, `next_step`: no arguments, host enforces current-step confirmation.
