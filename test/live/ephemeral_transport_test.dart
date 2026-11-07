@@ -131,6 +131,61 @@ void main() {
     },
   );
 
+  test('spoken captions use transcription deltas without duplicate model text packets', () async {
+    final socket = TestSocket();
+    final transport = EphemeralGeminiLiveTransport(
+      tokenProvider: () async =>
+          const LiveEphemeralToken(token: 'auth_tokens/test-session-token'),
+      socketFactory: (_) => socket,
+    );
+    final events = <LiveEvent>[];
+    final subscription = transport.events.listen(events.add);
+    final connecting = transport.connect(systemInstruction: 'Cook together.');
+    await flush();
+    socket.receive({'setupComplete': {}});
+    await connecting;
+    socket.receive({
+      'serverContent': {
+        'modelTurn': {
+          'parts': [
+            {'text': 'Stir, stir, then stop.'},
+            {'text': 'Private reasoning', 'thought': true},
+          ],
+        },
+      },
+    });
+    socket.receive({
+      'serverContent': {
+        'outputTranscription': {'text': 'Stir, '},
+      },
+    });
+    socket.receive({
+      'serverContent': {
+        'modelTurn': {
+          'parts': [
+            {'text': 'Stir, stir, then stop.'},
+          ],
+        },
+      },
+    });
+    socket.receive({
+      'serverContent': {
+        'outputTranscription': {'text': 'stir, then stop.'},
+      },
+    });
+    socket.receive({
+      'serverContent': {'turnComplete': true},
+    });
+    await flush();
+    expect(events.whereType<LiveTranscript>().map((event) => event.text), [
+      'Stir, ',
+      'stir, then stop.',
+    ]);
+    expect(events.whereType<LiveTurnComplete>(), hasLength(1));
+    await subscription.cancel();
+    await transport.close();
+  });
+
   test('rejects long-lived API keys before opening any socket', () async {
     var opened = false;
     final transport = EphemeralGeminiLiveTransport(
