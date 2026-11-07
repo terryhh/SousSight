@@ -6,7 +6,7 @@
 
 Validation uses Flutter 3.47.9 / Dart from that SDK, Node 22, Java 21 and Firebase CLI 15.35.0. It enforces the Dart lockfile, installs locked npm dependencies, runs Flutter analysis/tests, browser-media tests, backend syntax/tests, publisher tests and the isolated Firestore emulator suite, then builds a visibly simulated rehearsal. That rehearsal artifact is never deployed.
 
-The deployment job builds `lib/main_learner.dart` again with `FAKE_BACKEND=false`, the production reCAPTCHA site key, and the configured research model. It deploys Auth providers, Firestore rules/indexes, `liveToken`, and Hosting; it also deploys `dinnerReady` when `DINNER_SERVICE_READY=true`. For Live-only deployment, the workflow selects `functions/package.json` main=`src/live-index.js` for both function discovery and the uploaded runtime package. The repository default `src/index.js` re-exports the separate Live and dinner entry modules for full deployment. It does not use `--force`, destroy unknown functions, lift spend caps, create secrets, send notifications or run paid Gemini smoke tests. The final Hosting GET only checks that the site responds; it does not establish live camera/voice, App Check, AI or Vonage correctness.
+The deployment job builds `lib/main_learner.dart` again with `FAKE_BACKEND=false`, the production reCAPTCHA site key, and the configured research model. It deploys Firestore rules/indexes, `liveToken`, and Hosting; it also deploys `dinnerReady` when `DINNER_SERVICE_READY=true`. For Live-only deployment, the workflow selects `functions/package.json` main=`src/live-index.js` for both function discovery and the uploaded runtime package. The repository default `src/index.js` re-exports the separate Live and dinner entry modules for full deployment. It does not use `--force`, destroy unknown functions, lift spend caps, create secrets, send notifications or run paid Gemini smoke tests. The final Hosting GET only checks that the site responds; it does not establish live camera/voice, App Check, AI or Vonage correctness.
 
 ## One-time setup
 
@@ -25,6 +25,8 @@ As of November 7, the scoped GitHub WIF provider, main-only production environme
 The deployed identity permissions are not globally least privilege. Both existing default Compute Engine and App Engine runtime accounts have project Editor. Terry explicitly approved the deployer actAs grant on the App Engine default account after being informed of that broad existing role. Granting actAs permits deploying code under that runtime identity. The deployer itself has no Owner/Editor role, but this does not remove the effective privilege exposure. Any later replacement with dedicated runtime accounts needs separate reviewed deployment and compatibility verification; do not silently strip existing roles.
 
 A real Auth/App Check and AI Logic request smoke succeeded with 5 prompt / 17 total tokens, but response content was not asserted. This does not verify Android Chrome camera/voice or the deployed Live token path.
+
+Anonymous Auth is a one-time setup prerequisite, already enabled in this project. Routine CD omits `auth` from deploy targets: Firebase CLI 15.35 invokes `provisionFirebaseApp` during Auth deployment, which the scoped deployer cannot perform. Run explicit provider setup with the setup identity when provider configuration changes; do not broaden the CI identity to provision the project. Run 42421669752 uploaded source and Hosting files but stopped at this Auth provisioning call; uploads alone are not a released site.
 
 ## GitHub variables
 
