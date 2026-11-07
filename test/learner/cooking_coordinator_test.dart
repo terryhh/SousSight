@@ -104,6 +104,7 @@ class _Transport implements LiveTransport {
   final texts = <String>[];
   final responses = <Map<String, Object?>>[];
   String? instruction;
+  bool failNextSend = false;
   @override
   Stream<LiveEvent> get events => source.stream;
   @override
@@ -117,6 +118,10 @@ class _Transport implements LiveTransport {
   Future<void> sendVideo(Uint8List jpeg) async {}
   @override
   Future<void> sendText(String text) async {
+    if (failNextSend) {
+      failNextSend = false;
+      throw StateError('Controlled transport failure');
+    }
     texts.add(text);
   }
 
@@ -273,6 +278,20 @@ void main() {
       expect(fixture.cook.session!.confirmedFacts, isEmpty);
     },
   );
+
+  test('successful research survives a workspace transport failure', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    final pending = fixture.cook.researchQuestionNow('Can I use yogurt?');
+    fixture.transport.failNextSend = true;
+    const result = CookingResearchResult(answer: 'Keep this completed answer.');
+    fixture.research.pending.single.complete(result);
+    expect(await pending, same(result));
+    expect(fixture.cook.researchResult, same(result));
+    expect(fixture.cook.error, isNull);
+    expect(fixture.cook.live.status, LiveCookingStatus.error);
+    expect(fixture.cook.live.error, contains('could not reach the live coach'));
+  });
 
   test('uncited research is forwarded without invented grounding', () async {
     await fixture.initialize();
