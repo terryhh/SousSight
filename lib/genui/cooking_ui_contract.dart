@@ -4,6 +4,8 @@ import 'dart:convert';
 /// This is A2UI component JSON, not executable HTML or Dart.
 const cookingUiInstructions = '''
 Use show_cooking_ui to compose the cooking workspace as the cook's needs change.
+Set its stepId argument to the exact currentStepId in the latest host context.
+Never label an old-step workspace with a new stepId; regenerate for the current step.
 Its uiJson argument is a JSON string with one key, components, containing A2UI
 v0.9 component objects. Send a complete replacement workspace, not a patch.
 Every component has a unique id and a component type. Include a root

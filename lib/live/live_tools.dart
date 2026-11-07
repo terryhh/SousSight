@@ -17,6 +17,9 @@ List<FunctionDeclaration> cookingLiveFunctions() => [
     'Compose or replace the cooking panel using the supplied GenUI catalog. '
         'Use short contextual cards while the camera and conversation remain active.',
     parameters: {
+      'stepId': Schema.string(
+        description: 'Copy the exact currentStepId from the latest host context. Never reuse an earlier step ID.',
+      ),
       'uiJson': Schema.string(
         description: 'JSON object with components array.',
       ),
@@ -123,6 +126,7 @@ String? validateLiveTool(LiveToolCall call) {
       (a[key] as String).length <= max;
   switch (call.name) {
     case 'show_cooking_ui':
+      if (!text('stepId', 80)) return 'Workspace needs the current stepId.';
       if (!text('uiJson', 32768)) {
         return 'uiJson must be a nonempty JSON string (max 32 KB).';
       }

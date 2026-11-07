@@ -198,6 +198,29 @@ Future<void> _flush() async {
   }
 }
 
+LiveToolCall _workspaceCall(String stepId, String id) => LiveToolCall(
+  id: id,
+  name: 'show_cooking_ui',
+  arguments: {
+    'stepId': stepId,
+    'uiJson': jsonEncode({
+      'components': [
+        {
+          'id': 'root',
+          'component': 'CookingColumn',
+          'children': ['generated'],
+        },
+        {
+          'id': 'generated',
+          'component': 'stepCue',
+          'title': '$stepId generated panel',
+          'body': 'Guidance for $stepId.',
+        },
+      ],
+    }),
+  },
+);
+
 void main() {
   late _Fixture fixture;
   setUp(() {
@@ -223,6 +246,7 @@ void main() {
       await fixture.cook.connect();
       expect(fixture.media.starts, 1);
       expect(fixture.transport.instruction, contains('Current step: prep'));
+      expect(fixture.transport.instruction, contains('currentStepId: prep'));
       expect(fixture.cook.live.status, LiveCookingStatus.listening);
     },
   );
@@ -371,6 +395,7 @@ void main() {
           id: panel['id'] as String,
           name: 'show_cooking_ui',
           arguments: {
+            'stepId': 'prep',
             'uiJson': jsonEncode({
               'components': [
                 {
@@ -397,6 +422,51 @@ void main() {
       await _flush();
       expect(fixture.cook.ui.components.last['id'], panel['id']);
     }
+  });
+
+  test(
+    'late UI for the previous step cannot replace the current workspace',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      await fixture.cook.advanceStep();
+      final current = fixture.cook.ui.components;
+      fixture.transport.source.add(_workspaceCall('prep', 'late-prep'));
+      await _flush();
+      expect(fixture.cook.ui.components, current);
+      expect(fixture.transport.responses.last['ok'], isFalse);
+      expect(fixture.transport.responses.last['currentStepId'], 'mash');
+      fixture.transport.source.add(_workspaceCall('mash', 'current-mash'));
+      await _flush();
+      expect(fixture.cook.ui.components.last['title'], 'mash generated panel');
+      expect(fixture.transport.responses.last['ok'], isTrue);
+      expect(fixture.media.starts, 1);
+    },
+  );
+
+  test('old UI queued behind research is rejected after advancing', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.source.add(
+      const LiveToolCall(
+        id: 'research-prep',
+        name: 'research_cooking',
+        arguments: {'question': 'How do I drain these?'},
+      ),
+    );
+    await _flush();
+    fixture.transport.source.add(_workspaceCall('prep', 'queued-prep'));
+    await _flush();
+    await fixture.cook.advanceStep();
+    final current = fixture.cook.ui.components;
+    fixture.research.pending.single.complete(
+      const CookingResearchResult(answer: 'Old prep answer'),
+    );
+    await _flush();
+    expect(fixture.cook.ui.components, current);
+    expect(fixture.transport.responses.last['ok'], isFalse);
+    expect(fixture.transport.responses.last['currentStepId'], 'mash');
+    expect(fixture.media.starts, 1);
   });
 
   test('two Next step clicks while saving complete exactly one step', () async {

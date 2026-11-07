@@ -172,6 +172,7 @@ class LiveCookingController extends ChangeNotifier {
       await transport.sendText(
         'Call show_cooking_ui now to compose a useful cooking workspace from the '
         'supplied recipe, current step, and cook-confirmed facts using the allowed UI catalog. '
+        'Copy the exact currentStepId from the host context into the stepId argument. '
         'If essential context is missing, show a targeted question instead of inventing '
         'ingredients, quantities, or progress. Then give a brief spoken welcome and '
         'invite me to show the ingredients or current cooking step.',
