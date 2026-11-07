@@ -5,7 +5,7 @@ Project: `devfest-flutter-a59e8`. Currency: USD. Last reviewed: November 7, 2026
 
 ## Current authorization
 
-Terry subsequently authorized a **$20 monthly SousSight budget before credits** and continued infrastructure/CD setup, accepting the previously explained delayed cap enforcement. Use eligible credits first. Configure project-wide alerts and supported service caps before paid workloads. This supersedes the earlier strict $0 instruction below; it does not authorize buying Gemini prepaid credit or changing unrelated projects. Controls are not yet applied.
+Terry subsequently authorized a **$20 monthly SousSight budget before credits** and continued infrastructure/CD setup, accepting the previously explained delayed cap enforcement. Use eligible credits first. Configure project-wide alerts and supported service caps before paid workloads. This supersedes the earlier strict $0 instruction below; it does not authorize buying Gemini prepaid credit or changing unrelated projects. Controls are now configured and read back: whole-project gross alerts at $20/month; Gemini Developer API cap $15, Cloud Run cap $2, Cloud Run functions cap $1. The $2 remainder is monitored headroom for other infrastructure, not an enforced cap.
 
 ## Original spending constraint (superseded by $20 authorization)
 
@@ -17,7 +17,7 @@ Never put API keys, tokens, phone numbers, payment details, billing exports or b
 
 | Item | Status | Evidence / next check |
 |---|---|---|
-| Project billing | Disabled; no billing account linked | Read-only Cloud Billing `projects.getBillingInfo`, Nov 7: `billingEnabled=false`, account absent |
+| Project billing | Enabled on the user-approved existing account | User explicitly approved linking after overage risk explanation; API returned billingEnabled=true |
 | $300 GCP welcome credit | User reports credit; balance, scope and expiration unverified | Check Cloud Billing → Credits. Welcome credits generally expire after 90 days and exclude current Gemini Developer API usage |
 | $10 Developer Program benefit | User reports benefit; redemption, remaining balance and renewal unverified | Check Developer Program benefits and destination billing account. Eligible benefit credits can cover Gemini API; Prepay may require a positive purchased balance, which is not authorized |
 | Actual billed cost | **Unknown — billing report not inspected** | Do not equate successful setup, Spark status, or zero recorded charges with a verified $0 invoice |
@@ -32,12 +32,16 @@ Sources: [Google Cloud trial](https://cloud.google.com/signup-faqs), [Gemini bil
 | Firebase Authentication | Anonymous provider enabled Nov 7 | Active users and provider selection; no phone/SMS auth configured | Free allowance/eligible cloud credit; confirm before billing activation |
 | Firestore `(default)`, `nam5` | Pre-existing database; private rules and indexes deployed Nov 7 | Reads, writes, deletes, stored data, index storage and network transfer | $300 eligibility/balance unverified; Spark limits currently apply |
 | Firebase AI Logic + Gemini Developer API | APIs enabled; AI Logic App Check enforcement verified ENFORCED | Model tokens, search grounding, live media; API enablement is not a measured inference charge | Welcome credit excluded for current Gemini API; $10 benefit not yet verified |
-| App Check web provider | No production provider registered; local debug config exists | Attestation-provider quotas; never publish debug tokens | Verify applicable free allowance before production registration/traffic |
+| App Check web provider | Production Enterprise provider registered for the two Hosting domains; debug config remains local | Attestation-provider quotas; never publish debug tokens | Verify applicable free allowance before production registration/traffic |
 | Hosting | Default site exists; root returned 404 before setup | Storage and outbound transfer | Free allowance then eligible cloud billing; no production web release made in this setup |
-| Cloud Functions `liveToken`, `dinnerReady` | Not deployed by this setup; remote listing failed | Invocations, compute, network, build/artifact storage and logs | Blocked on billing; no coverage verified |
-| Secret Manager | Required API blocked by Spark plan; secret presence not established | Active versions and access operations | Blocked on billing; no coverage verified |
+| Cloud Functions `liveToken`, `dinnerReady` | Not deployed by this setup; remote listing failed | Invocations, compute, network, build/artifact storage and logs | Billing enabled; credit coverage remains unverified |
+| Secret Manager | Enabled; Gemini-only server key stored as GEMINI_API_KEY without printing or writing the value to disk | Active versions and access operations | Billing enabled; credit coverage remains unverified |
 | Vonage | App sending disabled by default; no credentials or paid sends configured in this setup | Channel/recipient-specific message charges, sender fees | Google credits do not establish Vonage coverage; keep disabled |
 | Local test/runtime resources | Temporary Java, emulator tests and simulated local web server | Local compute only; synthetic emulator project | Not a cloud deployment or billable service verification |
+
+## GitHub Actions infrastructure
+
+A dedicated deployment identity now uses a Workload Identity Federation provider restricted to repository ID 1449678039, owner ID 14064284, main branch, and push/manual workflow events. No service-account key was created. The GitHub production environment allows main only. The deployment gate remains false until the first PR validation passes. GitHub private-repository Actions minutes are separate from GCP credits; no paid runner or Actions spending increase is authorized.
 
 ## Change and charge ledger
 
@@ -50,6 +54,9 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Enabled Firebase AI Logic and Gemini Developer APIs | API enablement only; no inference request | Not inspected | CLI reported both required APIs enabled |
 | 2026-11-07 | Attempted Gemini secret metadata inspection | No secret value read or created | Not inspected | Firebase blocked Secret Manager API enablement because project is Spark |
 | 2026-11-07 | Read project billing status | Read-only; no billing change | Not inspected | No linked billing account; paid setup remains blocked |
+
+| 2026-11-07 | Linked billing after explicit account-specific approval; configured/read back $20 gross alerts and $15/$2/$1 service caps | No inference request in this step | Not inspected | Caps CONFIGURED, not a hard total ceiling |
+| 2026-11-07 | Registered production App Check, stored Gemini backend key, enabled deployment APIs and configured WIF identity | Secret versions and later attestation/build usage can incur charges | Not inspected | Secret values remain out of Git/browser; no service-account keys |
 
 ## Planning estimate — not a quote or cap
 
