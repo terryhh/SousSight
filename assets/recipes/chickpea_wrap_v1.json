@@ -1,0 +1,77 @@
+{
+  "id": "chickpea_wrap_v1",
+  "version": 1,
+  "title": "Smashed Chickpea Salad Wrap",
+  "summary": "A no-cook wrap from pantry staples: canned chickpeas, a creamy dressing, and crunchy vegetables. Teaches two techniques: mashing to a chunky texture and folding a filling evenly.",
+  "ingredients": [
+    {"id": "chickpeas", "name": "Canned chickpeas, drained and rinsed", "qty": "1 can (15 oz)", "allergens": []},
+    {"id": "mayo", "name": "Mayonnaise", "qty": "2 tbsp", "allergens": ["egg"]},
+    {"id": "mustard", "name": "Dijon mustard", "qty": "1 tsp", "allergens": ["mustard"]},
+    {"id": "lemon", "name": "Lemon juice", "qty": "1 tbsp + 1 tbsp for the onion", "allergens": []},
+    {"id": "red_onion", "name": "Red onion, thinly sliced (pre-sliced)", "qty": "2 tbsp", "optional": true, "allergens": []},
+    {"id": "celery", "name": "Celery, diced (pre-diced)", "qty": "1/4 cup", "allergens": []},
+    {"id": "bell_pepper", "name": "Red bell pepper, diced (pre-diced)", "qty": "1/4 cup", "allergens": []},
+    {"id": "salt_pepper", "name": "Salt and black pepper", "qty": "to taste", "allergens": []},
+    {"id": "tortillas", "name": "Flour tortillas (10 inch)", "qty": "2", "allergens": ["wheat"]}
+  ],
+  "equipment": ["Bowl (dark, wide)", "Potato masher or fork", "Spoon or spatula", "Small cup for the onion"],
+  "steps": [
+    {
+      "id": "pickle_onion",
+      "title": "Quick-pickle the onion",
+      "instruction": "Put the sliced red onion in a small cup with 1 tbsp lemon juice and a pinch of salt. Let it sit while you work.",
+      "cue": "The onion turns brighter pink and softens. It takes about 5 minutes.",
+      "timerSeconds": 300
+    },
+    {
+      "id": "mash",
+      "title": "Mash the chickpeas",
+      "instruction": "Put the drained chickpeas in the bowl and press with a masher or fork until most are broken.",
+      "cue": "Mostly broken and chunky, only a few whole chickpeas left, not a smooth paste.",
+      "checkpointId": "cp_mash"
+    },
+    {
+      "id": "mix",
+      "title": "Dress and fold",
+      "instruction": "Add mayo, mustard, 1 tbsp lemon juice, celery, bell pepper, the drained onion, salt and pepper. Fold from the bottom up until evenly mixed.",
+      "cue": "Red and green pieces spread through the whole bowl, everything lightly coated, no white streaks of dressing.",
+      "checkpointId": "cp_mix"
+    },
+    {
+      "id": "roll",
+      "title": "Fill and roll",
+      "instruction": "Spoon about half the filling in a line across the lower third of a tortilla. Fold in the sides, then roll away from you.",
+      "cue": "A spoonful holds its shape. If it slumps or pools, it is too wet to roll."
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "cp_mash",
+      "stepId": "mash",
+      "target": "Most chickpeas are broken into coarse, crumbly pieces. Fewer than about 10 whole chickpeas are visible. It is chunky, not smooth like hummus.",
+      "cues": ["few whole chickpeas", "coarse broken pieces", "not a smooth paste"],
+      "targetImageAsset": "assets/recipes/chickpea_wrap_v1/target_mash.jpg",
+      "allowedAdjustments": ["mash_more", "mash_side", "fine_as_is"]
+    },
+    {
+      "id": "cp_mix",
+      "stepId": "mix",
+      "target": "Red pepper and celery pieces are spread across the whole bowl, everything is lightly coated, and there are no white streaks or pools of dressing.",
+      "cues": ["vegetables spread evenly", "no dressing streaks", "no pooled liquid"],
+      "targetImageAsset": "assets/recipes/chickpea_wrap_v1/target_mix.jpg",
+      "allowedAdjustments": ["fold_more", "fold_from_bottom", "add_chickpeas_if_wet"]
+    }
+  ],
+  "reviewedSubstitutions": [
+    {"ingredientId": "mayo", "substitute": "Plain Greek yogurt", "note": "Same amount. Tangier. Contains dairy.", "approvedBy": "Recipe reviewer"},
+    {"ingredientId": "tortillas", "substitute": "Bread or a lettuce wrap", "note": "Lettuce leaves make it gluten-free; check bread labels.", "approvedBy": "Recipe reviewer"}
+  ],
+  "adjustmentLabels": {
+    "mash_more": "Mash 15-20 more presses",
+    "mash_side": "Focus on the side with more whole chickpeas",
+    "fine_as_is": "Smoother than the target is still fine to use",
+    "fold_more": "Fold 8-10 more times",
+    "fold_from_bottom": "Scrape from the bottom and fold up",
+    "add_chickpeas_if_wet": "If it looks wet, stir in a few more mashed chickpeas"
+  }
+}
