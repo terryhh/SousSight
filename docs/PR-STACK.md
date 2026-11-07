@@ -12,7 +12,11 @@ Prepared locally November 7, 2026. The cook is the human in the loop; there is n
 
 The old local `codex/agy-board-handoff` branch is superseded. Do not publish it. The current assignment is [AGY-COOKING-RESEARCH.md](handoffs/AGY-COOKING-RESEARCH.md).
 
-The original PRs #1 and #2 were recorded by the source handoff but could not be re-read remotely in this session. No new remote PR, issue, project item, merge, or deployment has been verified. `git push` failed to resolve `github.com`; `gh` could not reach `api.github.com`. GitHub plugin installation was offered and still needs account authorization.
+Published November 7, 2026: existing foundation/data PRs #1 and #2 remain open. The current stack is #7 (AGY assignment), #8 (AI), #9 (live cooking), #10 (services), and #11 (integration). Implementation PRs #8–#11 are drafts. PR #12, based on integration, fixes project Backlog status compatibility and records Terry-owned work as InProgress. Old instructor handoff PR #3 is superseded by #7.
+
+All 13 backlog cards were published. Eight Terry-owned/shared cards are assigned to `terryhh` and In progress; SS-005 is assigned to `jennajh` and remains Backlog. Jenna’s implementation is reserved for her.
+
+GitHub SSH pushes and CLI repository/project access were verified. The project is https://github.com/users/terryhh/projects/1. Publisher Todo maps to the existing Backlog option when no Todo option exists. Publication required retries when GitHub temporarily rejected adding newly created issues to the project.
 
 ## Checks
 
