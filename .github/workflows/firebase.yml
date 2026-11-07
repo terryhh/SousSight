@@ -1,0 +1,189 @@
+name: Validate and deploy SousSight
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: soussight-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FLUTTER_VERSION: '3.47.9'
+  FIREBASE_CLI_VERSION: '15.35.0'
+  FIREBASE_PROJECT: devfest-flutter-a59e8
+  CI: 'true'
+
+jobs:
+  validate:
+    name: Tests and rehearsal build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            functions/package-lock.json
+            test/rules/package-lock.json
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install locked dependencies
+        run: |
+          flutter pub get --enforce-lockfile
+          npm --prefix functions ci
+          npm --prefix test/rules ci
+          npm install --global "firebase-tools@$FIREBASE_CLI_VERSION"
+      - name: Validate Flutter and browser media
+        run: |
+          flutter analyze --no-pub
+          flutter test --no-pub
+          node --test test/live/browser_media_test.cjs
+      - name: Validate backend and project publisher
+        run: |
+          npm --prefix functions run check
+          npm --prefix functions test
+          python3 -m unittest discover -s test/tool -p 'test_publish_backlog.py'
+      - name: Verify private Firestore rules in emulator
+        run: npm --prefix test/rules test
+      - name: Build visibly simulated rehearsal
+        run: ./tool/build_web.sh --no-pub --dart-define=FAKE_BACKEND=true
+
+  deploy:
+    name: Deploy production
+    needs: validate
+    if: >-
+      github.repository == 'terryhh/SousSight' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      vars.FIREBASE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    environment:
+      name: production
+      url: https://devfest-flutter-a59e8.web.app
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: soussight-production
+      cancel-in-progress: false
+    env:
+      RECAPTCHA_SITE_KEY: ${{ vars.RECAPTCHA_SITE_KEY }}
+      WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      LIVE_MODEL: ${{ vars.LIVE_MODEL || 'gemini-3.8-live' }}
+      LIVE_API_VERSION: ${{ vars.LIVE_API_VERSION || 'v1beta' }}
+      RESEARCH_MODEL: ${{ vars.RESEARCH_MODEL || 'gemini-3.8-flash' }}
+      DINNER_SERVICE_READY: ${{ vars.DINNER_SERVICE_READY || 'false' }}
+      DINNER_CHANNEL: ${{ vars.DINNER_CHANNEL || 'whatsapp' }}
+      ENABLE_DINNER_MESSAGES: ${{ vars.ENABLE_DINNER_MESSAGES || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Require production configuration
+        shell: bash
+        run: |
+          for setting in RECAPTCHA_SITE_KEY WORKLOAD_IDENTITY_PROVIDER DEPLOY_SERVICE_ACCOUNT; do
+            if [[ -z "${!setting}" ]]; then
+              echo "::error::Missing production variable $setting"
+              exit 1
+            fi
+          done
+          if [[ "$ENABLE_DINNER_MESSAGES" != false && "$ENABLE_DINNER_MESSAGES" != true ]]; then
+            echo '::error::ENABLE_DINNER_MESSAGES must be false or true'
+            exit 1
+          fi
+          if [[ "$DINNER_SERVICE_READY" != false && "$DINNER_SERVICE_READY" != true ]]; then
+            echo '::error::DINNER_SERVICE_READY must be false or true'
+            exit 1
+          fi
+          if [[ "$ENABLE_DINNER_MESSAGES" == true && "$DINNER_SERVICE_READY" != true ]]; then
+            echo '::error::Dinner sending requires a configured dinner service'
+            exit 1
+          fi
+          if [[ "$DINNER_CHANNEL" != whatsapp && "$DINNER_CHANNEL" != sms ]]; then
+            echo '::error::DINNER_CHANNEL must be whatsapp or sms'
+            exit 1
+          fi
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install deployment dependencies
+        run: |
+          flutter pub get --enforce-lockfile
+          npm --prefix functions ci
+          npm install --global "firebase-tools@$FIREBASE_CLI_VERSION"
+      - name: Write public build configuration and non-secret function parameters
+        run: |
+          python3 - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          build = {
+              'FAKE_BACKEND': 'false',
+              'RECAPTCHA_SITE_KEY': os.environ['RECAPTCHA_SITE_KEY'],
+              'RESEARCH_MODEL': os.environ['RESEARCH_MODEL'],
+          }
+          Path('dart_defines.local.json').write_text(json.dumps(build))
+          if os.environ['DINNER_SERVICE_READY'] != 'true':
+              config_path = Path('firebase.json')
+              config = json.loads(config_path.read_text())
+              config['hosting']['rewrites'] = [
+                  rule for rule in config['hosting']['rewrites']
+                  if rule.get('source') != '/api/dinner-ready']
+              config_path.write_text(json.dumps(config))
+          params = {key: os.environ[key] for key in (
+              'LIVE_MODEL', 'LIVE_API_VERSION', 'DINNER_CHANNEL', 'ENABLE_DINNER_MESSAGES')}
+          for key, value in params.items():
+              if not re.fullmatch(r'[A-Za-z0-9._/-]+', value):
+                  raise SystemExit(f'Invalid non-secret deployment parameter: {key}')
+          params['LIVE_ALLOWED_ORIGINS'] = (
+              'https://devfest-flutter-a59e8.web.app,'
+              'https://devfest-flutter-a59e8.firebaseapp.com')
+          Path('functions/.env.devfest-flutter-a59e8').write_text(
+              ''.join(f'{key}={value}\n' for key, value in params.items()))
+          PY
+      - name: Build real-service web app
+        run: ./tool/build_web.sh --no-pub --dart-define-from-file=dart_defines.local.json
+      # Authenticate only after package installation/build; never run this on a PR.
+      - name: Authenticate with short-lived Google credentials
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: devfest-flutter-a59e8
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+          export_environment_variables: true
+      - name: Deploy reviewed production resources
+        run: |
+          targets=auth,firestore,functions:liveToken,hosting
+          if [[ "$DINNER_SERVICE_READY" == true ]]; then
+            targets=auth,firestore,functions:liveToken,functions:dinnerReady,hosting
+          fi
+          firebase deploy --project "$FIREBASE_PROJECT" --only "$targets" --non-interactive
+      - name: Check Hosting response
+        run: curl --fail --silent --show-error --retry 3 --retry-delay 5 https://devfest-flutter-a59e8.web.app/ --output /dev/null
