@@ -32,6 +32,7 @@ class TestSink implements WebSocketSink {
   TestSink(this.sent);
   final List<dynamic> sent;
   bool closed = false;
+  Completer<void>? closeGate;
   @override
   void add(dynamic event) => sent.add(event);
   @override
@@ -46,6 +47,7 @@ class TestSink implements WebSocketSink {
   @override
   Future<void> close([int? closeCode, String? closeReason]) async {
     closed = true;
+    await closeGate?.future;
   }
 
   @override
@@ -186,6 +188,175 @@ void main() {
       await transport.close();
     },
   );
+
+  test('resumption keeps tool replies queued until the replacement acknowledges setup', () async {
+    final original = TestSocket();
+    final replacement = TestSocket();
+    final sockets = [original, replacement];
+    var opened = 0;
+    final transport = EphemeralGeminiLiveTransport(
+      tokenProvider: () async =>
+          const LiveEphemeralToken(token: 'auth_tokens/test-session-token'),
+      socketFactory: (_) => sockets[opened++],
+    );
+    final events = <LiveEvent>[];
+    final errors = <Object>[];
+    final subscription = transport.events.listen(
+      events.add,
+      onError: errors.add,
+    );
+    addTearDown(() async {
+      await transport.close();
+      await subscription.cancel();
+    });
+    final connecting = transport.connect(systemInstruction: 'Keep cooking.');
+    await flush();
+    original.receive({'setupComplete': {}});
+    await connecting;
+    original.receive({
+      'sessionResumptionUpdate': {
+        'resumable': true,
+        'newHandle': 'resume-meal',
+      },
+    });
+    original.receive({
+      'goAway': {'timeLeft': '5s'},
+    });
+    await flush();
+    expect(opened, 2);
+    expect(original._sink.closed, isTrue);
+    final setup = jsonDecode(replacement.outgoing.single as String)['setup'];
+    expect(setup['sessionResumption']['handle'], 'resume-meal');
+    expect(setup['systemInstruction']['parts'][0]['text'], 'Keep cooking.');
+    var acknowledged = false;
+    final replying = transport
+        .respondToTool(
+          const LiveToolCall(id: 'timer-1', name: 'start_timer', arguments: {}),
+          {'ok': true, 'id': 'rest'},
+        )
+        .then((_) {
+          acknowledged = true;
+        });
+    await transport.sendAudio(Uint8List.fromList([1, 2]));
+    await flush();
+    expect(acknowledged, isFalse);
+    expect(replacement.outgoing, hasLength(1));
+    original.receive({
+      'serverContent': {'turnComplete': true},
+    });
+    replacement.receive({'setupComplete': {}});
+    await replying;
+    expect(acknowledged, isTrue);
+    final reply = jsonDecode(
+      replacement.outgoing.last as String,
+    )['toolResponse']['functionResponses'].single;
+    expect(reply['id'], 'timer-1');
+    expect(reply['response'], {'ok': true, 'id': 'rest'});
+    expect(events.whereType<LiveTurnComplete>(), isEmpty);
+    expect(
+      events.whereType<LiveConnectionNotice>().map((e) => e.reconnecting),
+      [true, false],
+    );
+    expect(errors, isEmpty);
+  });
+
+  test(
+    'closing during old-socket cleanup prevents a replacement connection',
+    () async {
+      final original = TestSocket();
+      var opened = 0;
+      final transport = EphemeralGeminiLiveTransport(
+        tokenProvider: () async =>
+            const LiveEphemeralToken(token: 'auth_tokens/test-session-token'),
+        socketFactory: (_) {
+          opened++;
+          return original;
+        },
+      );
+      final events = <LiveEvent>[];
+      final errors = <Object>[];
+      final subscription = transport.events.listen(
+        events.add,
+        onError: errors.add,
+      );
+      addTearDown(subscription.cancel);
+      final connecting = transport.connect(systemInstruction: 'Keep cooking.');
+      await flush();
+      original.receive({'setupComplete': {}});
+      await connecting;
+      original._sink.closeGate = Completer<void>();
+      original.receive({
+        'sessionResumptionUpdate': {
+          'resumable': true,
+          'newHandle': 'resume-meal',
+        },
+      });
+      original.receive({'goAway': {}});
+      await flush();
+      expect(original._sink.closed, isTrue);
+      final closing = transport.close();
+      original._sink.closeGate!.complete();
+      await closing;
+      await flush();
+      expect(opened, 1);
+      expect(
+        events.whereType<LiveConnectionNotice>().where((e) => !e.reconnecting),
+        isEmpty,
+      );
+      expect(errors, isEmpty);
+    },
+  );
+
+  test('closing during resumed setup rejects pending tool replies without sending them', () async {
+    final original = TestSocket();
+    final replacement = TestSocket();
+    final sockets = [original, replacement];
+    var opened = 0;
+    final transport = EphemeralGeminiLiveTransport(
+      tokenProvider: () async =>
+          const LiveEphemeralToken(token: 'auth_tokens/test-session-token'),
+      socketFactory: (_) => sockets[opened++],
+    );
+    final events = <LiveEvent>[];
+    final errors = <Object>[];
+    final subscription = transport.events.listen(
+      events.add,
+      onError: errors.add,
+    );
+    addTearDown(subscription.cancel);
+    final connecting = transport.connect(systemInstruction: 'Keep cooking.');
+    await flush();
+    original.receive({'setupComplete': {}});
+    await connecting;
+    original.receive({
+      'sessionResumptionUpdate': {
+        'resumable': true,
+        'newHandle': 'resume-meal',
+      },
+    });
+    original.receive({'goAway': {}});
+    await flush();
+    expect(opened, 2);
+    final rejectedReply = expectLater(
+      transport.respondToTool(
+        const LiveToolCall(id: 'timer-1', name: 'start_timer', arguments: {}),
+        {'ok': true},
+      ),
+      throwsStateError,
+    );
+    await transport.close();
+    await rejectedReply;
+    replacement.receive({'setupComplete': {}});
+    await flush();
+    expect(opened, 2);
+    expect(replacement._sink.closed, isTrue);
+    expect(replacement.outgoing, hasLength(1));
+    expect(
+      events.whereType<LiveConnectionNotice>().where((e) => !e.reconnecting),
+      isEmpty,
+    );
+    expect(errors, isEmpty);
+  });
 
   test(
     'token metadata rejects injected model paths and unsupported API versions',
