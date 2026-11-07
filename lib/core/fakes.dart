@@ -113,9 +113,7 @@ class FakeSessionRepository implements SessionRepository {
       learnerId: learnerId,
       recipeId: recipe.id,
       recipeVersion: recipe.version,
-      ingredients: {
-        for (final i in recipe.ingredients) i.id: IngredientStatus.have,
-      },
+      ingredients: const {},
       substitutions: const [],
       currentStepId: recipe.steps.first.id,
       completedStepIds: const [],

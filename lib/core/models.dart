@@ -55,20 +55,20 @@ class Ingredient {
   final List<String> allergens;
 
   factory Ingredient.fromMap(Map<String, dynamic> m) => Ingredient(
-        id: m['id'] as String,
-        name: m['name'] as String,
-        qty: m['qty'] as String? ?? '',
-        optional: m['optional'] as bool? ?? false,
-        allergens: readStrings(m['allergens']),
-      );
+    id: m['id'] as String,
+    name: m['name'] as String,
+    qty: m['qty'] as String? ?? '',
+    optional: m['optional'] as bool? ?? false,
+    allergens: readStrings(m['allergens']),
+  );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'name': name,
-        'qty': qty,
-        'optional': optional,
-        'allergens': allergens,
-      };
+    'id': id,
+    'name': name,
+    'qty': qty,
+    'optional': optional,
+    'allergens': allergens,
+  };
 }
 
 class RecipeStep {
@@ -91,22 +91,22 @@ class RecipeStep {
   final int? timerSeconds;
 
   factory RecipeStep.fromMap(Map<String, dynamic> m) => RecipeStep(
-        id: m['id'] as String,
-        title: m['title'] as String,
-        instruction: m['instruction'] as String,
-        cue: m['cue'] as String? ?? '',
-        checkpointId: m['checkpointId'] as String?,
-        timerSeconds: m['timerSeconds'] as int?,
-      );
+    id: m['id'] as String,
+    title: m['title'] as String,
+    instruction: m['instruction'] as String,
+    cue: m['cue'] as String? ?? '',
+    checkpointId: m['checkpointId'] as String?,
+    timerSeconds: m['timerSeconds'] as int?,
+  );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'title': title,
-        'instruction': instruction,
-        'cue': cue,
-        'checkpointId': checkpointId,
-        'timerSeconds': timerSeconds,
-      };
+    'id': id,
+    'title': title,
+    'instruction': instruction,
+    'cue': cue,
+    'checkpointId': checkpointId,
+    'timerSeconds': timerSeconds,
+  };
 }
 
 class CheckpointDef {
@@ -131,22 +131,22 @@ class CheckpointDef {
   final List<String> allowedAdjustments;
 
   factory CheckpointDef.fromMap(Map<String, dynamic> m) => CheckpointDef(
-        id: m['id'] as String,
-        stepId: m['stepId'] as String,
-        target: m['target'] as String,
-        cues: readStrings(m['cues']),
-        targetImageAsset: m['targetImageAsset'] as String,
-        allowedAdjustments: readStrings(m['allowedAdjustments']),
-      );
+    id: m['id'] as String,
+    stepId: m['stepId'] as String,
+    target: m['target'] as String,
+    cues: readStrings(m['cues']),
+    targetImageAsset: m['targetImageAsset'] as String,
+    allowedAdjustments: readStrings(m['allowedAdjustments']),
+  );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'stepId': stepId,
-        'target': target,
-        'cues': cues,
-        'targetImageAsset': targetImageAsset,
-        'allowedAdjustments': allowedAdjustments,
-      };
+    'id': id,
+    'stepId': stepId,
+    'target': target,
+    'cues': cues,
+    'targetImageAsset': targetImageAsset,
+    'allowedAdjustments': allowedAdjustments,
+  };
 }
 
 class ReviewedSubstitution {
@@ -176,12 +176,12 @@ class ReviewedSubstitution {
       );
 
   Map<String, dynamic> toMap() => {
-        'ingredientId': ingredientId,
-        'substitute': substitute,
-        'note': note,
-        'approvedBy': approvedBy,
-        'sourceRequestId': sourceRequestId,
-      };
+    'ingredientId': ingredientId,
+    'substitute': substitute,
+    'note': note,
+    'approvedBy': approvedBy,
+    'sourceRequestId': sourceRequestId,
+  };
 }
 
 class Recipe {
@@ -219,7 +219,8 @@ class Recipe {
 
   Ingredient ingredient(String id) => ingredients.firstWhere((i) => i.id == id);
 
-  Recipe copyWith({List<ReviewedSubstitution>? reviewedSubstitutions}) => Recipe(
+  Recipe copyWith({List<ReviewedSubstitution>? reviewedSubstitutions}) =>
+      Recipe(
         id: id,
         version: version,
         title: title,
@@ -234,45 +235,44 @@ class Recipe {
       );
 
   factory Recipe.fromMap(Map<String, dynamic> m) => Recipe(
-        id: m['id'] as String,
-        version: m['version'] as int,
-        title: m['title'] as String,
-        summary: m['summary'] as String? ?? '',
-        ingredients: [
-          for (final i in m['ingredients'] as List)
-            Ingredient.fromMap(Map<String, dynamic>.from(i as Map)),
-        ],
-        equipment: readStrings(m['equipment']),
-        steps: [
-          for (final s in m['steps'] as List)
-            RecipeStep.fromMap(Map<String, dynamic>.from(s as Map)),
-        ],
-        checkpoints: [
-          for (final c in m['checkpoints'] as List)
-            CheckpointDef.fromMap(Map<String, dynamic>.from(c as Map)),
-        ],
-        reviewedSubstitutions: [
-          for (final r in (m['reviewedSubstitutions'] as List? ?? const []))
-            ReviewedSubstitution.fromMap(Map<String, dynamic>.from(r as Map)),
-        ],
-        adjustmentLabels:
-            Map<String, String>.from(m['adjustmentLabels'] as Map? ?? {}),
-      );
+    id: m['id'] as String,
+    version: m['version'] as int,
+    title: m['title'] as String,
+    summary: m['summary'] as String? ?? '',
+    ingredients: [
+      for (final i in m['ingredients'] as List)
+        Ingredient.fromMap(Map<String, dynamic>.from(i as Map)),
+    ],
+    equipment: readStrings(m['equipment']),
+    steps: [
+      for (final s in m['steps'] as List)
+        RecipeStep.fromMap(Map<String, dynamic>.from(s as Map)),
+    ],
+    checkpoints: [
+      for (final c in m['checkpoints'] as List)
+        CheckpointDef.fromMap(Map<String, dynamic>.from(c as Map)),
+    ],
+    reviewedSubstitutions: [
+      for (final r in (m['reviewedSubstitutions'] as List? ?? const []))
+        ReviewedSubstitution.fromMap(Map<String, dynamic>.from(r as Map)),
+    ],
+    adjustmentLabels: Map<String, String>.from(
+      m['adjustmentLabels'] as Map? ?? {},
+    ),
+  );
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'version': version,
-        'title': title,
-        'summary': summary,
-        'ingredients': [for (final i in ingredients) i.toMap()],
-        'equipment': equipment,
-        'steps': [for (final s in steps) s.toMap()],
-        'checkpoints': [for (final c in checkpoints) c.toMap()],
-        'reviewedSubstitutions': [
-          for (final r in reviewedSubstitutions) r.toMap(),
-        ],
-        'adjustmentLabels': adjustmentLabels,
-      };
+    'id': id,
+    'version': version,
+    'title': title,
+    'summary': summary,
+    'ingredients': [for (final i in ingredients) i.toMap()],
+    'equipment': equipment,
+    'steps': [for (final s in steps) s.toMap()],
+    'checkpoints': [for (final c in checkpoints) c.toMap()],
+    'reviewedSubstitutions': [for (final r in reviewedSubstitutions) r.toMap()],
+    'adjustmentLabels': adjustmentLabels,
+  };
 }
 
 // ---------------------------------------------------------------- session
@@ -303,11 +303,11 @@ class SessionSubstitution {
       );
 
   Map<String, dynamic> toMap() => {
-        'ingredientId': ingredientId,
-        'substitute': substitute,
-        'source': source,
-        'requestId': requestId,
-      };
+    'ingredientId': ingredientId,
+    'substitute': substitute,
+    'source': source,
+    'requestId': requestId,
+  };
 }
 
 class CookingSession {
@@ -326,6 +326,8 @@ class CookingSession {
     this.language = 'en',
     this.timerDeadline,
     this.timerLabel,
+    this.timerId,
+    this.confirmedFacts = const [],
   });
 
   final String id;
@@ -347,6 +349,8 @@ class CookingSession {
   /// Timers store a deadline, never a countdown, so navigation can't reset them.
   final DateTime? timerDeadline;
   final String? timerLabel;
+  final String? timerId;
+  final List<String> confirmedFacts;
 
   CookingSession copyWith({
     Map<String, IngredientStatus>? ingredients,
@@ -358,26 +362,30 @@ class CookingSession {
     String? language,
     Object? timerDeadline = _unset,
     Object? timerLabel = _unset,
-  }) =>
-      CookingSession(
-        id: id,
-        learnerId: learnerId,
-        recipeId: recipeId,
-        recipeVersion: recipeVersion,
-        ingredients: ingredients ?? this.ingredients,
-        substitutions: substitutions ?? this.substitutions,
-        currentStepId: currentStepId ?? this.currentStepId,
-        completedStepIds: completedStepIds ?? this.completedStepIds,
-        revision: revision ?? this.revision,
-        createdAt: createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-        language: language ?? this.language,
-        timerDeadline: identical(timerDeadline, _unset)
-            ? this.timerDeadline
-            : timerDeadline as DateTime?,
-        timerLabel:
-            identical(timerLabel, _unset) ? this.timerLabel : timerLabel as String?,
-      );
+    Object? timerId = _unset,
+    List<String>? confirmedFacts,
+  }) => CookingSession(
+    id: id,
+    learnerId: learnerId,
+    recipeId: recipeId,
+    recipeVersion: recipeVersion,
+    ingredients: ingredients ?? this.ingredients,
+    substitutions: substitutions ?? this.substitutions,
+    currentStepId: currentStepId ?? this.currentStepId,
+    completedStepIds: completedStepIds ?? this.completedStepIds,
+    revision: revision ?? this.revision,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    language: language ?? this.language,
+    timerDeadline: identical(timerDeadline, _unset)
+        ? this.timerDeadline
+        : timerDeadline as DateTime?,
+    timerLabel: identical(timerLabel, _unset)
+        ? this.timerLabel
+        : timerLabel as String?,
+    timerId: identical(timerId, _unset) ? this.timerId : timerId as String?,
+    confirmedFacts: confirmedFacts ?? this.confirmedFacts,
+  );
 
   factory CookingSession.fromMap(String id, Map<String, dynamic> m) =>
       CookingSession(
@@ -386,10 +394,14 @@ class CookingSession {
         recipeId: m['recipeId'] as String,
         recipeVersion: m['recipeVersion'] as int,
         ingredients: {
-          for (final e in Map<String, dynamic>.from(m['ingredients'] as Map? ?? {})
-              .entries)
+          for (final e in Map<String, dynamic>.from(
+            m['ingredients'] as Map? ?? {},
+          ).entries)
             e.key: readEnum(
-                IngredientStatus.values, e.value, IngredientStatus.have),
+              IngredientStatus.values,
+              e.value,
+              IngredientStatus.have,
+            ),
         },
         substitutions: [
           for (final s in (m['substitutions'] as List? ?? const []))
@@ -403,25 +415,27 @@ class CookingSession {
         language: m['language'] as String? ?? 'en',
         timerDeadline: readTimeOrNull(m['timerDeadline']),
         timerLabel: m['timerLabel'] as String?,
+        timerId: m['timerId'] as String?,
+        confirmedFacts: readStrings(m['confirmedFacts']),
       );
 
   Map<String, dynamic> toMap() => {
-        'learnerId': learnerId,
-        'recipeId': recipeId,
-        'recipeVersion': recipeVersion,
-        'ingredients': {
-          for (final e in ingredients.entries) e.key: e.value.name,
-        },
-        'substitutions': [for (final s in substitutions) s.toMap()],
-        'currentStepId': currentStepId,
-        'completedStepIds': completedStepIds,
-        'revision': revision,
-        'createdAt': createdAt,
-        'updatedAt': updatedAt,
-        'language': language,
-        'timerDeadline': timerDeadline,
-        'timerLabel': timerLabel,
-      };
+    'learnerId': learnerId,
+    'recipeId': recipeId,
+    'recipeVersion': recipeVersion,
+    'ingredients': {for (final e in ingredients.entries) e.key: e.value.name},
+    'substitutions': [for (final s in substitutions) s.toMap()],
+    'currentStepId': currentStepId,
+    'completedStepIds': completedStepIds,
+    'revision': revision,
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
+    'language': language,
+    'timerDeadline': timerDeadline,
+    'timerLabel': timerLabel,
+    'timerId': timerId,
+    'confirmedFacts': confirmedFacts,
+  };
 }
 
 // ---------------------------------------------------------------- checkpoints
@@ -462,42 +476,44 @@ class Assessment {
   Assessment copyWith({
     AssessmentOutcome? outcome,
     Object? adjustmentId = _unset,
-  }) =>
-      Assessment(
-        outcome: outcome ?? this.outcome,
-        observations: observations,
-        cue: cue,
-        suggestedAction: suggestedAction,
-        confidence: confidence,
-        adjustmentId: identical(adjustmentId, _unset)
-            ? this.adjustmentId
-            : adjustmentId as String?,
-        outOfScope: outOfScope,
-        outOfScopeReason: outOfScopeReason,
-      );
+  }) => Assessment(
+    outcome: outcome ?? this.outcome,
+    observations: observations,
+    cue: cue,
+    suggestedAction: suggestedAction,
+    confidence: confidence,
+    adjustmentId: identical(adjustmentId, _unset)
+        ? this.adjustmentId
+        : adjustmentId as String?,
+    outOfScope: outOfScope,
+    outOfScopeReason: outOfScopeReason,
+  );
 
   factory Assessment.fromMap(Map<String, dynamic> m) => Assessment(
-        outcome: readEnum(
-            AssessmentOutcome.values, m['outcome'], AssessmentOutcome.uncertain),
-        observations: readStrings(m['observations']),
-        cue: m['cue'] as String? ?? '',
-        suggestedAction: m['suggestedAction'] as String? ?? '',
-        confidence: readEnum(Confidence.values, m['confidence'], Confidence.low),
-        adjustmentId: m['adjustmentId'] as String?,
-        outOfScope: m['outOfScope'] as bool? ?? false,
-        outOfScopeReason: m['outOfScopeReason'] as String?,
-      );
+    outcome: readEnum(
+      AssessmentOutcome.values,
+      m['outcome'],
+      AssessmentOutcome.uncertain,
+    ),
+    observations: readStrings(m['observations']),
+    cue: m['cue'] as String? ?? '',
+    suggestedAction: m['suggestedAction'] as String? ?? '',
+    confidence: readEnum(Confidence.values, m['confidence'], Confidence.low),
+    adjustmentId: m['adjustmentId'] as String?,
+    outOfScope: m['outOfScope'] as bool? ?? false,
+    outOfScopeReason: m['outOfScopeReason'] as String?,
+  );
 
   Map<String, dynamic> toMap() => {
-        'outcome': outcome.name,
-        'observations': observations,
-        'cue': cue,
-        'suggestedAction': suggestedAction,
-        'confidence': confidence.name,
-        'adjustmentId': adjustmentId,
-        'outOfScope': outOfScope,
-        'outOfScopeReason': outOfScopeReason,
-      };
+    'outcome': outcome.name,
+    'observations': observations,
+    'cue': cue,
+    'suggestedAction': suggestedAction,
+    'confidence': confidence.name,
+    'adjustmentId': adjustmentId,
+    'outOfScope': outOfScope,
+    'outOfScopeReason': outOfScopeReason,
+  };
 }
 
 class CheckpointRecord {
@@ -563,27 +579,31 @@ class CheckpointRecord {
         checkpointDefId: m['checkpointDefId'] as String,
         photoJpeg: readBytes(m['photoJpeg']),
         capturedAt: readTime(m['capturedAt']),
-        selfRating:
-            readEnum(SelfRating.values, m['selfRating'], SelfRating.notSure),
+        selfRating: readEnum(
+          SelfRating.values,
+          m['selfRating'],
+          SelfRating.notSure,
+        ),
         sessionRevision: m['sessionRevision'] as int? ?? 0,
         assessment: m['assessment'] == null
             ? null
             : Assessment.fromMap(
-                Map<String, dynamic>.from(m['assessment'] as Map)),
+                Map<String, dynamic>.from(m['assessment'] as Map),
+              ),
         learnerConfirmed: m['learnerConfirmed'] as bool? ?? false,
       );
 
   Map<String, dynamic> toMap() => {
-        'sessionId': sessionId,
-        'stepId': stepId,
-        'checkpointDefId': checkpointDefId,
-        'photoJpeg': photoJpeg,
-        'capturedAt': capturedAt,
-        'selfRating': selfRating.name,
-        'sessionRevision': sessionRevision,
-        'assessment': assessment?.toMap(),
-        'learnerConfirmed': learnerConfirmed,
-      };
+    'sessionId': sessionId,
+    'stepId': stepId,
+    'checkpointDefId': checkpointDefId,
+    'photoJpeg': photoJpeg,
+    'capturedAt': capturedAt,
+    'selfRating': selfRating.name,
+    'sessionRevision': sessionRevision,
+    'assessment': assessment?.toMap(),
+    'learnerConfirmed': learnerConfirmed,
+  };
 }
 
 // ---------------------------------------------------------------- help requests
@@ -610,23 +630,29 @@ extension RequestStatusX on RequestStatus {
 
   /// Board lane for this status.
   String get lane => switch (this) {
-        RequestStatus.submitted || RequestStatus.needsOwner => 'Needs owner',
-        RequestStatus.suggested || RequestStatus.accepted => 'With instructor',
-        RequestStatus.answered => 'Answered',
-        RequestStatus.resolved || RequestStatus.cancelled => 'Resolved',
-      };
+    RequestStatus.submitted || RequestStatus.needsOwner => 'Needs owner',
+    RequestStatus.suggested || RequestStatus.accepted => 'With instructor',
+    RequestStatus.answered => 'Answered',
+    RequestStatus.resolved || RequestStatus.cancelled => 'Resolved',
+  };
 }
 
-enum RequestCategory { technique, substitution, safetyAllergen, equipment, other }
+enum RequestCategory {
+  technique,
+  substitution,
+  safetyAllergen,
+  equipment,
+  other,
+}
 
 extension RequestCategoryX on RequestCategory {
   /// Instructor skill that can own this category.
   String get neededSkill => switch (this) {
-        RequestCategory.technique || RequestCategory.other => Skills.technique,
-        RequestCategory.substitution => Skills.substitutions,
-        RequestCategory.safetyAllergen => Skills.allergens,
-        RequestCategory.equipment => Skills.equipment,
-      };
+    RequestCategory.technique || RequestCategory.other => Skills.technique,
+    RequestCategory.substitution => Skills.substitutions,
+    RequestCategory.safetyAllergen => Skills.allergens,
+    RequestCategory.equipment => Skills.equipment,
+  };
 }
 
 abstract final class Skills {
@@ -652,14 +678,18 @@ class NotifyRecord {
   final String? channel;
 
   factory NotifyRecord.fromMap(Map<String, dynamic> m) => NotifyRecord(
-        state: readEnum(NotifyState.values, m['state'], NotifyState.pending),
-        at: readTimeOrNull(m['at']),
-        error: m['error'] as String?,
-        channel: m['channel'] as String?,
-      );
+    state: readEnum(NotifyState.values, m['state'], NotifyState.pending),
+    at: readTimeOrNull(m['at']),
+    error: m['error'] as String?,
+    channel: m['channel'] as String?,
+  );
 
-  Map<String, dynamic> toMap() =>
-      {'state': state.name, 'at': at, 'error': error, 'channel': channel};
+  Map<String, dynamic> toMap() => {
+    'state': state.name,
+    'at': at,
+    'error': error,
+    'channel': channel,
+  };
 }
 
 class HistoryEntry {
@@ -678,15 +708,22 @@ class HistoryEntry {
   final String? note;
 
   factory HistoryEntry.fromMap(Map<String, dynamic> m) => HistoryEntry(
-        status:
-            readEnum(RequestStatus.values, m['status'], RequestStatus.submitted),
-        at: readTime(m['at']),
-        by: m['by'] as String? ?? 'system',
-        note: m['note'] as String?,
-      );
+    status: readEnum(
+      RequestStatus.values,
+      m['status'],
+      RequestStatus.submitted,
+    ),
+    at: readTime(m['at']),
+    by: m['by'] as String? ?? 'system',
+    note: m['note'] as String?,
+  );
 
-  Map<String, dynamic> toMap() =>
-      {'status': status.name, 'at': at, 'by': by, 'note': note};
+  Map<String, dynamic> toMap() => {
+    'status': status.name,
+    'at': at,
+    'by': by,
+    'note': note,
+  };
 }
 
 class HelpRequest {
@@ -811,147 +848,158 @@ class HelpRequest {
     bool? approvedAsReviewed,
     Map<String, NotifyRecord>? notify,
     List<String>? plusOneLearners,
-  }) =>
-      HelpRequest(
-        id: id,
-        learnerId: learnerId,
-        learnerName: learnerName,
-        sessionId: sessionId,
-        recipeId: recipeId,
-        stepId: stepId,
-        question: question ?? this.question,
-        language: language,
-        trigger: trigger,
-        status: status ?? this.status,
-        nextStep: nextStep ?? this.nextStep,
-        history: history ?? this.history,
-        createdAt: createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-        category: identical(category, _unset)
-            ? this.category
-            : category as RequestCategory?,
-        urgency: urgency ?? this.urgency,
-        summaryForInstructor: identical(summaryForInstructor, _unset)
-            ? this.summaryForInstructor
-            : summaryForInstructor as String?,
-        aiUncertainty: identical(aiUncertainty, _unset)
-            ? this.aiUncertainty
-            : aiUncertainty as String?,
-        englishQuestion: identical(englishQuestion, _unset)
-            ? this.englishQuestion
-            : englishQuestion as String?,
-        details: details ?? this.details,
-        thumbnails: thumbnails ?? this.thumbnails,
-        checkpointIds: checkpointIds,
-        substitutionIngredientId: substitutionIngredientId,
-        proposedSubstitute: proposedSubstitute,
-        suggestedOwnerId: identical(suggestedOwnerId, _unset)
-            ? this.suggestedOwnerId
-            : suggestedOwnerId as String?,
-        suggestedReason: identical(suggestedReason, _unset)
-            ? this.suggestedReason
-            : suggestedReason as String?,
-        ownerId: identical(ownerId, _unset) ? this.ownerId : ownerId as String?,
-        declinedBy: declinedBy ?? this.declinedBy,
-        answerText:
-            identical(answerText, _unset) ? this.answerText : answerText as String?,
-        answeredBy:
-            identical(answeredBy, _unset) ? this.answeredBy : answeredBy as String?,
-        answeredAt: identical(answeredAt, _unset)
-            ? this.answeredAt
-            : answeredAt as DateTime?,
-        approvedAsReviewed: approvedAsReviewed ?? this.approvedAsReviewed,
-        notify: notify ?? this.notify,
-        plusOneLearners: plusOneLearners ?? this.plusOneLearners,
-      );
+  }) => HelpRequest(
+    id: id,
+    learnerId: learnerId,
+    learnerName: learnerName,
+    sessionId: sessionId,
+    recipeId: recipeId,
+    stepId: stepId,
+    question: question ?? this.question,
+    language: language,
+    trigger: trigger,
+    status: status ?? this.status,
+    nextStep: nextStep ?? this.nextStep,
+    history: history ?? this.history,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    category: identical(category, _unset)
+        ? this.category
+        : category as RequestCategory?,
+    urgency: urgency ?? this.urgency,
+    summaryForInstructor: identical(summaryForInstructor, _unset)
+        ? this.summaryForInstructor
+        : summaryForInstructor as String?,
+    aiUncertainty: identical(aiUncertainty, _unset)
+        ? this.aiUncertainty
+        : aiUncertainty as String?,
+    englishQuestion: identical(englishQuestion, _unset)
+        ? this.englishQuestion
+        : englishQuestion as String?,
+    details: details ?? this.details,
+    thumbnails: thumbnails ?? this.thumbnails,
+    checkpointIds: checkpointIds,
+    substitutionIngredientId: substitutionIngredientId,
+    proposedSubstitute: proposedSubstitute,
+    suggestedOwnerId: identical(suggestedOwnerId, _unset)
+        ? this.suggestedOwnerId
+        : suggestedOwnerId as String?,
+    suggestedReason: identical(suggestedReason, _unset)
+        ? this.suggestedReason
+        : suggestedReason as String?,
+    ownerId: identical(ownerId, _unset) ? this.ownerId : ownerId as String?,
+    declinedBy: declinedBy ?? this.declinedBy,
+    answerText: identical(answerText, _unset)
+        ? this.answerText
+        : answerText as String?,
+    answeredBy: identical(answeredBy, _unset)
+        ? this.answeredBy
+        : answeredBy as String?,
+    answeredAt: identical(answeredAt, _unset)
+        ? this.answeredAt
+        : answeredAt as DateTime?,
+    approvedAsReviewed: approvedAsReviewed ?? this.approvedAsReviewed,
+    notify: notify ?? this.notify,
+    plusOneLearners: plusOneLearners ?? this.plusOneLearners,
+  );
 
   factory HelpRequest.fromMap(String id, Map<String, dynamic> m) => HelpRequest(
-        id: id,
-        learnerId: m['learnerId'] as String,
-        learnerName: m['learnerName'] as String? ?? 'Learner',
-        sessionId: m['sessionId'] as String,
-        recipeId: m['recipeId'] as String,
-        stepId: m['stepId'] as String,
-        question: m['question'] as String,
-        language: m['language'] as String? ?? 'en',
-        trigger: readEnum(
-            HandoffTrigger.values, m['trigger'], HandoffTrigger.manual),
-        status:
-            readEnum(RequestStatus.values, m['status'], RequestStatus.submitted),
-        nextStep: m['nextStep'] as String? ?? '',
-        history: [
-          for (final h in (m['history'] as List? ?? const []))
-            HistoryEntry.fromMap(Map<String, dynamic>.from(h as Map)),
-        ],
-        createdAt: readTime(m['createdAt']),
-        updatedAt: readTime(m['updatedAt']),
-        category: m['category'] == null
-            ? null
-            : readEnum(
-                RequestCategory.values, m['category'], RequestCategory.other),
-        urgency: readEnum(Urgency.values, m['urgency'], Urgency.normal),
-        summaryForInstructor: m['summaryForInstructor'] as String?,
-        aiUncertainty: m['aiUncertainty'] as String?,
-        englishQuestion: m['englishQuestion'] as String?,
-        details: readStrings(m['details']),
-        thumbnails: [
-          for (final t in (m['thumbnails'] as List? ?? const [])) readBytes(t),
-        ],
-        checkpointIds: readStrings(m['checkpointIds']),
-        substitutionIngredientId: m['substitutionIngredientId'] as String?,
-        proposedSubstitute: m['proposedSubstitute'] as String?,
-        suggestedOwnerId: m['suggestedOwnerId'] as String?,
-        suggestedReason: m['suggestedReason'] as String?,
-        ownerId: m['ownerId'] as String?,
-        declinedBy: readStrings(m['declinedBy']),
-        answerText: m['answerText'] as String?,
-        answeredBy: m['answeredBy'] as String?,
-        answeredAt: readTimeOrNull(m['answeredAt']),
-        approvedAsReviewed: m['approvedAsReviewed'] as bool? ?? false,
-        notify: {
-          for (final e
-              in Map<String, dynamic>.from(m['notify'] as Map? ?? {}).entries)
-            e.key: NotifyRecord.fromMap(Map<String, dynamic>.from(e.value as Map)),
-        },
-        plusOneLearners: readStrings(m['plusOneLearners']),
-      );
+    id: id,
+    learnerId: m['learnerId'] as String,
+    learnerName: m['learnerName'] as String? ?? 'Learner',
+    sessionId: m['sessionId'] as String,
+    recipeId: m['recipeId'] as String,
+    stepId: m['stepId'] as String,
+    question: m['question'] as String,
+    language: m['language'] as String? ?? 'en',
+    trigger: readEnum(
+      HandoffTrigger.values,
+      m['trigger'],
+      HandoffTrigger.manual,
+    ),
+    status: readEnum(
+      RequestStatus.values,
+      m['status'],
+      RequestStatus.submitted,
+    ),
+    nextStep: m['nextStep'] as String? ?? '',
+    history: [
+      for (final h in (m['history'] as List? ?? const []))
+        HistoryEntry.fromMap(Map<String, dynamic>.from(h as Map)),
+    ],
+    createdAt: readTime(m['createdAt']),
+    updatedAt: readTime(m['updatedAt']),
+    category: m['category'] == null
+        ? null
+        : readEnum(
+            RequestCategory.values,
+            m['category'],
+            RequestCategory.other,
+          ),
+    urgency: readEnum(Urgency.values, m['urgency'], Urgency.normal),
+    summaryForInstructor: m['summaryForInstructor'] as String?,
+    aiUncertainty: m['aiUncertainty'] as String?,
+    englishQuestion: m['englishQuestion'] as String?,
+    details: readStrings(m['details']),
+    thumbnails: [
+      for (final t in (m['thumbnails'] as List? ?? const [])) readBytes(t),
+    ],
+    checkpointIds: readStrings(m['checkpointIds']),
+    substitutionIngredientId: m['substitutionIngredientId'] as String?,
+    proposedSubstitute: m['proposedSubstitute'] as String?,
+    suggestedOwnerId: m['suggestedOwnerId'] as String?,
+    suggestedReason: m['suggestedReason'] as String?,
+    ownerId: m['ownerId'] as String?,
+    declinedBy: readStrings(m['declinedBy']),
+    answerText: m['answerText'] as String?,
+    answeredBy: m['answeredBy'] as String?,
+    answeredAt: readTimeOrNull(m['answeredAt']),
+    approvedAsReviewed: m['approvedAsReviewed'] as bool? ?? false,
+    notify: {
+      for (final e in Map<String, dynamic>.from(
+        m['notify'] as Map? ?? {},
+      ).entries)
+        e.key: NotifyRecord.fromMap(Map<String, dynamic>.from(e.value as Map)),
+    },
+    plusOneLearners: readStrings(m['plusOneLearners']),
+  );
 
   /// Client-writable fields. `notify` is written by Cloud Functions only.
   Map<String, dynamic> toMap() => {
-        'learnerId': learnerId,
-        'learnerName': learnerName,
-        'sessionId': sessionId,
-        'recipeId': recipeId,
-        'stepId': stepId,
-        'question': question,
-        'language': language,
-        'trigger': trigger.name,
-        'status': status.name,
-        'nextStep': nextStep,
-        'history': [for (final h in history) h.toMap()],
-        'createdAt': createdAt,
-        'updatedAt': updatedAt,
-        'category': category?.name,
-        'neededSkill': neededSkill,
-        'urgency': urgency.name,
-        'summaryForInstructor': summaryForInstructor,
-        'aiUncertainty': aiUncertainty,
-        'englishQuestion': englishQuestion,
-        'details': details,
-        'thumbnails': thumbnails,
-        'checkpointIds': checkpointIds,
-        'substitutionIngredientId': substitutionIngredientId,
-        'proposedSubstitute': proposedSubstitute,
-        'suggestedOwnerId': suggestedOwnerId,
-        'suggestedReason': suggestedReason,
-        'ownerId': ownerId,
-        'declinedBy': declinedBy,
-        'answerText': answerText,
-        'answeredBy': answeredBy,
-        'answeredAt': answeredAt,
-        'approvedAsReviewed': approvedAsReviewed,
-        'plusOneLearners': plusOneLearners,
-      };
+    'learnerId': learnerId,
+    'learnerName': learnerName,
+    'sessionId': sessionId,
+    'recipeId': recipeId,
+    'stepId': stepId,
+    'question': question,
+    'language': language,
+    'trigger': trigger.name,
+    'status': status.name,
+    'nextStep': nextStep,
+    'history': [for (final h in history) h.toMap()],
+    'createdAt': createdAt,
+    'updatedAt': updatedAt,
+    'category': category?.name,
+    'neededSkill': neededSkill,
+    'urgency': urgency.name,
+    'summaryForInstructor': summaryForInstructor,
+    'aiUncertainty': aiUncertainty,
+    'englishQuestion': englishQuestion,
+    'details': details,
+    'thumbnails': thumbnails,
+    'checkpointIds': checkpointIds,
+    'substitutionIngredientId': substitutionIngredientId,
+    'proposedSubstitute': proposedSubstitute,
+    'suggestedOwnerId': suggestedOwnerId,
+    'suggestedReason': suggestedReason,
+    'ownerId': ownerId,
+    'declinedBy': declinedBy,
+    'answerText': answerText,
+    'answeredBy': answeredBy,
+    'answeredAt': answeredAt,
+    'approvedAsReviewed': approvedAsReviewed,
+    'plusOneLearners': plusOneLearners,
+  };
 }
 
 // ---------------------------------------------------------------- instructors
@@ -980,7 +1028,8 @@ class Instructor {
 
   bool covers(String skill) => skills.contains(skill);
 
-  Instructor copyWith({bool? available, DateTime? lastAssignedAt}) => Instructor(
+  Instructor copyWith({bool? available, DateTime? lastAssignedAt}) =>
+      Instructor(
         id: id,
         displayName: displayName,
         skills: skills,
@@ -991,22 +1040,21 @@ class Instructor {
       );
 
   factory Instructor.fromMap(String id, Map<String, dynamic> m) => Instructor(
-        id: id,
-        displayName: m['displayName'] as String,
-        skills: readStrings(m['skills']),
-        available: m['available'] as bool? ?? false,
-        role: readEnum(
-            InstructorRole.values, m['role'], InstructorRole.instructor),
-        isDemoData: m['isDemoData'] as bool? ?? true,
-        lastAssignedAt: readTimeOrNull(m['lastAssignedAt']),
-      );
+    id: id,
+    displayName: m['displayName'] as String,
+    skills: readStrings(m['skills']),
+    available: m['available'] as bool? ?? false,
+    role: readEnum(InstructorRole.values, m['role'], InstructorRole.instructor),
+    isDemoData: m['isDemoData'] as bool? ?? true,
+    lastAssignedAt: readTimeOrNull(m['lastAssignedAt']),
+  );
 
   Map<String, dynamic> toMap() => {
-        'displayName': displayName,
-        'skills': skills,
-        'available': available,
-        'role': role.name,
-        'isDemoData': isDemoData,
-        'lastAssignedAt': lastAssignedAt,
-      };
+    'displayName': displayName,
+    'skills': skills,
+    'available': available,
+    'role': role.name,
+    'isDemoData': isDemoData,
+    'lastAssignedAt': lastAssignedAt,
+  };
 }
