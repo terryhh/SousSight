@@ -28,10 +28,21 @@ class DemoLiveMedia implements LiveMedia {
 class DemoLiveTransport implements LiveTransport {
   final _events = StreamController<LiveEvent>.broadcast();
   int _id = 0;
+  String? _stepId;
+
+  void _readStep(String context) {
+    final match = RegExp(r'currentStepId: ([A-Za-z0-9_-]+)')
+        .firstMatch(context);
+    if (match != null) _stepId = match.group(1);
+  }
+
   @override
   Stream<LiveEvent> get events => _events.stream;
   @override
-  Future<void> connect({required String systemInstruction}) async {}
+  Future<void> connect({required String systemInstruction}) async {
+    _readStep(systemInstruction);
+  }
+
   @override
   Future<void> sendAudio(Uint8List pcm16khz) async {}
   @override
@@ -44,6 +55,7 @@ class DemoLiveTransport implements LiveTransport {
   @override
   Future<void> sendText(String text) async {
     if (_events.isClosed) return;
+    _readStep(text);
     final lower = text.toLowerCase();
     Map<String, dynamic> ui = demoCookingUi;
     String reply =
@@ -81,7 +93,7 @@ class DemoLiveTransport implements LiveTransport {
       LiveToolCall(
         name: 'show_cooking_ui',
         id: 'demo-${_id++}',
-        arguments: {'uiJson': jsonEncode(ui)},
+        arguments: {'stepId': _stepId, 'uiJson': jsonEncode(ui)},
       ),
     );
     _events.add(const LiveTurnComplete());
