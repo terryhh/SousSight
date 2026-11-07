@@ -60,13 +60,16 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Read initial project billing status | Read-only; no billing change | Not inspected | At that time no billing account was linked; superseded by the approved link below |
 | 2026-11-07 | Linked billing after explicit account-specific approval; configured/read back $20 gross alerts and $15/$2/$1 service caps | No inference request in this step | Not inspected | Caps CONFIGURED, not a hard total ceiling |
 | 2026-11-07 | Registered production App Check, stored Gemini backend key, enabled deployment APIs and configured WIF identity | Secret versions and later attestation/build usage can incur charges | Not inspected | Secret values remain out of Git/browser; no service-account keys |
-
 | 2026-11-07 | Real Auth/App Check and AI Logic request smoke | Metered 5 prompt / 17 total tokens; monetary charge not calculated or reconciled | Not inspected | Request succeeded; response content not asserted; no Live audio/video or Vonage send |
 | 2026-11-07 | Approved actAs access on App Engine default runtime account; reran GitHub production deployment (attempt 2) | Build, artifact, deployment and runtime charges may occur; private Actions minutes separate | Not inspected | Attempt failed on missing Vonage secret; both default runtime accounts retain pre-existing Editor roles |
-
 | 2026-11-07 | Enabled firebaseextensions.googleapis.com for Firebase CLI discovery | API enablement only; no extension installed | Not inspected | No Firebase Extensions workload created |
 | 2026-11-07 | Temporarily disabled GitHub production deployment gate while separate-entrypoint fix is reviewed | Prevents repeated known-failing deployments; validation can continue | Not inspected | Re-enable only as part of the reviewed fix rollout |
 | 2026-11-07 | Canceled redundant main workflow run 42420643671 while deployment isolation is fixed | Avoids repeated private GitHub Actions usage; no estimate of incurred minutes | Not inspected | No successful production deployment or message send claimed |
+
+| 2026-11-07 | Live-only rollout 42421304400 passed secret discovery, then stopped because Cloud Billing API was disabled | Private Actions minutes used; no successful function or Hosting release established | Not inspected | Enabled cloudbilling.googleapis.com with setup identity; no API-enable role added to deployer; next rollout 42421669752 started |
+| 2026-11-07 | Chrome rehearsal check at 360×740: layout, countdown and dinner review | Local simulated build only; no model call or message send | Not inspected | Timer visibly advanced from 4:59 to 4:48; physical camera/audio and hosted App Check remain unverified |
+
+| 2026-11-07 | One real Firebase AI Logic Google Search request with temporary Auth/App Check test identities | gemini-3.8-flash: 32 prompt + 172 candidate = 204 total tokens; search grounding may add charges, amount unreconciled | Not inspected | Nonempty answer, 3 source chunks and 5 supported segments returned; temporary identities removed; provider test, not physical UI acceptance |
 
 ## Planning estimate — not a quote or cap
 

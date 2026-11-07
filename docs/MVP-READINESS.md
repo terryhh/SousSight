@@ -17,6 +17,14 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 - GitHub OIDC is scoped to this repository/main/approved events, with a main-only production environment. Both pre-existing default runtime accounts have Editor; the approved actAs grants mean the effective deployment path is not globally least privilege. See `docs/AUTODEPLOY.md`.
 - Interactive browser verification was blocked by an unavailable browser access host and, in a separate attempt, denied native Chrome permission. Neither attempt establishes browser acceptance.
 
+### Latest verification
+
+Native Chrome subsequently worked: the local simulated mobile build fit a 360×740 DevTools viewport; a timer visibly counted down and the dinner-review dialog opened cleanly. No message was sent. Physical Android camera/audio and hosted production behavior remain unverified.
+
+Live-only rollout 42421304400 passed function secret discovery but stopped on a disabled Cloud Billing API. That API was enabled using setup credentials; rollout 42421669752 is underway. A successful release is still unverified.
+
+A subsequent real Firebase AI Logic request using `gemini-3.8-flash` with Google Search returned nonempty answer text, 3 source chunks and 5 supported segments (32 prompt + 172 candidate = 204 total tokens). Temporary anonymous Auth and debug App Check registrations were removed. This verifies the authenticated provider response and grounding metadata, not the complete research UI or production reCAPTCHA path.
+
 ## Live acceptance sequence
 
 1. Confirm anonymous Authentication, Firestore and production reCAPTCHA Enterprise App Check are configured for the Hosting origin. Configure backend Gemini credentials and the selected model/API version; keep credentials out of browser assets.
