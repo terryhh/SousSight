@@ -6,6 +6,8 @@
 - Use current Google capabilities, verified against primary documentation and installed SDK APIs. Keep model/API versions configurable. Never claim a live service was tested when only fakes or static checks ran.
 - Work in parallel with isolated branches/worktrees and clear file ownership. Use stacked PRs for all work. Do not silently stop at a plan.
 - Before starting work, check GitHub card ownership. Do not take over another person’s assigned work without explicit user authorization. Jenna (`jennajh`) owns SS-005 and its research-panel implementation: `lib/research/**`, `test/research/**`, and `lib/main_research_demo.dart`. Leave that work and those files to her; coordinate shared interfaces without implementing her task.
+- Every backlog card needs an actual GitHub assignee, not just owner text. Keep the manifest assignee explicit; fill unassigned cards and preserve existing human assignments.
+- The MVP delivery target is Chrome on Android and desktop web. APK/native packaging is tabled unless Terry explicitly reopens it; do not create APK work by default.
 - Credentials stay out of Git and browser bundles. Clearly label simulated demo behavior.
 
 The user's November 7 corrections supersede the older instructor-centric handoff and design.

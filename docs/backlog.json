@@ -23,7 +23,8 @@
       "evidence": [
         "2026-11-07: Anonymous Auth enabled; tested private Firestore rules and indexes deployed to devfest-flutter-a59e8. Firebase AI Logic and Gemini Developer APIs enabled; AI Logic App Check enforcement verified ENFORCED.",
         "2026-11-07: Production web App Check provider and hosted real-service verification remain pending."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-002",
@@ -44,7 +45,8 @@
       ],
       "evidence": [
         "Live implementation committed locally at 451fd2a; real service/device testing remains open."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-003",
@@ -65,7 +67,8 @@
       ],
       "evidence": [
         "GenUI workspace and timer code at feb9542; cook clarification correction at a60db93; learner integration is ongoing."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-004",
@@ -86,7 +89,8 @@
       ],
       "evidence": [
         "lib/core/cooking_research.dart contract is being integrated; provider implementation and real grounded-response verification are ongoing."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-005",
@@ -105,7 +109,8 @@
       "dependsOn": [],
       "evidence": [
         "Assignment prepared in docs/handoffs/AGY-COOKING-RESEARCH.md; sister implementation has not been observed. Fake clients allow work before SS-004 is ready."
-      ]
+      ],
+      "assignee": "jennajh"
     },
     {
       "id": "SS-006",
@@ -127,7 +132,8 @@
       ],
       "evidence": [
         "Deadline-based timer and generated timer component at feb9542; lifecycle and real watcher behavior remain unverified."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-007",
@@ -150,7 +156,8 @@
       ],
       "evidence": [
         "Backend at 527034a; 19 combined backend Node tests passed. No real message was sent or backend deployed."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-008",
@@ -172,7 +179,8 @@
       "evidence": [
         "2026-11-07: Reproducible Firebase dependency lockfile and validated Live model/API configuration merged in PR #24. All 21 backend tests pass on Node 22; installed Firebase function exports load.",
         "2026-11-07: Backend deployment and a real ephemeral-token/Gemini connection remain pending."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-009",
@@ -192,7 +200,8 @@
       "evidence": [
         "2026-11-07: All 10 real Firestore emulator security scenarios pass; existing rules compile unchanged. Private rules and indexes deployed successfully to devfest-flutter-a59e8.",
         "Production client/device behavior is tracked separately; emulator results do not establish the complete live MVP."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-010",
@@ -222,7 +231,8 @@
       "evidence": [
         "2026-11-07: 81 Flutter tests, Flutter analysis, 10 Firestore emulator security tests, and 3 browser-media tests pass. Rehearsal web build and Wasm dry run pass.",
         "2026-11-07: Actual phone/desktop camera, microphone, Gemini, production App Check and Vonage checks remain pending."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-011",
@@ -242,7 +252,8 @@
       "evidence": [
         "2026-11-07: Prepared stack PRs #7\u2013#12, MVP validation #24, cleanup #25 and infrastructure ledger/setup #28 merged. Project cards published, including cost ledger #26 and teardown #27.",
         "Ongoing new-work cards and PRs remain part of the delivery workflow; a merged implementation is not proof of live-service completion."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-012",
@@ -264,7 +275,8 @@
       ],
       "evidence": [
         "Submission and recorded demo have not been verified."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-013",
@@ -284,7 +296,8 @@
       ],
       "evidence": [
         "Structured assessment client at aded94a; target assets were placeholder images in the source handoff. Real image quality/model behavior is unverified."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-014",
@@ -305,7 +318,8 @@
         "2026-11-07: User explicitly approved linking My Billing Account and a $20 monthly budget before credits, accepting delayed cap enforcement. Billing linked successfully.",
         "2026-11-07: API read-back confirms total gross project alert budget $20/month; Gemini $15, Cloud Run $2 and Cloud Run functions $1 monthly service caps CONFIGURED. This is not a hard total spending ceiling; some infrastructure remains uncapped.",
         "$300 welcome-credit and $10 Developer Program benefit balances, scope, redemption and expiry remain unverified."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-015",
@@ -326,7 +340,8 @@
       ],
       "evidence": [
         "Teardown planning requested; no teardown executed."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-016",
@@ -346,7 +361,8 @@
       "dependsOn": [],
       "evidence": [
         "2026-11-07: User selected GitHub Actions for CD; workflow and scoped Google identity setup are in progress. No successful production workflow claimed."
-      ]
+      ],
+      "assignee": "terryhh"
     },
     {
       "id": "SS-017",
@@ -367,6 +383,27 @@
         "2026-11-07: User explicitly approved linking My Billing Account and a $20 monthly budget before credits, accepting delayed cap enforcement. Billing linked successfully.",
         "2026-11-07: API read-back confirms total gross project alert budget $20/month; Gemini $15, Cloud Run $2 and Cloud Run functions $1 monthly service caps CONFIGURED. This is not a hard total spending ceiling; some infrastructure remains uncapped.",
         "$300 welcome-credit and $10 Developer Program benefit balances, scope, redemption and expiry remain unverified."
+      ],
+      "assignee": "terryhh"
+    },
+    {
+      "id": "SS-018",
+      "priority": "P0",
+      "title": "Preserve explicit GitHub card assignees in backlog publishing",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Persist actual GitHub assignees for every backlog card. New issues use the manifest assignee; only existing unassigned issues are filled. Preserve any human assignment, including Jenna\u2019s work.",
+      "acceptance": [
+        "Every manifest task names one GitHub assignee; SS-005 is jennajh and other current tasks are terryhh.",
+        "New issues are created assigned; existing unassigned issues receive their configured assignee after a fresh ownership check.",
+        "Existing nonempty assignments and human issue-body edits are preserved.",
+        "Meaningful publisher tests pass and the PR is merged only after CI passes."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Publisher changes and ownership-preservation tests prepared; parent confirmed all existing project cards now have actual assignees."
       ]
     }
   ]

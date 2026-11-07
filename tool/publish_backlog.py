@@ -6,6 +6,8 @@ manifest. Requires gh authentication with repository and project access. Run one
 publisher per repository; a local flock prevents concurrent runs on this machine.
 Stable issue markers make interrupted runs resumable. Existing issue bodies are
 preserved; project Status is synchronized from the manifest on each apply.
+New issues use the manifest assignee. Existing human assignments are preserved;
+only unassigned issues are filled, after rechecking their current assignment.
 """
 
 import argparse
@@ -80,6 +82,10 @@ def load_manifest(path):
         for field in ("title", "owner", "description"):
             if not isinstance(task.get(field), str) or not task[field].strip():
                 raise PublishError(f"Missing {field} for {task_id}.")
+        assignee = task.get("assignee")
+        if (not isinstance(assignee, str) or len(assignee) > 39
+                or not re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", assignee)):
+            raise PublishError(f"Invalid or missing GitHub assignee for {task_id}.")
         for field in ("acceptance", "dependsOn", "evidence"):
             if not isinstance(task.get(field), list) or not all(isinstance(s, str) for s in task[field]):
                 raise PublishError(f"Invalid {field} for {task_id}.")
@@ -190,7 +196,7 @@ def publish(manifest, *, gh=None, apply=False, project_number=None, output=print
     if not apply:
         output(f"DRY RUN: {manifest['repository']} → {manifest['projectOwner']}/{manifest['projectTitle']} (no network or writes)")
         for task in tasks:
-            output(f"{task['id']} [{task['priority']}] {task['status']} — {task['title']} — {task['owner']}")
+            output(f"{task['id']} [{task['priority']}] {task['status']} — {task['title']} — {task['owner']} (@{task['assignee']})")
         output("Run with --apply after checking the manifest; optionally select --project-number N.")
         return
     gh = gh or Gh()
@@ -202,13 +208,17 @@ def publish(manifest, *, gh=None, apply=False, project_number=None, output=print
         if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
             raise PublishError("Invalid paginated issue listing.")
         issues = [issue for page in pages for issue in page if "pull_request" not in issue]
-        urls = {}
+        urls, existing = {}, {}
         for task in tasks:
             matches = [issue for issue in issues if marker(task["id"]) in (issue.get("body") or "")]
             if len(matches) > 1:
                 raise PublishError(f"Multiple issues contain {task['id']}; resolve duplicates before publishing.")
             if matches:
-                urls[task["id"]] = matches[0]["html_url"]
+                issue = matches[0]
+                if not isinstance(issue.get("assignees"), list):
+                    raise PublishError("Issue assignment metadata is incomplete; stopped before writes.")
+                urls[task["id"]] = issue["html_url"]
+                existing[task["id"]] = issue
         items = complete_page(gh.run([
             "project", "item-list", str(project["number"]), "--owner", owner,
             "--format", "json", "--limit", "1000",
@@ -226,6 +236,7 @@ def publish(manifest, *, gh=None, apply=False, project_number=None, output=print
                         "issue", "create", "--repo", repo,
                         "--title", f"[{task['priority']}] {task_id}: {task['title']}",
                         "--body-file", body_path,
+                        "--assignee", task["assignee"],
                     ], json_output=False)
                 finally:
                     if body_path:
@@ -234,6 +245,16 @@ def publish(manifest, *, gh=None, apply=False, project_number=None, output=print
             url = urls[task_id]
             if not re.fullmatch(r"https://github\.com/" + re.escape(repo) + r"/issues/[0-9]+", url):
                 raise PublishError("Issue URL did not match the intended repository; stopped.")
+            if task_id in existing and not existing[task_id]["assignees"]:
+                # A person may have claimed the card since the initial listing.
+                current = gh.run(["issue", "view", url, "--repo", repo, "--json", "assignees"])
+                if not isinstance(current.get("assignees"), list):
+                    raise PublishError("Current issue assignment metadata is incomplete; stopped.")
+                if not current["assignees"]:
+                    gh.run([
+                        "issue", "edit", url, "--repo", repo,
+                        "--add-assignee", task["assignee"],
+                    ], json_output=False)
             item_id = item_ids.get(url)
             if not item_id:
                 item = gh.run([
