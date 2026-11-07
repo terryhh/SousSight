@@ -1,5 +1,5 @@
 name: soussight
-description: "A new Flutter project."
+description: "A live cooking coach with Gemini vision, voice, and generative Flutter UI."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -43,6 +43,11 @@ dependencies:
   image: ^4.12.0
   uuid: ^4.6.0
   collection: ^1.19.1
+  genui: ^0.10.4
+  a2ui_core: ^0.1.1
+  json_schema_builder: ^0.1.3
+  web_socket_channel: ^3.0.3
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
