@@ -3,6 +3,21 @@
 Owner: Terry (`terryhh`), with Codex maintaining evidence during setup and operation.
 Project: `devfest-flutter-a59e8`. Currency: USD. Last reviewed: November 7, 2026.
 
+## Vonage trial credit
+
+2026-11-07: Terry reported a successful Vonage trial SMS and a balance change
+from approximately $2.00 to $1.99 (approximately $0.01 consumed). This is
+user-reported provider/dashboard evidence, not an independently inspected bill
+or a verified SousSight endpoint send. Exact current balance after any further
+user tests is unknown. No credentials or recipient numbers are recorded here.
+
+Terry requests trial-only messaging: no paid account upgrade or top-up. Use
+simulated transport while building and reserve credit for occasional explicitly
+authorized, cook-reviewed tests. `DINNER_CHANNEL=sms` has been configured;
+readiness and sending remain disabled. The sender compatibility change uses
+local automated tests only and causes no provider calls. The Google infrastructure
+authorization below is separate from Vonage trial credit.
+
 ## Current authorization
 
 Terry subsequently authorized a **$20 monthly SousSight budget before credits** and continued infrastructure/CD setup, accepting the previously explained delayed cap enforcement. Use eligible credits first. Configure project-wide alerts and supported service caps before paid workloads. This supersedes the earlier strict $0 instruction below; it does not authorize buying Gemini prepaid credit or changing unrelated projects. Controls are now configured and read back: whole-project gross alerts at $20/month; Gemini Developer API cap $15, Cloud Run cap $2, Cloud Run functions cap $1. The $2 remainder is monitored headroom for other infrastructure, not an enforced cap.
