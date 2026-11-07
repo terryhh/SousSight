@@ -62,10 +62,16 @@ class CookingCoordinator extends ChangeNotifier {
       if (session?.ingredients[ingredient.id] == IngredientStatus.have ||
           session?.ingredients[ingredient.id] == IngredientStatus.substituted)
         ingredient.name,
+    for (final entry
+        in session?.ingredients.entries ??
+            const <MapEntry<String, IngredientStatus>>[])
+      if (entry.value != IngredientStatus.missing &&
+          !recipe.ingredients.any((ingredient) => ingredient.id == entry.key))
+        entry.key.replaceAll('_', ' '),
   ];
   String get cookingContext =>
       '''
-Recipe and reviewed guidance: ${jsonEncode(recipe.toMap())}
+Recipe data for this cooking session: ${jsonEncode(recipe.toMap())}
 Current step: ${step.id}.
 Ingredients the cook confirmed: ${jsonEncode(confirmedIngredients)}.
 Other cook-confirmed facts: ${jsonEncode(session?.confirmedFacts ?? [])}.
@@ -337,7 +343,8 @@ $cookingUiInstructions
       final result = await research.research(
         CookingResearchQuery(
           question: question,
-          currentStep: '${step.title}: ${step.instruction}',
+          currentStep:
+              '${step.title}: ${step.instruction}. Cook-confirmed context: ${jsonEncode(session?.confirmedFacts ?? [])}',
           confirmedIngredients: confirmedIngredients,
         ),
       );
