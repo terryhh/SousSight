@@ -455,6 +455,28 @@
         "2026-11-07: PR #37 (6e10262) introduces separate deployment entrypoints. All 23 backend tests pass locally, including installed Firebase SDK manifest discovery. CI and deployed-run verification remain pending.",
         "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets."
       ]
+    },
+    {
+      "id": "SS-021",
+      "title": "Set up Vonage account and delivery configuration",
+      "priority": "P0",
+      "owner": "Jenna (jennajh)",
+      "assignee": "jennajh",
+      "status": "Todo",
+      "verified": false,
+      "description": "Set up the Vonage account and delivery configuration for reviewed dinner-ready messages. Terry explicitly assigned this provider setup to Jenna. SS-007 remains Terry/Codex integration work. Share only secret locations, never credentials or private recipient details.",
+      "acceptance": [
+        "Confirm the supported channel (currently WhatsApp), sending identity, test recipient, and any required Vonage account/channel approval.",
+        "Configure real `VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM`, and `VONAGE_ALLOWED_TO` in Google Secret Manager for `devfest-flutter-a59e8`; share secret locations only, never values in GitHub or browser code.",
+        "Document applicable Vonage charges/free credits and any sender/channel restrictions before a paid test.",
+        "Coordinate with Terry on deployment readiness. Keep `DINNER_SERVICE_READY=false` until prerequisites are verified and `ENABLE_DINNER_MESSAGES=false` until sending is explicitly authorized.",
+        "After authorization, verify one cook-reviewed test message and record its result without credentials or private recipient details. Never send automatically or claim a disabled send succeeded."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Issue #39 created and assigned jennajh with project status Backlog; assigned does not mean started.",
+        "DINNER_SERVICE_READY and ENABLE_DINNER_MESSAGES remain false until their respective prerequisites and authorization are satisfied. No automatic or unreviewed send is authorized."
+      ]
     }
   ]
 }

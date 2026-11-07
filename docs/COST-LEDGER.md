@@ -36,7 +36,7 @@ Sources: [Google Cloud trial](https://cloud.google.com/signup-faqs), [Gemini bil
 | Hosting | Default site exists; root returned 404 before setup | Storage and outbound transfer | Free allowance then eligible cloud billing; no production web release made in this setup |
 | Cloud Functions `liveToken`, `dinnerReady` | Deployment attempt 2 failed on missing VONAGE_API_KEY despite a Live-only selection; no successful function deployment verified yet | Invocations, compute, network, build/artifact storage and logs | Billing enabled; credit coverage remains unverified |
 | Secret Manager | Enabled; Gemini-only server key stored as GEMINI_API_KEY without printing or writing the value to disk | Active versions and access operations | Billing enabled; credit coverage remains unverified |
-| Vonage | App sending disabled by default; no credentials or paid sends configured in this setup | Channel/recipient-specific message charges, sender fees | Google credits do not establish Vonage coverage; keep disabled |
+| Vonage | App sending disabled; Jenna owns SS-021 provider setup (Backlog); no credentials or paid sends configured in this setup | Channel/recipient-specific message charges, sender fees | Google credits do not establish Vonage coverage; keep disabled |
 | Local test/runtime resources | Temporary Java, emulator tests and simulated local web server | Local compute only; synthetic emulator project | Not a cloud deployment or billable service verification |
 
 ## GitHub Actions infrastructure

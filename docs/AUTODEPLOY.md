@@ -43,6 +43,8 @@ Use repository or `production` environment variables for values consumed by depl
 | `DINNER_CHANNEL` | Optional; `whatsapp`; `sms` requires separately configured sender/registration |
 | `ENABLE_DINNER_MESSAGES` | Optional; `false`; set `true` only after approved Vonage configuration and reviewed-send validation |
 
+Jenna owns provider/credential setup under [SS-021](https://github.com/terryhh/SousSight/issues/39); assignment does not authorize a send. SS-007 remains the app/backend integration task.
+
 Until `DINNER_SERVICE_READY=true`, CI selects the Live-only package entrypoint, omits the dinner function from deployment and removes its Hosting rewrite from the temporary deployment configuration. A function-name filter alone is insufficient: Firebase discovers secrets from the imported source graph before filtering deployment targets. The Live-only entrypoint must not import the dinner module or declare its Vonage secrets. When dinner is ready, CI uses the full index instead. Runtime exports do not depend on a special environment flag, and no dummy credentials are introduced. Dinner messaging is unavailable, not simulated; no credentials are fabricated. This leaves a recorded MVP gap until real Vonage setup is complete. Switching the flag off later does not delete an already-deployed function; use the shutdown plan for that.
 
 The workflow writes public browser configuration to ignored `dart_defines.local.json` and non-secret backend parameters to ignored `functions/.env.devfest-flutter-a59e8`. It fixes allowed origins to the project's two Hosting domains. No local debug token or developer config is copied into CI. A fresh build is created before Google authentication; no credentials or production artifacts are uploaded as workflow artifacts.
