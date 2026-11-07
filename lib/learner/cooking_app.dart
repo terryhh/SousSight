@@ -193,59 +193,66 @@ class _CookingScreenState extends State<CookingScreen>
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1320),
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 14),
-                  child: _header(),
+          child: Column(
+            children: [
+              Expanded(
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 22, 24, 14),
+                        child: _header(),
+                      ),
+                    ),
+                    if (widget.isDemo)
+                      SliverToBoxAdapter(
+                        child: _banner(
+                          'Rehearsal mode · Camera, voice, and AI responses are simulated. No messages are sent.',
+                          Icons.science_outlined,
+                        ),
+                      ),
+                    if (cook.loading)
+                      const SliverFillRemaining(
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+                        sliver: SliverToBoxAdapter(
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final narrow = constraints.maxWidth < 850;
+                              final left = _cameraColumn(
+                                includeConversation: !narrow,
+                              );
+                              final right = _workspace();
+                              if (narrow) {
+                                return Column(
+                                  children: [
+                                    left,
+                                    const SizedBox(height: 24),
+                                    right,
+                                    const SizedBox(height: 24),
+                                    _conversation(),
+                                  ],
+                                );
+                              }
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(flex: 11, child: left),
+                                  const SizedBox(width: 28),
+                                  Expanded(flex: 10, child: right),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              if (widget.isDemo)
-                SliverToBoxAdapter(
-                  child: _banner(
-                    'Rehearsal mode · Camera, voice, and AI responses are simulated. No messages are sent.',
-                    Icons.science_outlined,
-                  ),
-                ),
-              if (cook.loading)
-                const SliverFillRemaining(
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-                  sliver: SliverToBoxAdapter(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final narrow = constraints.maxWidth < 850;
-                        final left = _cameraColumn(
-                          includeConversation: !narrow,
-                        );
-                        final right = _workspace();
-                        if (narrow) {
-                          return Column(
-                            children: [
-                              left,
-                              const SizedBox(height: 24),
-                              right,
-                              const SizedBox(height: 24),
-                              _conversation(),
-                            ],
-                          );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 11, child: left),
-                            const SizedBox(width: 28),
-                            Expanded(flex: 10, child: right),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
+              if (!cook.loading) _controlDock(),
             ],
           ),
         ),
@@ -432,32 +439,6 @@ class _CookingScreenState extends State<CookingScreen>
         spacing: 10,
         runSpacing: 10,
         children: [
-          FilledButton.icon(
-            onPressed: cook.live.status == LiveCookingStatus.connecting
-                ? null
-                : () => cook.live.isActive ? cook.live.stop() : cook.connect(),
-            icon: Icon(
-              cook.live.isActive ? Icons.stop_rounded : Icons.videocam_outlined,
-            ),
-            label: Text(
-              cook.live.isActive
-                  ? 'End live session'
-                  : widget.isDemo
-                  ? 'Start rehearsal'
-                  : 'Cook with me',
-            ),
-          ),
-          if (cook.live.isActive)
-            OutlinedButton.icon(
-              onPressed: () =>
-                  cook.live.setMicrophoneMuted(!cook.live.microphoneMuted),
-              icon: Icon(
-                cook.live.microphoneMuted
-                    ? Icons.mic_off_outlined
-                    : Icons.mic_none,
-              ),
-              label: Text(cook.live.microphoneMuted ? 'Unmute' : 'Mute'),
-            ),
           OutlinedButton.icon(
             onPressed: cook.live.watchGoal == null
                 ? cook.startWatch
@@ -513,40 +494,113 @@ class _CookingScreenState extends State<CookingScreen>
             ),
           ),
         ),
-      const SizedBox(height: 16),
-      TextField(
-        controller: _message,
-        minLines: 1,
-        maxLines: 4,
-        maxLength: 1000,
-        onSubmitted: (_) => _send(),
-        decoration: InputDecoration(
-          counterText: '',
-          hintText: cook.cookQuestion == null
-              ? 'Ask a cooking question…'
-              : 'Your answer to the coach…',
-          suffixIcon: IconButton(
-            onPressed: _messagePending ? null : _send,
-            icon: const Icon(Icons.arrow_upward_rounded),
-            tooltip: 'Send message',
-          ),
-        ),
-      ),
-      const SizedBox(height: 12),
-      TextButton.icon(
-        onPressed: () {
-          final question = _message.text.trim();
-          if (question.isNotEmpty) {
-            unawaited(cook.researchQuestionNow(question));
-          } else {
-            _message.text =
-                'Can I use vinegar instead of lemon in this recipe?';
-          }
-        },
-        icon: const Icon(Icons.travel_explore, size: 18),
-        label: const Text('Research a cooking question'),
-      ),
     ],
+  );
+
+  Widget _controlDock() => Material(
+    key: const ValueKey('cooking-control-dock'),
+    color: Theme.of(context).colorScheme.surface,
+    elevation: 8,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    widget.isDemo
+                        ? (cook.live.isActive
+                              ? 'Rehearsal on'
+                              : 'Rehearsal ready')
+                        : (cook.live.isActive
+                              ? _liveLabel
+                              : 'Camera and microphone off'),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (cook.live.isActive)
+                IconButton(
+                  key: const ValueKey('microphone-toggle'),
+                  onPressed: () =>
+                      cook.live.setMicrophoneMuted(!cook.live.microphoneMuted),
+                  icon: Icon(
+                    cook.live.microphoneMuted
+                        ? Icons.mic_off_outlined
+                        : Icons.mic_none,
+                  ),
+                  tooltip: cook.live.microphoneMuted
+                      ? 'Unmute microphone'
+                      : 'Mute microphone',
+                ),
+              Tooltip(
+                message: cook.live.isActive
+                    ? 'End live session'
+                    : (widget.isDemo ? 'Start rehearsal' : 'Cook with me'),
+                child: FilledButton.icon(
+                  key: const ValueKey('live-session-toggle'),
+                  onPressed: () =>
+                      cook.live.isActive ? cook.live.stop() : cook.connect(),
+                  icon: Icon(
+                    cook.live.isActive
+                        ? Icons.stop_rounded
+                        : Icons.videocam_outlined,
+                  ),
+                  label: Text(cook.live.isActive ? 'Stop' : 'Start'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('cooking-message-input'),
+                  controller: _message,
+                  minLines: 1,
+                  maxLines: 2,
+                  maxLength: 1000,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: cook.cookQuestion == null
+                        ? 'Ask the coach…'
+                        : 'Your answer…',
+                    suffixIcon: IconButton(
+                      onPressed: _messagePending ? null : _send,
+                      icon: const Icon(Icons.arrow_upward_rounded),
+                      tooltip: 'Send message',
+                    ),
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () {
+                  final question = _message.text.trim();
+                  if (question.isNotEmpty) {
+                    unawaited(cook.researchQuestionNow(question));
+                  } else {
+                    _message.text =
+                        'Can I use vinegar instead of lemon in this recipe?';
+                  }
+                },
+                icon: const Icon(Icons.travel_explore),
+                tooltip: 'Research a cooking question',
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
   );
 
   String get _liveLabel => switch (cook.live.status) {
