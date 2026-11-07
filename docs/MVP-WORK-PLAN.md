@@ -14,18 +14,18 @@ Jenna owns `lib/research/**`, `test/research/**`, `lib/main_research_demo.dart`,
 
 ## Complete board map
 
-Each linked card contains acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
+The 25 linked cards contain acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
 
 | Card | Owner | State | Completion dependencies |
 | --- | --- | --- | --- |
-| [SS-001: Configure Firebase, App Check and Gemini for the real demo](https://github.com/terryhh/SousSight/issues/4) | @terryhh | InProgress | None |
+| [SS-001: Configure Firebase, App Check and Gemini for the real demo](https://github.com/terryhh/SousSight/issues/4) | @terryhh | Done | None |
 | [SS-002: Verify live camera vision and two-way voice with Gemini](https://github.com/terryhh/SousSight/issues/6) | @terryhh | InProgress | SS-001, SS-008 |
 | [SS-003: Integrate Gemini-generated cooking panels and cook clarification](https://github.com/terryhh/SousSight/issues/13) | @terryhh | InProgress | SS-002 |
-| [SS-004: Implement source-backed cooking research and substitutions](https://github.com/terryhh/SousSight/issues/14) | @terryhh | InProgress | SS-001 |
+| [SS-004: Implement source-backed cooking research and substitutions](https://github.com/terryhh/SousSight/issues/14) | @terryhh | Done | SS-001 |
 | [SS-005: AGY: build the grounded answer and substitution panel](https://github.com/terryhh/SousSight/issues/15) | @jennajh | Backlog | None |
 | [SS-006: Finish persistent timers and opt-in visible-change alarms](https://github.com/terryhh/SousSight/issues/16) | @terryhh | InProgress | SS-002, SS-003 |
 | [SS-007: Connect reviewed dinner-ready messages through Vonage](https://github.com/terryhh/SousSight/issues/17) | @terryhh | InProgress | SS-001, SS-003, SS-021 |
-| [SS-008: Deploy and smoke-test protected ephemeral Live tokens](https://github.com/terryhh/SousSight/issues/5) | @terryhh | InProgress | SS-001 |
+| [SS-008: Deploy and smoke-test protected ephemeral Live tokens](https://github.com/terryhh/SousSight/issues/5) | @terryhh | Done | SS-001 |
 | [SS-009: Compile and verify private cooking Firestore rules](https://github.com/terryhh/SousSight/issues/18) | @terryhh | Done | None |
 | [SS-010: Run phone, desktop and failure-path integration checks](https://github.com/terryhh/SousSight/issues/20) | @terryhh | InProgress | SS-002, SS-003, SS-004, SS-005, SS-006, SS-007, SS-008, SS-009, SS-013, SS-023 |
 | [SS-011: Publish the stacked PRs and populate the SousSight project](https://github.com/terryhh/SousSight/issues/21) | @terryhh | Done | None |
@@ -33,7 +33,7 @@ Each linked card contains acceptance criteria and dated evidence; `docs/backlog.
 | [SS-013: Replace checkpoint placeholders with real visual examples](https://github.com/terryhh/SousSight/issues/19) | @terryhh | InProgress | SS-001, SS-022 |
 | [SS-014: Maintain infrastructure cost and credit ledger](https://github.com/terryhh/SousSight/issues/26) | @terryhh | InProgress | None |
 | [SS-015: Review and execute infrastructure teardown after the demo](https://github.com/terryhh/SousSight/issues/27) | @terryhh | Backlog | SS-014 |
-| [SS-016: Deploy merged main through GitHub Actions](https://github.com/terryhh/SousSight/issues/29) | @terryhh | InProgress | SS-020 |
+| [SS-016: Deploy merged main through GitHub Actions](https://github.com/terryhh/SousSight/issues/29) | @terryhh | Done | SS-020 |
 | [SS-017: Configure twenty dollar infrastructure spending controls](https://github.com/terryhh/SousSight/issues/30) | @terryhh | Done | None |
 | [SS-018: Preserve explicit GitHub card assignees in backlog publishing](https://github.com/terryhh/SousSight/issues/32) | @terryhh | Done | None |
 | [SS-019: Make the cooking workspace responsive in mobile Chrome](https://github.com/terryhh/SousSight/issues/34) | @terryhh | InProgress | None |
@@ -42,12 +42,14 @@ Each linked card contains acceptance criteria and dated evidence; `docs/backlog.
 | [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | Backlog | None |
 | [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | Backlog | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006 |
 | [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Backlog | None |
-| [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | InProgress | None |
+| [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | Done | None |
 
 ## Integration and release gates
 
 Terry completes production deployment and protected Live tokens (SS-016/SS-008), then verifies the actual camera/voice loop (SS-002). Generated panels and confirmed facts (SS-003), grounded research provider plus Jenna's panel (SS-004/SS-005), timers/watches (SS-006), and reviewed notification integration plus Jenna's setup (SS-007/SS-021) all remain required. SS-013 consumes Jenna's SS-022 fixture pack. SS-010 gathers these end-to-end outcomes and Jenna's SS-023 physical acceptance evidence before SS-012 final recording/submission; SS-024 supplies its script.
 
-The deployment fix has merged; a successful production release is not established by this plan. Earlier browser attempts were blocked by native Chrome permission denial and an unavailable access host. Native Chrome subsequently worked: the simulated mobile-PR-35 build at localhost:7358 fit a 360×740 DevTools viewport, a five-minute timer visibly counted down to 4:59 then 4:48, and the dinner review dialog fit. No message was sent and no physical media was tested. This rehearsal evidence does not replace Jenna’s real phone and deployed-service report. Unavailable services should be recorded as blocked with a responsible card, never silently replaced by simulated success.
+Run 42422724152 attempt 2 successfully released main d350601; production Chrome research returned a sourced answer. SS-001 setup and SS-016 CD are Done. SS-008 is now Done after run 42423984364 and a real protected hosted-token request returned Gemini Live audio. SS-002 still requires confirmed two-way microphone/heard-audio acceptance and transcript-repeat resolution; SS-003 still needs a verified real generated panel. Earlier browser attempts were blocked by native Chrome permission denial and an unavailable access host. Native Chrome subsequently worked: the simulated mobile-PR-35 build at localhost:7358 fit a 360×740 DevTools viewport, a five-minute timer visibly counted down to 4:59 then 4:48, and the dinner review dialog fit. No message was sent and no physical media was tested. This rehearsal evidence does not replace Jenna’s real phone and deployed-service report. Unavailable services should be recorded as blocked with a responsible card, never silently replaced by simulated success.
 
 SS-014 continues cost/credit reconciliation under the accepted $20 gross monthly soft budget; eligible credit balances remain unverified. Reuse short focused test sessions and record usage. SS-015 is a future teardown request, not authorization to delete resources now. No extra paid service, notification or fabricated deadline is introduced by assigning this plan.
+
+SS-025 automated regression coverage is complete after PRs #47/#49 passed CI and merged, including the duplicate dinner-confirmation callback fix. These fake transport/media and widget tests do not close Jenna’s SS-023 physical acceptance or the live integration cards.

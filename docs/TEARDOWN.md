@@ -2,7 +2,7 @@
 
 Owner: Terry (`terryhh`). Scope: Firebase/Google Cloud project **`devfest-flutter-a59e8`** and only the Vonage resources dedicated to SousSight. Updated November 7, 2026. **This is a plan, not an executed teardown.** Begin only when Terry explicitly says the demo/work is finished or requests shutdown. Writing this plan does not authorize deleting data or disabling the live MVP today.
 
-The operating constraint is credits only, with no intended out-of-pocket spending. Credit expiration does not delete resources or stop all usage. Review the [cost ledger](COST-LEDGER.md) before the last covered day and stop usage before coverage ends; do not wait for a delayed billing alert.
+Terry authorized a $20 monthly gross soft budget using eligible credits first, accepting delayed cap enforcement. Credit balances and eligibility remain unverified; this is not a guaranteed zero-cash or hard-cap arrangement. Review the [cost ledger](COST-LEDGER.md), minimize usage, and stop or reduce traffic as projected gross cost approaches the budget; do not wait for a delayed alert. Credit expiration does not delete resources.
 
 ## 1. Record scope and preserve evidence
 
@@ -21,8 +21,15 @@ firebase firestore:databases:list --project devfest-flutter-a59e8 --json
 
 Also inventory Hosting preview channels/releases, Secret Manager versions and access bindings, generated Cloud Run services, Artifact Registry images, build/source buckets, logging sinks/storage, App Check providers/debug tokens, API keys, Auth users, and any later-added schedulers or subscriptions. Record failed inventory calls as unknown, not absent.
 
+## Current deployed scope
+
+Run 42422724152 attempt 2 successfully deployed main d350601. liveToken is ACTIVE in us-central1 on Node 22; Hosting is serving the real-mode app. dinnerReady remains disabled and was not part of this Live-only deployment. Inventory again at shutdown rather than assuming both functions exist. Anonymous Auth, production App Check, a dedicated Gemini secret, GitHub deployment identity and scoped WIF provider are configured.
+
+Terry explicitly approved the gcf-artifacts one-day cleanup policy. Read-back confirmed DELETE / tagState ANY / olderThan 86400s. Matching deployment images may be deleted automatically; old-image rollback is not guaranteed. Preserve source commits and configuration metadata so a reviewed rebuild remains possible; cleanup does not restore deleted data/secrets or establish that storage is already empty.
+
 ## 2. Stop new usage first
 
+- Set repository `FIREBASE_DEPLOY_ENABLED=false` before shutdown and inspect active/queued Actions runs; the gate does not cancel an in-flight job or stop existing runtime traffic. After retained deployment needs are resolved, disable the dedicated WIF provider and remove only its scoped workloadIdentityUser binding and dedicated deployment identity grants/account under the approved removal list. Do not remove shared/default runtime identities or broad existing roles blindly. Verify merges cannot recreate resources.
 - Stop every cooking session and local rehearsal server. Confirm camera/microphone indicators turn off; disconnect Gemini Live WebSockets and cancel timers/visible-change watches. Closing Hosting alone does not end already-open browser sessions or their direct Gemini connections.
 - Disable dinner sending. If retaining the deployed service temporarily, set the existing `ENABLE_DINNER_MESSAGES` parameter to `false` in the ignored project-specific functions environment file and redeploy only `dinnerReady`; a local edit alone has no remote effect. Alternatively, delete that exact function in step 3. Do not send a test message to prove shutdown.
 - Stop token minting by removing `liveToken` in step 3. Existing ephemeral tokens/sessions may outlive endpoint removal; verify sessions have ended, then revoke a dedicated backend Gemini API key when approved. Never revoke the Firebase web configuration key as a substitute without checking its other consumers.
@@ -38,13 +45,13 @@ The command stops serving the site; it is not proof that stored Hosting releases
 
 ## 3. Remove compute and credentials deliberately
 
-After Terry approves the exact removal list, remove only the two known functions in their configured region. If inventory differs, stop and reconcile it first. Keep confirmation prompts; do not add `--force`.
+After Terry approves the exact removal list, remove only functions confirmed by inventory in their configured region. The current Live-only release contains liveToken; add dinnerReady only if a later inventory confirms it exists. If inventory differs, stop and reconcile it first. Keep confirmation prompts; do not add `--force`.
 
 ```sh
-firebase functions:delete liveToken dinnerReady --region us-central1 --project devfest-flutter-a59e8
+firebase functions:delete liveToken --region us-central1 --project devfest-flutter-a59e8
 ```
 
-- Verify both functions are absent and their associated generated Cloud Run services are gone. Inspect remaining regions rather than deleting by wildcard.
+- Verify each approved function is absent and their associated generated Cloud Run services are gone. Inspect remaining regions rather than deleting by wildcard.
 - Review Secret Manager metadata for `GEMINI_API_KEY`, `VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM`, and `VONAGE_ALLOWED_TO`. Disable dedicated secret versions first when a recovery period is desired; destroy them only after an explicit retention decision and approval. Remove SousSight-only access bindings. Do not remove default/shared service accounts or project-wide IAM roles blindly.
 - Revoke dedicated provider API credentials and remove dedicated Vonage sandbox registrations/webhooks as appropriate. Verify whether a sender/number/subscription has recurring fees; release it only if it belongs solely to this demo and Terry approves. Deleting a Cloud Function does not cancel a Vonage account or subscription.
 - Inspect Artifact Registry deployment images and build/source buckets. Remove only the identified SousSight artifacts after the rollback-retention choice; function deletion alone is not proof that storage costs stopped. A cleanup policy can reduce future accumulation but is not proof of immediate removal. [Firebase function and artifact management](https://firebase.google.com/docs/functions/manage-functions)

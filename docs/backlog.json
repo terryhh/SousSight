@@ -11,8 +11,8 @@
       "title": "Configure Firebase, App Check and Gemini for the real demo",
       "priority": "P0",
       "owner": "Terry",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Prepare the existing devfest-flutter-a59e8 project so authenticated cooking sessions and current Gemini models work from the hosted web app.",
       "acceptance": [
         "Anonymous Auth and App Check work on the intended HTTPS origin.",
@@ -23,7 +23,8 @@
       "evidence": [
         "2026-11-07: Anonymous Auth and tested private Firestore rules/indexes deployed. Firebase AI Logic and Gemini Developer APIs enabled; AI Logic App Check remains ENFORCED.",
         "2026-11-07: Production reCAPTCHA Enterprise web provider registered for the two Hosting domains; dedicated Gemini server key stored in Secret Manager. No debug token published.",
-        "2026-11-07: Real Auth/App Check and AI Logic request smoke succeeded; the AI request recorded 5 prompt / 17 total tokens. Response content was not asserted. This is not production-browser attestation or live camera/voice verification."
+        "2026-11-07: Real Auth/App Check and AI Logic request smoke succeeded; the AI request recorded 5 prompt / 17 total tokens. Response content was not asserted. This is not production-browser attestation or live camera/voice verification.",
+        "2026-11-07: Run 42422724152 attempt 2 succeeded with all jobs on main d350601. Hosting returned HTTP 200 and native Chrome loaded the hosted real-mode app. A benign chickpea research question rendered an actual answer with multiple source links using gemini-3.8-flash, verifying production browser Auth/App Check and AI Logic without a CI debug token. Camera/microphone permissions were not touched."
       ],
       "assignee": "terryhh"
     },
@@ -45,7 +46,9 @@
         "SS-008"
       ],
       "evidence": [
-        "Live implementation committed locally at 451fd2a; real service/device testing remains open."
+        "Live implementation committed locally at 451fd2a; real service/device testing remains open.",
+        "2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress.",
+        "2026-11-07: Three bounded synthetic diagnostics used the hosted protected-token path without user media. Transcript request at maxOutputTokens 180 returned one text fragment and no audio (failed diagnostic; usage unavailable). Retry at 512 returned 465,600 audio bytes in 11,195 ms; reported usage 580 prompt + 248 response = 828 total, thoughts 89. A real GenUI tool probe (gemini-3.8-live/v1beta) returned a valid-looking root, stepCue and two-option cookQuestion in 1,780 ms; reported usage 1,205 prompt + 150 response = 1,355 total, thoughts 252. These are provider-reported fields, not additive recomputations. The payload is stored only in a temporary local diagnostic file; widget/render validation and hosted UI verification remain pending. All temporary Auth/debug App Check registrations were cleaned up. Dollar costs are unknown."
       ],
       "assignee": "terryhh"
     },
@@ -67,7 +70,9 @@
         "SS-002"
       ],
       "evidence": [
-        "GenUI workspace and timer code at feb9542; cook clarification correction at a60db93; learner integration is ongoing."
+        "GenUI workspace and timer code at feb9542; cook clarification correction at a60db93; learner integration is ongoing.",
+        "2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress.",
+        "2026-11-07: Three bounded synthetic diagnostics used the hosted protected-token path without user media. Transcript request at maxOutputTokens 180 returned one text fragment and no audio (failed diagnostic; usage unavailable). Retry at 512 returned 465,600 audio bytes in 11,195 ms; reported usage 580 prompt + 248 response = 828 total, thoughts 89. A real GenUI tool probe (gemini-3.8-live/v1beta) returned a valid-looking root, stepCue and two-option cookQuestion in 1,780 ms; reported usage 1,205 prompt + 150 response = 1,355 total, thoughts 252. These are provider-reported fields, not additive recomputations. The payload is stored only in a temporary local diagnostic file; widget/render validation and hosted UI verification remain pending. All temporary Auth/debug App Check registrations were cleaned up. Dollar costs are unknown."
       ],
       "assignee": "terryhh"
     },
@@ -76,8 +81,8 @@
       "title": "Implement source-backed cooking research and substitutions",
       "priority": "P0",
       "owner": "Codex",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Implement the CookingResearchClient using Gemini with Google Search grounding, returning citations, attribution and targeted clarification.",
       "acceptance": [
         "Research preserves the question, recipe context and cook-confirmed facts.",
@@ -89,7 +94,8 @@
         "SS-001"
       ],
       "evidence": [
-        "lib/core/cooking_research.dart contract is being integrated; provider implementation and real grounded-response verification are ongoing."
+        "lib/core/cooking_research.dart contract is being integrated; provider implementation and real grounded-response verification are ongoing.",
+        "2026-11-07: Hosted real research rendered an answer, eight source links, Google logo and provider search-suggestion chips. Reviewed provider tests preserve the identical query and grounding metadata, validate HTTPS/deduplicate citations and handle uncited answers; provider suggestions HTML is isolated. Reviewed coordinator passes question, step, confirmed facts and ingredients and only assigns researchResult, without automatic ingredient mutation. SS-005 Jenna panel remains independently open."
       ],
       "assignee": "terryhh"
     },
@@ -166,8 +172,8 @@
       "title": "Deploy and smoke-test protected ephemeral Live tokens",
       "priority": "P0",
       "owner": "Codex + Terry",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Complete dependencies, Hosting rewrite and deployment for /api/live-token, then verify a constrained browser connection.",
       "acceptance": [
         "Pinned Firebase dependencies install with a committed lockfile.",
@@ -180,7 +186,12 @@
       ],
       "evidence": [
         "2026-11-07: Reproducible Firebase dependency lockfile and validated Live model/API configuration merged in PR #24. All 21 backend tests pass on Node 22; installed Firebase function exports load.",
-        "2026-11-07: Backend deployment and a real ephemeral-token/Gemini connection remain pending."
+        "2026-11-07: Backend deployment and a real ephemeral-token/Gemini connection remain pending.",
+        "2026-11-07: liveToken is ACTIVE on Node 22 at https://livetoken-kbzslsx4pq-uc.a.run.app. A real protected Auth/App Check request reached upstream but returned 502 because SDK liveConnectConstraints was sent to REST. PR #51 corrects bidiGenerateContentSetup plus fieldMask; one corrected direct real token mint succeeded (token withheld), without audio. Deployed fix and WebSocket/audio verification remain required.",
+        "2026-11-07: Token REST fix PR #51 passed CI and merged; rollout 42423984364 on main 4bb26bb is active. Real deployed WebSocket/audio verification remains outstanding.",
+        "2026-11-07: A corrected direct token mint followed by a real Gemini Live WebSocket synthetic \"Say ready\" request returned audio (gemini-3.8-live, v1beta, maxOutputTokens 64). No microphone or camera was used; usage units were not captured and the monetary amount is unknown. This does not verify the deployed token endpoint/full browser media path, which remains pending rollout 42423984364.",
+        "2026-11-07: PR #51 deployed successfully in run 42423984364. The real hosted /api/live-token path with Firebase Auth/App Check connected to Gemini Live and returned 38,402 audio bytes in 2,368 ms (gemini-3.8-live, v1beta). Usage: 561 prompt + 26 response = 587 total tokens; provider details reported prompt TEXT 314 / AUDIO 222, response AUDIO 26 and thoughts 18. These are reported fields, not an additive recomputation. Temporary test identities were deleted; dollar cost remains unknown.",
+        "Reviewed merged token configuration uses one session, 30-minute token expiry, one-minute new-session window, and a field mask locking the configured Live model and AUDIO output. Auth/App Check enforcement, transactional rate-limit tests and committed dependency lockfile remain verified; no permanent key is returned to the browser."
       ],
       "assignee": "terryhh"
     },
@@ -353,14 +364,14 @@
       "title": "Deploy merged main through GitHub Actions",
       "priority": "P0",
       "owner": "Terry + Codex",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Configure GitHub Actions continuous deployment for the merged cook-led MVP to devfest-flutter-a59e8, using short-lived Google credentials and production configuration.",
       "acceptance": [
         "Pull requests run validation without privileged deployment credentials.",
         "A merge/push to main runs tests and builds lib/main_learner.dart with production App Check configuration, never fake backend or a debug token.",
         "GitHub OIDC trust is scoped to this repository and approved deployment events/ref; no service-account JSON key is stored in GitHub or Git.",
-        "Deploy reviewed Auth, Firestore rules/indexes, live backend and Hosting; keep dinner sending disabled until credentials and cook-reviewed send are ready.",
+        "Keep one-time Auth setup configured as a prerequisite; routinely deploy reviewed Firestore rules/indexes, live backend and Hosting; keep dinner sending disabled until credentials and cook-reviewed send are ready.",
         "Record a successful deployed workflow and read-back checks; maintain the cost ledger and teardown instructions."
       ],
       "dependsOn": [
@@ -370,7 +381,12 @@
         "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
         "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
         "Both default runtime accounts have pre-existing Editor roles. The deployer has no Owner/Editor role, but its permitted runtime impersonation means the effective deployment path is not globally least privilege.",
-        "2026-11-07: PR #37 passed CI and merged; FIREBASE_DEPLOY_ENABLED restored true before merge for rollout. Deployment verification remains pending. firebaseextensions.googleapis.com enabled for discovery; no extensions installed."
+        "2026-11-07: PR #37 passed CI and merged; FIREBASE_DEPLOY_ENABLED restored true before merge for rollout. Deployment verification remains pending. firebaseextensions.googleapis.com enabled for discovery; no extensions installed.",
+        "2026-11-07: Rollout 42421669752 failed after uploads at Auth provisionFirebaseApp (403), not a completed release. PR #48 passed CI and merged to omit routine Auth deployment after one-time provider setup. Gate remains enabled; run 42422724152 for main d350601 is pending verification.",
+        "2026-11-07: Run 42422724152 attempt 2 succeeded with all jobs on main d350601. Hosting returned HTTP 200 and native Chrome loaded the hosted real-mode app. A benign chickpea research question rendered an actual answer with multiple source links using gemini-3.8-flash, verifying production browser Auth/App Check and AI Logic without a CI debug token. Camera/microphone permissions were not touched.",
+        "PR #48 omits routine Auth provisioning after one-time setup; deployment success is separate from Live token protocol correctness tracked in SS-008.",
+        "2026-11-07: The initial rollout attempt failed only at artifact cleanup after function creation. Terry explicitly approved one-day artifact retention; firebase functions:artifacts:setpolicy succeeded and read-back confirmed DELETE, tagState ANY, olderThan 86400s on gcf-artifacts. This permits automatic deletion of matching images and limits artifact-based rollback; it does not delete source history or prove immediate cleanup.",
+        "2026-11-07: Subsequent deployment run 42424326318 succeeded."
       ],
       "assignee": "terryhh"
     },
@@ -561,8 +577,8 @@
       "title": "Cover reconnect, media lifecycle and reviewed-send regressions",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Add focused critical-flow regression tests while production deployment proceeds. Tracks #46; preserve Jenna-owned implementation and physical acceptance.",
       "acceptance": [
         "Live resumption queues tool replies until replacement setup and stopping during reconnect cannot reopen capture.",
@@ -572,7 +588,9 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Coverage audit identified these three runtime gaps. Assigned #46 to terryhh, In progress; implementation in isolated branches."
+        "2026-11-07: Coverage audit identified these three runtime gaps. Assigned #46 to terryhh, In progress; implementation in isolated branches.",
+        "2026-11-07: PRs #47 and #49 passed CI and merged. All 7 transport and 6 browser-media tests pass; 25 affected cooking/coordinator/mobile widget tests pass, including five reviewed-send regressions. A synchronous confirmation guard fixes the demonstrated duplicate-callback race. No real messages were sent; fake API/widget checks are not physical-device or live-service acceptance.",
+        "2026-11-07: Issue #46 is closed and Project Done; assignee terryhh preserved."
       ]
     }
   ]

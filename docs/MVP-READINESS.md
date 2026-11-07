@@ -12,18 +12,18 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 - Production reCAPTCHA Enterprise App Check is registered for the two Hosting domains, and the dedicated Gemini server key is in Secret Manager. Local debug tokens remain out of published builds.
 - All 10 Firestore emulator security scenarios pass. Actual repository rules compile unchanged; tests verify owner isolation, checkpoint privacy/size, session validation and server-only ledger denial. See `test/rules/README.md`. This is emulator verification, not production deployment.
 - Firebase CLI can list the active project and its default Hosting site, `devfest-flutter-a59e8`.
-- Initial Hosting root returned HTTP 404. GitHub production deployment run 42419680055, attempt 2, failed because Firebase CLI required missing VONAGE_API_KEY despite selecting liveToken only. The separate deployment-path fix in PR #37 passed CI and merged, and the deployment gate was re-enabled for rollout; a successful production release and deployed Live token endpoint are not yet established. Redundant run 42420643671 was canceled until the fix is ready.
+- Initial Hosting root returned HTTP 404. GitHub production deployment run 42419680055, attempt 2, failed because Firebase CLI required missing VONAGE_API_KEY despite selecting liveToken only. The separate deployment-path fix in PR #37 passed CI and merged, and the deployment gate was re-enabled for rollout; that historical attempt did not establish a release; the successful later rollout is recorded below. Redundant run 42420643671 was canceled until the fix is ready.
 - Real Auth/App Check and an AI Logic request smoke succeeded (5 prompt / 17 total tokens). Response content was not asserted. This does not verify a Live session or production-browser attestation.
 - GitHub OIDC is scoped to this repository/main/approved events, with a main-only production environment. Both pre-existing default runtime accounts have Editor; the approved actAs grants mean the effective deployment path is not globally least privilege. See `docs/AUTODEPLOY.md`.
 - Interactive browser verification was blocked by an unavailable browser access host and, in a separate attempt, denied native Chrome permission. Neither attempt establishes browser acceptance.
 
 ### Latest verification
 
-Native Chrome subsequently worked: the local simulated mobile build fit a 360×740 DevTools viewport; a timer visibly counted down and the dinner-review dialog opened cleanly. No message was sent. Physical Android camera/audio and hosted production behavior remain unverified.
+Native Chrome subsequently worked: the local simulated mobile build fit a 360×740 DevTools viewport; a timer visibly counted down and the dinner-review dialog opened cleanly. No message was sent. Physical Android camera/audio remain unverified; hosted research was subsequently verified below.
 
-Live-only rollout 42421304400 passed function secret discovery but stopped on a disabled Cloud Billing API. That API was enabled using setup credentials; rollout 42421669752 is underway. A successful release is still unverified.
+Live-only rollout 42421304400 passed function secret discovery but stopped on a disabled Cloud Billing API. That API was enabled using setup credentials. Rollout 42421669752 subsequently failed after uploads at Auth provisionFirebaseApp (403); uploads do not establish a release. PR #48 passed CI and merged to omit routine Auth deployment because one-time provider setup is already complete. The deployment gate is enabled. 2026-11-07: Run 42422724152 attempt 2 succeeded with all jobs on main d350601. Hosting returned HTTP 200 and native Chrome loaded the hosted real-mode app. A benign chickpea research question rendered an actual answer with multiple source links using gemini-3.8-flash, verifying production browser Auth/App Check and AI Logic without a CI debug token. Camera/microphone permissions were not touched.
 
-A subsequent real Firebase AI Logic request using `gemini-3.8-flash` with Google Search returned nonempty answer text, 3 source chunks and 5 supported segments (32 prompt + 172 candidate = 204 total tokens). Temporary anonymous Auth and debug App Check registrations were removed. This verifies the authenticated provider response and grounding metadata, not the complete research UI or production reCAPTCHA path.
+A subsequent real Firebase AI Logic request using `gemini-3.8-flash` with Google Search returned nonempty answer text, 3 source chunks and 5 supported segments (32 prompt + 172 candidate = 204 total tokens). Temporary anonymous Auth and debug App Check registrations were removed. This verifies the authenticated provider response and grounding metadata, not by itself the complete research UI or production reCAPTCHA path; the later hosted Chrome check above verifies that production path.
 
 ## Live acceptance sequence
 
@@ -37,3 +37,31 @@ A subsequent real Firebase AI Logic request using `gemini-3.8-flash` with Google
 ## Ownership and integration
 
 The prepared implementation stack, MVP validation #24, obsolete-handoff cleanup #25, infrastructure record #28, delivery configuration #31 and assignee preservation #33 are merged. SS-018/#32 is closed and Done after CI. Merges and local tests do not establish live end-to-end acceptance. Chrome on Android and desktop web are the MVP targets; APK work is deferred. Jenna retains SS-005 and its research-panel implementation.
+
+## Completed automated regression gaps
+
+2026-11-07: PRs #47 and #49 passed CI and merged. All 7 transport and 6 browser-media tests pass; 25 affected cooking/coordinator/mobile widget tests pass, including five reviewed-send regressions. A synchronous confirmation guard fixes the demonstrated duplicate-callback race. No real messages were sent; fake API/widget checks are not physical-device or live-service acceptance. Issue #46/SS-025 is closed and Project Done. Jenna’s physical acceptance and real provider/device checks remain separate.
+
+## Deployed Live limitation and artifact retention
+
+2026-11-07: liveToken is ACTIVE on Node 22 at https://livetoken-kbzslsx4pq-uc.a.run.app. A real protected Auth/App Check request reached upstream but returned 502 because SDK liveConnectConstraints was sent to REST. PR #51 corrects bidiGenerateContentSetup plus fieldMask; one corrected direct real token mint succeeded (token withheld), without audio. That earlier limitation was resolved by the deployed-path verification recorded below.
+
+2026-11-07: The initial rollout attempt failed only at artifact cleanup after function creation. Terry explicitly approved one-day artifact retention; firebase functions:artifacts:setpolicy succeeded and read-back confirmed DELETE, tagState ANY, olderThan 86400s on gcf-artifacts. This permits automatic deletion of matching images and limits artifact-based rollback; it does not delete source history or prove immediate cleanup.
+
+## Grounded research provider completion
+
+2026-11-07: Hosted real research rendered an answer, eight source links, Google logo and provider search-suggestion chips. Reviewed provider tests preserve the identical query and grounding metadata, validate HTTPS/deduplicate citations and handle uncited answers; provider suggestions HTML is isolated. Reviewed coordinator passes question, step, confirmed facts and ingredients and only assigns researchResult, without automatic ingredient mutation. SS-005 Jenna panel remains independently open. The finite provider scope SS-004 is Done; this does not take over Jenna’s research UI. Token fix PR #51 passed CI and merged, with rollout 42423984364 active on main 4bb26bb; SS-008 was subsequently verified as recorded below.
+
+2026-11-07: A corrected direct token mint followed by a real Gemini Live WebSocket synthetic "Say ready" request returned audio (gemini-3.8-live, v1beta, maxOutputTokens 64). No microphone or camera was used; usage units were not captured and the monetary amount is unknown. This does not verify the deployed token endpoint/full browser media path, which was verified separately after rollout 42423984364, as recorded below. Terry approved the brief subsequent camera/microphone test after deployment, and the subsequent limited results are recorded below.
+
+## Deployed token and brief browser media verification
+
+2026-11-07: PR #51 deployed successfully in run 42423984364. The real hosted /api/live-token path with Firebase Auth/App Check connected to Gemini Live and returned 38,402 audio bytes in 2,368 ms (gemini-3.8-live, v1beta). Usage: 561 prompt + 26 response = 587 total tokens; provider details reported prompt TEXT 314 / AUDIO 222, response AUDIO 26 and thoughts 18. These are reported fields, not an additive recomputation. Temporary test identities were deleted; dollar cost remains unknown.
+
+Reviewed merged token configuration uses one session, 30-minute token expiry, one-minute new-session window, and a field mask locking the configured Live model and AUDIO output. Auth/App Check enforcement, transactional rate-limit tests and committed dependency lockfile remain verified; no permanent key is returned to the browser.
+
+2026-11-07: The authorized brief native Chrome camera/microphone test showed camera preview, coach transcript and the browser audio indicator. Human-audible playback and distinct microphone transcription were not verified. The transcript repeated excessively; the dynamic-panel prompt was not confirmed submitted and no real generated panel was verified. Reload stopped capture and CAMERA OFF was confirmed. SS-002 and SS-003 remain InProgress. Browser media usage units and dollar amount were not captured; reconcile actual charges after reporting catches up. No Vonage send occurred.
+
+## Bounded synthetic follow-up diagnostics
+
+2026-11-07: Three bounded synthetic diagnostics used the hosted protected-token path without user media. Transcript request at maxOutputTokens 180 returned one text fragment and no audio (failed diagnostic; usage unavailable). Retry at 512 returned 465,600 audio bytes in 11,195 ms; reported usage 580 prompt + 248 response = 828 total, thoughts 89. A real GenUI tool probe (gemini-3.8-live/v1beta) returned a valid-looking root, stepCue and two-option cookQuestion in 1,780 ms; reported usage 1,205 prompt + 150 response = 1,355 total, thoughts 252. These are provider-reported fields, not additive recomputations. The payload is stored only in a temporary local diagnostic file; widget/render validation and hosted UI verification remain pending. All temporary Auth/debug App Check registrations were cleaned up. Dollar costs are unknown. Deployment run 42424326318 succeeded; SS-003 remains open until actual generated UI validation.
