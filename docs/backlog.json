@@ -363,7 +363,9 @@
         "Deploy reviewed Auth, Firestore rules/indexes, live backend and Hosting; keep dinner sending disabled until credentials and cook-reviewed send are ready.",
         "Record a successful deployed workflow and read-back checks; maintain the cost ledger and teardown instructions."
       ],
-      "dependsOn": [],
+      "dependsOn": [
+        "SS-020"
+      ],
       "evidence": [
         "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
         "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
@@ -452,9 +454,7 @@
         "Workflow uploads the same entrypoint it analyzed.",
         "Backend tests and CI pass before merge."
       ],
-      "dependsOn": [
-        "SS-016"
-      ],
+      "dependsOn": [],
       "evidence": [
         "2026-11-07: PR #37 (6e10262) introduces separate deployment entrypoints. All 23 backend tests pass locally, including installed Firebase SDK manifest discovery. GitHub CI passed and PR merged; deployed-run verification remains pending.",
         "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets.",
@@ -512,7 +512,7 @@
       "assignee": "jennajh",
       "status": "Todo",
       "verified": false,
-      "description": "Own docs/validation/cook-acceptance.md and docs/validation/cook-acceptance/** evidence. Supplies SS-010/SS-019 acceptance evidence; Terry retains runtime fixes. Prepare checklist and exercise labeled local rehearsal now; live signoff waits for deployed services.",
+      "description": "Own docs/validation/cook-acceptance.md and docs/validation/cook-acceptance/** evidence. Supplies SS-010/SS-019 acceptance evidence; Terry retains runtime fixes. Prepare checklist and exercise labeled local rehearsal now; live signoff waits for deployed services. The mobile implementation dependency is fulfilled by merged PR #35; SS-019 stays open to consume this card's physical-device evidence, so its closure is not a prerequisite.",
       "acceptance": [
         "Record actual phone/desktop device, OS, Chrome version, URL/build and date for every test. Mark pass, fail, blocked or not run; unavailable access is never a pass.",
         "Exercise 320\u2013430px phone layout, enlarged text, touch controls and dinner-review keyboard scrolling. Capture redacted screenshots and reproducible defects with expected/actual behavior.",
@@ -526,8 +526,7 @@
         "SS-003",
         "SS-004",
         "SS-005",
-        "SS-006",
-        "SS-019"
+        "SS-006"
       ],
       "evidence": [
         "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",

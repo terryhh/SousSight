@@ -8,7 +8,7 @@ The target remains a live cooking companion on Android Chrome and desktop: camer
 2. **SS-021 Vonage setup** can proceed independently once account access is available. Share secret locations only. Coordinate readiness with SS-007; paid sending still requires the recorded explicit authorization and cook review.
 3. **SS-022 real photo pack** is a bounded parallel deliverable. Jenna owns original/licensed real food photos and visible-cue fixture documentation; Terry owns SS-013 recipe wiring and real model evaluation. No synthetic reference truth or vision-based internal-temperature claim.
 4. **SS-024 demo preparation** can be drafted now from the actual cooking flow. Terry owns final recording, official requirement/deadline verification and submission in SS-012. Label planned, rehearsed and live segments honestly.
-5. **SS-023 physical cook acceptance** can start with checklist preparation and clearly labeled local rehearsal. Live signoff depends on the deployed HTTPS app and integrated capabilities listed on the card. Record device/browser/build, evidence, and pass/fail/blocked/not-run; Terry fixes runtime defects. This supplies evidence to SS-010/SS-019 rather than duplicating their implementation.
+5. **SS-023 physical cook acceptance** can start with checklist preparation and clearly labeled local rehearsal. Live signoff depends on the deployed HTTPS app and integrated capabilities listed on the card. Record device/browser/build, evidence, and pass/fail/blocked/not-run; Terry fixes runtime defects. The mobile implementation prerequisite was fulfilled by merged PR #35. This supplies physical evidence to SS-010/SS-019; it does not wait for SS-019 to close.
 
 Jenna owns `lib/research/**`, `test/research/**`, `lib/main_research_demo.dart`, `assets/reference-cooking/**`, `docs/validation/reference-images.md`, `docs/validation/cook-acceptance.md`, `docs/validation/cook-acceptance/**`, and `docs/demo/**`. Other contributors must not implement these assignments. New cards remain Backlog until Jenna begins. Coordinate shared interfaces and PR bases on the cards; no automatic takeover when a dependency is blocked.
 
@@ -33,14 +33,14 @@ Each linked card contains acceptance criteria and dated evidence; `docs/backlog.
 | [SS-013: Replace checkpoint placeholders with real visual examples](https://github.com/terryhh/SousSight/issues/19) | @terryhh | InProgress | SS-001, SS-022 |
 | [SS-014: Maintain infrastructure cost and credit ledger](https://github.com/terryhh/SousSight/issues/26) | @terryhh | InProgress | None |
 | [SS-015: Review and execute infrastructure teardown after the demo](https://github.com/terryhh/SousSight/issues/27) | @terryhh | Backlog | SS-014 |
-| [SS-016: Deploy merged main through GitHub Actions](https://github.com/terryhh/SousSight/issues/29) | @terryhh | InProgress | None |
+| [SS-016: Deploy merged main through GitHub Actions](https://github.com/terryhh/SousSight/issues/29) | @terryhh | InProgress | SS-020 |
 | [SS-017: Configure twenty dollar infrastructure spending controls](https://github.com/terryhh/SousSight/issues/30) | @terryhh | Done | None |
 | [SS-018: Preserve explicit GitHub card assignees in backlog publishing](https://github.com/terryhh/SousSight/issues/32) | @terryhh | Done | None |
 | [SS-019: Make the cooking workspace responsive in mobile Chrome](https://github.com/terryhh/SousSight/issues/34) | @terryhh | InProgress | None |
-| [SS-020: Isolate Live deployment from unconfigured Vonage secrets](https://github.com/terryhh/SousSight/issues/36) | @terryhh | Done | SS-016 |
+| [SS-020: Isolate Live deployment from unconfigured Vonage secrets](https://github.com/terryhh/SousSight/issues/36) | @terryhh | Done | None |
 | [SS-021: Set up Vonage account and delivery configuration](https://github.com/terryhh/SousSight/issues/39) | @jennajh | Backlog | None |
 | [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | Backlog | None |
-| [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | Backlog | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006, SS-019 |
+| [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | Backlog | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006 |
 | [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Backlog | None |
 
 ## Integration and release gates
