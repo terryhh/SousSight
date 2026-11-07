@@ -558,12 +558,24 @@ void main() {
     expect(calls.map((c) => c.id), ['first']);
   });
 
+  test('workspace calls require an explicit step ID', () {
+    expect(
+      validateLiveTool(
+        const LiveToolCall(
+          name: 'show_cooking_ui',
+          arguments: {'uiJson': '{"components":[]}'},
+        ),
+      ),
+      isNotNull,
+    );
+  });
+
   test('tool validation checks bounds and malformed UI', () {
     expect(
       validateLiveTool(
         const LiveToolCall(
           name: 'show_cooking_ui',
-          arguments: {'uiJson': 'oops'},
+          arguments: {'stepId': 'prep', 'uiJson': 'oops'},
         ),
       ),
       isNotNull,
@@ -581,7 +593,7 @@ void main() {
       validateLiveTool(
         const LiveToolCall(
           name: 'show_cooking_ui',
-          arguments: {'uiJson': '{"components":[]}'},
+          arguments: {'stepId': 'prep', 'uiJson': '{"components":[]}'},
         ),
       ),
       isNull,
