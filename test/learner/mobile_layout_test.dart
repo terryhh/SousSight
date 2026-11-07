@@ -56,6 +56,27 @@ void main() {
     });
   }
 
+  for (final width in [735.0, 1280.0]) {
+    testWidgets('empty camera fills its preview at ${width}px', (tester) async {
+      await openKitchen(tester, Size(width, 900));
+      final placeholder = find.byWidgetPredicate(
+        (widget) =>
+            widget is Container &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration! as BoxDecoration).gradient != null,
+      );
+      final preview = find
+          .ancestor(of: placeholder, matching: find.byType(ClipRRect))
+          .first;
+      final backgroundBounds = tester.getRect(placeholder);
+      final previewBounds = tester.getRect(preview);
+      expect(backgroundBounds.left, previewBounds.left);
+      expect(backgroundBounds.right, previewBounds.right);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('large text preserves mobile live controls and timer', (
     tester,
   ) async {
