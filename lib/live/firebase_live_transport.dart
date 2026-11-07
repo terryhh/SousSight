@@ -71,9 +71,8 @@ class FirebaseLiveTransport implements LiveTransport {
                   part.mimeType.startsWith('audio/pcm')) {
                 _events.add(LiveAudio(part.bytes));
               }
-              if (part is TextPart && outputTranscription == null) {
-                _events.add(LiveTranscript(part.text, isUser: false));
-              }
+              // Use the requested spoken transcription as the caption source;
+              // model text may arrive separately and duplicate the same words.
             }
             if (inputTranscription?.text case final text?) {
               _events.add(

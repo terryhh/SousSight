@@ -193,10 +193,9 @@ class EphemeralGeminiLiveTransport implements LiveTransport {
               inline['data'] is String) {
             _events.add(LiveAudio(base64Decode(inline['data'] as String)));
           }
-          if (part['text'] is String &&
-              content['outputTranscription'] == null) {
-            _events.add(LiveTranscript(part['text'] as String, isUser: false));
-          }
+          // AUDIO sessions request outputAudioTranscription. Model text and
+          // spoken transcription can arrive in separate packets; mixing both
+          // duplicates captions and may display non-spoken model text.
         }
       }
       for (final entry in [

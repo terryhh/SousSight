@@ -127,6 +127,69 @@ void main() {
     controller.dispose();
   });
 
+  test(
+    'first Live turn requests a contextual workspace and clarification',
+    () async {
+      await controller.start(cookingContext: 'chickpea wrap; step: mash');
+      expect(transport.texts, hasLength(1));
+      expect(transport.texts.single, contains('show_cooking_ui'));
+      expect(transport.texts.single, contains('cook-confirmed facts'));
+      expect(
+        transport.texts.single,
+        contains('targeted question instead of inventing'),
+      );
+    },
+  );
+
+  test(
+    'transcript deltas preserve repeated words within the latest turn',
+    () async {
+      await controller.start(cookingContext: 'wrap');
+      transport.source.add(const LiveTranscript('Stir, ', isUser: false));
+      transport.source.add(
+        const LiveTranscript('stir, then stop.', isUser: false),
+      );
+      transport.source.add(const LiveTranscript('very ', isUser: true));
+      transport.source.add(const LiveTranscript('very hot', isUser: true));
+      await flush();
+      expect(controller.coachTranscript, 'Stir, stir, then stop.');
+      expect(controller.userTranscript, 'very very hot');
+      transport.source.add(const LiveTurnComplete());
+      transport.source.add(
+        const LiveTranscript('Stir, stir, then stop.', isUser: false),
+      );
+      transport.source.add(const LiveTranscript('What next?', isUser: true));
+      await flush();
+      expect(controller.coachTranscript, 'Stir, stir, then stop.');
+      expect(controller.userTranscript, 'What next?');
+    },
+  );
+
+  test('interruption and finished captions start fresh without clearing visible text early', () async {
+    await controller.start(cookingContext: 'wrap');
+    transport.source.add(
+      const LiveTranscript('Add the chickpeas', isUser: false),
+    );
+    transport.source.add(const LiveInterrupted());
+    await flush();
+    expect(controller.coachTranscript, 'Add the chickpeas');
+    transport.source.add(
+      const LiveTranscript('What do you have?', isUser: false, finished: true),
+    );
+    await flush();
+    expect(controller.coachTranscript, 'What do you have?');
+    transport.source.add(
+      const LiveTranscript('Let us continue.', isUser: false),
+    );
+    await flush();
+    expect(controller.coachTranscript, 'Let us continue.');
+    await controller.stop();
+    transport = TestTransport();
+    await controller.start(cookingContext: 'new meal');
+    expect(controller.coachTranscript, isEmpty);
+    expect(controller.userTranscript, isEmpty);
+  });
+
   test('keeps listening across turns and plays subsequent audio', () async {
     await controller.start(cookingContext: 'chickpea wrap');
     transport.source.add(LiveAudio(Uint8List(4)));

@@ -35,6 +35,8 @@ class LiveCookingController extends ChangeNotifier {
   Uint8List? latestFrame;
   String userTranscript = '';
   String coachTranscript = '';
+  bool _newUserTranscript = true;
+  bool _newCoachTranscript = true;
   bool microphoneMuted = false;
   String? watchGoal;
   String? watchId;
@@ -87,6 +89,10 @@ class LiveCookingController extends ChangeNotifier {
     status = LiveCookingStatus.connecting;
     error = null;
     notice = null;
+    userTranscript = '';
+    coachTranscript = '';
+    _newUserTranscript = true;
+    _newCoachTranscript = true;
     _toolResults.clear();
     _cancelledTools.clear();
     _toolQueue = Future<void>.value();
@@ -164,7 +170,11 @@ class LiveCookingController extends ChangeNotifier {
       if (latestFrame case final jpeg?) await transport.sendVideo(jpeg);
       if (!_current(epoch)) return;
       await transport.sendText(
-        'Say a brief hello and ask me to show the ingredients or current cooking step.',
+        'Call show_cooking_ui now to compose a useful cooking workspace from the '
+        'supplied recipe, current step, and cook-confirmed facts using the allowed UI catalog. '
+        'If essential context is missing, show a targeted question instead of inventing '
+        'ingredients, quantities, or progress. Then give a brief spoken welcome and '
+        'invite me to show the ingredients or current cooking step.',
       );
       _notify();
     } catch (_) {
@@ -252,16 +262,35 @@ class LiveCookingController extends ChangeNotifier {
         status = LiveCookingStatus.speaking;
         media.playAudio(pcm);
       case LiveTranscript(:final text, :final isUser, :final finished):
-        // Keep a bounded latest transcript, independent of the audio chunks.
+        // Transcription packets are deltas, not cumulative snapshots. Preserve
+        // repeated spoken words, but show the latest turn rather than joining
+        // every response (including repeated greetings) into one long caption.
         if (isUser) {
-          userTranscript = _append(userTranscript, text);
+          if (text.isNotEmpty) {
+            userTranscript = _append(
+              _newUserTranscript ? '' : userTranscript,
+              text,
+            );
+            _newUserTranscript = false;
+          }
+          if (finished) _newUserTranscript = true;
         } else {
-          coachTranscript = _append(coachTranscript, text);
+          if (text.isNotEmpty) {
+            coachTranscript = _append(
+              _newCoachTranscript ? '' : coachTranscript,
+              text,
+            );
+            _newCoachTranscript = false;
+          }
+          if (finished) _newCoachTranscript = true;
         }
         if (finished) notice = null;
       case LiveTurnComplete():
+        _newUserTranscript = true;
+        _newCoachTranscript = true;
         status = LiveCookingStatus.listening;
       case LiveInterrupted():
+        _newCoachTranscript = true;
         media.interruptPlayback();
         status = LiveCookingStatus.listening;
       case LiveToolCall():
