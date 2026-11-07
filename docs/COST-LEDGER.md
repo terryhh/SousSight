@@ -3,7 +3,11 @@
 Owner: Terry (`terryhh`), with Codex maintaining evidence during setup and operation.
 Project: `devfest-flutter-a59e8`. Currency: USD. Last reviewed: November 7, 2026.
 
-## Spending constraint
+## Current authorization
+
+Terry subsequently authorized a **$20 monthly SousSight budget before credits** and continued infrastructure/CD setup, accepting the previously explained delayed cap enforcement. Use eligible credits first. Configure project-wide alerts and supported service caps before paid workloads. This supersedes the earlier strict $0 instruction below; it does not authorize buying Gemini prepaid credit or changing unrelated projects. Controls are not yet applied.
+
+## Original spending constraint (superseded by $20 authorization)
 
 Use eligible credits and free allowances; Terry does not authorize out-of-pocket spend. Do not link or upgrade billing, purchase Gemini prepaid balance, enable paid traffic, or send a paid message merely because credits are expected. Confirm the billing account, credit scope, remaining amount and expiration first. If coverage cannot be verified, leave the paid path disabled and report the blocker. Credits and alert thresholds are not a guaranteed spending ceiling.
 
@@ -17,7 +21,7 @@ Never put API keys, tokens, phone numbers, payment details, billing exports or b
 | $300 GCP welcome credit | User reports credit; balance, scope and expiration unverified | Check Cloud Billing → Credits. Welcome credits generally expire after 90 days and exclude current Gemini Developer API usage |
 | $10 Developer Program benefit | User reports benefit; redemption, remaining balance and renewal unverified | Check Developer Program benefits and destination billing account. Eligible benefit credits can cover Gemini API; Prepay may require a positive purchased balance, which is not authorized |
 | Actual billed cost | **Unknown — billing report not inspected** | Do not equate successful setup, Spark status, or zero recorded charges with a verified $0 invoice |
-| Out-of-pocket spending authorized | **$0** | Explicit user constraint; credits must be verified before paid operations |
+| Current project spending budget | **$20/month before credits** | Later user authorization; delayed overage limitation explained and accepted; controls pending |
 
 Sources: [Google Cloud trial](https://cloud.google.com/signup-faqs), [Gemini billing and credit eligibility](https://ai.google.dev/gemini-api/docs/billing), [Developer Program credits](https://developers.google.com/profile/help/faq), [credit balance inspection](https://docs.cloud.google.com/billing/docs/how-to/resolve-issues).
 
@@ -53,7 +57,7 @@ Using published Gemini 3.8 Live media rates checked November 7: input audio abou
 
 [Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing), [Firebase pricing](https://firebase.google.com/pricing/), [Vonage Sandbox limits](https://developer.vonage.com/en/messages/concepts/messages-api-sandbox).
 
-## Current spending-control decision
+## Earlier spending-control decision (before $20 authorization)
 
 Terry requested credit-backed limits guaranteeing no personal spend. Google’s spend-cap documentation explicitly states that caps are not hard caps and delayed overages are billed. Coverage is limited to selected services and does not establish a universal project cutoff. Therefore billing remains unlinked, no spend-cap configuration has been applied, and no paid inference/backend path has been enabled. Do not represent a proposed threshold as an enforced or guaranteed zero-cash limit.
 

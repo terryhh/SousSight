@@ -12,5 +12,5 @@ The user's November 7 corrections supersede the older instructor-centric handoff
 
 ## Infrastructure cost control
 
-- Terry authorizes credits/free allowances only, with $0 out-of-pocket spend. Verify credit eligibility, remaining balance and expiry before paid usage. Do not treat budget alerts or delayed spend caps as a guaranteed ceiling; do not link paid billing or buy Gemini Prepay funds under the current zero-spend constraint.
+- Terry subsequently authorized a $20 monthly SousSight budget, using eligible credits first, and accepted delayed spend-cap enforcement. Configure project alerts and supported service caps before paid workloads; verify credit eligibility and expiry. Never describe these controls as a hard $20 ceiling. Do not purchase Gemini Prepay funds or change unrelated billing resources without explicit authorization.
 - Keep `docs/COST-LEDGER.md` current after infrastructure changes and live tests, distinguishing estimates, verified billed amounts and unknowns. Track shutdown in `docs/TEARDOWN.md`; execute deletion only on explicit teardown authorization with retention decisions.
