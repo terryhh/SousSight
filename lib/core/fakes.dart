@@ -275,3 +275,12 @@ class FakeTriageClient implements TriageClient {
     );
   }
 }
+
+/// Demo instructor logins. Firestore rules carry the same map, so an
+/// instructor identity can never be self-assigned from the client.
+const demoInstructorEmails = {
+  'ana@soussight.demo': 'ana',
+  'marcus@soussight.demo': 'marcus',
+  'priya@soussight.demo': 'priya',
+  'coordinator@soussight.demo': 'coordinator',
+};
