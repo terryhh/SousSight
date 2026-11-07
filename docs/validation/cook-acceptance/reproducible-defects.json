@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "ticket": "SS-023",
+  "issueUrl": "https://github.com/terryhh/SousSight/issues/41",
+  "evaluatedAt": "2026-11-07",
+  "evaluatedCommit": "d350601",
+  "owner": "jennajh",
+  "runtimeFixOwner": "terryhh",
+  "defects": [
+    {
+      "id": "DEF-001",
+      "severity": "high",
+      "title": "Dinner review masks HTTP 403/400/409 server rejections as ambiguous delivery status and locks the dialog",
+      "relatedCards": ["SS-007", "SS-023"],
+      "files": [
+        "lib/data/dinner_messages.dart:55-57",
+        "lib/learner/cooking_app.dart:807-827",
+        "functions/src/dinner-ready.js:25-27"
+      ],
+      "expected": "When POST /api/dinner-ready returns HTTP 403 (recipient-not-allowed) or 400 (invalid-recipient) before claiming any ledger entry, the UI surfaces the rejection reason and lets the cook edit the recipient.",
+      "actual": "sendDinnerMessage throws StateError on any non-200 HTTP status; _reviewDinner catches all errors and sets result = 'Message status could not be confirmed. No automatic resend will occur.', disabling the Recipient field, Message field, and Confirm button."
+    },
+    {
+      "id": "DEF-002",
+      "severity": "medium",
+      "title": "_notificationId is allocated once per _CookingScreenState lifetime, causing 409 idempotency-conflict if edited after a claimed failure",
+      "relatedCards": ["SS-007", "SS-025"],
+      "files": [
+        "lib/learner/cooking_app.dart:93",
+        "lib/learner/cooking_app.dart:808-813",
+        "functions/src/dinner-ready.js:37-57"
+      ],
+      "expected": "Distinct review attempts after a non-pending validation or configuration fix do not collide on a stale notificationId with a different message/recipient fingerprint.",
+      "actual": "_CookingScreenState initializes final _notificationId = const Uuid().v4() once. Editing the message in a reopened dialog after a claimed attempt causes 409 idempotency-conflict on the backend."
+    },
+    {
+      "id": "DEF-003",
+      "severity": "medium",
+      "title": "Answering a cook clarification (ask_cook / cookQuestion) leaves the question panel and option buttons active in the GenUI workspace",
+      "relatedCards": ["SS-003"],
+      "files": [
+        "lib/learner/cooking_coordinator.dart:180-195",
+        "lib/learner/cooking_coordinator.dart:395-404",
+        "lib/learner/cooking_coordinator.dart:474-478",
+        "lib/genui/cooking_catalog.dart:118-169"
+      ],
+      "expected": "Confirming an answer transitions or removes the active question/cookQuestion GenUI panel so repeated taps on option buttons cannot append duplicate confirmed facts.",
+      "actual": "confirmCookAnswer sets cookQuestion = null and saves the fact, but leaves the GenUI 'question' or 'cookQuestion' panel mounted with active OutlinedButton options."
+    },
+    {
+      "id": "DEF-004",
+      "severity": "medium",
+      "title": "Main cooking workspace does not yet mount CookingResearchPanel (SS-005) and requires two taps when starting research from an empty input box",
+      "relatedCards": ["SS-003", "SS-004", "SS-005"],
+      "files": [
+        "lib/learner/cooking_app.dart:513-525",
+        "lib/learner/cooking_app.dart:648-686"
+      ],
+      "expected": "CookingScreen renders CookingResearchPanel (with targeted clarification and editable substitution confirmation) and clearly guides or initiates research when tapping Research a cooking question.",
+      "actual": "On origin/main (d350601), CookingScreen renders an inline Card without clarification/substitution confirmation, and tapping Research a cooking question with an empty text box only pre-fills _message.text without focusing or submitting."
+    },
+    {
+      "id": "DEF-005",
+      "severity": "low",
+      "title": "ingredientChecklist uses CheckboxListTile(dense: true), reducing touch target height below 48dp on mobile viewports",
+      "relatedCards": ["SS-019"],
+      "files": [
+        "lib/genui/cooking_catalog.dart:63-75"
+      ],
+      "expected": "Mobile touch controls maintain >=48dp vertical tap target height at 1.0x text scale.",
+      "actual": "CheckboxListTile in ingredientChecklist sets dense: true and contentPadding: EdgeInsets.zero, yielding ~40dp row height for single-line ingredient items at 1.0x text scale."
+    }
+  ]
+}
