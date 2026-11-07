@@ -21,7 +21,7 @@ The 25 linked cards contain acceptance criteria and dated evidence; `docs/backlo
 | [SS-001: Configure Firebase, App Check and Gemini for the real demo](https://github.com/terryhh/SousSight/issues/4) | @terryhh | Done | None |
 | [SS-002: Verify live camera vision and two-way voice with Gemini](https://github.com/terryhh/SousSight/issues/6) | @terryhh | InProgress | SS-001, SS-008 |
 | [SS-003: Integrate Gemini-generated cooking panels and cook clarification](https://github.com/terryhh/SousSight/issues/13) | @terryhh | InProgress | SS-002 |
-| [SS-004: Implement source-backed cooking research and substitutions](https://github.com/terryhh/SousSight/issues/14) | @terryhh | InProgress | SS-001 |
+| [SS-004: Implement source-backed cooking research and substitutions](https://github.com/terryhh/SousSight/issues/14) | @terryhh | Done | SS-001 |
 | [SS-005: AGY: build the grounded answer and substitution panel](https://github.com/terryhh/SousSight/issues/15) | @jennajh | Backlog | None |
 | [SS-006: Finish persistent timers and opt-in visible-change alarms](https://github.com/terryhh/SousSight/issues/16) | @terryhh | InProgress | SS-002, SS-003 |
 | [SS-007: Connect reviewed dinner-ready messages through Vonage](https://github.com/terryhh/SousSight/issues/17) | @terryhh | InProgress | SS-001, SS-003, SS-021 |

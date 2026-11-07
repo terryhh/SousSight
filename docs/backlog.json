@@ -77,8 +77,8 @@
       "title": "Implement source-backed cooking research and substitutions",
       "priority": "P0",
       "owner": "Codex",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Implement the CookingResearchClient using Gemini with Google Search grounding, returning citations, attribution and targeted clarification.",
       "acceptance": [
         "Research preserves the question, recipe context and cook-confirmed facts.",
@@ -90,7 +90,8 @@
         "SS-001"
       ],
       "evidence": [
-        "lib/core/cooking_research.dart contract is being integrated; provider implementation and real grounded-response verification are ongoing."
+        "lib/core/cooking_research.dart contract is being integrated; provider implementation and real grounded-response verification are ongoing.",
+        "2026-11-07: Hosted real research rendered an answer, eight source links, Google logo and provider search-suggestion chips. Reviewed provider tests preserve the identical query and grounding metadata, validate HTTPS/deduplicate citations and handle uncited answers; provider suggestions HTML is isolated. Reviewed coordinator passes question, step, confirmed facts and ingredients and only assigns researchResult, without automatic ingredient mutation. SS-005 Jenna panel remains independently open."
       ],
       "assignee": "terryhh"
     },
@@ -182,7 +183,8 @@
       "evidence": [
         "2026-11-07: Reproducible Firebase dependency lockfile and validated Live model/API configuration merged in PR #24. All 21 backend tests pass on Node 22; installed Firebase function exports load.",
         "2026-11-07: Backend deployment and a real ephemeral-token/Gemini connection remain pending.",
-        "2026-11-07: liveToken is ACTIVE on Node 22 at https://livetoken-kbzslsx4pq-uc.a.run.app. A real protected Auth/App Check request reached upstream but returned 502 because SDK liveConnectConstraints was sent to REST. PR #51 corrects bidiGenerateContentSetup plus fieldMask; one corrected direct real token mint succeeded (token withheld), without audio. Deployed fix and WebSocket/audio verification remain required."
+        "2026-11-07: liveToken is ACTIVE on Node 22 at https://livetoken-kbzslsx4pq-uc.a.run.app. A real protected Auth/App Check request reached upstream but returned 502 because SDK liveConnectConstraints was sent to REST. PR #51 corrects bidiGenerateContentSetup plus fieldMask; one corrected direct real token mint succeeded (token withheld), without audio. Deployed fix and WebSocket/audio verification remain required.",
+        "2026-11-07: Token REST fix PR #51 passed CI and merged; rollout 42423984364 on main 4bb26bb is active. Real deployed WebSocket/audio verification remains outstanding."
       ],
       "assignee": "terryhh"
     },
