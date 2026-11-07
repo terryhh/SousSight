@@ -9,6 +9,7 @@ import '../core/models.dart';
 import '../genui/cooking_ui.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
+import 'research_panel_client.dart';
 
 /// The cook confirms facts and actions; Gemini chooses how to coach and present
 /// them. No external instructor or human routing is involved.
@@ -39,6 +40,18 @@ class CookingCoordinator extends ChangeNotifier {
   CookingSession? session;
   CookingResearchResult? researchResult;
   String? researchQuestion;
+  ResearchPanelRequest? _researchPanel;
+  ResearchPanelRequest? get researchPanel {
+    final panel = _researchPanel;
+    return panel != null && _isResearchPanelCurrent(panel) ? panel : null;
+  }
+
+  bool _isResearchPanelCurrent(ResearchPanelRequest panel) =>
+      !_disposed &&
+      identical(_researchPanel, panel) &&
+      panel.revision == session?.revision &&
+      panel.stepId == step.id;
+
   String? error;
   String? alert;
   String? cookQuestion;
@@ -341,23 +354,92 @@ $cookingUiInstructions
   Future<CookingResearchResult?> researchQuestionNow(
     String question, {
     bool requestWorkspace = true,
+  }) {
+    final query = CookingResearchQuery(
+      question: question,
+      currentStep:
+          '${step.title}: ${step.instruction}. Cook-confirmed context: ${jsonEncode(session?.confirmedFacts ?? [])}',
+      confirmedIngredients: List.unmodifiable(confirmedIngredients),
+    );
+    final seed = Completer<CookingResearchResult?>();
+    late final ResearchPanelRequest panel;
+    panel = ResearchPanelRequest(
+      query: query,
+      revision: session?.revision,
+      stepId: step.id,
+      client: ResearchPanelClient(
+        query: query,
+        initialResult: seed.future,
+        isCurrent: () => _isResearchPanelCurrent(panel),
+        followUp: (request) {
+          if (!_isResearchPanelCurrent(panel) ||
+              request.question != query.question ||
+              request.currentStep != query.currentStep) {
+            return Future.value(null);
+          }
+          // The panel's clarification facts belong to this exact query. Keep
+          // them intact; they are not persisted as substitutions until reviewed.
+          return _runResearch(request, requestWorkspace: true);
+        },
+      ),
+    );
+    _researchPanel = panel;
+    final pending = _runResearch(query, requestWorkspace: requestWorkspace);
+    pending.then(seed.complete, onError: (_) => seed.complete(null));
+    return pending;
+  }
+
+  Future<void> confirmResearchFact(
+    ResearchPanelRequest panel,
+    String fact,
+  ) async {
+    final reviewed = fact.trim();
+    if (reviewed.isEmpty || !_isResearchPanelCurrent(panel)) {
+      alert = 'Cooking context changed. Research again before confirming this fact.';
+      _notify();
+      return;
+    }
+    try {
+      await _save((current) {
+        if (current.revision != panel.revision ||
+            current.currentStepId != panel.stepId) {
+          throw StateError('Cooking context changed.');
+        }
+        return current.copyWith(
+          confirmedFacts: [
+            ...current.confirmedFacts,
+            if (!current.confirmedFacts.contains(reviewed)) reviewed,
+          ].reversed.take(30).toList().reversed.toList(),
+        );
+      });
+      if (_disposed) return;
+      _researchPanel = null;
+      alert = 'Saved your reviewed cooking fact: $reviewed';
+      if (live.isActive) {
+        await live.sendText(
+          'The cook explicitly reviewed and confirmed this fact: ${jsonEncode(reviewed)}. '
+          'Call show_cooking_ui to adapt the workspace to this confirmed context.',
+        );
+      }
+    } catch (_) {
+      if (!_disposed) error = 'The reviewed fact could not be saved. Research again if your cooking context changed.';
+    }
+    _notify();
+  }
+
+  Future<CookingResearchResult?> _runResearch(
+    CookingResearchQuery query, {
+    required bool requestWorkspace,
   }) async {
     final epoch = ++_researchEpoch;
     final requestedRevision = session?.revision;
     final requestedStepId = step.id;
     researching = true;
-    researchQuestion = question;
+    researchQuestion = query.question;
     researchResult = null;
     _notify();
     try {
-      final result = await research.research(
-        CookingResearchQuery(
-          question: question,
-          currentStep:
-              '${step.title}: ${step.instruction}. Cook-confirmed context: ${jsonEncode(session?.confirmedFacts ?? [])}',
-          confirmedIngredients: confirmedIngredients,
-        ),
-      );
+      final result = await research.research(query);
       if (_disposed || epoch != _researchEpoch) return null;
       if (session?.revision != requestedRevision ||
           step.id != requestedStepId) {
@@ -373,7 +455,7 @@ $cookingUiInstructions
           'Ask for any missing facts; research is not cook confirmation. '
           'Do not invent sources or claim grounding when sources is empty. '
           'Source links and provider attribution remain in the research card. '
-          '${jsonEncode(_researchEvidence(question, result))}',
+          '${jsonEncode(_researchEvidence(query.question, result))}',
         );
       }
       return result;

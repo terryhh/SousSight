@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../ai/cooking_research_client.dart';
-import '../ai/search_suggestions.dart';
+import '../research/cooking_research_panel.dart';
 import '../app/services_scope.dart';
 import '../data/dinner_messages.dart';
 import '../data/live_token_provider.dart';
@@ -663,47 +663,17 @@ class _CookingScreenState extends State<CookingScreen>
           ),
         ],
       ),
-      if (cook.researching)
-        const Padding(
-          padding: EdgeInsets.all(20),
-          child: LinearProgressIndicator(),
-        ),
-      if (cook.researchResult case final result?)
+      if (cook.researchPanel case final panel?)
         Padding(
           padding: const EdgeInsets.only(top: 20),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    cook.researchQuestion ?? 'Cooking research',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SelectableText(
-                    result.answer,
-                    style: const TextStyle(height: 1.5),
-                  ),
-                  const SizedBox(height: 12),
-                  if (result.citations.isEmpty)
-                    const Text('No sources returned for this answer.'),
-                  for (final source in result.citations)
-                    TextButton.icon(
-                      onPressed: () => launchUrl(
-                        source.uri,
-                        mode: LaunchMode.externalApplication,
-                      ),
-                      icon: const Icon(Icons.open_in_new, size: 16),
-                      label: Text(source.title),
-                    ),
-                  SearchSuggestions(html: result.searchSuggestionsHtml),
-                ],
-              ),
+          child: CookingResearchPanel(
+            key: ObjectKey(panel),
+            client: panel.client,
+            query: panel.query,
+            onCookConfirmed: (fact) =>
+                unawaited(cook.confirmResearchFact(panel, fact)),
+            onOpenSource: (citation) => unawaited(
+              launchUrl(citation.uri, mode: LaunchMode.externalApplication),
             ),
           ),
         ),
