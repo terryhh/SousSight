@@ -21,7 +21,7 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 
 Native Chrome subsequently worked: the local simulated mobile build fit a 360×740 DevTools viewport; a timer visibly counted down and the dinner-review dialog opened cleanly. No message was sent. Physical Android camera/audio and hosted production behavior remain unverified.
 
-Live-only rollout 42421304400 passed function secret discovery but stopped on a disabled Cloud Billing API. That API was enabled using setup credentials; rollout 42421669752 is underway. A successful release is still unverified.
+Live-only rollout 42421304400 passed function secret discovery but stopped on a disabled Cloud Billing API. That API was enabled using setup credentials. Rollout 42421669752 subsequently failed after uploads at Auth provisionFirebaseApp (403); uploads do not establish a release. PR #48 passed CI and merged to omit routine Auth deployment because one-time provider setup is already complete. The deployment gate is enabled; run 42422724152 for main d350601 is pending verification. A successful release is still unverified.
 
 A subsequent real Firebase AI Logic request using `gemini-3.8-flash` with Google Search returned nonempty answer text, 3 source chunks and 5 supported segments (32 prompt + 172 candidate = 204 total tokens). Temporary anonymous Auth and debug App Check registrations were removed. This verifies the authenticated provider response and grounding metadata, not the complete research UI or production reCAPTCHA path.
 
@@ -37,3 +37,7 @@ A subsequent real Firebase AI Logic request using `gemini-3.8-flash` with Google
 ## Ownership and integration
 
 The prepared implementation stack, MVP validation #24, obsolete-handoff cleanup #25, infrastructure record #28, delivery configuration #31 and assignee preservation #33 are merged. SS-018/#32 is closed and Done after CI. Merges and local tests do not establish live end-to-end acceptance. Chrome on Android and desktop web are the MVP targets; APK work is deferred. Jenna retains SS-005 and its research-panel implementation.
+
+## Completed automated regression gaps
+
+2026-11-07: PRs #47 and #49 passed CI and merged. All 7 transport and 6 browser-media tests pass; 25 affected cooking/coordinator/mobile widget tests pass, including five reviewed-send regressions. A synchronous confirmation guard fixes the demonstrated duplicate-callback race. No real messages were sent; fake API/widget checks are not physical-device or live-service acceptance. Issue #46/SS-025 is closed and Project Done. Jenna’s physical acceptance and real provider/device checks remain separate.

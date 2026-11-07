@@ -370,7 +370,8 @@
         "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
         "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
         "Both default runtime accounts have pre-existing Editor roles. The deployer has no Owner/Editor role, but its permitted runtime impersonation means the effective deployment path is not globally least privilege.",
-        "2026-11-07: PR #37 passed CI and merged; FIREBASE_DEPLOY_ENABLED restored true before merge for rollout. Deployment verification remains pending. firebaseextensions.googleapis.com enabled for discovery; no extensions installed."
+        "2026-11-07: PR #37 passed CI and merged; FIREBASE_DEPLOY_ENABLED restored true before merge for rollout. Deployment verification remains pending. firebaseextensions.googleapis.com enabled for discovery; no extensions installed.",
+        "2026-11-07: Rollout 42421669752 failed after uploads at Auth provisionFirebaseApp (403), not a completed release. PR #48 passed CI and merged to omit routine Auth deployment after one-time provider setup. Gate remains enabled; run 42422724152 for main d350601 is pending verification."
       ],
       "assignee": "terryhh"
     },
@@ -561,8 +562,8 @@
       "title": "Cover reconnect, media lifecycle and reviewed-send regressions",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Add focused critical-flow regression tests while production deployment proceeds. Tracks #46; preserve Jenna-owned implementation and physical acceptance.",
       "acceptance": [
         "Live resumption queues tool replies until replacement setup and stopping during reconnect cannot reopen capture.",
@@ -572,7 +573,9 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Coverage audit identified these three runtime gaps. Assigned #46 to terryhh, In progress; implementation in isolated branches."
+        "2026-11-07: Coverage audit identified these three runtime gaps. Assigned #46 to terryhh, In progress; implementation in isolated branches.",
+        "2026-11-07: PRs #47 and #49 passed CI and merged. All 7 transport and 6 browser-media tests pass; 25 affected cooking/coordinator/mobile widget tests pass, including five reviewed-send regressions. A synchronous confirmation guard fixes the demonstrated duplicate-callback race. No real messages were sent; fake API/widget checks are not physical-device or live-service acceptance.",
+        "2026-11-07: Issue #46 is closed and Project Done; assignee terryhh preserved."
       ]
     }
   ]

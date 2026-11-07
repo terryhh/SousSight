@@ -14,7 +14,7 @@ Jenna owns `lib/research/**`, `test/research/**`, `lib/main_research_demo.dart`,
 
 ## Complete board map
 
-Each linked card contains acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
+The 25 linked cards contain acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
 
 | Card | Owner | State | Completion dependencies |
 | --- | --- | --- | --- |
@@ -42,7 +42,7 @@ Each linked card contains acceptance criteria and dated evidence; `docs/backlog.
 | [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | Backlog | None |
 | [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | Backlog | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006 |
 | [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Backlog | None |
-| [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | InProgress | None |
+| [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | Done | None |
 
 ## Integration and release gates
 
@@ -51,3 +51,5 @@ Terry completes production deployment and protected Live tokens (SS-016/SS-008),
 The deployment fix has merged; a successful production release is not established by this plan. Earlier browser attempts were blocked by native Chrome permission denial and an unavailable access host. Native Chrome subsequently worked: the simulated mobile-PR-35 build at localhost:7358 fit a 360×740 DevTools viewport, a five-minute timer visibly counted down to 4:59 then 4:48, and the dinner review dialog fit. No message was sent and no physical media was tested. This rehearsal evidence does not replace Jenna’s real phone and deployed-service report. Unavailable services should be recorded as blocked with a responsible card, never silently replaced by simulated success.
 
 SS-014 continues cost/credit reconciliation under the accepted $20 gross monthly soft budget; eligible credit balances remain unverified. Reuse short focused test sessions and record usage. SS-015 is a future teardown request, not authorization to delete resources now. No extra paid service, notification or fabricated deadline is introduced by assigning this plan.
+
+SS-025 automated regression coverage is complete after PRs #47/#49 passed CI and merged, including the duplicate dinner-confirmation callback fix. These fake transport/media and widget tests do not close Jenna’s SS-023 physical acceptance or the live integration cards.
