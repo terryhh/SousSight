@@ -7,83 +7,279 @@
   "product": "Live cooking companion: camera vision, two-way voice, dynamic Flutter GenUI/A2UI panels, cook clarification, grounded research, timers, visible-change watches, and reviewed dinner-ready messages. No external instructor workflow.",
   "tasks": [
     {
-      "id": "SS-001", "title": "Configure Firebase, App Check and Gemini for the real demo", "priority": "P0", "owner": "Terry", "status": "Todo", "verified": false,
+      "id": "SS-001",
+      "title": "Configure Firebase, App Check and Gemini for the real demo",
+      "priority": "P0",
+      "owner": "Terry",
+      "status": "InProgress",
+      "verified": false,
       "description": "Prepare the existing devfest-flutter-a59e8 project so authenticated cooking sessions and current Gemini models work from the hosted web app.",
-      "acceptance": ["Anonymous Auth and App Check work on the intended HTTPS origin.", "Gemini Developer API and required server secrets are configured without committing values or placing permanent keys in browser assets.", "Document a successful real request and identify the exact model/API version used."],
-      "dependsOn": [], "evidence": ["Firebase config and data layer exist at 30b35ad; real service configuration is not verified in this session."]
+      "acceptance": [
+        "Anonymous Auth and App Check work on the intended HTTPS origin.",
+        "Gemini Developer API and required server secrets are configured without committing values or placing permanent keys in browser assets.",
+        "Document a successful real request and identify the exact model/API version used."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "Firebase config and data layer exist at 30b35ad; real service configuration is not verified in this session."
+      ]
     },
     {
-      "id": "SS-002", "title": "Verify live camera vision and two-way voice with Gemini", "priority": "P0", "owner": "Codex + Terry", "status": "InProgress", "verified": false,
+      "id": "SS-002",
+      "title": "Verify live camera vision and two-way voice with Gemini",
+      "priority": "P0",
+      "owner": "Codex + Terry",
+      "status": "InProgress",
+      "verified": false,
       "description": "Complete the live cooking loop with sampled video, microphone input, spoken responses, transcripts, interruption handling and explicit media controls.",
-      "acceptance": ["A real HTTPS phone session sends camera frames and speech and plays Gemini audio.", "Stopping or hiding the app releases media; denied permissions and reconnects are recoverable.", "Confirm current Gemini 3.8 Live/v1beta behavior with a real token, not only SDK assumptions or fakes."],
-      "dependsOn": ["SS-001", "SS-008"], "evidence": ["Live implementation committed locally at 451fd2a; real service/device testing remains open."]
+      "acceptance": [
+        "A real HTTPS phone session sends camera frames and speech and plays Gemini audio.",
+        "Stopping or hiding the app releases media; denied permissions and reconnects are recoverable.",
+        "Confirm current Gemini 3.8 Live/v1beta behavior with a real token, not only SDK assumptions or fakes."
+      ],
+      "dependsOn": [
+        "SS-001",
+        "SS-008"
+      ],
+      "evidence": [
+        "Live implementation committed locally at 451fd2a; real service/device testing remains open."
+      ]
     },
     {
-      "id": "SS-003", "title": "Integrate Gemini-generated cooking panels and cook clarification", "priority": "P0", "owner": "Codex", "status": "InProgress", "verified": false,
+      "id": "SS-003",
+      "title": "Integrate Gemini-generated cooking panels and cook clarification",
+      "priority": "P0",
+      "owner": "Codex",
+      "status": "InProgress",
+      "verified": false,
       "description": "Connect the live agent's actions to trusted Flutter GenUI/A2UI components and retain cook-confirmed facts across step changes.",
-      "acceptance": ["A real model response creates or updates the relevant native Flutter panel.", "Missing information produces a concise question for the cook; only an explicit answer becomes a confirmed fact.", "Stale responses cannot change a newer step; unknown component/action IDs are rejected.", "No instructor board, queue or expert handoff appears in the cooking flow."],
-      "dependsOn": ["SS-002"], "evidence": ["GenUI workspace and timer code at feb9542; cook clarification correction at a60db93; learner integration is ongoing."]
+      "acceptance": [
+        "A real model response creates or updates the relevant native Flutter panel.",
+        "Missing information produces a concise question for the cook; only an explicit answer becomes a confirmed fact.",
+        "Stale responses cannot change a newer step; unknown component/action IDs are rejected.",
+        "No instructor board, queue or expert handoff appears in the cooking flow."
+      ],
+      "dependsOn": [
+        "SS-002"
+      ],
+      "evidence": [
+        "GenUI workspace and timer code at feb9542; cook clarification correction at a60db93; learner integration is ongoing."
+      ]
     },
     {
-      "id": "SS-004", "title": "Implement source-backed cooking research and substitutions", "priority": "P0", "owner": "Codex", "status": "InProgress", "verified": false,
+      "id": "SS-004",
+      "title": "Implement source-backed cooking research and substitutions",
+      "priority": "P0",
+      "owner": "Codex",
+      "status": "InProgress",
+      "verified": false,
       "description": "Implement the CookingResearchClient using Gemini with Google Search grounding, returning citations, attribution and targeted clarification.",
-      "acceptance": ["Research preserves the question, recipe context and cook-confirmed facts.", "Citations come from returned grounding metadata; uncited answers are clearly distinguishable.", "Preserve required Google Search suggestions attribution without rendering model-written HTML as trusted attribution.", "A model suggestion never silently changes ingredients or confirms safety."],
-      "dependsOn": ["SS-001"], "evidence": ["lib/core/cooking_research.dart contract is being integrated; provider implementation and real grounded-response verification are ongoing."]
+      "acceptance": [
+        "Research preserves the question, recipe context and cook-confirmed facts.",
+        "Citations come from returned grounding metadata; uncited answers are clearly distinguishable.",
+        "Preserve required Google Search suggestions attribution without rendering model-written HTML as trusted attribution.",
+        "A model suggestion never silently changes ingredients or confirms safety."
+      ],
+      "dependsOn": [
+        "SS-001"
+      ],
+      "evidence": [
+        "lib/core/cooking_research.dart contract is being integrated; provider implementation and real grounded-response verification are ongoing."
+      ]
     },
     {
-      "id": "SS-005", "title": "AGY: build the grounded answer and substitution panel", "priority": "P0", "owner": "Terry's sister (AGY)", "status": "Todo", "verified": false,
+      "id": "SS-005",
+      "title": "AGY: build the grounded answer and substitution panel",
+      "priority": "P0",
+      "owner": "Terry's sister (AGY)",
+      "status": "Todo",
+      "verified": false,
       "description": "Independent sister assignment: implement CookingResearchPanel and its isolated fake-client demo. Follow docs/handoffs/AGY-COOKING-RESEARCH.md. Own lib/research/**, test/research/** and lib/main_research_demo.dart only.",
-      "acceptance": ["Handle loading, clarification, cited/uncited answers, retry and stale results using the shared client contract.", "The cook reviews an editable substitution fact before onCookConfirmed fires.", "Validate HTTPS citations and preserve provider search suggestions attribution.", "Analyze, meaningful widget tests, web build and narrow/desktop screenshots pass; open a draft PR against codex/agy-cooking-research."],
-      "dependsOn": [], "evidence": ["Assignment prepared in docs/handoffs/AGY-COOKING-RESEARCH.md; sister implementation has not been observed. Fake clients allow work before SS-004 is ready."]
+      "acceptance": [
+        "Handle loading, clarification, cited/uncited answers, retry and stale results using the shared client contract.",
+        "The cook reviews an editable substitution fact before onCookConfirmed fires.",
+        "Validate HTTPS citations and preserve provider search suggestions attribution.",
+        "Analyze, meaningful widget tests, web build and narrow/desktop screenshots pass; open a draft PR against codex/agy-cooking-research."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "Assignment prepared in docs/handoffs/AGY-COOKING-RESEARCH.md; sister implementation has not been observed. Fake clients allow work before SS-004 is ready."
+      ]
     },
     {
-      "id": "SS-006", "title": "Finish persistent timers and opt-in visible-change alarms", "priority": "P0", "owner": "Codex", "status": "InProgress", "verified": false,
+      "id": "SS-006",
+      "title": "Finish persistent timers and opt-in visible-change alarms",
+      "priority": "P0",
+      "owner": "Codex",
+      "status": "InProgress",
+      "verified": false,
       "description": "Make a dynamic timer appear when needed and let the cook request a watch for a visible mixing or cooking cue.",
-      "acceptance": ["Timers use persisted deadlines and stable IDs; navigation cannot restart them or duplicate completion alerts.", "Watch mode is explicit, shows its active state and stops when requested.", "An alert describes a visible cue and asks for cook confirmation; it never claims an image proves safe internal temperature.", "Exercise timer expiry, pause/background/reconnect and repeated tool calls."],
-      "dependsOn": ["SS-002", "SS-003"], "evidence": ["Deadline-based timer and generated timer component at feb9542; lifecycle and real watcher behavior remain unverified."]
+      "acceptance": [
+        "Timers use persisted deadlines and stable IDs; navigation cannot restart them or duplicate completion alerts.",
+        "Watch mode is explicit, shows its active state and stops when requested.",
+        "An alert describes a visible cue and asks for cook confirmation; it never claims an image proves safe internal temperature.",
+        "Exercise timer expiry, pause/background/reconnect and repeated tool calls."
+      ],
+      "dependsOn": [
+        "SS-002",
+        "SS-003"
+      ],
+      "evidence": [
+        "Deadline-based timer and generated timer component at feb9542; lifecycle and real watcher behavior remain unverified."
+      ]
     },
     {
-      "id": "SS-007", "title": "Connect reviewed dinner-ready messages through Vonage", "priority": "P0", "owner": "Codex + Terry", "status": "InProgress", "verified": false,
+      "id": "SS-007",
+      "title": "Connect reviewed dinner-ready messages through Vonage",
+      "priority": "P0",
+      "owner": "Codex + Terry",
+      "status": "InProgress",
+      "verified": false,
       "description": "Wire the cook's explicit recipient/message confirmation to the authenticated dinnerReady endpoint and demonstrate one notification to an allowed recipient.",
-      "acceptance": ["Auth, App Check, session ownership and server recipient allowlist are enforced.", "Dry-run is default; real sending requires configured secrets and ENABLE_DINNER_MESSAGES=true.", "Persist an attempt before sending; duplicate/unknown attempts never blind-resend.", "UI distinguishes provider acceptance from delivery and shows skipped, failed and unknown states.", "WhatsApp Sandbox enrollment/window or SMS sender registration is configured before the real send."],
-      "dependsOn": ["SS-001", "SS-003"], "evidence": ["Backend at 527034a; 19 combined backend Node tests passed. No real message was sent or backend deployed."]
+      "acceptance": [
+        "Auth, App Check, session ownership and server recipient allowlist are enforced.",
+        "Dry-run is default; real sending requires configured secrets and ENABLE_DINNER_MESSAGES=true.",
+        "Persist an attempt before sending; duplicate/unknown attempts never blind-resend.",
+        "UI distinguishes provider acceptance from delivery and shows skipped, failed and unknown states.",
+        "WhatsApp Sandbox enrollment/window or SMS sender registration is configured before the real send."
+      ],
+      "dependsOn": [
+        "SS-001",
+        "SS-003"
+      ],
+      "evidence": [
+        "Backend at 527034a; 19 combined backend Node tests passed. No real message was sent or backend deployed."
+      ]
     },
     {
-      "id": "SS-008", "title": "Deploy and smoke-test protected ephemeral Live tokens", "priority": "P0", "owner": "Codex + Terry", "status": "InProgress", "verified": false,
+      "id": "SS-008",
+      "title": "Deploy and smoke-test protected ephemeral Live tokens",
+      "priority": "P0",
+      "owner": "Codex + Terry",
+      "status": "InProgress",
+      "verified": false,
       "description": "Complete dependencies, Hosting rewrite and deployment for /api/live-token, then verify a constrained browser connection.",
-      "acceptance": ["Pinned Firebase dependencies install with a committed lockfile.", "Endpoint requires Firebase ID token and App Check and applies transactional rate limits.", "Browser receives only a short-lived, single-session token restricted to the intended Live model/audio output.", "Real requests verify token provisioning and the current WebSocket/API version; no permanent key is exposed."],
-      "dependsOn": ["SS-001"], "evidence": ["Token backend at 8ab485c; 10 Node tests passed. Deployment, dependency installation and actual Gemini connection remain open."]
+      "acceptance": [
+        "Pinned Firebase dependencies install with a committed lockfile.",
+        "Endpoint requires Firebase ID token and App Check and applies transactional rate limits.",
+        "Browser receives only a short-lived, single-session token restricted to the intended Live model/audio output.",
+        "Real requests verify token provisioning and the current WebSocket/API version; no permanent key is exposed."
+      ],
+      "dependsOn": [
+        "SS-001"
+      ],
+      "evidence": [
+        "Token backend at 8ab485c; 10 Node tests passed. Deployment, dependency installation and actual Gemini connection remain open."
+      ]
     },
     {
-      "id": "SS-009", "title": "Compile and verify private cooking Firestore rules", "priority": "P0", "owner": "Codex", "status": "InProgress", "verified": false,
+      "id": "SS-009",
+      "title": "Compile and verify private cooking Firestore rules",
+      "priority": "P0",
+      "owner": "Codex",
+      "status": "InProgress",
+      "verified": false,
       "description": "Exercise the hardened rules in the emulator before deploying owner-only sessions, photos and legacy records.",
-      "acceptance": ["Cook B cannot read or alter cook A's session/photos; reserved demo emails and catalog claims cannot bypass privacy.", "Ownership/recipe identity is immutable; timerId, confirmedFacts and empty ingredient maps remain writable by the owner.", "All client reads/writes to token quota and notification ledger collections are denied.", "Compile and run the authorization matrix in docs/RULES-REVIEW.md, then deploy the reviewed rules."],
-      "dependsOn": [], "evidence": ["Hardening committed at 4677a5c. Static review/diff checks completed; no Java runtime, emulator compilation or rule tests available yet."]
+      "acceptance": [
+        "Cook B cannot read or alter cook A's session/photos; reserved demo emails and catalog claims cannot bypass privacy.",
+        "Ownership/recipe identity is immutable; timerId, confirmedFacts and empty ingredient maps remain writable by the owner.",
+        "All client reads/writes to token quota and notification ledger collections are denied.",
+        "Compile and run the authorization matrix in docs/RULES-REVIEW.md, then deploy the reviewed rules."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "Hardening committed at 4677a5c. Static review/diff checks completed; no Java runtime, emulator compilation or rule tests available yet."
+      ]
     },
     {
-      "id": "SS-010", "title": "Run phone, desktop and failure-path integration checks", "priority": "P0", "owner": "Codex + Terry", "status": "Todo", "verified": false,
+      "id": "SS-010",
+      "title": "Run phone, desktop and failure-path integration checks",
+      "priority": "P0",
+      "owner": "Codex + Terry",
+      "status": "InProgress",
+      "verified": false,
       "description": "Validate the complete cook-directed experience on the real hosted app, including awkward permissions and connection failures.",
-      "acceptance": ["Flutter analyze, meaningful tests and both relevant web builds pass.", "Record Chrome and phone browser checks for camera/mic permissions, audio playback, dynamic UI, timers, research and dinner review.", "Reconnect, timeout, stale result, provider rejection and background cleanup remain understandable.", "Simulated demo behavior is explicitly labeled and never presented as a live service test."],
-      "dependsOn": ["SS-002", "SS-003", "SS-004", "SS-005", "SS-006", "SS-007", "SS-008", "SS-009", "SS-013"],
-      "evidence": ["This environment blocks Flutter test harness localhost sockets; device and full integration validation remain outstanding."]
+      "acceptance": [
+        "Flutter analyze, meaningful tests and both relevant web builds pass.",
+        "Record Chrome and phone browser checks for camera/mic permissions, audio playback, dynamic UI, timers, research and dinner review.",
+        "Reconnect, timeout, stale result, provider rejection and background cleanup remain understandable.",
+        "Simulated demo behavior is explicitly labeled and never presented as a live service test."
+      ],
+      "dependsOn": [
+        "SS-002",
+        "SS-003",
+        "SS-004",
+        "SS-005",
+        "SS-006",
+        "SS-007",
+        "SS-008",
+        "SS-009",
+        "SS-013"
+      ],
+      "evidence": [
+        "This environment blocks Flutter test harness localhost sockets; device and full integration validation remain outstanding."
+      ]
     },
     {
-      "id": "SS-011", "title": "Publish the stacked PRs and populate the SousSight project", "priority": "P0", "owner": "Codex + Terry", "status": "InProgress", "verified": false,
+      "id": "SS-011",
+      "title": "Publish the stacked PRs and populate the SousSight project",
+      "priority": "P0",
+      "owner": "Codex + Terry",
+      "status": "InProgress",
+      "verified": false,
       "description": "Push the local implementation stack, open correctly based PRs, publish this backlog idempotently, and make the sister branch available.",
-      "acceptance": ["Each PR targets its immediate predecessor and reports actual checks and remaining service limitations.", "SousSight project contains one issue per stable SS-ID, including the sister assignment.", "Project status reflects remaining verification; local implementation alone does not mark a feature Done.", "Sister can fetch codex/agy-cooking-research and open her draft PR against it."],
-      "dependsOn": [], "evidence": ["Existing foundation/data PRs were recorded as #1/#2; current CLI networking is unavailable and private GitHub connector reads failed. Local commits exist; remote status must be rechecked."]
+      "acceptance": [
+        "Each PR targets its immediate predecessor and reports actual checks and remaining service limitations.",
+        "SousSight project contains one issue per stable SS-ID, including the sister assignment.",
+        "Project status reflects remaining verification; local implementation alone does not mark a feature Done.",
+        "Sister can fetch codex/agy-cooking-research and open her draft PR against it."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "Existing foundation/data PRs were recorded as #1/#2; current CLI networking is unavailable and private GitHub connector reads failed. Local commits exist; remote status must be rechecked."
+      ]
     },
     {
-      "id": "SS-012", "title": "Record the DevFest demo and explain Central Florida impact", "priority": "P0", "owner": "Terry + sister", "status": "Todo", "verified": false,
+      "id": "SS-012",
+      "title": "Record the DevFest demo and explain Central Florida impact",
+      "priority": "P0",
+      "owner": "Terry + sister",
+      "status": "InProgress",
+      "verified": false,
       "description": "Show a coherent cooking story: pantry ingredients, live coaching, a clarified substitution, a generated timer/watch, and a reviewed dinner announcement.",
-      "acceptance": ["Record a concise, repeatable demo using the actual app and clearly disclose any simulation.", "Explain the benefit for Central Florida households learning affordable pantry cooking without claiming unmeasured impact.", "Credit current Google and Vonage capabilities accurately and include repository/demo links.", "Verify the Devpost requirements/deadline and submit the completed entry."],
-      "dependsOn": ["SS-010", "SS-011"], "evidence": ["Submission and recorded demo have not been verified."]
+      "acceptance": [
+        "Record a concise, repeatable demo using the actual app and clearly disclose any simulation.",
+        "Explain the benefit for Central Florida households learning affordable pantry cooking without claiming unmeasured impact.",
+        "Credit current Google and Vonage capabilities accurately and include repository/demo links.",
+        "Verify the Devpost requirements/deadline and submit the completed entry."
+      ],
+      "dependsOn": [
+        "SS-010",
+        "SS-011"
+      ],
+      "evidence": [
+        "Submission and recorded demo have not been verified."
+      ]
     },
     {
-      "id": "SS-013", "title": "Replace checkpoint placeholders with real visual examples", "priority": "P1", "owner": "Terry + Codex", "status": "Todo", "verified": false,
+      "id": "SS-013",
+      "title": "Replace checkpoint placeholders with real visual examples",
+      "priority": "P1",
+      "owner": "Terry + Codex",
+      "status": "InProgress",
+      "verified": false,
       "description": "Prepare real chickpea texture/mixing target photos if the structured checkpoint comparison remains in the demo.",
-      "acceptance": ["Target assets show the actual reviewed technique instead of placeholder images.", "Compare clearly different current images and an obscured view against the target with the real model.", "Teach visible cues; uncertain or out-of-scope output stays uncertain, and no image is represented as proof of food safety."],
-      "dependsOn": ["SS-001"], "evidence": ["Structured assessment client at aded94a; target assets were placeholder images in the source handoff. Real image quality/model behavior is unverified."]
+      "acceptance": [
+        "Target assets show the actual reviewed technique instead of placeholder images.",
+        "Compare clearly different current images and an obscured view against the target with the real model.",
+        "Teach visible cues; uncertain or out-of-scope output stays uncertain, and no image is represented as proof of food safety."
+      ],
+      "dependsOn": [
+        "SS-001"
+      ],
+      "evidence": [
+        "Structured assessment client at aded94a; target assets were placeholder images in the source handoff. Real image quality/model behavior is unverified."
+      ]
     }
   ]
 }
