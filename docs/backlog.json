@@ -153,7 +153,8 @@
       ],
       "dependsOn": [
         "SS-001",
-        "SS-003"
+        "SS-003",
+        "SS-021"
       ],
       "evidence": [
         "Backend at 527034a; 19 combined backend Node tests passed. No real message was sent or backend deployed."
@@ -227,7 +228,8 @@
         "SS-007",
         "SS-008",
         "SS-009",
-        "SS-013"
+        "SS-013",
+        "SS-023"
       ],
       "evidence": [
         "2026-11-07: 81 Flutter tests, Flutter analysis, 10 Firestore emulator security tests, and 3 browser-media tests pass. Rehearsal web build and Wasm dry run pass.",
@@ -272,7 +274,8 @@
       ],
       "dependsOn": [
         "SS-010",
-        "SS-011"
+        "SS-011",
+        "SS-024"
       ],
       "evidence": [
         "Submission and recorded demo have not been verified."
@@ -286,14 +289,15 @@
       "owner": "Terry + Codex",
       "status": "InProgress",
       "verified": false,
-      "description": "Prepare real chickpea texture/mixing target photos if the structured checkpoint comparison remains in the demo.",
+      "description": "Prepare real chickpea texture/mixing target photos if the structured checkpoint comparison remains in the demo. Jenna prepares the real photo/fixture pack in SS-022; Terry retains runtime asset integration and real model evaluation.",
       "acceptance": [
         "Target assets show the actual reviewed technique instead of placeholder images.",
         "Compare clearly different current images and an obscured view against the target with the real model.",
         "Teach visible cues; uncertain or out-of-scope output stays uncertain, and no image is represented as proof of food safety."
       ],
       "dependsOn": [
-        "SS-001"
+        "SS-001",
+        "SS-022"
       ],
       "evidence": [
         "Structured assessment client at aded94a; target assets were placeholder images in the source handoff. Real image quality/model behavior is unverified."
@@ -359,7 +363,9 @@
         "Deploy reviewed Auth, Firestore rules/indexes, live backend and Hosting; keep dinner sending disabled until credentials and cook-reviewed send are ready.",
         "Record a successful deployed workflow and read-back checks; maintain the cost ledger and teardown instructions."
       ],
-      "dependsOn": [],
+      "dependsOn": [
+        "SS-020"
+      ],
       "evidence": [
         "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
         "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
@@ -400,7 +406,7 @@
       "verified": true,
       "description": "Persist actual GitHub assignees for every backlog card. New issues use the manifest assignee; only existing unassigned issues are filled. Preserve any human assignment, including Jenna\u2019s work.",
       "acceptance": [
-        "Every manifest task names one GitHub assignee; SS-005 is jennajh and other current tasks are terryhh.",
+        "Every manifest task names an explicit GitHub assignee matching the authorized ownership plan.",
         "New issues are created assigned; existing unassigned issues receive their configured assignee after a fresh ownership check.",
         "Existing nonempty assignments and human issue-body edits are preserved.",
         "Meaningful publisher tests pass and the PR is merged only after CI passes."
@@ -439,8 +445,8 @@
       "priority": "P0",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Production deployment attempt 2 failed because Firebase CLI discovers all exports and resolves Vonage secrets even when only liveToken is selected. Deploy Live without unavailable dinner credentials, preserving the disabled dinner service and its future deployment path.",
       "acceptance": [
         "Live-only package discovery contains only liveToken and no Vonage secret parameters.",
@@ -448,12 +454,11 @@
         "Workflow uploads the same entrypoint it analyzed.",
         "Backend tests and CI pass before merge."
       ],
-      "dependsOn": [
-        "SS-016"
-      ],
+      "dependsOn": [],
       "evidence": [
         "2026-11-07: PR #37 (6e10262) introduces separate deployment entrypoints. All 23 backend tests pass locally, including installed Firebase SDK manifest discovery. GitHub CI passed and PR merged; deployed-run verification remains pending.",
-        "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets."
+        "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets.",
+        "2026-11-07: PR #37 passed CI and merged; issue #36 closed. The finite entrypoint-isolation implementation is complete. Successful production rollout and Live connection remain SS-016/SS-008 acceptance."
       ]
     },
     {
@@ -476,6 +481,78 @@
       "evidence": [
         "2026-11-07: Issue #39 created and assigned jennajh with project status Backlog; assigned does not mean started.",
         "DINNER_SERVICE_READY and ENABLE_DINNER_MESSAGES remain false until their respective prerequisites and authorization are satisfied. No automatic or unreviewed send is authorized."
+      ]
+    },
+    {
+      "id": "SS-022",
+      "title": "Prepare real cooking reference photos and evaluation fixtures",
+      "priority": "P1",
+      "owner": "Jenna (jennajh)",
+      "assignee": "jennajh",
+      "status": "Todo",
+      "verified": false,
+      "description": "Split asset preparation from SS-013 integration. Own assets/reference-cooking/** and docs/validation/reference-images.md. Terry retains recipe wiring and paid model evaluation.",
+      "acceptance": [
+        "Capture or obtain licensed real chickpea mash/mixing photos: reviewed target, clearly different texture, and obscured/uncertain view; no synthetic image is reference truth.",
+        "Record source, rights/license or photographer consent, visible cue, and intended comparison for each image. Exclude faces/private identifying content unless consented.",
+        "Provide web-sized images with dimensions, file sizes and captions; document uncertainty and lighting/occlusion limitations. Never infer internal temperature or food safety from appearance.",
+        "Open an asset-only PR and hand fixture IDs plus expected visible observations to Terry for SS-013. No paid model calls required for this deliverable."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/40 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
+      ]
+    },
+    {
+      "id": "SS-023",
+      "title": "Run physical cook acceptance and report reproducible failures",
+      "priority": "P0",
+      "owner": "Jenna (jennajh)",
+      "assignee": "jennajh",
+      "status": "Todo",
+      "verified": false,
+      "description": "Own docs/validation/cook-acceptance.md and docs/validation/cook-acceptance/** evidence. Supplies SS-010/SS-019 acceptance evidence; Terry retains runtime fixes. Prepare checklist and exercise labeled local rehearsal now; live signoff waits for deployed services. The mobile implementation dependency is fulfilled by merged PR #35; SS-019 stays open to consume this card's physical-device evidence, so its closure is not a prerequisite.",
+      "acceptance": [
+        "Record actual phone/desktop device, OS, Chrome version, URL/build and date for every test. Mark pass, fail, blocked or not run; unavailable access is never a pass.",
+        "Exercise 320\u2013430px phone layout, enlarged text, touch controls and dinner-review keyboard scrolling. Capture redacted screenshots and reproducible defects with expected/actual behavior.",
+        "On deployed HTTPS verify camera/mic permission allow/deny, real two-way voice and interruption, stop/background/reconnect, generated panel and cook clarification, grounded citations, timer expiry/reload, and explicit visible-change watch start/stop.",
+        "Check dinner recipient/message review without sending until SS-021 prerequisites and explicit authorization are met. Distinguish provider acceptance from delivery.",
+        "Clearly separate rehearsal/fake checks from live checks and record blockers; hand findings to Terry without editing owned runtime code or claiming unavailable scenarios passed."
+      ],
+      "dependsOn": [
+        "SS-016",
+        "SS-002",
+        "SS-003",
+        "SS-004",
+        "SS-005",
+        "SS-006"
+      ],
+      "evidence": [
+        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/41 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
+      ]
+    },
+    {
+      "id": "SS-024",
+      "title": "Prepare a repeatable cooking demo story and recording checklist",
+      "priority": "P0",
+      "owner": "Jenna (jennajh)",
+      "assignee": "jennajh",
+      "status": "Todo",
+      "verified": false,
+      "description": "Own docs/demo/**. Split script and preparation from SS-012 final recording/submission, which remains Terry-owned. Can draft immediately; accurate final live claims depend on SS-023 and notification readiness.",
+      "acceptance": [
+        "Write a pantry-cooking recipe/runbook covering live camera and two-way voice, generated panel, targeted clarification, grounded substitution, real timer, opt-in watch and reviewed dinner message.",
+        "List ingredients, physical setup, camera framing, permissions, test recipient prerequisites and reset/retry steps so another cook can repeat the story.",
+        "Mark each segment live, rehearsal or blocked using actual evidence; never disguise fake behavior or an unsent message. Include fallback disclosure rather than invented success.",
+        "Draft a concise Central Florida household benefit narrative without unmeasured impact claims and an asset/recording checklist with repository/demo links.",
+        "Hand script and shot list to Terry for SS-012 recording, official requirement/deadline verification and submission; do not invent a deadline or submit on his behalf."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/42 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
       ]
     }
   ]

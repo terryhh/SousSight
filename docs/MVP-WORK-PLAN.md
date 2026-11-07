@@ -1,0 +1,52 @@
+# Remaining MVP work and ownership — November 7, 2026
+
+The target remains a live cooking companion on Android Chrome and desktop: camera vision, two-way voice, Gemini-generated Flutter GenUI/A2UI panels, grounded research, cook clarification, real timers, opt-in visible-change watches, and a reviewed Vonage dinner message. APK work stays deferred. Assignment means available for pickup, not work started or verified.
+
+## Jenna pickup order
+
+1. **SS-005 research panel** is the first product implementation priority. Use the existing fake-client contract to work independently; Terry supplies grounded provider/runtime integration in SS-004/SS-003.
+2. **SS-021 Vonage setup** can proceed independently once account access is available. Share secret locations only. Coordinate readiness with SS-007; paid sending still requires the recorded explicit authorization and cook review.
+3. **SS-022 real photo pack** is a bounded parallel deliverable. Jenna owns original/licensed real food photos and visible-cue fixture documentation; Terry owns SS-013 recipe wiring and real model evaluation. No synthetic reference truth or vision-based internal-temperature claim.
+4. **SS-024 demo preparation** can be drafted now from the actual cooking flow. Terry owns final recording, official requirement/deadline verification and submission in SS-012. Label planned, rehearsed and live segments honestly.
+5. **SS-023 physical cook acceptance** can start with checklist preparation and clearly labeled local rehearsal. Live signoff depends on the deployed HTTPS app and integrated capabilities listed on the card. Record device/browser/build, evidence, and pass/fail/blocked/not-run; Terry fixes runtime defects. The mobile implementation prerequisite was fulfilled by merged PR #35. This supplies physical evidence to SS-010/SS-019; it does not wait for SS-019 to close.
+
+Jenna owns `lib/research/**`, `test/research/**`, `lib/main_research_demo.dart`, `assets/reference-cooking/**`, `docs/validation/reference-images.md`, `docs/validation/cook-acceptance.md`, `docs/validation/cook-acceptance/**`, and `docs/demo/**`. Other contributors must not implement these assignments. New cards remain Backlog until Jenna begins. Coordinate shared interfaces and PR bases on the cards; no automatic takeover when a dependency is blocked.
+
+## Complete board map
+
+Each linked card contains acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
+
+| Card | Owner | State | Completion dependencies |
+| --- | --- | --- | --- |
+| [SS-001: Configure Firebase, App Check and Gemini for the real demo](https://github.com/terryhh/SousSight/issues/4) | @terryhh | InProgress | None |
+| [SS-002: Verify live camera vision and two-way voice with Gemini](https://github.com/terryhh/SousSight/issues/6) | @terryhh | InProgress | SS-001, SS-008 |
+| [SS-003: Integrate Gemini-generated cooking panels and cook clarification](https://github.com/terryhh/SousSight/issues/13) | @terryhh | InProgress | SS-002 |
+| [SS-004: Implement source-backed cooking research and substitutions](https://github.com/terryhh/SousSight/issues/14) | @terryhh | InProgress | SS-001 |
+| [SS-005: AGY: build the grounded answer and substitution panel](https://github.com/terryhh/SousSight/issues/15) | @jennajh | Backlog | None |
+| [SS-006: Finish persistent timers and opt-in visible-change alarms](https://github.com/terryhh/SousSight/issues/16) | @terryhh | InProgress | SS-002, SS-003 |
+| [SS-007: Connect reviewed dinner-ready messages through Vonage](https://github.com/terryhh/SousSight/issues/17) | @terryhh | InProgress | SS-001, SS-003, SS-021 |
+| [SS-008: Deploy and smoke-test protected ephemeral Live tokens](https://github.com/terryhh/SousSight/issues/5) | @terryhh | InProgress | SS-001 |
+| [SS-009: Compile and verify private cooking Firestore rules](https://github.com/terryhh/SousSight/issues/18) | @terryhh | Done | None |
+| [SS-010: Run phone, desktop and failure-path integration checks](https://github.com/terryhh/SousSight/issues/20) | @terryhh | InProgress | SS-002, SS-003, SS-004, SS-005, SS-006, SS-007, SS-008, SS-009, SS-013, SS-023 |
+| [SS-011: Publish the stacked PRs and populate the SousSight project](https://github.com/terryhh/SousSight/issues/21) | @terryhh | Done | None |
+| [SS-012: Record the DevFest demo and explain Central Florida impact](https://github.com/terryhh/SousSight/issues/22) | @terryhh | InProgress | SS-010, SS-011, SS-024 |
+| [SS-013: Replace checkpoint placeholders with real visual examples](https://github.com/terryhh/SousSight/issues/19) | @terryhh | InProgress | SS-001, SS-022 |
+| [SS-014: Maintain infrastructure cost and credit ledger](https://github.com/terryhh/SousSight/issues/26) | @terryhh | InProgress | None |
+| [SS-015: Review and execute infrastructure teardown after the demo](https://github.com/terryhh/SousSight/issues/27) | @terryhh | Backlog | SS-014 |
+| [SS-016: Deploy merged main through GitHub Actions](https://github.com/terryhh/SousSight/issues/29) | @terryhh | InProgress | SS-020 |
+| [SS-017: Configure twenty dollar infrastructure spending controls](https://github.com/terryhh/SousSight/issues/30) | @terryhh | Done | None |
+| [SS-018: Preserve explicit GitHub card assignees in backlog publishing](https://github.com/terryhh/SousSight/issues/32) | @terryhh | Done | None |
+| [SS-019: Make the cooking workspace responsive in mobile Chrome](https://github.com/terryhh/SousSight/issues/34) | @terryhh | InProgress | None |
+| [SS-020: Isolate Live deployment from unconfigured Vonage secrets](https://github.com/terryhh/SousSight/issues/36) | @terryhh | Done | None |
+| [SS-021: Set up Vonage account and delivery configuration](https://github.com/terryhh/SousSight/issues/39) | @jennajh | Backlog | None |
+| [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | Backlog | None |
+| [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | Backlog | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006 |
+| [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Backlog | None |
+
+## Integration and release gates
+
+Terry completes production deployment and protected Live tokens (SS-016/SS-008), then verifies the actual camera/voice loop (SS-002). Generated panels and confirmed facts (SS-003), grounded research provider plus Jenna's panel (SS-004/SS-005), timers/watches (SS-006), and reviewed notification integration plus Jenna's setup (SS-007/SS-021) all remain required. SS-013 consumes Jenna's SS-022 fixture pack. SS-010 gathers these end-to-end outcomes and Jenna's SS-023 physical acceptance evidence before SS-012 final recording/submission; SS-024 supplies its script.
+
+The deployment fix has merged; a successful production release is not established by this plan. Earlier browser attempts were blocked by native Chrome permission denial and an unavailable access host. Native Chrome subsequently worked: the simulated mobile-PR-35 build at localhost:7358 fit a 360×740 DevTools viewport, a five-minute timer visibly counted down to 4:59 then 4:48, and the dinner review dialog fit. No message was sent and no physical media was tested. This rehearsal evidence does not replace Jenna’s real phone and deployed-service report. Unavailable services should be recorded as blocked with a responsible card, never silently replaced by simulated success.
+
+SS-014 continues cost/credit reconciliation under the accepted $20 gross monthly soft budget; eligible credit balances remain unverified. Reuse short focused test sessions and record usage. SS-015 is a future teardown request, not authorization to delete resources now. No extra paid service, notification or fabricated deadline is introduced by assigning this plan.
