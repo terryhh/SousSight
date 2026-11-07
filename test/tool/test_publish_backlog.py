@@ -141,6 +141,18 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(fake.items, [])
         self.assertEqual(len(fake.issues), 2)
 
+    def test_backlog_column_accepts_todo_tasks(self):
+        fake = FakeGhRunner()
+        fake.options[0] = {"id": "backlog-id", "name": "Backlog"}
+        self.apply(fake)
+        self.assertEqual(fake.statuses["PVTI_2"], "backlog-id")
+
+    def test_explicit_todo_takes_precedence_over_backlog(self):
+        fake = FakeGhRunner()
+        fake.options.append({"id": "backlog-id", "name": "Backlog"})
+        self.apply(fake)
+        self.assertEqual(fake.statuses["PVTI_2"], "todo-id")
+
     def test_missing_status_option_stops_before_issue_writes(self):
         fake = FakeGhRunner()
         fake.options = fake.options[:1]

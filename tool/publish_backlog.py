@@ -150,8 +150,11 @@ def find_project(gh, manifest, number=None):
         if name in options:
             raise PublishError("Ambiguous Status options.")
         options[name] = option["id"]
+    # GitHub team projects commonly use Backlog instead of Todo.
+    if "todo" not in options and "backlog" in options:
+        options["todo"] = options["backlog"]
     if not field.get("id") or not all(name in options for name in ("todo", "inprogress", "done")):
-        raise PublishError("Status must offer Todo, In Progress and Done options.")
+        raise PublishError("Status must offer Todo (or Backlog), In Progress and Done options.")
     return project, field["id"], options
 
 
