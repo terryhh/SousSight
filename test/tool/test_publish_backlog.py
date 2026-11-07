@@ -17,10 +17,10 @@ def manifest():
         "schemaVersion": 1, "repository": "terryhh/SousSight",
         "projectOwner": "terryhh", "projectTitle": "SousSight",
         "tasks": [
-            {"id": "SS-001", "priority": "P0", "title": "Camera `literal` $value", "owner": "Codex",
+            {"id": "SS-001", "priority": "P0", "title": "Camera `literal` $value", "owner": "Codex", "assignee": "terryhh",
              "status": "InProgress", "verified": False, "description": "Live camera + voice.",
              "acceptance": ["Verify real audio."], "dependsOn": [], "evidence": ["Local code; live service unverified."]},
-            {"id": "SS-002", "priority": "P1", "title": "AGY research panel", "owner": "Sister (AGY)",
+            {"id": "SS-002", "priority": "P1", "title": "AGY research panel", "owner": "Sister (AGY)", "assignee": "jennajh",
              "status": "Todo", "verified": False, "description": "Implement cited answers.",
              "acceptance": ["Explicit cook confirmation."], "dependsOn": ["SS-001"], "evidence": ["Assignment ready."]},
         ],
@@ -36,6 +36,7 @@ class FakeGhRunner:
                         {"id": "progress-id", "name": "In Progress"},
                         {"id": "done-id", "name": "Done"}]
         self.fail_edit_once = False
+        self.claim_on_view = None
 
     def __call__(self, argv, **kwargs):
         assert isinstance(argv, list)
@@ -61,9 +62,21 @@ class FakeGhRunner:
             body = Path(path).read_text()
             number = len(self.issues) + 1
             url = f"https://github.com/terryhh/SousSight/issues/{number}"
-            self.issues.append({"html_url": url, "body": body, "number": number})
+            assignee = args[args.index("--assignee") + 1]
+            self.issues.append({"html_url": url, "body": body, "number": number,
+                                "assignees": [{"login": assignee}]})
             self.bodies[url] = body
             return subprocess.CompletedProcess(argv, 0, stdout=url + "\n", stderr="")
+        elif args[:2] == ["issue", "view"]:
+            issue = next(issue for issue in self.issues if issue["html_url"] == args[2])
+            if self.claim_on_view:
+                issue["assignees"] = [{"login": self.claim_on_view}]
+            stdout = {"assignees": issue["assignees"]}
+        elif args[:2] == ["issue", "edit"]:
+            issue = next(issue for issue in self.issues if issue["html_url"] == args[2])
+            assignee = args[args.index("--add-assignee") + 1]
+            issue["assignees"].append({"login": assignee})
+            return subprocess.CompletedProcess(argv, 0, stdout=issue["html_url"], stderr="")
         elif args[:2] == ["project", "item-add"]:
             url = args[args.index("--url") + 1]
             item = {"id": f"PVTI_{len(self.items) + 1}", "content": {"url": url}}
@@ -103,6 +116,50 @@ class PublisherTests(unittest.TestCase):
         create = next(cmd for cmd in fake.commands if cmd[1:3] == ["issue", "create"])
         self.assertEqual(create[create.index("--title") + 1], "[P0] SS-001: Camera `literal` $value")
         self.assertFalse(Path(create[create.index("--body-file") + 1]).exists())
+        self.assertEqual(fake.issues[0]["assignees"], [{"login": "terryhh"}])
+        self.assertEqual(fake.issues[1]["assignees"], [{"login": "jennajh"}])
+
+    def test_existing_unassigned_issue_gets_manifest_assignee_without_body_changes(self):
+        fake = FakeGhRunner()
+        self.apply(fake)
+        fake.issues[0]["assignees"] = []
+        before = fake.issues[0]["body"]
+        fake.commands.clear()
+        self.apply(fake)
+        self.assertEqual(fake.issues[0]["assignees"], [{"login": "terryhh"}])
+        self.assertEqual(fake.issues[0]["body"], before)
+        edits = [c for c in fake.commands if c[1:3] == ["issue", "edit"]]
+        self.assertEqual(len(edits), 1)
+        self.assertNotIn("--remove-assignee", edits[0])
+
+    def test_existing_human_and_jenna_assignments_are_preserved(self):
+        fake = FakeGhRunner()
+        self.apply(fake)
+        fake.issues[0]["assignees"] = [{"login": "another-cook"}, {"login": "jennajh"}]
+        fake.commands.clear()
+        self.apply(fake)
+        self.assertEqual(fake.issues[0]["assignees"], [{"login": "another-cook"}, {"login": "jennajh"}])
+        self.assertEqual(fake.issues[1]["assignees"], [{"login": "jennajh"}])
+        self.assertFalse(any(c[1:3] == ["issue", "edit"] for c in fake.commands))
+
+    def test_new_human_claim_since_listing_is_preserved(self):
+        fake = FakeGhRunner()
+        self.apply(fake)
+        fake.issues[0]["assignees"] = []
+        fake.claim_on_view = "jennajh"
+        fake.commands.clear()
+        self.apply(fake)
+        self.assertEqual(fake.issues[0]["assignees"], [{"login": "jennajh"}])
+        self.assertFalse(any(c[1:3] == ["issue", "edit"] for c in fake.commands))
+
+    def test_unknown_assignment_metadata_stops_before_writes(self):
+        fake = FakeGhRunner()
+        self.apply(fake)
+        del fake.issues[0]["assignees"]
+        fake.commands.clear()
+        with self.assertRaisesRegex(publisher.PublishError, "assignment metadata"):
+            self.apply(fake)
+        self.assertFalse(any(c[1:3] in (["issue", "edit"], ["project", "item-edit"]) for c in fake.commands))
 
     def test_second_apply_reuses_issues_and_items_without_changing_bodies(self):
         fake = FakeGhRunner()
@@ -184,6 +241,19 @@ class PublisherTests(unittest.TestCase):
                 with self.assertRaises(publisher.PublishError):
                     publisher.load_manifest(path)
 
+    def test_manifest_requires_one_explicit_github_login_per_task(self):
+        for invalid in (None, "", "@terryhh", "terryhh,jennajh", "-owner", "owner-", "a" * 40):
+            with self.subTest(assignee=invalid), tempfile.TemporaryDirectory() as temp:
+                data = manifest()
+                if invalid is None:
+                    del data["tasks"][0]["assignee"]
+                else:
+                    data["tasks"][0]["assignee"] = invalid
+                path = Path(temp) / "manifest.json"
+                path.write_text(json.dumps(data))
+                with self.assertRaisesRegex(publisher.PublishError, "GitHub assignee"):
+                    publisher.load_manifest(path)
+
     def test_local_concurrent_publisher_is_rejected_without_deleting_lock(self):
         with publisher.publisher_lock("terryhh/SousSight-test-lock"):
             with self.assertRaisesRegex(publisher.PublishError, "Another local"):
@@ -197,6 +267,8 @@ class PublisherTests(unittest.TestCase):
         sister = next(task for task in data["tasks"] if task["id"] == "SS-005")
         self.assertIn("AGY-COOKING-RESEARCH.md", sister["description"])
         self.assertIn("AGY", sister["owner"])
+        self.assertEqual(sister["assignee"], "jennajh")
+        self.assertTrue(all(task["assignee"] == "terryhh" for task in data["tasks"] if task["id"] != "SS-005"))
         self.assertTrue(all(task["status"] != "Done" or task["verified"] is True for task in data["tasks"]))
 
 
