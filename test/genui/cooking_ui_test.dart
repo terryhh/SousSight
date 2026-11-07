@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genui/genui.dart';
@@ -15,6 +17,41 @@ Map<String, dynamic> panel(Map<String, dynamic> child) => {
 };
 
 void main() {
+  testWidgets(
+    'captured Gemini Live workspace renders and waits for the cook answer',
+    (tester) async {
+      // Captured from an actual Gemini Live show_cooking_ui tool response on
+      // 2026-11-07. This is offline replay of that payload, not a live service test.
+      final events = <CookingUiAction>[];
+      final controller = CookingUiController(onAction: events.add);
+      controller.applyJson(
+        File('test/genui/fixtures/gemini_live_workspace.json')
+            .readAsStringSync(),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: CookingSurface(controller: controller),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(Surface), findsOneWidget);
+      expect(find.text('Chickpea Texture Check'), findsOneWidget);
+      expect(find.text('Leave some chickpeas whole.'), findsOneWidget);
+      expect(find.text('Texture Preference'), findsOneWidget);
+      expect(events, isEmpty);
+      await tester.ensureVisible(find.text('Chunky'));
+      await tester.tap(find.text('Chunky'));
+      expect(events.single.name, 'cook_answer');
+      expect(events.single.context['answer'], 'Chunky');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+    },
+  );
+
   test('rejects cyclic, dangling, duplicate and unknown component trees', () {
     final invalid = [
       {

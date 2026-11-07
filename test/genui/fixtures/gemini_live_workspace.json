@@ -1,0 +1,34 @@
+{
+  "components": [
+    {
+      "id": "root",
+      "component": "CookingColumn",
+      "children": [
+        "step_cue_1",
+        "cook_question_1"
+      ]
+    },
+    {
+      "id": "step_cue_1",
+      "component": "stepCue",
+      "title": "Chickpea Texture Check",
+      "body": "Leave some chickpeas whole."
+    },
+    {
+      "id": "cook_question_1",
+      "component": "cookQuestion",
+      "title": "Texture Preference",
+      "question": "Do you want a chunky or smooth texture?",
+      "options": [
+        {
+          "id": "chunky",
+          "label": "Chunky"
+        },
+        {
+          "id": "smooth",
+          "label": "Smooth"
+        }
+      ]
+    }
+  ]
+}

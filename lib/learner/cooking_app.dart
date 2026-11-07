@@ -218,11 +218,20 @@ class _CookingScreenState extends State<CookingScreen>
                   sliver: SliverToBoxAdapter(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
-                        final left = _cameraColumn();
+                        final narrow = constraints.maxWidth < 850;
+                        final left = _cameraColumn(
+                          includeConversation: !narrow,
+                        );
                         final right = _workspace();
-                        if (constraints.maxWidth < 850) {
+                        if (narrow) {
                           return Column(
-                            children: [left, const SizedBox(height: 24), right],
+                            children: [
+                              left,
+                              const SizedBox(height: 24),
+                              right,
+                              const SizedBox(height: 24),
+                              _conversation(),
+                            ],
                           );
                         }
                         return Row(
@@ -304,7 +313,7 @@ class _CookingScreenState extends State<CookingScreen>
     ],
   );
 
-  Widget _cameraColumn() => Column(
+  Widget _cameraColumn({bool includeConversation = true}) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       const Text(
@@ -464,6 +473,13 @@ class _CookingScreenState extends State<CookingScreen>
         _inlineNotice(error, Icons.cloud_off_outlined),
       if (cook.live.notice case final notice?)
         _inlineNotice(notice, Icons.info_outline),
+      if (includeConversation) _conversation(),
+    ],
+  );
+
+  Widget _conversation() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
       if (cook.live.coachTranscript.isNotEmpty)
         Padding(
           padding: const EdgeInsets.only(top: 16),
@@ -482,9 +498,15 @@ class _CookingScreenState extends State<CookingScreen>
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    cook.live.coachTranscript,
-                    style: const TextStyle(height: 1.5),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    child: SingleChildScrollView(
+                      key: const ValueKey('coach-caption-scroll'),
+                      child: Text(
+                        cook.live.coachTranscript,
+                        style: const TextStyle(height: 1.5),
+                      ),
+                    ),
                   ),
                 ],
               ),

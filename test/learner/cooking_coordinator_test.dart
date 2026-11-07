@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -103,6 +104,7 @@ class _Transport implements LiveTransport {
   final texts = <String>[];
   final responses = <Map<String, Object?>>[];
   String? instruction;
+  bool failNextSend = false;
   @override
   Stream<LiveEvent> get events => source.stream;
   @override
@@ -116,6 +118,10 @@ class _Transport implements LiveTransport {
   Future<void> sendVideo(Uint8List jpeg) async {}
   @override
   Future<void> sendText(String text) async {
+    if (failNextSend) {
+      failNextSend = false;
+      throw StateError('Controlled transport failure');
+    }
     texts.add(text);
   }
 
@@ -220,6 +226,178 @@ void main() {
       expect(fixture.cook.live.status, LiveCookingStatus.listening);
     },
   );
+
+  test(
+    'connection context explicitly requests a contextual generated workspace',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      expect(fixture.transport.instruction, contains('call show_cooking_ui'));
+      expect(
+        fixture.transport.instruction,
+        contains('initial checklist is a fallback'),
+      );
+      expect(
+        fixture.transport.instruction,
+        contains('Ingredients the cook confirmed: []'),
+      );
+    },
+  );
+
+  test(
+    'completed research requests generated panels with actual evidence only',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      fixture.transport.texts.clear();
+      final pending = fixture.cook.researchQuestionNow('Can I use yogurt?');
+      fixture.research.pending.single.complete(
+        CookingResearchResult(
+          answer: 'Plain yogurt is an option.',
+          clarifyingQuestion: 'Is your yogurt unsweetened?',
+          citations: [
+            CookingCitation(
+              title: 'Provider source',
+              uri: Uri.parse('https://example.com/yogurt'),
+            ),
+          ],
+          searchSuggestionsHtml: '<div>Provider attribution</div>',
+        ),
+      );
+      await pending;
+      final request = fixture.transport.texts.single;
+      expect(request, contains('Call show_cooking_ui'));
+      expect(request, contains('https://example.com/yogurt'));
+      expect(request, contains('Is your yogurt unsweetened?'));
+      expect(request, contains('research is not cook confirmation'));
+      expect(request, isNot(contains('<div>')));
+      expect(
+        fixture.cook.researchResult!.searchSuggestionsHtml,
+        '<div>Provider attribution</div>',
+      );
+      expect(fixture.cook.session!.confirmedFacts, isEmpty);
+    },
+  );
+
+  test('successful research survives a workspace transport failure', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    final pending = fixture.cook.researchQuestionNow('Can I use yogurt?');
+    fixture.transport.failNextSend = true;
+    const result = CookingResearchResult(answer: 'Keep this completed answer.');
+    fixture.research.pending.single.complete(result);
+    expect(await pending, same(result));
+    expect(fixture.cook.researchResult, same(result));
+    expect(fixture.cook.error, isNull);
+    expect(fixture.cook.live.status, LiveCookingStatus.error);
+    expect(fixture.cook.live.error, contains('could not reach the live coach'));
+  });
+
+  test('uncited research is forwarded without invented grounding', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.texts.clear();
+    final pending = fixture.cook.researchQuestionNow('How much?');
+    fixture.research.pending.single.complete(
+      const CookingResearchResult(answer: 'No sourced answer available.'),
+    );
+    await pending;
+    expect(fixture.transport.texts.single, contains('"sources":[]'));
+    expect(
+      fixture.transport.texts.single,
+      contains('Do not invent sources or claim grounding'),
+    );
+  });
+
+  test('Live research tool replies with evidence without creating a duplicate user turn', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.texts.clear();
+    fixture.transport.source.add(
+      const LiveToolCall(
+        id: 'research',
+        name: 'research_cooking',
+        arguments: {'question': 'Can I use yogurt?'},
+      ),
+    );
+    await _flush();
+    fixture.research.pending.single.complete(
+      const CookingResearchResult(
+        answer: 'Ask about sweetness.',
+        clarifyingQuestion: 'Is it plain?',
+      ),
+    );
+    await _flush();
+    expect(fixture.transport.texts, isEmpty);
+    expect(
+      fixture.transport.responses.single['clarifyingQuestion'],
+      'Is it plain?',
+    );
+    expect(
+      fixture.transport.responses.single['workspaceInstruction'],
+      contains('show_cooking_ui'),
+    );
+  });
+
+  test('model replaces fallback and can recompose while confirmed state and timer persist', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.cook.ui.confirmIngredient('ingredients', 'yogurt', true);
+    await _flush();
+    await fixture.cook.startTimer('mash-timer', 'Mash', 60);
+    final deadline = fixture.cook.ui.timers.single.deadline;
+    for (final panel in [
+      {
+        'id': 'question',
+        'component': 'cookQuestion',
+        'title': 'Your yogurt',
+        'question': 'Is it plain?',
+        'options': [
+          {'id': 'yes', 'label': 'Yes'},
+          {'id': 'unsure', 'label': 'Not sure'},
+        ],
+      },
+      {
+        'id': 'comparison',
+        'component': 'comparison',
+        'title': 'Your bowl now',
+        'observed': 'Large pieces',
+        'target': 'Small chunks',
+        'cue': 'Mash a little more',
+      },
+    ]) {
+      fixture.transport.source.add(
+        LiveToolCall(
+          id: panel['id'] as String,
+          name: 'show_cooking_ui',
+          arguments: {
+            'uiJson': jsonEncode({
+              'components': [
+                {
+                  'id': 'root',
+                  'component': 'CookingColumn',
+                  'children': [panel['id']],
+                },
+                panel,
+              ],
+            }),
+          },
+        ),
+      );
+      await _flush();
+      expect(fixture.cook.ui.components.map((c) => c['id']), [
+        'root',
+        panel['id'],
+      ]);
+      expect(fixture.cook.ui.confirmedIngredients, contains('yogurt'));
+      expect(fixture.cook.ui.timers.single.deadline, deadline);
+      fixture.transport.source.add(
+        const LiveTranscript('Short coaching reply', isUser: false),
+      );
+      await _flush();
+      expect(fixture.cook.ui.components.last['id'], panel['id']);
+    }
+  });
 
   test('two Next step clicks while saving complete exactly one step', () async {
     await fixture.initialize();
@@ -349,6 +527,7 @@ void main() {
     'research based on a previous step cannot be applied after advancement',
     () async {
       await fixture.initialize();
+      await fixture.cook.connect();
       final pending = fixture.cook.researchQuestionNow(
         'What should this look like?',
       );
@@ -357,12 +536,14 @@ void main() {
         startsWith('Prepare:'),
       );
       await fixture.cook.advanceStep();
+      fixture.transport.texts.clear();
       fixture.research.pending.single.complete(
         const CookingResearchResult(answer: 'Old prep guidance'),
       );
       expect(await pending, isNull);
       expect(fixture.cook.researchResult, isNull);
       expect(fixture.cook.researching, isFalse);
+      expect(fixture.transport.texts, isEmpty);
     },
   );
 

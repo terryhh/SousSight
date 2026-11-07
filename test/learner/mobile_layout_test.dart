@@ -1,7 +1,26 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/learner/cooking_app.dart';
+import 'package:soussight/learner/cooking_coordinator.dart';
+import 'package:soussight/learner/demo_live.dart';
+import 'package:soussight/ai/cooking_research_client.dart';
+import 'package:soussight/live/live_types.dart';
+
+class _CaptionTransport extends DemoLiveTransport {
+  final source = StreamController<LiveEvent>.broadcast();
+  @override
+  Stream<LiveEvent> get events => source.stream;
+  @override
+  Future<void> sendText(String text) async {}
+  @override
+  Future<void> close() async {
+    await source.close();
+    await super.close();
+  }
+}
 
 void main() {
   Future<void> openKitchen(
@@ -56,6 +75,19 @@ void main() {
     });
   }
 
+  testWidgets('mobile puts the generated workspace before the conversation', (
+    tester,
+  ) async {
+    await openKitchen(tester, const Size(390, 844));
+    final workspace = tester.getTopLeft(find.text('Your cooking space'));
+    final composer = tester.getTopLeft(find.byType(TextField).first);
+    final liveControls = tester.getTopLeft(find.text('Start rehearsal'));
+    expect(liveControls.dy, lessThan(workspace.dy));
+    expect(workspace.dy, lessThan(composer.dy));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   for (final width in [735.0, 1280.0]) {
     testWidgets('empty camera fills its preview at ${width}px', (tester) async {
       await openKitchen(tester, Size(width, 900));
@@ -76,6 +108,55 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets(
+    'long captions scroll within a bounded height without moving live controls',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final services = (await tester.runAsync(fakeServices))!;
+      final transport = _CaptionTransport();
+      final cook = CookingCoordinator(
+        services: services,
+        research: FakeCookingResearchClient(),
+        transportFactory: () => transport,
+        media: DemoLiveMedia(),
+        isDemo: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: cookingTheme,
+          home: CookingScreen(
+            services: services,
+            isDemo: true,
+            createCoordinator: () => cook,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await cook.connect();
+      await tester.pumpAndSettle();
+      final stopBefore = tester.getTopLeft(find.text('End live session'));
+      transport.source.add(
+        LiveTranscript(
+          List.filled(100, 'Keep stirring slowly.').join(' '),
+          isUser: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final caption = find.byKey(const ValueKey('coach-caption-scroll'));
+      expect(tester.getSize(caption).height, lessThanOrEqualTo(160));
+      final scroll = tester.state<ScrollableState>(
+        find.descendant(of: caption, matching: find.byType(Scrollable)),
+      );
+      expect(scroll.position.maxScrollExtent, greaterThan(0));
+      expect(tester.getTopLeft(find.text('End live session')), stopBefore);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   testWidgets('large text preserves mobile live controls and timer', (
     tester,
