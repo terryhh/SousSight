@@ -32,8 +32,8 @@ Sources: [Google Cloud trial](https://cloud.google.com/signup-faqs), [Gemini bil
 | Firebase Authentication | Anonymous provider enabled Nov 7 | Active users and provider selection; no phone/SMS auth configured | Free allowance/eligible cloud credit; credit redemption remains unverified |
 | Firestore `(default)`, `nam5` | Pre-existing database; private rules and indexes deployed Nov 7 | Reads, writes, deletes, stored data, index storage and network transfer | $300 eligibility/balance unverified; project billing is now enabled |
 | Firebase AI Logic + Gemini Developer API | APIs enabled; AI Logic App Check enforcement verified ENFORCED; one authenticated AI request smoke succeeded (5 prompt / 17 total tokens), content not asserted | Model tokens, search grounding, live media; API enablement is not a measured inference charge | Welcome credit excluded for current Gemini API; $10 benefit not yet verified |
-| App Check web provider | Production Enterprise provider registered for the two Hosting domains; debug config remains local | Attestation-provider quotas; never publish debug tokens | Provider registered; actual attestation usage/cost and production-browser behavior remain to be measured |
-| Hosting | Default site exists; root returned 404 before setup | Storage and outbound transfer | Free allowance then eligible cloud billing; no production web release made in this setup |
+| App Check web provider | Production Enterprise provider configured for both Hosting domains; hosted real research verified the production Auth/App Check path without a CI debug token | Attestation-provider quotas; never publish debug tokens | Production browser behavior verified; actual attestation units and monetary cost remain unmeasured |
+| Hosting | Production release served HTTP 200 after run 42422724152 attempt 2; native Chrome loaded the real-mode app | Storage and outbound transfer | Free allowance then eligible cloud billing; credit coverage and actual transfer/storage charges remain unverified |
 | Cloud Functions `liveToken`, `dinnerReady` | liveToken ACTIVE on Node 22 after successful run 42422724152 attempt 2; dinnerReady remains undeployed/disabled | Invocations, compute, network, build/artifact storage and logs | Billing enabled; credit coverage remains unverified |
 | Secret Manager | Enabled; Gemini-only server key stored as GEMINI_API_KEY without printing or writing the value to disk | Active versions and access operations | Billing enabled; credit coverage remains unverified |
 | Vonage | App sending disabled; Jenna owns SS-021 provider setup (Backlog); no credentials or paid sends configured in this setup | Channel/recipient-specific message charges, sender fees | Google credits do not establish Vonage coverage; keep disabled |
@@ -65,12 +65,12 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Enabled firebaseextensions.googleapis.com for Firebase CLI discovery | API enablement only; no extension installed | Not inspected | No Firebase Extensions workload created |
 | 2026-11-07 | Temporarily disabled GitHub production deployment gate while separate-entrypoint fix is reviewed | Prevents repeated known-failing deployments; validation can continue | Not inspected | Re-enable only as part of the reviewed fix rollout |
 | 2026-11-07 | Canceled redundant main workflow run 42420643671 while deployment isolation is fixed | Avoids repeated private GitHub Actions usage; no estimate of incurred minutes | Not inspected | No successful production deployment or message send claimed |
-
 | 2026-11-07 | Live-only rollout 42421304400 passed secret discovery, then stopped because Cloud Billing API was disabled | Private Actions minutes used; no successful function or Hosting release established | Not inspected | Enabled cloudbilling.googleapis.com with setup identity; no API-enable role added to deployer; next rollout 42421669752 started |
 | 2026-11-07 | Rollout 42421669752 failed at Auth provisionFirebaseApp (403) after uploads; PR #48 passed CI and merged to omit repeated one-time Auth provisioning | Upload/build/artifact and private Actions usage may occur despite a failed release; no measured charge claimed | Not inspected | Gate enabled; run 42422724152 on main d350601 pending verification; no successful release established |
 | 2026-11-07 | Chrome rehearsal check at 360×740: layout, countdown and dinner review | Local simulated build only; no model call or message send | Not inspected | Timer visibly advanced from 4:59 to 4:48; physical camera/audio and hosted App Check remain unverified |
-
 | 2026-11-07 | One real Firebase AI Logic Google Search request with temporary Auth/App Check test identities | gemini-3.8-flash: 32 prompt + 172 candidate = 204 total tokens; search grounding may add charges, amount unreconciled | Not inspected | Nonempty answer, 3 source chunks and 5 supported segments returned; temporary identities removed; provider test, not physical UI acceptance |
+
+| 2026-11-07 | Corrected direct token mint and real Gemini Live WebSocket synthetic "Say ready" request returned audio | gemini-3.8-live / v1beta / maxOutputTokens 64; usage units not captured, amount unknown | Not inspected | No microphone/camera used; deployed token full path still pending rollout 42423984364 |
 
 ## Planning estimate — not a quote or cap
 
@@ -103,3 +103,7 @@ Tracking: [SS-014 cost ledger](https://github.com/terryhh/SousSight/issues/26), 
 - At completion: execute the reviewed [teardown plan](TEARDOWN.md), then reconcile residual storage, artifact, log and delayed usage charges. Mark a resource removed only after a read-back check.
 
 [Budget alerts](https://firebase.google.com/docs/projects/billing/budget-alerts), [supported spend caps and their limits](https://firebase.google.com/docs/projects/billing/spend-caps).
+
+2026-11-07: A corrected direct token mint followed by a real Gemini Live WebSocket synthetic "Say ready" request returned audio (gemini-3.8-live, v1beta, maxOutputTokens 64). No microphone or camera was used; usage units were not captured and the monetary amount is unknown. This does not verify the deployed token endpoint/full browser media path, which remains pending rollout 42423984364.
+
+Terry explicitly approved a brief camera/microphone test to Google Gemini after the fix deploys. That authorized test has not yet been performed. PR #52 desktop-layout fix passed CI and merged; its rollout follows the backend fix.
