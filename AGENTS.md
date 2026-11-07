@@ -23,3 +23,5 @@ The user's November 7 corrections supersede the older instructor-centric handoff
 
 - Jenna also owns SS-021 Vonage provider setup, SS-022 real photo fixtures (`assets/reference-cooking/**`, `docs/validation/reference-images.md`), SS-023 physical cook acceptance reports (`docs/validation/cook-acceptance.md`, `docs/validation/cook-acceptance/**`), and SS-024 demo preparation (`docs/demo/**`). Assignment is Backlog until she starts. Do not implement these scopes for her.
 - Terry retains shared runtime integration, model evaluation, deployment, runtime fixes and final recording/submission. Coordinate handoffs through the cards and `docs/MVP-WORK-PLAN.md`; no implicit takeover of either person’s files.
+
+- Add meaningful regression coverage alongside MVP behavior changes. Prioritize the working deployment and critical flows; distinguish automated, emulator, live-service and physical-device evidence. Avoid redundant tests that only mirror implementation.

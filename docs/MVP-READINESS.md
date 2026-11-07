@@ -23,6 +23,8 @@ Native Chrome subsequently worked: the local simulated mobile build fit a 360×7
 
 Live-only rollout 42421304400 passed function secret discovery but stopped on a disabled Cloud Billing API. That API was enabled using setup credentials; rollout 42421669752 is underway. A successful release is still unverified.
 
+A subsequent real Firebase AI Logic request using `gemini-3.8-flash` with Google Search returned nonempty answer text, 3 source chunks and 5 supported segments (32 prompt + 172 candidate = 204 total tokens). Temporary anonymous Auth and debug App Check registrations were removed. This verifies the authenticated provider response and grounding metadata, not the complete research UI or production reCAPTCHA path.
+
 ## Live acceptance sequence
 
 1. Confirm anonymous Authentication, Firestore and production reCAPTCHA Enterprise App Check are configured for the Hosting origin. Configure backend Gemini credentials and the selected model/API version; keep credentials out of browser assets.

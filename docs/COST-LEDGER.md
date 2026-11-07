@@ -69,6 +69,8 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Live-only rollout 42421304400 passed secret discovery, then stopped because Cloud Billing API was disabled | Private Actions minutes used; no successful function or Hosting release established | Not inspected | Enabled cloudbilling.googleapis.com with setup identity; no API-enable role added to deployer; next rollout 42421669752 started |
 | 2026-11-07 | Chrome rehearsal check at 360×740: layout, countdown and dinner review | Local simulated build only; no model call or message send | Not inspected | Timer visibly advanced from 4:59 to 4:48; physical camera/audio and hosted App Check remain unverified |
 
+| 2026-11-07 | One real Firebase AI Logic Google Search request with temporary Auth/App Check test identities | gemini-3.8-flash: 32 prompt + 172 candidate = 204 total tokens; search grounding may add charges, amount unreconciled | Not inspected | Nonempty answer, 3 source chunks and 5 supported segments returned; temporary identities removed; provider test, not physical UI acceptance |
+
 ## Planning estimate — not a quote or cap
 
 Using published Gemini 3.8 Live media rates checked November 7: input audio about $0.005/min, input image/video about $0.002/min, output audio about $0.018/min. A hypothetical 30-minute camera/microphone session with 5 minutes of generated speech is `30 × (0.005 + 0.002) + 5 × 0.018 = $0.30` for these streams. Text/context, research/grounding, infrastructure, taxes and Vonage are additional. Actual token metering and session behavior must be measured; this is not a total-session ceiling.
