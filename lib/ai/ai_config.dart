@@ -19,7 +19,7 @@ abstract final class AiConfig {
     defaultValue: 'gemini-3.5-flash-lite',
   );
 
-  /// Gemini Live (stretch goal, audio-only push-to-talk).
+  /// Gemini Live: core camera, microphone, spoken coaching, and UI tools.
   static const liveModel = String.fromEnvironment(
     'LIVE_MODEL',
     defaultValue: 'gemini-3.1-flash-live-preview',
