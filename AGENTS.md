@@ -18,3 +18,8 @@ The user's November 7 corrections supersede the older instructor-centric handoff
 - Keep `docs/COST-LEDGER.md` current after infrastructure changes and live tests, distinguishing estimates, verified billed amounts and unknowns. Track shutdown in `docs/TEARDOWN.md`; execute deletion only on explicit teardown authorization with retention decisions.
 
 - GitHub access and mutations are restricted to `terryhh/SousSight` and Terry’s SousSight project board. Do not access or change Rekor repositories, organizations, or projects.
+
+## Jenna pickup ownership
+
+- Jenna also owns SS-021 Vonage provider setup, SS-022 real photo fixtures (`assets/reference-cooking/**`, `docs/validation/reference-images.md`), SS-023 physical cook acceptance reports (`docs/validation/cook-acceptance.md`, `docs/validation/cook-acceptance/**`), and SS-024 demo preparation (`docs/demo/**`). Assignment is Backlog until she starts. Do not implement these scopes for her.
+- Terry retains shared runtime integration, model evaluation, deployment, runtime fixes and final recording/submission. Coordinate handoffs through the cards and `docs/MVP-WORK-PLAN.md`; no implicit takeover of either person’s files.

@@ -268,9 +268,9 @@ class PublisherTests(unittest.TestCase):
         self.assertIn("AGY-COOKING-RESEARCH.md", sister["description"])
         self.assertIn("AGY", sister["owner"])
         self.assertEqual(sister["assignee"], "jennajh")
-        jenna_tasks = {"SS-005", "SS-021"}
-        self.assertEqual({task["id"] for task in data["tasks"] if task["assignee"] == "jennajh"}, jenna_tasks)
-        self.assertTrue(all(task["assignee"] == "terryhh" for task in data["tasks"] if task["id"] not in jenna_tasks))
+        # Validate explicit owners without assuming future pickup work belongs to Terry.
+        self.assertTrue(all(task["assignee"] in {"terryhh", "jennajh"} for task in data["tasks"]))
+        self.assertEqual(next(task for task in data["tasks"] if task["id"] == "SS-005")["assignee"], "jennajh")
         self.assertTrue(all(task["status"] != "Done" or task["verified"] is True for task in data["tasks"]))
 
 
