@@ -443,8 +443,8 @@
       "priority": "P0",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Production deployment attempt 2 failed because Firebase CLI discovers all exports and resolves Vonage secrets even when only liveToken is selected. Deploy Live without unavailable dinner credentials, preserving the disabled dinner service and its future deployment path.",
       "acceptance": [
         "Live-only package discovery contains only liveToken and no Vonage secret parameters.",
@@ -457,7 +457,8 @@
       ],
       "evidence": [
         "2026-11-07: PR #37 (6e10262) introduces separate deployment entrypoints. All 23 backend tests pass locally, including installed Firebase SDK manifest discovery. GitHub CI passed and PR merged; deployed-run verification remains pending.",
-        "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets."
+        "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets.",
+        "2026-11-07: PR #37 passed CI and merged; issue #36 closed. The finite entrypoint-isolation implementation is complete. Successful production rollout and Live connection remain SS-016/SS-008 acceptance."
       ]
     },
     {
@@ -499,7 +500,8 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed."
+        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/40 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
       ]
     },
     {
@@ -528,7 +530,8 @@
         "SS-019"
       ],
       "evidence": [
-        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed."
+        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/41 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
       ]
     },
     {
@@ -549,7 +552,8 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed."
+        "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/42 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
       ]
     }
   ]
