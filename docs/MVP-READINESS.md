@@ -12,10 +12,10 @@ The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated
 - Production reCAPTCHA Enterprise App Check is registered for the two Hosting domains, and the dedicated Gemini server key is in Secret Manager. Local debug tokens remain out of published builds.
 - All 10 Firestore emulator security scenarios pass. Actual repository rules compile unchanged; tests verify owner isolation, checkpoint privacy/size, session validation and server-only ledger denial. See `test/rules/README.md`. This is emulator verification, not production deployment.
 - Firebase CLI can list the active project and its default Hosting site, `devfest-flutter-a59e8`.
-- Initial Hosting root returned HTTP 404. GitHub production deployment run 42419680055, attempt 2, failed because Firebase CLI required missing VONAGE_API_KEY despite selecting liveToken only. A separate deployment-path fix is in progress; a successful production release and deployed Live token endpoint are not yet established. Redundant run 42420643671 was canceled until the fix is ready.
+- Initial Hosting root returned HTTP 404. GitHub production deployment run 42419680055, attempt 2, failed because Firebase CLI required missing VONAGE_API_KEY despite selecting liveToken only. The separate deployment-path fix in PR #37 passed CI and merged, and the deployment gate was re-enabled for rollout; a successful production release and deployed Live token endpoint are not yet established. Redundant run 42420643671 was canceled until the fix is ready.
 - Real Auth/App Check and an AI Logic request smoke succeeded (5 prompt / 17 total tokens). Response content was not asserted. This does not verify a Live session or production-browser attestation.
 - GitHub OIDC is scoped to this repository/main/approved events, with a main-only production environment. Both pre-existing default runtime accounts have Editor; the approved actAs grants mean the effective deployment path is not globally least privilege. See `docs/AUTODEPLOY.md`.
-- Interactive browser verification was unavailable because the browser access host was unavailable.
+- Interactive browser verification was blocked by an unavailable browser access host and, in a separate attempt, denied native Chrome permission. Neither attempt establishes browser acceptance.
 
 ## Live acceptance sequence
 

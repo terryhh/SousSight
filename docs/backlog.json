@@ -364,7 +364,7 @@
         "2026-11-07: GitHub Actions workflow merged; validation gates production build/deployment. OIDC provider is restricted to SousSight repository/owner numeric IDs, main and allowed events; production environment allows main only.",
         "2026-11-07: Deployment run 42419680055 attempt 2 failed on missing VONAGE_API_KEY despite selecting liveToken only. This followed the specifically approved actAs grant on the project App Engine default runtime account. A deployment-isolation fix is in progress; redundant run 42420643671 was canceled. No successful production release is claimed.",
         "Both default runtime accounts have pre-existing Editor roles. The deployer has no Owner/Editor role, but its permitted runtime impersonation means the effective deployment path is not globally least privilege.",
-        "2026-11-07: FIREBASE_DEPLOY_ENABLED temporarily set false to avoid known-failing production deploys; separate Live-only package entrypoint fix is being reviewed. firebaseextensions.googleapis.com enabled for discovery; no extensions installed."
+        "2026-11-07: PR #37 passed CI and merged; FIREBASE_DEPLOY_ENABLED restored true before merge for rollout. Deployment verification remains pending. firebaseextensions.googleapis.com enabled for discovery; no extensions installed."
       ],
       "assignee": "terryhh"
     },
@@ -452,7 +452,7 @@
         "SS-016"
       ],
       "evidence": [
-        "2026-11-07: PR #37 (6e10262) introduces separate deployment entrypoints. All 23 backend tests pass locally, including installed Firebase SDK manifest discovery. CI and deployed-run verification remain pending.",
+        "2026-11-07: PR #37 (6e10262) introduces separate deployment entrypoints. All 23 backend tests pass locally, including installed Firebase SDK manifest discovery. GitHub CI passed and PR merged; deployed-run verification remains pending.",
         "Issue #36 is assigned terryhh and Project In progress. No new IAM grants or fabricated Vonage secrets."
       ]
     },
