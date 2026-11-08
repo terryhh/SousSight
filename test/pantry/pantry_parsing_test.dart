@@ -44,34 +44,58 @@ void main() {
       expect(result.simulated, isFalse);
     });
 
-    test('rejects recipes outside the reviewed catalog', () {
-      expect(
-        () => parsePantryResult(_response(recipeId: 'invented_lasagna'), _ids),
-        throwsFormatException,
-      );
+    test('never shows recipes outside the reviewed catalog', () {
+      final result =
+          parsePantryResult(_response(recipeId: 'invented_lasagna'), _ids);
+      expect(result.meals, isEmpty);
     });
 
-    test('rejects malformed confidence, duplicates and non-objects', () {
-      expect(
-        () => parsePantryResult(
-          jsonEncode({
-            'items': [
-              {'name': 'rice', 'confidence': 'certain'},
-            ],
-            'meals': [],
-          }),
-          _ids,
-        ),
-        throwsFormatException,
+    test('over-long model text is shortened, not rejected', () {
+      final long = 'Tortilla chips or tortillas, for serving (flour tortillas '
+          'contain wheat; check labels) and more words';
+      final result = parsePantryResult(
+        jsonEncode({
+          'items': [
+            {'name': 'peanut butter', 'confidence': 'High'},
+          ],
+          'meals': [
+            {
+              'recipeId': 'black_bean_corn_salsa_v1',
+              'why': 'x' * 900,
+              'matched': [long],
+              'missing': [for (var i = 0; i < 40; i++) 'item $i'],
+            },
+          ],
+        }),
+        _ids,
       );
+      expect(result.items.single.confidence, PantryConfidence.high);
+      expect(result.meals.single.why.length, lessThanOrEqualTo(400));
+      expect(result.meals.single.matched.single.length, lessThanOrEqualTo(80));
+      expect(result.meals.single.matched.single, endsWith("…"));
+      expect(result.meals.single.missing, hasLength(20));
+    });
+
+    test('normalizes confidence, drops duplicates, rejects non-objects', () {
+      final odd = parsePantryResult(
+        jsonEncode({
+          'items': [
+            {'name': 'rice', 'confidence': 'certain'},
+            {'name': '', 'confidence': 'high'},
+          ],
+          'meals': [],
+        }),
+        _ids,
+      );
+      expect(odd.items.single.confidence, PantryConfidence.low);
       final duplicate = jsonDecode(_response()) as Map<String, dynamic>;
       duplicate['meals'] = [
         ...duplicate['meals'] as List,
         ...duplicate['meals'] as List,
       ];
       expect(
-        () => parsePantryResult(jsonEncode(duplicate), _ids),
-        throwsFormatException,
+        parsePantryResult(jsonEncode(duplicate), _ids).meals,
+        hasLength(1),
       );
       expect(() => parsePantryResult('[]', _ids), throwsFormatException);
       expect(() => parsePantryResult(null, _ids), throwsFormatException);
@@ -137,10 +161,11 @@ void main() {
         final invented = GeminiPantryClient(
           generate: (_) async => _response(recipeId: 'invented_lasagna'),
         );
-        await expectLater(
-          invented.identify(const PantryInput(text: 'pasta'), recipes),
-          throwsA(isA<PantryException>()),
+        final result = await invented.identify(
+          const PantryInput(text: 'pasta'),
+          recipes,
         );
+        expect(result.meals, isEmpty, reason: 'invented recipes never shown');
         final offline = GeminiPantryClient(
           generate: (_) async => throw StateError('network api key leak'),
         );

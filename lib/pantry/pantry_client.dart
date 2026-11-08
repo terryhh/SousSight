@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:async';
 import 'dart:convert';
 
@@ -156,7 +157,9 @@ class GeminiPantryClient implements PantryClient {
           config: GenerationConfig(
             responseMimeType: 'application/json',
             responseSchema: pantrySchema(ids),
-            maxOutputTokens: 2048,
+            // Thinking tokens can count toward this budget; a truncated JSON
+            // reply would be unreadable, so leave generous headroom.
+            maxOutputTokens: 8192,
             thinkingConfig: ThinkingConfig.withThinkingLevel(ThinkingLevel.low),
           ),
         ),
@@ -172,7 +175,9 @@ class GeminiPantryClient implements PantryClient {
       rethrow;
     } on TimeoutException {
       throw const PantryException('That took too long. Please try again.');
-    } on FormatException {
+    } on FormatException catch (error) {
+      // Diagnosable in the browser console; never shown to the cook.
+      debugPrint('Pantry response rejected: ${error.message}');
       throw const PantryException(
         'I could not read that answer. Please try again or type your list.',
       );
