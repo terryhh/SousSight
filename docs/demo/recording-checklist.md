@@ -20,8 +20,8 @@ Prepared by Jenna for Terry's SS-012 recording and submission. Jenna does not se
 - [ ] Camera and mic allowed. Do-not-disturb on. Battery above 50%, or the device plugged in.
 - [ ] Ingredients and props from [runbook.md §1](runbook.md#1-ingredients-and-props) are on the counter.
 - [ ] Frame checked: no faces of others, screens, addresses or phone numbers.
-- [ ] Simulation flag deployed if beats 8–9 are in the take.
-- [ ] Real SMS: **not planned** unless Terry has given fresh approval of the recipient and text ([runbook.md §5](runbook.md#5-test-recipient-prerequisites-vonage)).
+- [ ] If beats 8–9 are in the take: simulation flag deployed, and the cook has the allowlisted demo recipient from Terry off-camera ([runbook.md §5a](runbook.md#5a-simulated-outcomes-beats-89-no-sms)). `ENABLE_DINNER_MESSAGES` stays `false`.
+- [ ] Real SMS: **not planned** unless Terry has given fresh approval of the recipient and text ([runbook.md §5b](runbook.md#5b-real-sms-not-planned)).
 
 ## While recording
 

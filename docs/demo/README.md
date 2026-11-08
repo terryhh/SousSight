@@ -36,7 +36,7 @@ Snapshot from the GitHub cards on **2026-11-08**. Re-read the linked cards befor
 | 6 | Real timer | **Live** | [SS-006 #16](https://github.com/terryhh/SousSight/issues/16): hosted timers persist across reload, expire and dismiss. The sandwich has no timed step; use the salsa meld timer (see runbook) |
 | 7 | Opt-in visible-change watch | Pending | Moved to [SS-040 #95](https://github.com/terryhh/SousSight/issues/95) |
 | 8 | Spanish exchange | Pending | [SS-046 #111](https://github.com/terryhh/SousSight/issues/111) |
-| 9 | Vonage "started cooking" and "dinner is ready", reviewed, delivered and failed outcomes | Simulated by design · Pending hosted | [SS-047 #112](https://github.com/terryhh/SousSight/issues/112). Needs `ALLOW_DELIVERY_SIMULATION=true` on production |
+| 9 | Vonage "started cooking" and "dinner is ready", reviewed, delivered and failed outcomes | Simulated by design · Pending hosted | [SS-047 #112](https://github.com/terryhh/SousSight/issues/112). Needs `ALLOW_DELIVERY_SIMULATION=true` on production and an allowlisted recipient entered in the dialog; Vonage is not contacted |
 | 10 | Real SMS delivered from the app | **Blocked** | [SS-021 #39](https://github.com/terryhh/SousSight/issues/39): the one authorized app send was rejected (1120 Illegal Sender Address). The sender is corrected, but no app-originated delivery is proven. A new send needs fresh explicit approval of the recipient and text |
 | 11 | Meal-complete moment | Pending | Merged in #116, no hosted check recorded |
 | 12 | New cook between takes | Pending | [SS-033 #83](https://github.com/terryhh/SousSight/issues/83): code merged and index READY; hosted repeatability not recorded |

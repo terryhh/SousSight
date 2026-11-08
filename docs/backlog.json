@@ -603,7 +603,8 @@
       "evidence": [
         "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/42 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim.",
-        "2026-11-08: Jenna started; PR #122 adds docs/demo/ (runbook, script and shot list, Central Florida narrative, recording checklist, per-segment evidence table from current cards) and hands it to Terry for SS-012. Docs only: no live test was run for this card, and no deadline or submission is claimed. Segment status must be refreshed from the linked cards before recording."
+        "2026-11-08: Jenna started; PR #122 adds docs/demo/ (runbook, script and shot list, Central Florida narrative, recording checklist, per-segment evidence table from current cards) and hands it to Terry for SS-012. Docs only: no live test was run for this card, and no deadline or submission is claimed. Segment status must be refreshed from the linked cards before recording.",
+        "2026-11-08: Addressed Terry's PR #122 review: runbook and shot list now run Find food help nearby (typed Orlando, FL + Search) on the pantry screen before choosing the recipe, and the simulated Vonage beats include entering an allowlisted demo recipient. Corrected the runbook: per functions/src/dinner-ready.js, simulations also require a recipient in VONAGE_ALLOWED_TO and a configured channel. Docs only; no live or hosted check run."
       ]
     },
     {

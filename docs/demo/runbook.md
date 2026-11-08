@@ -48,7 +48,19 @@ Status labels for each segment are in [README.md](README.md#evidence-status-by-s
 
 ## 5. Test-recipient prerequisites (Vonage)
 
-These apply only to a **real** SMS. The simulated delivered and failed outcomes need none of them and send nothing.
+### 5a. Simulated outcomes (beats 8–9, no SMS)
+
+The simulate buttons never contact Vonage, but the server still validates the request first, in this order (`functions/src/dinner-ready.js`):
+
+- [ ] **A demo recipient is entered in the review dialog.** A **New cook** starts with the field blank, and the app rejects the tap until it holds a full international number (`+` and 8–15 digits).
+- [ ] That number is already in the server allowlist secret `VONAGE_ALLOWED_TO`. Otherwise the server answers `recipient-not-allowed`, even for a simulation. Use the existing verified test number. Terry gives it to the cook off-camera; never write it in GitHub or show it on screen.
+- [ ] The dinner channel is configured (SMS or WhatsApp). Otherwise the server answers `not-configured`.
+- [ ] `ALLOW_DELIVERY_SIMULATION=true` is set on the GitHub `production` environment and deployed. Otherwise the buttons are hidden or the server answers `simulation-disabled`.
+- [ ] Leave `ENABLE_DINNER_MESSAGES=false`. Simulations do not need it, and with it off, an accidental tap on **Confirm and send** is recorded as a dry run and sends nothing.
+
+Entering the recipient does **not** authorize a real send. Tap only the **Simulate … (demo)** buttons, and keep the "No SMS was sent" disclosure.
+
+### 5b. Real SMS (not planned)
 
 - [ ] Fresh, explicit approval from Terry of the exact recipient and message text, given in the chat or on the card. An earlier approval does not carry over.
 - [ ] The recipient is a Vonage-verified test number on the trial account, and is in the server allowlist secret `VONAGE_ALLOWED_TO`. Without it, the server answers `recipient-not-allowed`.
@@ -62,15 +74,15 @@ These apply only to a **real** SMS. The simulated delivered and failed outcomes 
 
 The script with spoken lines is in [script-and-shots.md](script-and-shots.md). In short:
 
-1. **Scan the haul.** Confirm only the items the scan got right. Pick **Peanut Butter Sandwich**.
-2. **Find food help nearby** for Orlando. Show the Maps links.
-3. Press **Start**. Answer the coach's allergy check.
+1. **Scan the haul.** Confirm only the items the scan got right. Stay on the pantry screen; do not pick a recipe yet.
+2. **Find food help nearby**, still on the pantry screen. Type `Orlando, FL` in **Or type a city or ZIP**, then tap **Search**. The app never searches an implied place, so the area must be typed or **Use my location once** tapped. Show the Maps links, then close the sheet.
+3. Pick **Peanut Butter Sandwich**. Press **Start**. Answer the coach's allergy check.
 4. Answer one targeted question, for example "smooth, no jam". Check that the answer shows as confirmed.
 5. Ask "Can I use sunflower seed butter instead?" Show the sources.
 6. Spread on camera and ask "Am I doing this right?" Optionally: "Watch until it's spread to the edges."
 7. Optionally, have one exchange in Spanish.
-8. **Text household: started cooking**, then **Simulate delivery (demo)**.
-9. **Dinner is ready**, review, then **Simulate failed delivery (demo)**. Show the recovery options.
+8. **Text household: started cooking**. Enter the allowlisted demo recipient off-camera ([§5a](#5a-simulated-outcomes-beats-89-no-sms)), keep 30 minutes, then tap **Simulate delivery (demo)**.
+9. **Dinner is ready**. The recipient is prefilled from beat 8; check it, review the text, then tap **Simulate failed delivery (demo)**. Show the recovery options.
 10. Finish the last step to show the meal-complete screen. Press **Stop** and check that the camera and mic are off.
 11. **Timer segment, separate take:** open `?recipe=black_bean_corn_salsa_v1` and reach the meld step. Start the real timer, show it counting down, and reload to show that it persists.
 
@@ -84,6 +96,9 @@ The script with spoken lines is in [script-and-shots.md](script-and-shots.md). I
 | Scan finds nothing or the wrong items | Type the items instead. Typed input is a supported path; say "typed" in the take |
 | Research has no sources or fails | Say that research is unavailable. Do not read out an answer without sources |
 | Simulation buttons are missing | `ALLOW_DELIVERY_SIMULATION` is not deployed. Skip beats 8–9 or use the labelled rehearsal build, and say so |
+| "Enter a full international phone number" | The recipient field is blank or malformed. Enter the allowlisted demo number off-camera |
+| `recipient-not-allowed` on a simulation | The number is not in `VONAGE_ALLOWED_TO`. Use the configured test number; do not add a new one mid-take |
+| A beat 8 or 9 attempt already ran in this cook | Each message kind is claimed once per session. Start a **New cook** to repeat it |
 | A real SMS is not delivered | Do not retry automatically. Record the status and the Vonage reason |
 | Venue or network failure | Switch to the rehearsal build (`FAKE_BACKEND=true`, labelled **Rehearsal** in the UI) or the backup recording, and say on camera that it is simulated or recorded |
 | Leftover state after the take | **Stop**. Close the tab. Revoke the camera and mic grant in Chrome site settings if the device is shared |
