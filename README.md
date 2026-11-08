@@ -6,7 +6,7 @@ Inspired by UCF's [garden-to-pantry work](https://www.ucf.edu/pegasus/how-does-y
 
 **Live app:** https://devfest-flutter-a59e8.web.app · Chrome on desktop or Android · no account needed
 
-## The demo in six beats
+## The demo in seven beats
 
 1. **Show what you got.** Scan your pantry haul with the camera, say it out loud, or type it. Gemini lists the items it thinks it sees; only the ones you tap count. It then suggests meals you can actually make and shows what's missing. **Find food help nearby** uses Grounding with Google Maps to list nearby pantries and stores, linked to Google Maps.
 2. **Cook with a live coach.** Gemini Live watches the camera and talks with you. It builds the cooking workspace on the fly as Flutter panels: step cues, comparisons, questions and timers.
@@ -14,6 +14,7 @@ Inspired by UCF's [garden-to-pantry work](https://www.ucf.edu/pegasus/how-does-y
 4. **"Am I doing this right?"** Show the spread, the dice or the mash. The coach describes what it can see. When a fact is missing it asks you instead of guessing, and only your answer counts.
 5. **Ask anything.** For questions like "Can I swap sunflower butter for peanut butter?", the coach runs a separate Google Search–grounded answer and shows the source links.
 6. **Call everyone to the table.** You review a Vonage SMS before it goes out: "dinner's started", then "dinner is ready". The app tracks real delivery status, and if delivery fails it shows the reason and how to recover.
+7. **You made it!** Finishing the last step shows a meal-complete moment. It lists the pantry items you confirmed, pauses the live coach to save cost, and offers three next steps: text the household (still reviewed), find food help nearby, or cook something else. It shows no invented impact numbers.
 
 ## Architecture
 
@@ -156,6 +157,7 @@ CI runs all of these on every pull request and deploys `main` to Firebase. Passi
 
 ## More
 
+- In the app, **How it works**, then **Under the hood**: the flow, the Google stack, privacy and safety, and protocol details
 - [Product specification](docs/SPEC.md)
 - [Backend and messaging setup](functions/README.md)
 - [Live transport](lib/live/README.md)
