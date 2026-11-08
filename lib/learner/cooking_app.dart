@@ -22,6 +22,7 @@ import 'allergen_chip.dart';
 import 'cooking_coordinator.dart';
 import 'demo_live.dart';
 import 'dinner_review.dart';
+import 'meal_complete.dart';
 
 final cookingTheme = ThemeData(
   useMaterial3: true,
@@ -801,6 +802,21 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   Widget _workspace() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
+      if (cook.complete) ...[
+        MealCompletePanel(
+          cook: cook,
+          isDemo: widget.isDemo,
+          onTextHousehold: _reviewDinner,
+          onCookSomethingElse: switch (widget.onBackToPantry) {
+            final back? => () {
+              unawaited(cook.live.stop());
+              back();
+            },
+            null => widget.onNewCook,
+          },
+        ),
+        const SizedBox(height: 24),
+      ],
       Row(
         children: [
           const Expanded(

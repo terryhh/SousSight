@@ -12,6 +12,9 @@ import '../live/live_types.dart';
 import 'recipe_allergens.dart';
 import 'research_panel_client.dart';
 
+/// Shown when finishing the final step pauses the live coach.
+const String mealCompleteCoachNote = 'Coach paused — nice work!';
+
 /// The cook confirms facts and actions; Gemini chooses how to coach and present
 /// them. No external instructor or human routing is involved.
 class CookingCoordinator extends ChangeNotifier {
@@ -296,14 +299,23 @@ $cookingUiInstructions
           _stepPanel,
         ],
       });
-      if (live.isActive) {
+      final finished = complete;
+      if (live.isActive && !finished) {
         await live.sendText(
           'The cook confirmed the previous step is finished. '
           'currentStepId: ${step.id}. Current step: ${step.title}. ${step.instruction} Cue: ${step.cue}. '
           'Call show_cooking_ui with stepId=${step.id} to replace the workspace with useful cooking panels.',
         );
       }
-      if (complete) draftDinner();
+      if (finished) {
+        draftDinner();
+        // The meal is done: end the live session so no more camera frames,
+        // audio or follow-up turns reach Gemini. The cook can start it again.
+        if (live.isActive) {
+          unawaited(live.stop());
+          live.notice = mealCompleteCoachNote;
+        }
+      }
     } catch (_) {
       error = 'Could not save the next step. Please try again.';
     } finally {
