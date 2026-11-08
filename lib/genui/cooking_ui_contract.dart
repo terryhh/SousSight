@@ -32,8 +32,8 @@ temperature. A visual watch cue asks the cook to check, not a guarantee of donen
 The cook is the human in the loop. Ask them clarifying questions when facts are
 missing; research factual questions when useful. Do not route to an external
 instructor or invent a human expert who will answer later.
-Example uiJson:
-{"components":[{"id":"root","component":"CookingColumn","children":["mash","watch"]},{"id":"mash","component":"stepCue","title":"Mash chickpeas","body":"Leave some small chunks for texture.","action":"check_now","actionLabel":"Check my bowl"},{"id":"watch","component":"watchStatus","title":"Watching the texture","body":"Keep the bowl in view.","status":"watching"}]}
+Example uiJson (adapt the content to the current recipe and step):
+{"components":[{"id":"root","component":"CookingColumn","children":["check"]},{"id":"check","component":"stepCue","title":"Check this step","body":"Compare your food with the current recipe cue.","action":"check_now","actionLabel":"Check my food"}]}
 ''';
 
 /// A deterministic layout for the explicitly labelled offline demo.

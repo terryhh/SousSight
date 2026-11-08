@@ -127,7 +127,7 @@ class _CookingScreenState extends State<CookingScreen>
           if (mounted) unawaited(_reviewDinner());
         });
       }
-      if (cook.alert!.startsWith('Check your bowl:') ||
+      if (cook.alert!.startsWith('Check your food:') ||
           cook.alert!.contains('time is up')) {
         _chime();
       }
@@ -445,7 +445,7 @@ class _CookingScreenState extends State<CookingScreen>
                 : cook.stopWatch,
             icon: const Icon(Icons.visibility_outlined),
             label: Text(
-              cook.live.watchGoal == null ? 'Watch my bowl' : 'Pause watch',
+              cook.live.watchGoal == null ? 'Watch my food' : 'Pause watch',
             ),
           ),
         ],
@@ -590,7 +590,7 @@ class _CookingScreenState extends State<CookingScreen>
                     unawaited(cook.researchQuestionNow(question));
                   } else {
                     _message.text =
-                        'Can I use vinegar instead of lemon in this recipe?';
+                        'What should I look for during this step?';
                   }
                 },
                 icon: const Icon(Icons.travel_explore),
@@ -667,7 +667,7 @@ class _CookingScreenState extends State<CookingScreen>
       CookingSurface(controller: cook.ui),
       const SizedBox(height: 16),
       const Text(
-        'What do you think of your bowl?',
+        'How does your food look?',
         style: TextStyle(fontWeight: FontWeight.w600),
       ),
       const SizedBox(height: 8),
@@ -690,15 +690,16 @@ class _CookingScreenState extends State<CookingScreen>
           FilledButton.icon(
             onPressed: () => cook.checkNow(_prediction),
             icon: const Icon(Icons.auto_awesome),
-            label: const Text('Check my bowl'),
+            label: const Text('Check my food'),
           ),
+          if (cook.step.timerSeconds != null && cook.step.timerSeconds! > 0)
           OutlinedButton.icon(
             onPressed: cook.startStepTimer,
             icon: const Icon(Icons.timer_outlined),
             label: Text(
-              cook.step.timerSeconds == null
-                  ? '1-minute timer'
-                  : 'Start ${cook.step.timerSeconds! ~/ 60}-minute timer',
+              cook.step.timerSeconds! % 60 == 0
+                  ? 'Start ${cook.step.timerSeconds! ~/ 60}-minute timer'
+                  : 'Start ${cook.step.timerSeconds}-second timer',
             ),
           ),
           TextButton(
