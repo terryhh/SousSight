@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../live/live_types.dart';
 import 'pantry_client.dart';
@@ -394,6 +395,7 @@ class _PantryScreenState extends State<PantryScreen> {
           ],
         ),
       ),
+      HowItWorksButton(isDemo: widget.isDemo),
     ],
   );
 

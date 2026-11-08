@@ -17,6 +17,8 @@ import '../live/ephemeral_live_transport.dart';
 import '../live/live_controller.dart';
 import '../core/models.dart';
 import '../pantry/pantry_flow.dart';
+import '../app/how_it_works.dart';
+import 'allergen_chip.dart';
 import 'cooking_coordinator.dart';
 import 'demo_live.dart';
 
@@ -470,6 +472,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         icon: const Icon(Icons.restart_alt),
         label: Text(widget.startingNewCook ? 'Starting…' : 'New cook'),
       ),
+      AllergenChip(recipe: cook.recipe),
+      HowItWorksButton(isDemo: widget.isDemo),
     ],
   );
 
