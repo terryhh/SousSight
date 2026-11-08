@@ -121,6 +121,7 @@ class _CookingScreenState extends State<CookingScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Start a new cook?'),
+          scrollable: true,
           content: const Text(
             'Your current cook stays saved. The new cook starts with an empty '
             'checklist and fresh progress. Camera, microphone and watches will '
