@@ -6,6 +6,17 @@ import 'package:flutter/foundation.dart';
 import 'live_tools.dart';
 import 'live_types.dart';
 
+/// Live session cap in minutes; override with
+/// `--dart-define=LIVE_SESSION_MAX_MINUTES=<n>`. Bounds Gemini Live spend.
+const int liveSessionMaxMinutes = int.fromEnvironment(
+  'LIVE_SESSION_MAX_MINUTES',
+  defaultValue: 8,
+);
+
+/// Shown after the controller stops a session to stay within the demo budget.
+const String liveCostPauseMessage =
+    'Paused to save cost — tap Start to continue.';
+
 enum LiveCookingStatus {
   idle,
   connecting,
@@ -23,12 +34,29 @@ class LiveCookingController extends ChangeNotifier {
     required this.media,
     required this.onToolCall,
     DateTime Function()? clock,
-  }) : _clock = clock ?? DateTime.now;
+    Duration? sessionLimit,
+    this.sessionExtension = const Duration(minutes: 5),
+    this.sessionWarningLead = const Duration(minutes: 1),
+    this.idleLimit = const Duration(minutes: 3),
+    this.watchLimit = const Duration(minutes: 3),
+  }) : _clock = clock ?? DateTime.now,
+       sessionLimit =
+           sessionLimit ?? const Duration(minutes: liveSessionMaxMinutes);
 
   final LiveTransportFactory transportFactory;
   final LiveMedia media;
   final LiveToolHandler onToolCall;
   final DateTime Function() _clock;
+
+  /// Cost guardrails: a connected session stops at [sessionLimit] (one
+  /// [sessionExtension] allowed), warns [sessionWarningLead] before, and stops
+  /// after [idleLimit] without cook speech or text. Watches stop after
+  /// [watchLimit] unless the cook starts them again.
+  final Duration sessionLimit;
+  final Duration sessionExtension;
+  final Duration sessionWarningLead;
+  final Duration idleLimit;
+  final Duration watchLimit;
   LiveCookingStatus status = LiveCookingStatus.idle;
   String? error;
   String? notice;
@@ -50,12 +78,23 @@ class LiveCookingController extends ChangeNotifier {
   Future<void>? _startOperation;
   Future<void>? _stopOperation;
   Timer? _watchTimer;
+  Timer? _watchLimitTimer;
+  Timer? _sessionWarningTimer;
+  Timer? _sessionLimitTimer;
+  Timer? _idleTimer;
+  DateTime? _sessionDeadline;
+  bool _sessionExtended = false;
+
+  /// Non-null during the final minute before the session cap.
+  String? sessionWarning;
   int _epoch = 0;
   bool _disposed = false;
   bool _readyReported = false;
 
   bool get isActive =>
       status != LiveCookingStatus.idle && status != LiveCookingStatus.error;
+  bool get canExtendSession =>
+      isActive && _sessionDeadline != null && !_sessionExtended;
   bool get hasFreshFrame =>
       _frameAt != null &&
       _clock().difference(_frameAt!) < const Duration(seconds: 4);
@@ -96,6 +135,8 @@ class LiveCookingController extends ChangeNotifier {
     _toolResults.clear();
     _cancelledTools.clear();
     _toolQueue = Future<void>.value();
+    sessionWarning = null;
+    _sessionExtended = false;
     _notify();
     late final LiveTransport transport;
     try {
@@ -167,6 +208,7 @@ class LiveCookingController extends ChangeNotifier {
         return;
       }
       status = LiveCookingStatus.listening;
+      _startCostGuards(epoch);
       if (latestFrame case final jpeg?) await transport.sendVideo(jpeg);
       if (!_current(epoch)) return;
       await transport.sendText(
@@ -188,7 +230,13 @@ class LiveCookingController extends ChangeNotifier {
     }
   }
 
+  /// Sends a cook-initiated message; counts as cook activity for idle stop.
   Future<void> sendText(String text) async {
+    if (isActive && text.trim().isNotEmpty) _noteCookActivity();
+    return _sendText(text);
+  }
+
+  Future<void> _sendText(String text) async {
     final transport = _transport;
     final epoch = _epoch;
     if (transport == null ||
@@ -215,7 +263,7 @@ class LiveCookingController extends ChangeNotifier {
 
   String? startWatch(
     String goal, {
-    Duration interval = const Duration(seconds: 8),
+    Duration interval = const Duration(seconds: 15),
   }) {
     if (!isActive || goal.trim().isEmpty) return null;
     stopWatch();
@@ -234,14 +282,22 @@ class LiveCookingController extends ChangeNotifier {
           _readyReported) {
         return;
       }
+      // Automatic checks are not cook activity and must not defer idle stop.
       unawaited(
-        sendText(
+        _sendText(
           'Watch check for watchId=$id: use the latest camera frame to assess this visible goal: $watchGoal. '
           'Call report_readiness with watchId=$id and a short observation. Never reuse an older watchId. '
           'Say uncertain if the goal is hidden. '
           'Do not infer internal temperature or food safety.',
         ),
       );
+    });
+    _watchLimitTimer = Timer(watchLimit, () {
+      if (watchId != id) return;
+      stopWatch();
+      notice =
+          'Watch paused after ${_minutes(watchLimit)} to save cost — tap Watch my food to continue.';
+      _notify();
     });
     _notify();
     return id;
@@ -250,6 +306,8 @@ class LiveCookingController extends ChangeNotifier {
   void stopWatch() {
     _watchTimer?.cancel();
     _watchTimer = null;
+    _watchLimitTimer?.cancel();
+    _watchLimitTimer = null;
     watchGoal = null;
     watchId = null;
     _readyReported = false;
@@ -267,6 +325,7 @@ class LiveCookingController extends ChangeNotifier {
         // repeated spoken words, but show the latest turn rather than joining
         // every response (including repeated greetings) into one long caption.
         if (isUser) {
+          if (text.trim().isNotEmpty) _noteCookActivity();
           if (text.isNotEmpty) {
             userTranscript = _append(
               _newUserTranscript ? '' : userTranscript,
@@ -419,6 +478,9 @@ class LiveCookingController extends ChangeNotifier {
     ++_epoch;
     _watchTimer?.cancel();
     _watchTimer = null;
+    _watchLimitTimer?.cancel();
+    _watchLimitTimer = null;
+    _cancelCostGuards();
     watchGoal = null;
     watchId = null;
     _readyReported = false;
@@ -451,6 +513,82 @@ class LiveCookingController extends ChangeNotifier {
     );
     _notify();
     return cleanup;
+  }
+
+  /// One-tap extension of the session cap, allowed once per session.
+  void extendSession() {
+    final deadline = _sessionDeadline;
+    if (!canExtendSession || deadline == null) return;
+    _sessionExtended = true;
+    sessionWarning = null;
+    _noteCookActivity();
+    _scheduleSessionCap(_epoch, deadline.add(sessionExtension));
+    _notify();
+  }
+
+  void _startCostGuards(int epoch) {
+    _scheduleSessionCap(epoch, _clock().add(sessionLimit));
+    _noteCookActivity();
+  }
+
+  void _scheduleSessionCap(int epoch, DateTime deadline) {
+    _sessionWarningTimer?.cancel();
+    _sessionLimitTimer?.cancel();
+    _sessionDeadline = deadline;
+    final remaining = deadline.difference(_clock());
+    final untilWarning = remaining - sessionWarningLead;
+    void warn() {
+      if (!_current(epoch)) return;
+      sessionWarning =
+          'Live coach pauses in ${_minutes(sessionWarningLead)} to save cost.';
+      _notify();
+    }
+
+    if (untilWarning > Duration.zero) {
+      _sessionWarningTimer = Timer(untilWarning, warn);
+    } else {
+      warn();
+    }
+    _sessionLimitTimer = Timer(
+      remaining.isNegative ? Duration.zero : remaining,
+      () => _pauseToSaveCost(epoch),
+    );
+  }
+
+  void _noteCookActivity() {
+    if (_sessionDeadline == null) return;
+    final epoch = _epoch;
+    _idleTimer?.cancel();
+    _idleTimer = Timer(idleLimit, () => _pauseToSaveCost(epoch));
+  }
+
+  void _cancelCostGuards() {
+    _sessionWarningTimer?.cancel();
+    _sessionLimitTimer?.cancel();
+    _idleTimer?.cancel();
+    _sessionWarningTimer = null;
+    _sessionLimitTimer = null;
+    _idleTimer = null;
+    _sessionDeadline = null;
+    sessionWarning = null;
+  }
+
+  Future<void> _pauseToSaveCost(int epoch) async {
+    if (!_current(epoch)) return;
+    // stop() cancels media subscriptions and capture, so no further camera
+    // frames or microphone audio reach Gemini after this point.
+    final cleanup = stop();
+    notice = liveCostPauseMessage;
+    _notify();
+    await cleanup;
+  }
+
+  static String _minutes(Duration value) {
+    final minutes = value.inMinutes;
+    if (minutes >= 1 && value == Duration(minutes: minutes)) {
+      return minutes == 1 ? '1 minute' : '$minutes minutes';
+    }
+    return '${value.inSeconds} seconds';
   }
 
   bool _current(int epoch) => !_disposed && _epoch == epoch;

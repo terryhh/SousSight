@@ -28,8 +28,11 @@ Listen to controller changes for status, user/coach transcripts, frame, error,
 and notice. `setMicrophoneMuted`, `startWatch`, `stopWatch`, and `sendText` are
 available. Each watch has a unique `watchId`, returned from `startWatch` and echoed in the
 `watch_cooking` tool response. Readiness must carry that ID; results from a
-previous watch are rejected. Watch mode requests fresh visual observations every 8s;
-it does not assume that silent video will automatically trigger responses.
+previous watch are rejected. Watch mode requests fresh visual observations every 15s
+and pauses after 3 minutes unless restarted; it does not assume that silent video
+will automatically trigger responses. To bound Gemini spend, sessions stop after
+`LIVE_SESSION_MAX_MINUTES` (default 8, one +5 minute `extendSession`, warning one
+minute before) or after 3 minutes without cook speech or `sendText`.
 Readiness reports require a fresh frame and active watch, and only the first
 ready report reaches the host per watch. A timer or appearance report never
 certifies internal temperature or food safety.
