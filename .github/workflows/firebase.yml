@@ -166,8 +166,8 @@ jobs:
           # --only functions:liveToken alone still discovers dinner secret params.
           # The signed vonageStatus binds VONAGE_SIGNATURE_SECRET, so it is only
           # packaged when DINNER_STATUS_READY=true; otherwise discovery would fail.
-          # live-dinner-index.js instead exports a secret-free vonageStatus stub
-          # that answers 503 (Vonage retries), so the rewrite stays with dinner.
+          # live-dinner-index.js instead exports a secret-free vonageStatus that
+          # authenticates per-message capability URLs (/api/vonage-status/<token>).
           dinner_ready = os.environ['DINNER_SERVICE_READY'] == 'true'
           status_ready = dinner_ready and os.environ['DINNER_STATUS_READY'] == 'true'
           package_path = Path('functions/package.json')
@@ -180,6 +180,7 @@ jobs:
           if not dinner_ready:
               removed.add('/api/dinner-ready')
               removed.add('/api/vonage-status')
+              removed.add('/api/vonage-status/**')
           if removed:
               config_path = Path('firebase.json')
               config = json.loads(config_path.read_text())
@@ -196,11 +197,11 @@ jobs:
           params['LIVE_ALLOWED_ORIGINS'] = (
               'https://devfest-flutter-a59e8.web.app,'
               'https://devfest-flutter-a59e8.firebaseapp.com')
-          # Always provide a value: an empty param default blocks
-          # non-interactive deploys. 'disabled' is ignored by the runtime.
-          params['DINNER_STATUS_WEBHOOK_URL'] = (
-              'https://devfest-flutter-a59e8.web.app/api/vonage-status'
-              if status_ready else 'disabled')
+          # Origin for per-message capability status URLs
+          # (<base>/api/vonage-status/<token>). Always provide a value: an empty
+          # param blocks non-interactive deploys. 'disabled' sends no webhook_url.
+          params['DINNER_STATUS_BASE_URL'] = (
+              'https://devfest-flutter-a59e8.web.app' if dinner_ready else 'disabled')
           Path('functions/.env.devfest-flutter-a59e8').write_text(
               ''.join(f'{key}={value}\n' for key, value in params.items()))
           PY
@@ -220,8 +221,8 @@ jobs:
           # Auth provider provisioning is a one-time setup prerequisite.
           targets=firestore,functions:liveToken,hosting
           if [[ "$DINNER_SERVICE_READY" == true ]]; then
-            # vonageStatus is the signed handler when DINNER_STATUS_READY=true,
-            # otherwise the secret-free 503 stub from src/live-dinner-index.js.
+            # vonageStatus accepts per-message capability URLs in both modes and
+            # additionally signed JWTs when DINNER_STATUS_READY=true.
             targets=firestore,functions:liveToken,functions:dinnerReady,functions:vonageStatus,hosting
           fi
           firebase deploy --project "$FIREBASE_PROJECT" --only "$targets" --non-interactive

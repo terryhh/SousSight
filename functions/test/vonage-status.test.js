@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, createHmac } from 'node:crypto';
 import {
-  createDeliveryStatusStore, createVonageStatusHandler, parseStatusEvent, providerIndexId,
-  shouldAdvance, verifyVonageSignature, WebhookAuthError,
+  createDeliveryStatusStore, createVonageStatusHandler, newStatusToken, parseStatusEvent, pendingStatusPath,
+  providerIndexId, sameTokenHash, shouldAdvance, statusTokenFromPath, statusTokenHash, verifyVonageSignature,
+  WebhookAuthError,
 } from '../src/vonage-status.js';
 import { fakeFirestore } from './fake-firestore.js';
 
@@ -99,13 +100,14 @@ test('status transitions are monotonic and failures are terminal', () => {
   assert.equal(shouldAdvance('submitted', 'mystery'), false);
 });
 
+const capToken = 'A'.repeat(20) + 'b_-' + 'c'.repeat(20); // 43 chars, test-only
 function seeded() {
   const uuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
   const db = fakeFirestore([
     ['_dinnerNotifications/ledger-1', { status: 'submitted', kind: 'started', sessionId: 'meal-1',
       notificationId: 'notice-123', simulated: false }],
     [`_dinnerProviderMessages/${providerIndexId(uuid)}`, { ledgerKey: 'ledger-1', sessionId: 'meal-1',
-      notificationId: 'notice-123', simulated: false }],
+      notificationId: 'notice-123', simulated: false, statusTokenHash: statusTokenHash(capToken) }],
   ]);
   return { db, uuid };
 }
@@ -127,27 +129,29 @@ test('ledger history and cook mirror update without downgrading', async () => {
     [{ status: 'delivered', errorTitle: null, errorCode: null, at: nowMs }]);
 });
 
-function harness(applyStatus) {
+function harness(applyStatus, { signatureSecret = secret } = {}) {
   const reports = [];
-  const handler = createVonageStatusHandler({ secret: () => secret, applyStatus, now: () => nowMs,
+  const handler = createVonageStatusHandler({ secret: () => signatureSecret, applyStatus, now: () => nowMs,
     report: (event, fields) => reports.push([event, fields]) });
-  const call = async ({ raw = statusBody(), authorization, method = 'POST' } = {}) => {
+  const call = async ({ raw = statusBody(), authorization, method = 'POST', path = '/api/vonage-status' } = {}) => {
     const res = { code: null, body: null, headers: {},
       set(key, value) { this.headers[key] = value; return this; },
       status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
-    await handler({ method, rawBody: Buffer.from(raw), body: JSON.parse(raw),
+    let parsed = {};
+    try { parsed = JSON.parse(raw); } catch { /* malformed on purpose */ }
+    await handler({ method, path, originalUrl: path, rawBody: Buffer.from(raw), body: parsed,
       get: (key) => (key === 'Authorization' ? authorization : undefined) }, res);
     return res;
   };
   return { call, reports };
 }
 
-test('webhook handler: 401 invalid, 503 unsigned, 200 for unknown uuid, applies verified status', async () => {
+test('webhook handler: 401 invalid or unsigned+tokenless, 200 for unknown uuid, applies verified status', async () => {
   const { db, uuid } = seeded();
   const { call, reports } = harness(createDeliveryStatusStore(db));
   const raw = statusBody();
   assert.equal((await call({ raw, authorization: `Bearer ${sign(claimsFor(raw), { key: 'wrong' })}` })).code, 401);
-  assert.equal((await call({ raw, authorization: undefined })).code, 503);
+  assert.equal((await call({ raw, authorization: undefined })).code, 401);
   assert.equal((await call({ raw, method: 'GET' })).code, 405);
   assert.equal(db.docs.get('sessions/meal-1/notifications/notice-123'), undefined);
 
@@ -170,4 +174,82 @@ test('webhook handler returns 500 on storage failure so Vonage retries', async (
   const { call } = harness(async () => { throw new Error('Firestore unavailable'); });
   const raw = statusBody();
   assert.equal((await call({ raw, authorization: `Bearer ${sign(claimsFor(raw))}` })).code, 500);
+});
+
+test('capability tokens: random 43-char base64url, hash compare, path extraction', () => {
+  const a = newStatusToken();
+  assert.match(a, /^[A-Za-z0-9_-]{43}$/);
+  assert.notEqual(a, newStatusToken());
+  assert.equal(sameTokenHash(statusTokenHash(a), statusTokenHash(a)), true);
+  assert.equal(sameTokenHash(statusTokenHash(a), statusTokenHash(capToken)), false);
+  assert.equal(sameTokenHash(statusTokenHash(a), undefined), false);
+  assert.equal(sameTokenHash('zz', 'zz'), false);
+  assert.equal(statusTokenFromPath({ path: `/api/vonage-status/${capToken}` }), capToken);
+  assert.equal(statusTokenFromPath({ path: `/api/vonage-status/${capToken}/` }), capToken);
+  assert.equal(statusTokenFromPath({ path: `/${capToken}` }), capToken);
+  assert.equal(statusTokenFromPath({ originalUrl: `/api/vonage-status/${capToken}?x=1` }), capToken);
+  for (const path of ['/api/vonage-status', '/api/vonage-status/short', `/api/other/${capToken}`,
+    `/api/vonage-status/${capToken}/extra`, `/api/vonage-status/${capToken}x`, '/']) {
+    assert.equal(statusTokenFromPath({ path }), null, path);
+  }
+});
+
+for (const [label, signatureSecret] of [['without a signature secret', ''], ['with a signature secret', secret]]) {
+  test(`capability URL ${label}: right token applies, wrong or missing token is 401`, async () => {
+    const { db, uuid } = seeded();
+    const { call, reports } = harness(createDeliveryStatusStore(db), { signatureSecret });
+    const raw = statusBody();
+    const wrong = newStatusToken();
+    assert.equal((await call({ raw, path: `/api/vonage-status/${wrong}` })).code, 401);
+    assert.equal((await call({ raw, path: '/api/vonage-status' })).code, 401);
+    assert.equal((await call({ raw, path: '/api/vonage-status/not-a-token' })).code, 401);
+    assert.equal(db.docs.get('sessions/meal-1/notifications/notice-123'), undefined);
+    assert.equal(db.docs.get('_dinnerNotifications/ledger-1').deliveryStatus, undefined);
+
+    const res = await call({ raw, path: `/api/vonage-status/${capToken}` });
+    assert.equal(res.code, 200);
+    assert.deepEqual(db.docs.get('sessions/meal-1/notifications/notice-123'), { kind: 'started', status: 'delivered',
+      errorTitle: null, errorCode: null, simulated: false, updatedAt: nowMs });
+    assert.equal(db.docs.get('_dinnerNotifications/ledger-1').deliveryStatus, 'delivered');
+    // The token is a valid capability for THIS message only.
+    const other = statusBody({ message_uuid: '99999999-2222-3333-4444-555555555555' });
+    db.docs.set(`_dinnerProviderMessages/${providerIndexId('99999999-2222-3333-4444-555555555555')}`,
+      { ledgerKey: 'ledger-1', sessionId: 'meal-1', notificationId: 'notice-123', simulated: false,
+        statusTokenHash: statusTokenHash(wrong) });
+    assert.equal((await call({ raw: other, path: `/api/vonage-status/${capToken}` })).code, 401);
+    // A legacy index without a stored hash never accepts a capability.
+    db.docs.set(`_dinnerProviderMessages/${providerIndexId(uuid)}`, { ledgerKey: 'ledger-1', sessionId: 'meal-1',
+      notificationId: 'notice-123', simulated: false });
+    assert.equal((await call({ raw, path: `/api/vonage-status/${capToken}` })).code, 401);
+    assert.equal((await call({ raw: '{nope', path: `/api/vonage-status/${capToken}` })).code, 400);
+
+    const logged = JSON.stringify(reports);
+    for (const secretValue of [capToken, wrong, statusTokenHash(capToken), statusTokenHash(wrong), uuid]) {
+      assert.equal(logged.includes(secretValue), false);
+    }
+    assert.ok(reports.some(([event, fields]) => event === 'vonage-status-rejected' && fields.code === 'capability-mismatch'));
+    assert.ok(reports.some(([event, fields]) => event === 'vonage-status-rejected' && fields.code === 'unauthenticated'));
+  });
+}
+
+test('a signed JWT without a configured secret falls back to the capability check', async () => {
+  const { db } = seeded();
+  const { call } = harness(createDeliveryStatusStore(db), { signatureSecret: '' });
+  const raw = statusBody();
+  const authorization = `Bearer ${sign(claimsFor(raw))}`;
+  assert.equal((await call({ raw, authorization })).code, 401);
+  assert.equal((await call({ raw, authorization, path: `/api/vonage-status/${capToken}` })).code, 200);
+});
+
+test('capability callbacks for an unknown uuid are buffered under the token hash', async () => {
+  const db = fakeFirestore();
+  const { call } = harness(createDeliveryStatusStore(db), { signatureSecret: '' });
+  const uuid = '11111111-2222-3333-4444-555555555555';
+  const raw = statusBody({ message_uuid: uuid });
+  assert.equal((await call({ raw, path: `/api/vonage-status/${capToken}` })).code, 200);
+  const buffered = db.docs.get(pendingStatusPath(uuid, statusTokenHash(capToken)));
+  assert.equal(buffered.tokenHash, statusTokenHash(capToken));
+  assert.deepEqual(buffered.events.map((e) => e.status), ['delivered']);
+  assert.equal(db.docs.has(pendingStatusPath(uuid)), false);
+  assert.equal(JSON.stringify([...db.docs.values()]).includes(capToken), false);
 });

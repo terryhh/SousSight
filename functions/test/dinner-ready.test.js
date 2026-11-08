@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {
   cleanTemplateText, composeDinnerMessage, createDinnerLedger, createDinnerReadyHandler,
   createDinnerService, nextSendLimit, providerConfigProblem, sendVonageDinner,
-  SEND_LIMIT_PER_HOUR, validateDinnerRequest,
+  SEND_LIMIT_PER_HOUR, statusWebhookUrl, validateDinnerRequest,
 } from '../src/dinner-ready.js';
-import { createDeliveryStatusStore, providerIndexId } from '../src/vonage-status.js';
+import {
+  createDeliveryStatusStore, newStatusToken, pendingStatusPath, providerIndexId, statusTokenHash,
+} from '../src/vonage-status.js';
 import { fakeFirestore } from './fake-firestore.js';
 
 const input = (overrides = {}) => ({ sessionId: 'meal-1', notificationId: 'notice-123',
@@ -427,4 +429,61 @@ test('HTTP gate requires Auth and App Check and maps 429 Retry-After', async () 
   assert.equal(limited.code, 429);
   assert.equal(limited.body.error.code, 'rate-limited');
   assert.equal(limited.headers['Retry-After'], String(59 * 60));
+});
+
+test('status webhook URL is https base + /api/vonage-status/<token>, else empty', () => {
+  const token = newStatusToken();
+  assert.equal(statusWebhookUrl('https://devfest-flutter-a59e8.web.app', token),
+    `https://devfest-flutter-a59e8.web.app/api/vonage-status/${token}`);
+  assert.equal(statusWebhookUrl('https://example.web.app/', token), `https://example.web.app/api/vonage-status/${token}`);
+  for (const base of ['disabled', '', 'http://example.web.app', 'https://example.web.app/api', 'https://a b', undefined]) {
+    assert.equal(statusWebhookUrl(base, token), '', String(base));
+  }
+  assert.equal(statusWebhookUrl('https://example.web.app', 'short'), '');
+});
+
+test('real sends get a fresh capability token; only its hash is stored', async () => {
+  const tokens = [];
+  const { service, db } = harness({ sendMessage: async ({ statusToken }) => {
+    tokens.push(statusToken);
+    return { status: 'submitted', providerMessageId: `uuid-${tokens.length}` };
+  } });
+  const result = await service('cook-1', input());
+  await service('cook-1', started());
+  assert.equal(tokens.length, 2);
+  assert.notEqual(tokens[0], tokens[1]);
+  for (const token of tokens) assert.match(token, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(JSON.stringify(result).includes(tokens[0]), false);
+  assert.equal(JSON.stringify(result).includes(statusTokenHash(tokens[0])), false);
+  const index = db.docs.get(`_dinnerProviderMessages/${providerIndexId('uuid-1')}`);
+  assert.equal(index.statusTokenHash, statusTokenHash(tokens[0]));
+  const ledger = db.docs.get(`_dinnerNotifications/${index.ledgerKey}`);
+  assert.equal(ledger.statusTokenHash, statusTokenHash(tokens[0]));
+  const everything = JSON.stringify([...db.docs.values()]);
+  for (const token of tokens) assert.equal(everything.includes(token), false);
+});
+
+test('capability callback before settle is applied only when its token hash matches', async () => {
+  const db = fakeFirestore();
+  const applyStatus = createDeliveryStatusStore(db);
+  const service = createDinnerService({ ledger: createDinnerLedger(db), settings, now: () => nowMs, applyStatus,
+    sendMessage: async ({ statusToken }) => {
+      // Forged callback (wrong token) and the genuine one both land in flight.
+      assert.deepEqual(await applyStatus({ messageUuid: 'fast-uuid', status: 'rejected',
+        errorTitle: 'Forged', errorCode: '9999' }, nowMs, { tokenHash: statusTokenHash(newStatusToken()) }),
+      { matched: false, buffered: true });
+      assert.deepEqual(await applyStatus({ messageUuid: 'fast-uuid', status: 'delivered' }, nowMs,
+        { tokenHash: statusTokenHash(statusToken) }), { matched: false, buffered: true });
+      return { status: 'submitted', providerMessageId: 'fast-uuid' };
+    } });
+  await service('cook-1', input());
+  assert.deepEqual(mirror(db), { kind: 'ready', status: 'delivered', errorTitle: null, errorCode: null,
+    reason: null, simulated: false, updatedAt: nowMs });
+  const ledger = [...db.docs.entries()].find(([key]) => key.startsWith('_dinnerNotifications/'))[1];
+  assert.deepEqual(ledger.statusHistory.map((h) => h.status), ['delivered']);
+  // The genuine buffer is consumed; the forged one is never read or applied.
+  const pending = [...db.docs.keys()].filter((key) => key.startsWith('_dinnerPendingStatus/'));
+  assert.equal(pending.length, 1);
+  assert.equal(db.docs.get(pending[0]).events[0].errorTitle, 'Forged');
+  assert.equal(db.docs.has(pendingStatusPath('fast-uuid', ledger.statusTokenHash)), false);
 });

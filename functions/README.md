@@ -106,31 +106,58 @@ so a misconfiguration never locks the meal slot.
 
 ### Delivery status (Vonage status webhook)
 
-`vonageStatus` (HTTPS, `us-central1`, Hosting rewrite `/api/vonage-status`)
-receives [Message Status webhooks](https://developer.vonage.com/en/api/messages)
+`vonageStatus` (HTTPS, `us-central1`, Hosting rewrites `/api/vonage-status` and
+`/api/vonage-status/**`) receives
+[Message Status webhooks](https://developer.vonage.com/en/api/messages)
 (`message_uuid`, `status` = `submitted|delivered|rejected|undeliverable`, plus
 `read` on WhatsApp, `error {type,title,detail,instance}`, `timestamp`, `to`,
-`from`, `channel`, `client_ref`). It trusts nothing until the
-[signed-webhook JWT](https://developer.vonage.com/en/getting-started/concepts/webhooks#decoding-signed-webhooks)
-in `Authorization` verifies:
+`from`, `channel`, `client_ref`). It trusts nothing until one of two checks passes.
 
-- HS256 only (header `alg` pinned), HMAC-SHA256 with `VONAGE_SIGNATURE_SECRET`,
-  constant-time comparison (`node:crypto`, no new dependency);
-- `iat` no older than 5 minutes and no more than 60 s in the future;
-- `payload_hash` equals SHA-256 (hex) of the received body.
+**Security model.** The primary check is a **per-message capability URL**, which
+needs no Vonage signature secret:
 
-Invalid signatures get 401. A missing `Authorization` header gets 503 because
-Vonage documents that it may send an unsigned callback after an internal error and
-retries a 5xx signed. Unsupported statuses get 200 (no retry storm). A verified
-event whose `message_uuid` has no provider index yet (the callback beat the send
-response, or the UUID is unknown) is buffered, not dropped: it is appended to
-`_dinnerPendingStatus/{sha256(message_uuid)}` (capped at 20 events, with an
-`expireAt` timestamp 7 days out that a Firestore TTL policy may use) and answered
-200. When `settle` later writes the provider index, it reads that buffer in the
-same transaction, folds the events through the same monotonic logic, mirrors the
-result and deletes the buffer, so a fast rejection still surfaces with its error
-and recovery action. Storage failures get 500 so Vonage retries. Logs contain only event
-codes and statuses: never tokens, bodies, phone numbers or message UUIDs.
+- For every real send the server draws 32 random bytes (`crypto.randomBytes`,
+  base64url, 43 chars) and sets that message's `webhook_url` to
+  `${DINNER_STATUS_BASE_URL}/api/vonage-status/<token>` with `webhook_version: "v1"`.
+- Only `sha256(token)` is persisted, server-side only: on the ledger record
+  (`_dinnerNotifications`, `statusTokenHash`) and the provider index
+  (`_dinnerProviderMessages/{sha256(message_uuid)}`). The raw token exists only
+  in the outbound request to Vonage and in Vonage's callback URL. It is never
+  returned to the app, stored, or logged.
+- A callback is applied only when `sha256(path token)` equals the hash stored for
+  the body's `message_uuid` (constant-time `timingSafeEqual`). A token is valid
+  for exactly one message, so a leaked token cannot touch any other notification,
+  and it can only move that message's status monotonically.
+- Requests with no token, a malformed token, a token for another message, or a
+  message indexed before this change (no stored hash) get 401.
+
+The **signed JWT** check is optional: when an `Authorization` header is present
+and `VONAGE_SIGNATURE_SECRET` is bound (`DINNER_STATUS_READY=true`, `src/index.js`),
+the [signed-webhook JWT](https://developer.vonage.com/en/getting-started/concepts/webhooks#decoding-signed-webhooks)
+must verify (HS256 pinned, HMAC-SHA256 constant-time, `iat` within 5 minutes /
+60 s future, `payload_hash` = SHA-256 of the body) or the request gets 401. Without
+the secret (`src/live-dinner-index.js`, `src/status-capability-index.js`) the
+header is ignored and the capability check applies.
+
+Trade-off: a capability URL is a bearer secret in the URL. Hosting/Cloud Run
+request logs may record request paths; the token grants only status updates for
+its one message, and the 256-bit entropy rules out guessing. Unsigned, tokenless
+requests now get 401 (previously 503), because callbacks for SousSight sends
+always carry their token.
+
+Unsupported statuses on a signed request get 200 (no retry storm); on a
+capability request they get 400 because no usable `message_uuid` means the token
+cannot be checked. An authenticated event whose `message_uuid` has no provider
+index yet (the callback beat the send response) is buffered, not dropped:
+capability events go to `_dinnerPendingStatus/{sha256(message_uuid + "\n" + tokenHash)}`
+and signed events to `_dinnerPendingStatus/{sha256(message_uuid)}` (capped at 20
+events, `expireAt` 7 days out for a Firestore TTL policy), answered 200. When
+`settle` writes the provider index, it reads only the signed buffer and the
+buffer keyed by **this message's** token hash, folds those events through the same
+monotonic logic, mirrors the result and deletes them; events presented with any
+other token are never applied. Storage failures get 500 so Vonage retries. Logs
+contain only event codes and statuses: never tokens, token hashes, bodies, phone
+numbers or message UUIDs.
 
 On send, `settle` writes `_dinnerProviderMessages/{sha256(message_uuid)}` ->
 ledger key, session and notification IDs. The webhook updates the ledger's
@@ -141,8 +168,10 @@ ledger key, session and notification IDs. The webhook updates the ledger's
 `{kind, status, errorTitle, errorCode, reason, simulated, updatedAt}` via the Admin
 SDK. Rules let only the session owner read it; all client writes are denied.
 
-When `DINNER_STATUS_WEBHOOK_URL` is set, each send includes `webhook_url` and
-`webhook_version: "v1"`, which override the dashboard status URL for that message.
+`webhook_url` and `webhook_version: "v1"` override the dashboard status URL for
+that message. If `DINNER_STATUS_BASE_URL` is not `https://host[:port]` (e.g.
+`disabled`), no `webhook_url` is sent and status falls back to dashboard settings,
+which cannot authenticate without the signature secret.
 
 Recovery: a known failure (`failed`, `rejected`, `undeliverable`) frees the
 meal/recipient/kind slot for a **new** notification ID only after the cook edits
@@ -186,10 +215,11 @@ Configuration:
   dashboard trial example has a separate, limited path described below.
 - `ENABLE_DINNER_MESSAGES=false` by default. Only the exact value `true` enables
   a provider request. Deploying code does not itself opt into sending messages.
-- Secret Manager `VONAGE_SIGNATURE_SECRET` (bound only to `vonageStatus`).
-- `DINNER_STATUS_WEBHOOK_URL` (string param, default empty): set by the workflow
-  to `https://devfest-flutter-a59e8.web.app/api/vonage-status` when
-  `DINNER_STATUS_READY=true`.
+- Optional Secret Manager `VONAGE_SIGNATURE_SECRET` (bound only to
+  `vonageStatus`, and only when `DINNER_STATUS_READY=true`).
+- `DINNER_STATUS_BASE_URL` (string param, default
+  `https://devfest-flutter-a59e8.web.app`): origin for per-message capability
+  status URLs. The workflow writes it whenever `DINNER_SERVICE_READY=true`.
 - `ALLOW_DELIVERY_SIMULATION=false` by default (demo delivery/failure simulation).
 - Allowed origins reuse `LIVE_ALLOWED_ORIGINS`.
 
@@ -308,37 +338,28 @@ session still need their own checks. The token was not persisted or logged.
 
 ## Human setup for delivery status (not done by automation)
 
-1. Vonage Dashboard > **Settings** (https://dashboard.nexmo.com/settings): copy the
-   account **Signature secret** for the same API key used by `VONAGE_API_KEY`.
-   Messages API webhooks are always signed with SHA-256 (HS256 JWT); the
-   "signature method" dropdown only affects the legacy SMS API.
-2. Store it interactively (never in chat, args, GitHub or Dart defines):
-   `firebase functions:secrets:set VONAGE_SIGNATURE_SECRET --project devfest-flutter-a59e8`
-3. Optional fallback for messages without `webhook_url`: Dashboard > Settings >
-   Messages API (or the Vonage application's Messages capability, if one is used)
-   set **Status URL** to `https://devfest-flutter-a59e8.web.app/api/vonage-status`,
-   method POST, webhook version v1. Per-message `webhook_url` already covers
-   SousSight sends.
-4. WhatsApp Sandbox: the sandbox page (https://dashboard.nexmo.com/messages/sandbox)
-   has its own webhook fields. Whether the sandbox honours per-message
-   `webhook_url` is not documented; set its Status URL to the same address.
-5. GitHub `production` variables: `DINNER_STATUS_READY=true` (only after step 2;
-   requires `DINNER_SERVICE_READY=true`) and, for the demo,
-   `ALLOW_DELIVERY_SIMULATION=true`. Then re-run the deploy workflow.
+Capability URLs need **no** human setup: with `DINNER_SERVICE_READY=true` the
+workflow packages `src/live-dinner-index.js`, whose `vonageStatus`
+(`src/status-capability-index.js`) binds no secret, and every real send carries
+its own `webhook_url`. Optional extras:
 
-Deploy gating mirrors `DINNER_SERVICE_READY`: with `DINNER_STATUS_READY=false` the
-workflow packages `src/live-dinner-index.js`, whose `vonageStatus` is an interim
-stub (`src/status-stub.js`) that binds no secret, never reads or accepts an
-event, and answers every POST with 503 `{"error":"status-webhook-not-configured"}`
-(405 otherwise). The `/api/vonage-status` rewrite stays, so the route returns a
-handler rejection instead of the SPA fallback, a missing secret cannot break
-deployment, and Vonage's 5xx retries succeed once the real handler replaces the
-stub under the same function name. With it `true`, it packages `src/index.js`
-(the signed handler) and writes `DINNER_STATUS_WEBHOOK_URL`. Both modes deploy
-`functions:vonageStatus`; the rewrite is removed only when the dinner service
-itself is not ready.
+1. Signed JWTs in addition (only if the account **Signature secret** is found in
+   Vonage Dashboard > Settings for the same API key as `VONAGE_API_KEY`): store it
+   interactively with
+   `firebase functions:secrets:set VONAGE_SIGNATURE_SECRET --project devfest-flutter-a59e8`,
+   then set the GitHub `production` variable `DINNER_STATUS_READY=true` (requires
+   `DINNER_SERVICE_READY=true`). The workflow then packages `src/index.js`, which
+   accepts both signed and capability callbacks.
+2. Dashboard Status URL fallback: not useful without the signature secret, since a
+   tokenless callback cannot authenticate and gets 401.
+3. WhatsApp Sandbox: whether the sandbox honours per-message `webhook_url` is not
+   documented. Its dashboard-level Status URL cannot carry a per-message token.
+4. For the demo, `ALLOW_DELIVERY_SIMULATION=true`. Then re-run the deploy workflow.
 
-Verification status: unit tests cover JWT verification (valid, bad signature,
+Both modes deploy `functions:vonageStatus`; the two status rewrites are removed
+only when the dinner service itself is not ready.
+
+Verification status: unit tests cover capability URLs (token format, right/wrong/missing/legacy token, token bound to one message, buffering before settle applied only with the matching hash, no token or hash in logs or app responses), entrypoint params and the Hosting rewrites, JWT verification (valid, bad signature,
 `alg` swap, stale/future `iat`, hash mismatch), status mapping and monotonicity,
 unknown UUIDs, callbacks arriving before the send response (buffer and fold at
 settle), delivered/rejected simulation without any provider call, templates, rate limit and pre-claim configuration

@@ -66,6 +66,13 @@
         }
       },
       {
+        "source": "/api/vonage-status/**",
+        "function": {
+          "functionId": "vonageStatus",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

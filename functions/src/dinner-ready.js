@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { TokenRequestError as HttpError } from './live-token.js';
 import {
-  foldStatus, mirrorFor, notificationPath, pendingStatusPath, providerIndexId,
+  foldStatus, mirrorFor, newStatusToken, notificationPath, pendingStatusPath, providerIndexId, statusTokenHash,
 } from './vonage-status.js';
 
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
@@ -165,27 +165,40 @@ export function createDinnerLedger(db) {
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists || snapshot.data().status !== 'pending') return;
         const record = snapshot.data();
-        const { providerMessageId, ...stored } = result;
-        // Status callbacks verified before this index existed were buffered;
-        // fold them in now so a fast rejection/delivery is never lost.
-        const pendingRef = providerMessageId ? db.doc(pendingStatusPath(providerMessageId)) : null;
-        const pending = pendingRef ? await transaction.get(pendingRef) : null;
+        const { providerMessageId, statusTokenHash: tokenHash, ...stored } = result;
+        // Status callbacks that arrived before this index existed were buffered;
+        // fold them in now so a fast rejection/delivery is never lost. Only the
+        // signed buffer and the buffer keyed by THIS message's token hash are
+        // read, so a callback presenting any other token is never applied.
+        const pendingRefs = providerMessageId
+          ? [db.doc(pendingStatusPath(providerMessageId)),
+            ...(tokenHash ? [db.doc(pendingStatusPath(providerMessageId, tokenHash))] : [])]
+          : [];
+        const pendings = [];
+        for (const pendingRef of pendingRefs) pendings.push([pendingRef, await transaction.get(pendingRef)]);
         let folded = { ...record, ...stored };
-        for (const event of pending?.exists && Array.isArray(pending.data().events) ? pending.data().events : []) {
-          folded = { ...folded, ...(foldStatus(folded, event, nowMs) ?? {}) };
+        for (const [, pending] of pendings) {
+          const data = pending.exists ? pending.data() : null;
+          if (!data || !Array.isArray(data.events)) continue;
+          // Defence in depth: the key already binds the hash; re-check it.
+          if (data.tokenHash !== undefined && data.tokenHash !== tokenHash) continue;
+          for (const event of data.events) folded = { ...folded, ...(foldStatus(folded, event, nowMs) ?? {}) };
         }
         const delivery = folded.deliveryStatus
           ? { deliveryStatus: folded.deliveryStatus, statusHistory: folded.statusHistory,
             errorTitle: folded.errorTitle ?? null, errorCode: folded.errorCode ?? null }
           : {};
         transaction.update(ref, { ...stored, ...delivery, updatedAt: nowMs,
+          ...(tokenHash ? { statusTokenHash: tokenHash } : {}),
           ...(providerMessageId ? { providerMessageHash: providerIndexId(providerMessageId) } : {}) });
-        if (pending?.exists) transaction.delete(pendingRef);
+        for (const [pendingRef, pending] of pendings) if (pending.exists) transaction.delete(pendingRef);
         if (providerMessageId) {
           // Status webhooks carry only message_uuid; this index maps it back.
           transaction.set(db.collection('_dinnerProviderMessages').doc(providerIndexId(providerMessageId)), {
             ledgerKey: key, sessionId: record.sessionId, notificationId: record.notificationId,
             simulated: record.simulated === true, createdAt: nowMs,
+            // sha256 of the per-message capability token; never the token.
+            ...(tokenHash ? { statusTokenHash: tokenHash } : {}),
           });
         }
         if (record.sessionId) {
@@ -207,6 +220,15 @@ export function providerConfigProblem(credentials) {
   try { normalizeRecipient(credentials.from); }
   catch { return 'invalid-sender'; }
   return null;
+}
+
+/** Per-message status URL for a capability token, or '' when the base URL is
+ * unset/invalid. The base must be https with no path, query or fragment. */
+export function statusWebhookUrl(baseUrl, statusToken) {
+  const base = String(baseUrl ?? '').trim().replace(/\/+$/, '');
+  if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(base)) return '';
+  if (typeof statusToken !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(statusToken)) return '';
+  return `${base}/api/vonage-status/${statusToken}`;
 }
 
 export async function sendVonageDinner({ request, channel, credentials, webhookUrl = '', fetchImpl = fetch }) {
@@ -286,11 +308,14 @@ export function createDinnerService({ ledger, sendMessage, applyStatus, settings
       result = { status: 'submitted', providerMessageId: `sim-${randomUUID()}` };
     } else if (!settings.enabled) result = { status: 'skipped', reason: 'dry-run' };
     else {
-      try { result = await sendMessage({ request, channel: settings.channel }); }
+      // Per-message capability for the status webhook. Only its hash is kept.
+      const statusToken = newStatusToken();
+      try { result = await sendMessage({ request, channel: settings.channel, statusToken }); }
       catch { result = { status: 'unknown', reason: 'provider-response-unavailable' }; }
       if (!result || !publicStatuses.has(result.status)) {
         result = { status: 'unknown', reason: 'invalid-provider-result' };
       }
+      result = { ...result, statusTokenHash: statusTokenHash(statusToken) };
     }
     try { await ledger.settle(claim.key, result, now()); }
     catch {

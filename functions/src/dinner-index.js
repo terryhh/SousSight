@@ -6,6 +6,7 @@ import { defineSecret, defineString } from 'firebase-functions/params';
 import { onRequest } from 'firebase-functions/v2/https';
 import {
   createDinnerLedger, createDinnerReadyHandler, createDinnerService, providerConfigProblem, sendVonageDinner,
+  statusWebhookUrl,
 } from './dinner-ready.js';
 import { createDeliveryStatusStore } from './vonage-status.js';
 
@@ -17,15 +18,11 @@ const dinnerChannel = defineString('DINNER_CHANNEL', { default: 'whatsapp' });
 const enableDinnerMessages = defineString('ENABLE_DINNER_MESSAGES', { default: 'false' });
 // Demo-only: lets the cook trigger a server-side simulated Vonage rejection.
 const allowDeliverySimulation = defineString('ALLOW_DELIVERY_SIMULATION', { default: 'false' });
-// Per-message status webhook, e.g. https://devfest-flutter-a59e8.web.app/api/vonage-status.
-// A non-empty default keeps non-interactive deploys working when the status
-// webhook is not configured; any non-HTTPS value (e.g. 'disabled') means unset.
-const statusWebhookUrl = defineString('DINNER_STATUS_WEBHOOK_URL', { default: 'disabled' });
-
-function webhookUrl() {
-  const value = statusWebhookUrl.value().trim();
-  return /^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9/_-]*$/.test(value) ? value : '';
-}
+// Origin for per-message capability status URLs:
+// `${DINNER_STATUS_BASE_URL}/api/vonage-status/<per-message token>`.
+// Must be https://host[:port] with no path; any other value (e.g. 'disabled')
+// sends no webhook_url, so status falls back to dashboard settings.
+const statusBaseUrl = defineString('DINNER_STATUS_BASE_URL', { default: 'https://devfest-flutter-a59e8.web.app' });
 
 export const dinnerReady = onRequest({
   region: 'us-central1',
@@ -46,8 +43,8 @@ export const dinnerReady = onRequest({
       checkProvider: () => providerConfigProblem(credentials()),
       allowedRecipients: vonageAllowedTo.value().split(',').map((s) => s.trim()).filter(Boolean),
     },
-    sendMessage: ({ request, channel }) => sendVonageDinner({ request, channel,
-      credentials: credentials(), webhookUrl: webhookUrl(),
+    sendMessage: ({ request, channel, statusToken }) => sendVonageDinner({ request, channel,
+      credentials: credentials(), webhookUrl: statusWebhookUrl(statusBaseUrl.value(), statusToken),
     }),
   });
   return createDinnerReadyHandler({

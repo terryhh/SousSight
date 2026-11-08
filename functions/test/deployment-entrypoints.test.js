@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -33,7 +33,7 @@ test('Live-only packaged entrypoint discovers no dinner exports or secret parame
   assert.ok(stack.params.some(p => p.name === 'GEMINI_API_KEY'));
 });
 
-test('live+dinner entrypoint serves a secret-free rejecting status stub', () => {
+test('live+dinner entrypoint serves the secret-free capability status handler', () => {
   const stack = discover('src/live-dinner-index.js');
   assert.deepEqual(Object.keys(stack.endpoints).sort(), ['dinnerReady', 'liveToken', 'vonageStatus']);
   assert.equal(stack.params.some(p => p.name === 'VONAGE_SIGNATURE_SECRET'), false);
@@ -41,8 +41,23 @@ test('live+dinner entrypoint serves a secret-free rejecting status stub', () => 
   assert.equal(stack.endpoints.vonageStatus.region[0], 'us-central1');
   assert.ok(stack.endpoints.vonageStatus.httpsTrigger);
   assert.equal(stack.params.find(p => p.name === 'ALLOW_DELIVERY_SIMULATION').default, 'false');
-  // A non-empty default keeps non-interactive deploys from prompting (2026-11-08 deploy failure).
-  assert.equal(stack.params.find(p => p.name === 'DINNER_STATUS_WEBHOOK_URL').default, 'disabled');
+  // A non-empty https default keeps non-interactive deploys from prompting
+  // (2026-11-08 deploy failure) and makes every real send carry a capability URL.
+  assert.equal(stack.params.find(p => p.name === 'DINNER_STATUS_BASE_URL').default,
+    'https://devfest-flutter-a59e8.web.app');
+  assert.equal(stack.params.some(p => p.name === 'DINNER_STATUS_WEBHOOK_URL'), false);
+});
+
+test('Hosting rewrites route tokenized and bare status paths to vonageStatus', () => {
+  const config = JSON.parse(readFileSync(join(root, '..', 'firebase.json'), 'utf8'));
+  const rewrites = config.hosting.rewrites;
+  for (const source of ['/api/vonage-status', '/api/vonage-status/**']) {
+    const rule = rewrites.find(r => r.source === source);
+    assert.ok(rule, source);
+    assert.deepEqual(rule.function, { functionId: 'vonageStatus', region: 'us-central1' });
+    // Must precede the SPA catch-all.
+    assert.ok(rewrites.indexOf(rule) < rewrites.findIndex(r => r.source === '**'));
+  }
 });
 
 test('full packaged entrypoint preserves all functions and secret bindings', () => {

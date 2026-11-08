@@ -74,24 +74,34 @@ for path in /api/live-token /api/dinner-ready; do
   esac
 done
 
-# Status webhook: unsigned requests must never be accepted (503 asks Vonage to
-# retry signed; 401 for bad signatures). Before DINNER_STATUS_READY the stub
-# answers 503 for every POST; the route is absent only without the dinner service.
-code=$(status -X POST -H 'Content-Type: application/json' -d '{"message_uuid":"smoke","status":"delivered"}' "$BASE/api/vonage-status")
-case "$code" in
-  401|403|503) ok "POST /api/vonage-status unsigned -> $code" ;;
-  2??)
-    # The SPA fallback serves index.html when the rewrite is absent; any other
-    # 2xx means an unsigned status event was accepted, which must never pass.
-    body=$(curl -s -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/vonage-status" | head -c 300)
-    if [ "$code" = 200 ] && grep -qi '<!doctype html\|<html' <<<"$body"; then
-      note "/api/vonage-status not deployed (SPA fallback); set DINNER_STATUS_READY after the secret exists"
-    else
-      bad "POST /api/vonage-status unsigned accepted with $code"
-    fi
-    ;;
-  *) bad "POST /api/vonage-status unsigned -> unexpected $code" ;;
-esac
+# Status webhook: a request with neither a valid signature nor a valid
+# per-message capability token must never be accepted. The capability handler
+# answers 401; 403/503 are tolerated for older deployments (the former stub
+# answered 503). The route is absent only without the dinner service.
+status_probe() {
+  local path=$1 label=$2
+  code=$(status -X POST -H 'Content-Type: application/json' -d '{"message_uuid":"smoke","status":"delivered"}' "$BASE$path")
+  case "$code" in
+    401) ok "POST $label -> 401" ;;
+    403|503) note "POST $label -> $code (expected 401 once the capability handler is deployed)" ;;
+    2??)
+      # The SPA fallback serves index.html when the rewrite is absent; any other
+      # 2xx means an unauthenticated status event was accepted, which must never pass.
+      body=$(curl -s -X POST -H 'Content-Type: application/json' -d '{}' "$BASE$path" | head -c 300)
+      if [ "$code" = 200 ] && grep -qi '<!doctype html\|<html' <<<"$body"; then
+        note "$label not deployed (SPA fallback); set DINNER_SERVICE_READY to deploy vonageStatus"
+      else
+        bad "POST $label unauthenticated accepted with $code"
+      fi
+      ;;
+    *) bad "POST $label unauthenticated -> unexpected $code" ;;
+  esac
+}
+status_probe /api/vonage-status '/api/vonage-status (unsigned, no token)'
+# A malformed token is rejected before any lookup. (A well-formed unknown token
+# for an unknown uuid is buffered by design, so it is not probed here: that
+# would write a pending-status document in production.)
+status_probe /api/vonage-status/not-a-token '/api/vonage-status/<malformed token>'
 
 echo
 echo "pass=$pass warn=$warn fail=$fail"
