@@ -183,7 +183,7 @@ class HowItWorksSheet extends StatelessWidget {
           icon: Icons.lock_outline,
         ),
         bullet('No account needed.', icon: Icons.lock_outline),
-        bullet('Safety'),
+        heading('Safety'),
         bullet('You confirm everything; the coach suggests, you decide.'),
         bullet(
           "Vision can't certify internal temperature, freshness, or allergens. "
@@ -191,7 +191,7 @@ class HowItWorksSheet extends StatelessWidget {
           icon: Icons.warning_amber_rounded,
         ),
         bullet('Nothing is sent without your review.'),
-        heading('DevFest 2026 Judge X-Ray'),
+        heading('Under the hood'),
         _DevFestXRayCard(isDemo: isDemo),
       ],
     );
@@ -225,7 +225,7 @@ class _DevFestXRayCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'LIVE ARCHITECTURE & GUARANTEES',
+                    'ARCHITECTURE AT A GLANCE',
                     style: theme.textTheme.labelMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.2,
@@ -244,11 +244,11 @@ class _DevFestXRayCard extends StatelessWidget {
             _diagRow('Video Frame Ingestion', '1 fps JPEG (≤768px, client-rendered)'),
             _diagRow(
               'GenUI / A2UI Safety',
-              'Strict JSON Schema (9 validated catalog items)',
+              'Schema-validated trusted catalog; no model-written code or HTML',
             ),
             _diagRow(
               'Grounding Engines',
-              'Google Search & Google Maps (Knights Pantry / UCF)',
+              'Google Search (cited sources) & Google Maps (grounded places)',
             ),
             _diagRow('Client Secret Isolation', 'Zero long-lived keys in web bundle'),
             _diagRow(

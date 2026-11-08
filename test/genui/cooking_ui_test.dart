@@ -129,7 +129,7 @@ void main() {
       throwsFormatException,
     );
     expect(controller.components, original);
-    expect(controller.catalog.items.length, 9);
+    expect(controller.catalog.items.length, 8);
   });
 
   test('timer repeats and layout morphs preserve original deadline', () {
@@ -413,41 +413,6 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Yes, canned and drained'));
     expect(events, hasLength(2));
-    await tester.pumpWidget(const SizedBox.shrink());
-    controller.dispose();
-  });
-
-  testWidgets('doneness gauge renders visual progress and texture cue', (
-    tester,
-  ) async {
-    final controller = CookingUiController(onAction: (_) {});
-    controller.applyToolPayload(
-      panel({
-        'id': 'gauge',
-        'component': 'donenessGauge',
-        'title': 'Chickpea Mash Check',
-        'percent': 75,
-        'currentTexture': 'Mostly whole chickpeas with some paste',
-        'targetTexture': 'Coarsely mashed with identifiable pieces',
-        'cue': 'Press firmly on the whole peas around the edge.',
-      }),
-    );
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: CookingSurface(controller: controller)),
-      ),
-    );
-    expect(find.text('Chickpea Mash Check'), findsOneWidget);
-    expect(find.text('VISUAL DONENESS GAUGE'), findsOneWidget);
-    expect(find.text('75% toward target texture'), findsOneWidget);
-    expect(find.text('Mostly whole chickpeas with some paste'), findsOneWidget);
-    expect(find.text('Coarsely mashed with identifiable pieces'), findsOneWidget);
-    expect(
-      find.text('Press firmly on the whole peas around the edge.'),
-      findsOneWidget,
-    );
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
-    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });

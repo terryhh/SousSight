@@ -24,9 +24,6 @@ Allowed components and properties:
 - watchStatus: title, body, status (watching, check_now, paused).
 - cookingTimer: timerId, label. Display an existing timer started by start_timer;
   creating a panel does not start or restart a timer.
-- donenessGauge: title, percent (integer 0-100), currentTexture, targetTexture, cue.
-  Display visual progress toward a texture cue (e.g. mashing or mixing). Never certify
-  food safety or internal temperature.
 - dinnerReady: title, message. Creates a draft for the cook to review; never sends.
 Use 1-12 visible components, concise text, stable IDs, and no URLs or HTML.
 Timers keep running through workspace changes. Use a new timerId for a new timer.
@@ -235,18 +232,6 @@ void _validateComponent(Map<String, dynamic> data) {
       fields = {'title', 'message'};
       _text(data, 'title');
       _text(data, 'message');
-    case 'donenessGauge':
-      fields = {'title', 'percent', 'currentTexture', 'targetTexture', 'cue'};
-      _text(data, 'title');
-      final percent = data['percent'];
-      if (percent is! int || percent < 0 || percent > 100) {
-        throw const FormatException(
-          'donenessGauge percent must be an int between 0 and 100.',
-        );
-      }
-      _text(data, 'currentTexture');
-      _text(data, 'targetTexture');
-      _text(data, 'cue');
     default:
       throw FormatException('Unsupported cooking component: $type');
   }

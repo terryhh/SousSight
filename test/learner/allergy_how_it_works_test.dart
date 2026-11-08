@@ -240,7 +240,7 @@ void main() {
     await expectListed(find.text('Your privacy'));
     await expectListed(find.textContaining('Pantry photos, voice clips'));
     await expectListed(find.text('Safety'));
-    await expectListed(find.text('DevFest 2026 Judge X-Ray'));
+    await expectListed(find.text('Under the hood'));
     await expectListed(find.byKey(const ValueKey('devfest-x-ray-card')));
   }
 
