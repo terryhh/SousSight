@@ -12,6 +12,7 @@ import 'pantry_handoff.dart';
 import 'pantry_screen.dart';
 import 'recipe_catalog.dart';
 import 'recipe_draft.dart';
+import 'recipe_draft_client.dart';
 
 typedef CookingPageBuilder = Widget Function(
   Recipe recipe,
@@ -53,14 +54,10 @@ class _PantryFlowState extends State<PantryFlow> {
   late final PantryClient _client =
       widget.client ??
       (widget.isDemo ? const FakePantryClient() : GeminiPantryClient());
-  // SS-053 wiring: swap these placeholders for `FakeRecipeDraftClient()`
-  // (demo) and `GeminiRecipeDraftClient()` (real) from recipe_draft_client.dart
-  // once that branch merges. This is the only place the defaults are chosen.
+  // SS-053: the only place the default draft clients are chosen.
   late final RecipeDraftClient _draftClient =
       widget.draftClient ??
-      (widget.isDemo
-          ? const _UnavailableDraftClient()
-          : const _UnavailableDraftClient());
+      (widget.isDemo ? FakeRecipeDraftClient() : GeminiRecipeDraftClient());
   bool _opening = false;
 
   Widget _cooking(Recipe recipe, VoidCallback onBack) =>
@@ -158,15 +155,4 @@ class _DeepLinkedCookingState extends State<_DeepLinkedCooking> {
   Widget build(BuildContext context) => _showPantry
       ? widget.pantry()
       : widget.build(() => setState(() => _showPantry = true));
-}
-
-/// Placeholder until the Gemini/fake draft clients land (see SS-053 wiring).
-class _UnavailableDraftClient implements RecipeDraftClient {
-  const _UnavailableDraftClient();
-
-  @override
-  Future<Recipe> draft(RecipeDraftRequest request) async =>
-      throw const RecipeDraftException(
-        'Recipe drafting is unavailable right now. Pick a recipe below.',
-      );
 }
