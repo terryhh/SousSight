@@ -55,7 +55,8 @@ class PantryUiController extends ChangeNotifier {
   }
 
   /// Replaces the surface with components built from a validated result.
-  /// Likely items start selected; low-confidence guesses wait for the cook.
+  /// Every candidate starts unconfirmed: model confidence is not the cook's
+  /// confirmation. Only items the cook taps are handed to the cooking session.
   void show(PantryResult result, List<Recipe> recipes) {
     if (_disposed) return;
     final byId = {for (final recipe in recipes) recipe.id: recipe};
@@ -64,12 +65,7 @@ class PantryUiController extends ChangeNotifier {
         if (byId.containsKey(meal.recipeId)) meal,
     ];
     _items = [for (final item in result.items) item.name];
-    _confirmed
-      ..clear()
-      ..addAll([
-        for (var i = 0; i < result.items.length; i++)
-          if (result.items[i].confidence != PantryConfidence.low) i,
-      ]);
+    _confirmed.clear();
     final components = <Map<String, dynamic>>[
       {
         'id': 'root',
@@ -201,7 +197,7 @@ Catalog buildPantryCatalog(PantryUiController controller) => Catalog([
             ),
             const SizedBox(height: 4),
             const Text(
-              'Tap to keep only what you really have. Dimmed items are guesses.',
+              'Tap each item you actually have. Nothing counts until you confirm it.',
               style: TextStyle(fontSize: 14, height: 1.4),
             ),
             const SizedBox(height: 14),
