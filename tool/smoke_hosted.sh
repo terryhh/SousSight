@@ -30,6 +30,8 @@ grep -qi '^cache-control: no-cache' <<<"$headers" && ok "app shell no-cache" || 
 grep -qi '^strict-transport-security' <<<"$headers" && ok "HSTS present" || note "HSTS header missing"
 grep -qi '^permissions-policy' <<<"$headers" && ok "Permissions-Policy present" || note "Permissions-Policy not deployed yet"
 
+bundle_headers=$(curl -s -D - -o /dev/null "$BASE/main.dart.js")
+grep -qi '^cache-control: no-cache' <<<"$bundle_headers" && ok "main.dart.js no-cache" || bad "main.dart.js missing no-cache (stale bundles after deploy)"
 bundle=$(curl -s "$BASE/main.dart.js")
 if [ -z "$bundle" ]; then
   bad "main.dart.js empty or unreachable"
@@ -77,16 +79,17 @@ done
 code=$(status -X POST -H 'Content-Type: application/json' -d '{"message_uuid":"smoke","status":"delivered"}' "$BASE/api/vonage-status")
 case "$code" in
   401|403|503) ok "POST /api/vonage-status unsigned -> $code" ;;
-  200)
-    # The SPA fallback serves index.html with 200 when the rewrite is absent.
-    body=$(curl -s -X POST -d '{}' "$BASE/api/vonage-status" | head -c 200)
-    if grep -qi '<!doctype html\|<html' <<<"$body"; then
+  2??)
+    # The SPA fallback serves index.html when the rewrite is absent; any other
+    # 2xx means an unsigned status event was accepted, which must never pass.
+    body=$(curl -s -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/api/vonage-status" | head -c 300)
+    if [ "$code" = 200 ] && grep -qi '<!doctype html\|<html' <<<"$body"; then
       note "/api/vonage-status not deployed (SPA fallback); set DINNER_STATUS_READY after the secret exists"
     else
-      bad "POST /api/vonage-status unsigned accepted with 200"
+      bad "POST /api/vonage-status unsigned accepted with $code"
     fi
     ;;
-  *) note "POST /api/vonage-status unsigned -> $code" ;;
+  *) bad "POST /api/vonage-status unsigned -> unexpected $code" ;;
 esac
 
 echo
