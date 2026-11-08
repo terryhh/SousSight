@@ -4,8 +4,36 @@
       "collectionGroup": "sessions",
       "queryScope": "COLLECTION",
       "fields": [
-        {"fieldPath": "learnerId", "order": "ASCENDING"},
-        {"fieldPath": "recipeId", "order": "ASCENDING"}
+        {
+          "fieldPath": "learnerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "recipeId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "learnerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "recipeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "__name__",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],
