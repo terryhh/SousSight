@@ -148,3 +148,5 @@ On November 7, Terry reported that his billing page currently displays **$0**. T
 2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition.
 
 2026-11-07: A simulated 360px mobile viewport exercised the stable control dock, scrolling and Stop. No human media was used. PR #64 has 131 passing local tests; hosted controls and physical mobile keyboard/focus acceptance remain pending. These checks do not establish that all infrastructure costs are zero; hosting/requests and prior billable usage remain subject to delayed reporting.
+
+Google states cost details typically become available within a day, but sometimes take longer than 24 hours; this general reporting delay does not establish this project’s current charges or credit coverage. [Cloud Billing reports](https://docs.cloud.google.com/billing/docs/how-to/reports).

@@ -680,6 +680,28 @@
         "2026-11-07: https://github.com/terryhh/SousSight/issues/63 created with terryhh assignee and Project In progress.",
         "2026-11-07: A simulated 360px mobile viewport exercised the stable control dock, scrolling and Stop. No human media was used. PR #64 has 131 passing local tests; hosted controls and physical mobile keyboard/focus acceptance remain pending."
       ]
+    },
+    {
+      "id": "SS-029",
+      "priority": "P0",
+      "title": "Guard repository history and browser builds against secrets",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "User explicitly requires no secrets in GitHub, including a future public repository. Backend agent is implementing ignore rules and a redacted full-history CI scan using a trusted pinned scanner. Public Firebase browser configuration is not a server secret; allow only exact reviewed public values.",
+      "acceptance": [
+        "Keep server credentials, service-account private keys and other secrets out of tracked source, commit history, browser bundles and logs. Runtime secrets remain in the approved secret store.",
+        "Ignore local environment/configuration secrets, service-account files, private keys and generated GitHub Actions credential files without hiding required safe templates.",
+        "Run a trusted pinned scanner across available Git history in CI; allowlist only exact reviewed public Firebase configuration values, never broad credential patterns.",
+        "A synthetic canary test proves detection fails safely while scanner/tool output remains redacted; do not commit real credentials to test the guard.",
+        "Record audit coverage and limits, including skipped binary content and pattern-based detection limitations. A clean scan does not guarantee the absence of every possible secret."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: User explicitly requested permanent repository secret protection before any future public release; backend agent started isolated implementation.",
+        "2026-11-07: Current audit inspected 170 commits and 332 text blobs; 25 binary blobs were skipped. No pattern-matching server secrets were found; observed Firebase browser keys were public configuration. This limited pattern-based result is not a universal no-secret guarantee."
+      ]
     }
   ]
 }
