@@ -20,7 +20,8 @@ class CookingCoordinator extends ChangeNotifier {
     required LiveTransportFactory transportFactory,
     required LiveMedia media,
     this.isDemo = false,
-  }) : recipe = services.bundledRecipe {
+    Recipe? recipe,
+  }) : recipe = recipe ?? services.bundledRecipe {
     ui = CookingUiController(onAction: _onUiAction, clock: services.clock);
     live = LiveCookingController(
       transportFactory: transportFactory,

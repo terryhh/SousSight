@@ -40,12 +40,17 @@ class FirestoreRecipeRepository implements RecipeRepository {
       _db.collection('recipes').doc(id);
 
   @override
-  Stream<Recipe> watch(String recipeId) => _doc(recipeId).snapshots().map((s) {
+  Stream<Recipe> watch(String recipeId) => _doc(recipeId)
+      .snapshots()
+      .map((s) {
         final data = s.data();
-        // Unseeded project: fall back to the bundled recipe.
-        if (data == null) return _bundled;
+        // Unseeded project: fall back to the bundled recipe, but never swap a
+        // different runtime-selected recipe for the build-time default.
+        if (data == null) return recipeId == _bundled.id ? _bundled : null;
         return Recipe.fromMap({...data, 'id': recipeId});
-      });
+      })
+      .where((recipe) => recipe != null)
+      .cast<Recipe>();
 }
 
 class FirestoreSessionRepository implements SessionRepository {

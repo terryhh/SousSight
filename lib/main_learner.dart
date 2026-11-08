@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app/services_scope.dart';
 import 'data/firebase_services.dart';
 import 'learner/cooking_app.dart';
+import 'pantry/recipe_catalog.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +27,12 @@ class _SousSightBootstrapState extends State<SousSightBootstrap> {
     future: _services,
     builder: (context, snapshot) {
       if (snapshot.hasData) {
-        return CookingApp(services: snapshot.data!, isDemo: kFakeBackend);
+        return CookingApp(
+          services: snapshot.data!,
+          isDemo: kFakeBackend,
+          pantryFirst: true,
+          initialRecipeId: deepLinkRecipeId(),
+        );
       }
       return MaterialApp(
         debugShowCheckedModeBanner: false,

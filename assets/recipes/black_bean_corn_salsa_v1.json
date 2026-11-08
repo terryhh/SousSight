@@ -1,0 +1,67 @@
+{
+  "id": "black_bean_corn_salsa_v1",
+  "version": 1,
+  "title": "Black Bean & Corn Salsa",
+  "summary": "A no-cook pantry salsa: canned black beans and corn with fresh tomato, red onion, and lime. Scoop it up with tortilla chips or fold it into tortillas. Teaches an even small dice and letting flavors meld.",
+  "ingredients": [
+    {"id": "black_beans", "name": "Canned black beans, drained and rinsed", "qty": "1 can (15 oz)", "allergens": []},
+    {"id": "corn", "name": "Canned corn, drained", "qty": "1 can (15 oz)", "allergens": []},
+    {"id": "tomato", "name": "Tomato, diced", "qty": "1 large or 2 small", "allergens": []},
+    {"id": "red_onion", "name": "Red onion, finely diced", "qty": "1/4 cup", "allergens": []},
+    {"id": "lime", "name": "Lime juice", "qty": "1 lime (about 2 tbsp)", "allergens": []},
+    {"id": "cilantro", "name": "Cilantro, chopped, only if the cook likes it", "qty": "2 tbsp, optional", "optional": true, "allergens": []},
+    {"id": "salt", "name": "Salt", "qty": "a pinch, to taste", "allergens": []},
+    {"id": "tortillas", "name": "Tortilla chips or tortillas, for serving (flour tortillas contain wheat; check labels)", "qty": "a handful of chips or 2 tortillas", "allergens": ["wheat"]}
+  ],
+  "equipment": ["Can opener", "Colander or strainer", "Cutting board", "Knife", "Medium bowl", "Spoon"],
+  "steps": [
+    {
+      "id": "drain_rinse",
+      "title": "Drain and rinse the cans",
+      "instruction": "Open the black beans and corn. Pour the beans into a colander, rinse them under cold water, then add the corn and let everything drain. Tip them into the bowl.",
+      "cue": "Beans look glossy but not sitting in thick, cloudy liquid. No pool of canning liquid in the bottom of the bowl."
+    },
+    {
+      "id": "dice",
+      "title": "Dice the tomato and onion",
+      "instruction": "Cut the tomato and red onion into small, even pieces, about the size of a corn kernel. Add them to the bowl. Chop the cilantro too if you are using it.",
+      "cue": "Tomato and onion pieces are evenly diced, about the size of a corn kernel, with no large chunks.",
+      "checkpointId": "cp_dice"
+    },
+    {
+      "id": "dress",
+      "title": "Add lime and salt, then stir",
+      "instruction": "Squeeze the lime over the bowl, add a pinch of salt, and stir gently from the bottom until the colors are mixed throughout.",
+      "cue": "Black, yellow, red and purple pieces are spread through the whole bowl, everything lightly glossy, with no dry clump of beans on one side."
+    },
+    {
+      "id": "meld",
+      "title": "Let the flavors meld",
+      "instruction": "Let the salsa sit for about 5 minutes so the lime and salt can soak in. Taste and add a little more salt or lime if you want.",
+      "cue": "A little juice gathers at the bottom and the onion looks slightly softened. Taste is the cook's call.",
+      "timerSeconds": 300
+    },
+    {
+      "id": "serve",
+      "title": "Serve",
+      "instruction": "Give it one more stir. Scoop it up with tortilla chips, or spoon it into tortillas.",
+      "cue": "Salsa is mixed evenly and ready to serve."
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "cp_dice",
+      "stepId": "dice",
+      "target": "Tomato and red onion are evenly diced, pieces about the size of a corn kernel, no large chunks. Judge visible piece size using the live camera and these text cues; no target photo is supplied.",
+      "cues": ["evenly diced", "pieces about the size of a corn kernel", "no large chunks"],
+      "targetImageAsset": "",
+      "allowedAdjustments": ["dice_smaller", "even_out_pieces", "fine_as_is"]
+    }
+  ],
+  "reviewedSubstitutions": [],
+  "adjustmentLabels": {
+    "dice_smaller": "Cut the larger pieces once or twice more",
+    "even_out_pieces": "Pick out the big chunks and dice them to match the rest",
+    "fine_as_is": "A few bigger pieces are fine for a chunky salsa"
+  }
+}
