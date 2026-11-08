@@ -11,8 +11,12 @@ const kNearbyModel = String.fromEnvironment(
   defaultValue: kCookingResearchModel,
 );
 
-/// Shown when the cook has not shared a location or typed an area.
+/// Example text for the area field only. It is never sent as a search area;
+/// the cook must type an area or share a location once.
 const kNearbyAreaHint = 'Orlando, FL';
+
+const nearbyAreaRequired =
+    'Type a city or ZIP code, or tap "Use my location once".';
 
 const nearbyLocationNotice =
     'Your location is used once to find nearby places and is not stored.';
@@ -311,6 +315,8 @@ class FakeNearbyClient implements NearbyClient {
   @override
   Future<NearbyResult> find(NearbyQuery query) async {
     if (delay > Duration.zero) await Future<void>.delayed(delay);
+    // Rehearsal only (results are labelled simulated): the demo locator's
+    // simulated position stands in for the cook's area in generic Maps links.
     final area = query.area.trim().isEmpty ? kNearbyAreaHint : query.area;
     Uri search(String what) => Uri.https('www.google.com', '/maps/search/', {
       'api': '1',

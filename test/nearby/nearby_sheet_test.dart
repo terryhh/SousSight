@@ -105,7 +105,9 @@ void main() {
     expect(find.text('Sample Community Pantry (simulated)'), findsOneWidget);
   });
 
-  testWidgets('empty typed area uses the Orlando hint', (tester) async {
+  testWidgets('blank area without a location never searches a default city', (
+    tester,
+  ) async {
     await setUp360(tester);
     final nearby = _RecordingNearby();
     await tester.pumpWidget(
@@ -116,8 +118,58 @@ void main() {
       ),
     );
     await tapVisible(tester, find.byKey(const ValueKey('nearby-food-help')));
-    await tapVisible(tester, find.byKey(const ValueKey('nearby-search-area')));
-    expect(nearby.queries.single.area, kNearbyAreaHint);
+    final search = find.byKey(const ValueKey('nearby-search-area'));
+    expect(tester.widget<OutlinedButton>(search).onPressed, isNull);
+    await tapVisible(tester, search);
+    expect(nearby.queries, isEmpty);
+
+    // Whitespace is still blank; submitting from the keyboard explains why.
+    final area = find.byKey(const ValueKey('nearby-area'));
+    await tester.enterText(area, '   ');
+    await tester.pump();
+    expect(tester.widget<OutlinedButton>(search).onPressed, isNull);
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(find.text(nearbyAreaRequired), findsOneWidget);
+    expect(nearby.queries, isEmpty);
+
+    // The Orlando example is only a hint.
+    expect(find.text('e.g. $kNearbyAreaHint'), findsOneWidget);
+    await tester.enterText(area, 'Tampa');
+    await tester.pump();
+    expect(tester.widget<OutlinedButton>(search).onPressed, isNotNull);
+  });
+
+  testWidgets('Maps source links can be activated by a screen reader', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final opened = <Uri>[];
+    final place = NearbyPlace(
+      title: 'Real Pantry',
+      uri: Uri.parse('https://maps.google.com/?cid=1'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: NearbyResults(
+              result: NearbyResult(answer: 'One place.', places: [place]),
+              openLink: (uri) async => opened.add(uri),
+            ),
+          ),
+        ),
+      ),
+    );
+    const label = 'Real Pantry, open in Google Maps';
+    expect(
+      tester.getSemantics(find.bySemanticsLabel(label)),
+      isSemantics(label: label, isLink: true, hasTapAction: true),
+    );
+    tester.semantics.tap(find.semantics.byLabel(label));
+    await tester.pump();
+    expect(opened, [place.uri]);
+    semantics.dispose();
   });
 
   testWidgets('meal with missing items searches for where to buy them', (
@@ -165,6 +217,11 @@ void main() {
         ),
       ),
     );
+    await tester.enterText(
+      find.byKey(const ValueKey('nearby-area')),
+      'Nowhere',
+    );
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('nearby-search-area')));
     await tester.pumpAndSettle();
     expect(find.textContaining('could not find places'), findsOneWidget);

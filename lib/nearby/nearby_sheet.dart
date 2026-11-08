@@ -121,6 +121,12 @@ class _NearbyPanelState extends State<NearbyPanel> {
   Future<void> _useArea() async {
     if (_busy) return;
     final typed = _area.text.trim();
+    // Never search an implied place: the hint is only an example.
+    if (typed.isEmpty) {
+      setState(() => _error = nearbyAreaRequired);
+      _areaFocus.requestFocus();
+      return;
+    }
     final request = ++_request;
     setState(() {
       _busy = true;
@@ -129,7 +135,7 @@ class _NearbyPanelState extends State<NearbyPanel> {
     await _search(
       NearbyQuery(
         kind: widget.kind,
-        area: typed.isEmpty ? kNearbyAreaHint : typed,
+        area: typed,
         missingItems: widget.missingItems,
       ),
       request,
@@ -239,7 +245,7 @@ class _NearbyPanelState extends State<NearbyPanel> {
                 style: const TextStyle(fontSize: 17),
                 decoration: const InputDecoration(
                   labelText: 'Or type a city or ZIP',
-                  hintText: kNearbyAreaHint,
+                  hintText: 'e.g. $kNearbyAreaHint',
                   counterText: '',
                   filled: true,
                   fillColor: Colors.white,
@@ -250,24 +256,29 @@ class _NearbyPanelState extends State<NearbyPanel> {
                 ),
               ),
             ),
-            SizedBox(
-              height: 56,
-              child: OutlinedButton(
-                key: const ValueKey('nearby-search-area'),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(64, 56),
-                  foregroundColor: _green,
-                  side: const BorderSide(color: _green, width: 1.5),
-                  textStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _area,
+              builder: (context, value, _) => SizedBox(
+                height: 56,
+                child: OutlinedButton(
+                  key: const ValueKey('nearby-search-area'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(64, 56),
+                    foregroundColor: _green,
+                    side: const BorderSide(color: _green, width: 1.5),
+                    textStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                  onPressed: _busy || value.text.trim().isEmpty
+                      ? null
+                      : () => unawaited(_useArea()),
+                  child: const Text('Search'),
                 ),
-                onPressed: _busy ? null : () => unawaited(_useArea()),
-                child: const Text('Search'),
               ),
             ),
           ],
@@ -376,6 +387,9 @@ class NearbyResults extends StatelessWidget {
               link: true,
               label: '${place.title}, open in Google Maps',
               excludeSemantics: true,
+              // The merged node replaces the InkWell's own semantics, so it
+              // must carry the same activation for screen readers.
+              onTap: () => unawaited(openLink(place.uri)),
               child: Material(
                 color: _cream,
                 borderRadius: BorderRadius.circular(16),
