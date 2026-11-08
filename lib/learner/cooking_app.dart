@@ -4,12 +4,12 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:uuid/uuid.dart';
 
 import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../app/services_scope.dart';
 import '../data/dinner_messages.dart';
+import '../data/dinner_status.dart';
 import '../data/live_token_provider.dart';
 import '../genui/cooking_ui.dart';
 import '../live/browser_live_media.dart';
@@ -21,6 +21,7 @@ import '../app/how_it_works.dart';
 import 'allergen_chip.dart';
 import 'cooking_coordinator.dart';
 import 'demo_live.dart';
+import 'dinner_review.dart';
 
 final cookingTheme = ThemeData(
   useMaterial3: true,
@@ -83,21 +84,14 @@ class CookingApp extends StatelessWidget {
   );
 }
 
-typedef DinnerMessageSender = Future<DinnerMessageResult> Function({
-  required String sessionId,
-  required String notificationId,
-  required String recipient,
-  required String message,
-  bool demo,
-});
-
 class CookingScreen extends StatefulWidget {
   const CookingScreen({
     super.key,
     required this.services,
     required this.isDemo,
     this.createCoordinator,
-    this.sendDinner = sendDinnerMessage,
+    this.sendDinner,
+    this.dinnerStatus,
     this.recipe,
     this.onBackToPantry,
   });
@@ -108,7 +102,11 @@ class CookingScreen extends StatefulWidget {
   final Recipe? recipe;
   final VoidCallback? onBackToPantry;
   final CookingCoordinator Function()? createCoordinator;
-  final DinnerMessageSender sendDinner;
+
+  /// Defaults: the real endpoint and Firestore mirror, or a visibly simulated
+  /// backend in demo builds.
+  final DinnerMessageSender? sendDinner;
+  final DinnerStatusSource? dinnerStatus;
   @override
   State<CookingScreen> createState() => _CookingScreenState();
 }
@@ -205,6 +203,7 @@ class _CookingScreenState extends State<CookingScreen> {
     onBackToPantry: widget.onBackToPantry,
     startingNewCook: _startingNewCook,
     sendDinner: widget.sendDinner,
+    dinnerStatus: widget.dinnerStatus,
   );
 
   @override
@@ -225,6 +224,7 @@ class _CookingSessionScreen extends StatefulWidget {
     this.onBackToPantry,
     required this.startingNewCook,
     required this.sendDinner,
+    required this.dinnerStatus,
   });
   final AppServices services;
   final bool isDemo;
@@ -233,7 +233,8 @@ class _CookingSessionScreen extends StatefulWidget {
   final VoidCallback? onNewCook;
   final VoidCallback? onBackToPantry;
   final bool startingNewCook;
-  final DinnerMessageSender sendDinner;
+  final DinnerMessageSender? sendDinner;
+  final DinnerStatusSource? dinnerStatus;
 
   @override
   State<_CookingSessionScreen> createState() => _CookingSessionScreenState();
@@ -243,7 +244,14 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
   final _message = TextEditingController();
-  final _notificationId = const Uuid().v4();
+  final _dinnerAttempts = DinnerAttemptMemory();
+  final _fakeDinner = FakeDinnerBackend();
+  late final DinnerMessageSender _sendDinner =
+      widget.sendDinner ??
+      (widget.isDemo ? _fakeDinner.send : sendDinnerMessage);
+  late final DinnerStatusSource _dinnerStatus =
+      widget.dinnerStatus ??
+      (widget.isDemo ? _fakeDinner : FirestoreDinnerStatusSource());
   String _prediction = 'Not sure';
   String? _announcedAlert;
   bool _messagePending = false;
@@ -303,6 +311,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
     _message.dispose();
+    unawaited(_fakeDinner.dispose());
     super.dispose();
   }
 
@@ -766,8 +775,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                   if (question.isNotEmpty) {
                     unawaited(cook.researchQuestionNow(question));
                   } else {
-                    _message.text =
-                        'What should I look for during this step?';
+                    _message.text = 'What should I look for during this step?';
                   }
                 },
                 icon: const Icon(Icons.travel_explore),
@@ -870,15 +878,15 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             label: const Text('Check my food'),
           ),
           if (cook.step.timerSeconds != null && cook.step.timerSeconds! > 0)
-          OutlinedButton.icon(
-            onPressed: cook.startStepTimer,
-            icon: const Icon(Icons.timer_outlined),
-            label: Text(
-              cook.step.timerSeconds! % 60 == 0
-                  ? 'Start ${cook.step.timerSeconds! ~/ 60}-minute timer'
-                  : 'Start ${cook.step.timerSeconds}-second timer',
+            OutlinedButton.icon(
+              onPressed: cook.startStepTimer,
+              icon: const Icon(Icons.timer_outlined),
+              label: Text(
+                cook.step.timerSeconds! % 60 == 0
+                    ? 'Start ${cook.step.timerSeconds! ~/ 60}-minute timer'
+                    : 'Start ${cook.step.timerSeconds}-second timer',
+              ),
             ),
-          ),
           TextButton(
             onPressed: cook.advancing || cook.complete
                 ? null
@@ -932,6 +940,14 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _reviewStarted,
+          icon: const Icon(Icons.outdoor_grill_outlined),
+          label: const Text('Text household: started cooking'),
+        ),
+      ),
     ],
   );
 
@@ -952,115 +968,23 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     child: _inlineNotice(text, icon),
   );
 
-  Future<void> _reviewDinner() async {
-    final recipient = TextEditingController();
-    final message = TextEditingController(
-      text: cook.dinnerDraft ?? 'Dinner is ready! Come join me.',
+  Future<void> _reviewDinner() => _reviewHousehold(DinnerKind.ready);
+
+  /// Opt-in "started cooking" text; opens the same review, never auto-sends.
+  Future<void> _reviewStarted() => _reviewHousehold(DinnerKind.started);
+
+  Future<void> _reviewHousehold(DinnerKind kind) async {
+    final session = cook.session;
+    if (session == null) return;
+    await showDinnerReview(
+      context,
+      kind: kind,
+      sessionId: session.id,
+      recipeTitle: cook.recipe.title,
+      send: _sendDinner,
+      statusSource: _dinnerStatus,
+      memory: _dinnerAttempts,
+      isDemo: widget.isDemo,
     );
-    bool sending = false;
-    String? result;
-    String? validationError;
-    await showDialog<void>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          title: const Text('Dinner is ready'),
-          scrollable: true,
-          insetPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Choose your configured household contact and review the exact message.',
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: recipient,
-                  enabled: !sending && result == null,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Recipient',
-                    hintText: '+14075550123',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: message,
-                  enabled: !sending && result == null,
-                  maxLines: 3,
-                  maxLength: 320,
-                  decoration: const InputDecoration(labelText: 'Message'),
-                ),
-                if (validationError != null) Text(validationError!),
-                if (result != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text(result!),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: sending ? null : () => Navigator.pop(context),
-              child: const Text('Close'),
-            ),
-            FilledButton(
-              onPressed: sending || result != null
-                  ? null
-                  : () async {
-                      // Guard the callback too: two taps can arrive before the
-                      // disabled button has rebuilt.
-                      if (sending || result != null) return;
-                      if (!RegExp(r'^\+?[1-9][0-9]{7,14}$')
-                              .hasMatch(recipient.text.trim()) ||
-                          message.text.trim().isEmpty) {
-                        update(
-                          () => validationError = 'Enter a full international phone number and a message.',
-                        );
-                        return;
-                      }
-                      update(() {
-                        sending = true;
-                        validationError = null;
-                      });
-                      try {
-                        final response = await widget.sendDinner(
-                          sessionId: cook.session!.id,
-                          notificationId: _notificationId,
-                          recipient: recipient.text.trim(),
-                          message: message.text.trim(),
-                          demo: widget.isDemo,
-                        );
-                        if (context.mounted) {
-                          update(() => result = response.explanation);
-                        }
-                      } on DinnerValidationException catch (error) {
-                        if (context.mounted) {
-                          update(() => validationError = error.explanation);
-                        }
-                      } catch (_) {
-                        if (context.mounted) {
-                          update(
-                            () => result = 'Message status could not be confirmed. No automatic resend will occur.',
-                          );
-                        }
-                      } finally {
-                        if (context.mounted) update(() => sending = false);
-                      }
-                    },
-              child: Text(widget.isDemo ? 'Rehearse send' : 'Confirm and send'),
-            ),
-          ],
-        ),
-      ),
-    );
-    recipient.dispose();
-    message.dispose();
   }
 }

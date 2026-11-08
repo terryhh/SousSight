@@ -4,7 +4,10 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { onRequest } from 'firebase-functions/v2/https';
-import { createDinnerLedger, createDinnerReadyHandler, createDinnerService, sendVonageDinner } from './dinner-ready.js';
+import {
+  createDinnerLedger, createDinnerReadyHandler, createDinnerService, providerConfigProblem, sendVonageDinner,
+} from './dinner-ready.js';
+import { createDeliveryStatusStore } from './vonage-status.js';
 
 const vonageApiKey = defineSecret('VONAGE_API_KEY');
 const vonageApiSecret = defineSecret('VONAGE_API_SECRET');
@@ -12,21 +15,37 @@ const vonageFrom = defineSecret('VONAGE_FROM');
 const vonageAllowedTo = defineSecret('VONAGE_ALLOWED_TO');
 const dinnerChannel = defineString('DINNER_CHANNEL', { default: 'whatsapp' });
 const enableDinnerMessages = defineString('ENABLE_DINNER_MESSAGES', { default: 'false' });
+// Demo-only: lets the cook trigger a server-side simulated Vonage rejection.
+const allowDeliverySimulation = defineString('ALLOW_DELIVERY_SIMULATION', { default: 'false' });
+// Per-message status webhook, e.g. https://devfest-flutter-a59e8.web.app/api/vonage-status.
+const statusWebhookUrl = defineString('DINNER_STATUS_WEBHOOK_URL', { default: '' });
+
+function webhookUrl() {
+  const value = statusWebhookUrl.value().trim();
+  return /^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[A-Za-z0-9/_-]*$/.test(value) ? value : '';
+}
 
 export const dinnerReady = onRequest({
   region: 'us-central1',
   secrets: [vonageApiKey, vonageApiSecret, vonageFrom, vonageAllowedTo],
   cors: false, maxInstances: 2, timeoutSeconds: 30, memory: '256MiB',
 }, async (req, res) => {
+  const db = getFirestore();
+  const credentials = () => ({
+    apiKey: vonageApiKey.value(), apiSecret: vonageApiSecret.value(), from: vonageFrom.value(),
+  });
   const service = createDinnerService({
-    ledger: createDinnerLedger(getFirestore()),
+    ledger: createDinnerLedger(db),
+    applyStatus: createDeliveryStatusStore(db),
     settings: {
       channel: dinnerChannel.value(),
       enabled: enableDinnerMessages.value() === 'true',
+      allowSimulation: allowDeliverySimulation.value() === 'true',
+      checkProvider: () => providerConfigProblem(credentials()),
       allowedRecipients: vonageAllowedTo.value().split(',').map((s) => s.trim()).filter(Boolean),
     },
     sendMessage: ({ request, channel }) => sendVonageDinner({ request, channel,
-      credentials: { apiKey: vonageApiKey.value(), apiSecret: vonageApiSecret.value(), from: vonageFrom.value() },
+      credentials: credentials(), webhookUrl: webhookUrl(),
     }),
   });
   return createDinnerReadyHandler({

@@ -94,6 +94,9 @@ jobs:
       DINNER_SERVICE_READY: ${{ vars.DINNER_SERVICE_READY || 'false' }}
       DINNER_CHANNEL: ${{ vars.DINNER_CHANNEL || 'whatsapp' }}
       ENABLE_DINNER_MESSAGES: ${{ vars.ENABLE_DINNER_MESSAGES || 'false' }}
+      # true only after VONAGE_SIGNATURE_SECRET exists in Secret Manager.
+      DINNER_STATUS_READY: ${{ vars.DINNER_STATUS_READY || 'false' }}
+      ALLOW_DELIVERY_SIMULATION: ${{ vars.ALLOW_DELIVERY_SIMULATION || 'false' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -117,6 +120,16 @@ jobs:
           fi
           if [[ "$ENABLE_DINNER_MESSAGES" == true && "$DINNER_SERVICE_READY" != true ]]; then
             echo '::error::Dinner sending requires a configured dinner service'
+            exit 1
+          fi
+          for flag in DINNER_STATUS_READY ALLOW_DELIVERY_SIMULATION; do
+            if [[ "${!flag}" != false && "${!flag}" != true ]]; then
+              echo "::error::$flag must be false or true"
+              exit 1
+            fi
+          done
+          if [[ "$DINNER_STATUS_READY" == true && "$DINNER_SERVICE_READY" != true ]]; then
+            echo '::error::The Vonage status webhook requires a configured dinner service'
             exit 1
           fi
           if [[ "$DINNER_CHANNEL" != whatsapp && "$DINNER_CHANNEL" != sms ]]; then
@@ -151,26 +164,40 @@ jobs:
           Path('dart_defines.local.json').write_text(json.dumps(build))
           # Package main is used by Firebase discovery AND the uploaded runtime.
           # --only functions:liveToken alone still discovers dinner secret params.
+          # vonageStatus binds VONAGE_SIGNATURE_SECRET, so it is only packaged
+          # when DINNER_STATUS_READY=true; otherwise discovery would fail.
+          dinner_ready = os.environ['DINNER_SERVICE_READY'] == 'true'
+          status_ready = dinner_ready and os.environ['DINNER_STATUS_READY'] == 'true'
           package_path = Path('functions/package.json')
           package = json.loads(package_path.read_text())
-          package['main'] = ('src/index.js' if os.environ['DINNER_SERVICE_READY'] == 'true'
+          package['main'] = ('src/index.js' if status_ready
+                             else 'src/live-dinner-index.js' if dinner_ready
                              else 'src/live-index.js')
           package_path.write_text(json.dumps(package, indent=2) + '\n')
-          if os.environ['DINNER_SERVICE_READY'] != 'true':
+          removed = set()
+          if not dinner_ready:
+              removed.add('/api/dinner-ready')
+          if not status_ready:
+              removed.add('/api/vonage-status')
+          if removed:
               config_path = Path('firebase.json')
               config = json.loads(config_path.read_text())
               config['hosting']['rewrites'] = [
                   rule for rule in config['hosting']['rewrites']
-                  if rule.get('source') != '/api/dinner-ready']
+                  if rule.get('source') not in removed]
               config_path.write_text(json.dumps(config))
           params = {key: os.environ[key] for key in (
-              'LIVE_MODEL', 'LIVE_API_VERSION', 'DINNER_CHANNEL', 'ENABLE_DINNER_MESSAGES')}
+              'LIVE_MODEL', 'LIVE_API_VERSION', 'DINNER_CHANNEL', 'ENABLE_DINNER_MESSAGES',
+              'ALLOW_DELIVERY_SIMULATION')}
           for key, value in params.items():
               if not re.fullmatch(r'[A-Za-z0-9._/-]+', value):
                   raise SystemExit(f'Invalid non-secret deployment parameter: {key}')
           params['LIVE_ALLOWED_ORIGINS'] = (
               'https://devfest-flutter-a59e8.web.app,'
               'https://devfest-flutter-a59e8.firebaseapp.com')
+          if status_ready:
+              params['DINNER_STATUS_WEBHOOK_URL'] = (
+                  'https://devfest-flutter-a59e8.web.app/api/vonage-status')
           Path('functions/.env.devfest-flutter-a59e8').write_text(
               ''.join(f'{key}={value}\n' for key, value in params.items()))
           PY
@@ -191,6 +218,9 @@ jobs:
           targets=firestore,functions:liveToken,hosting
           if [[ "$DINNER_SERVICE_READY" == true ]]; then
             targets=firestore,functions:liveToken,functions:dinnerReady,hosting
+            if [[ "$DINNER_STATUS_READY" == true ]]; then
+              targets=firestore,functions:liveToken,functions:dinnerReady,functions:vonageStatus,hosting
+            fi
           fi
           firebase deploy --project "$FIREBASE_PROJECT" --only "$targets" --non-interactive
       - name: Check Hosting response

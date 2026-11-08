@@ -31,6 +31,9 @@ service cloud.firestore {
     match /_liveTokenGlobalLimits/{id} { allow read, write: if false; }
     match /_dinnerNotifications/{id} { allow read, write: if false; }
     match /_dinnerMealClaims/{id} { allow read, write: if false; }
+    match /_dinnerSendLimits/{id} { allow read, write: if false; }
+    match /_dinnerProviderMessages/{id} { allow read, write: if false; }
+    match /_dinnerPendingStatus/{id} { allow read, write: if false; }
 
     match /sessions/{sessionId} {
       function validSession(data) {
@@ -102,6 +105,13 @@ service cloud.firestore {
         allow create: if ownsSession() && validCheckpoint(request.resource.data);
         allow update: if ownsSession() && validCheckpoint(request.resource.data)
           && changed().hasOnly(['assessment', 'learnerConfirmed']);
+      }
+
+      // Household message status mirrored by Cloud Functions (Admin SDK) from
+      // the server ledger and verified Vonage webhooks. Read-only for the cook.
+      match /notifications/{notificationId} {
+        allow read: if owns(get(/databases/$(database)/documents/sessions/$(sessionId)).data);
+        allow write: if false;
       }
     }
 
