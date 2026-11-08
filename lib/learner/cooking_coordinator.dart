@@ -9,8 +9,16 @@ import '../core/models.dart';
 import '../genui/cooking_ui.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
+import '../pantry/recipe_draft.dart';
 import 'recipe_allergens.dart';
 import 'research_panel_client.dart';
+
+/// Added to the coach context for AI-drafted, unreviewed recipes (SS-053).
+const String draftRecipeContextLine =
+    "This recipe was AI-drafted from the cook's pantry items and is not "
+    'reviewed. Be extra careful: confirm quantities with the cook, never '
+    'certify doneness or safety, and recommend a food thermometer for anything '
+    'cooked through.';
 
 /// Shown when finishing the final step pauses the live coach.
 const String mealCompleteCoachNote = 'Coach paused — nice work!';
@@ -103,6 +111,7 @@ call show_cooking_ui to compose useful panels for this step and the cook's known
 context. Recompose when the cook answers, ingredients change, or research arrives;
 do not only narrate the preset recipe. Keep unanswered facts as questions.
 ${allergyContextLine(recipe, session?.confirmedFacts ?? const []) ?? ''}
+${isDraftRecipe(recipe) ? draftRecipeContextLine : ''}
 $cookingUiInstructions
 ''';
 
