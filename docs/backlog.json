@@ -802,7 +802,7 @@
       "title": "Start a new cook while preserving prior cooking sessions",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "Todo",
+      "status": "InProgress",
       "verified": false,
       "description": "Add an explicit repeatable New cook action after the conference sandwich deployment. Current completed recipes resume their existing session; no reset UI exists. Preserve prior records and deterministic latest-session resume. This is planned follow-up, not scope added to the sandwich PR.",
       "acceptance": [
@@ -815,7 +815,8 @@
         "SS-031"
       ],
       "evidence": [
-        "2026-11-08: Backend confirmed the app currently resumes a completed recipe and has no New cook/reset control. Terry requested this P1 follow-up; Backlog, not started."
+        "2026-11-08: Backend confirmed the app currently resumes a completed recipe and has no New cook/reset control. Terry requested this P1 follow-up; Backlog, not started.",
+        "2026-11-08: Terry assigned backend createNew/latest-resume persistence work and a separate Flutter UI/test stack. Work is now InProgress after the sandwich deployment priority. Explicit New cook will stop media before creating a fresh session; no auth reset or prior-data deletion. Not implemented/verified by this documentation update."
       ]
     }
   ]

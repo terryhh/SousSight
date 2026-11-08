@@ -50,7 +50,7 @@ The 33 linked cards contain acceptance criteria and dated evidence; `docs/backlo
 | [SS-030: Allow correction of known dinner pre-send validation failures](https://github.com/terryhh/SousSight/issues/72) | @terryhh | Done | SS-007 |
 | [SS-031: Make a peanut butter sandwich the conference demo recipe](https://github.com/terryhh/SousSight/issues/79) | @terryhh | InProgress | None |
 | [SS-032: Verify the sandwich conference flow and recipe context regressions](https://github.com/terryhh/SousSight/issues/80) | @terryhh | InProgress | SS-031 |
-| [SS-033: Start a new cook while preserving prior cooking sessions](https://github.com/terryhh/SousSight/issues/83) | @terryhh | Backlog | SS-031 |
+| [SS-033: Start a new cook while preserving prior cooking sessions](https://github.com/terryhh/SousSight/issues/83) | @terryhh | InProgress | SS-031 |
 
 ## Integration and release gates
 
@@ -87,3 +87,5 @@ Final board/manifest reconciliation: **30 cards, 16 Done, 11 In progress, 3 Back
 Terry requested a peanut butter sandwich as the main conference recipe and a **3:00 PM Eastern hard cutoff today**. SS-031/#79 covers recipe/default integration; SS-032/#80 covers focused regressions and actual deployed rehearsal. Both are Terry-assigned and In progress. Use the [technical conference quickstart](handoffs/CONFERENCE-PEANUT-BUTTER.md); Jenna retains her separate SS-024 story/demo preparation and all other assigned scopes. The new recipe uses untimed prep/spread/optional-jam/close steps and a live text-cue checkpoint, not reference photos. Prior chickpea verification does not establish the new recipe’s live acceptance.
 
 SS-033/#83 is a Terry-assigned P1 Backlog follow-up for repeatable New cook without deleting prior sessions. Current completion resumes the same recipe session; the technical quickstart documents a user-controlled fresh-private-session/new-profile workaround, not automatic data deletion or reset. This follow-up is outside the immediate sandwich implementation.
+
+SS-033 is now In progress: backend persistence and separate Flutter UI work were assigned after the immediate sandwich rollout. No New cook implementation or verification is claimed here; the current repeatability limitation still applies.
