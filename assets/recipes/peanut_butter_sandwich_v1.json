@@ -2,7 +2,7 @@
   "id": "peanut_butter_sandwich_v1",
   "version": 1,
   "title": "Peanut Butter Sandwich",
-  "summary": "Make one no-cook sandwich with bread and peanut butter. Ask the cook whether they want jam; do not assume it is available or wanted. Follow visible spreading and assembly cues, with no timed waiting or reference photograph. Ingredient labels and the cook's confirmed needs determine suitability; appearance cannot establish allergen safety.",
+  "summary": "A simple no-cook sandwich. Choose plain peanut butter or add jam, then spread and assemble.",
   "ingredients": [
     {"id": "bread", "name": "Bread", "qty": "2 slices", "allergens": ["wheat"]},
     {"id": "peanut_butter", "name": "Peanut butter", "qty": "about 2 tbsp, to preference", "allergens": ["peanut"]},
