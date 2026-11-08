@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'dart:async';
 
 import 'package:firebase_ai/firebase_ai.dart';
@@ -267,7 +268,16 @@ class GeminiNearbyClient implements NearbyClient {
         NearbyFailure.timeout,
         'That search took too long. Please try again.',
       );
-    } catch (_) {
+    } catch (error) {
+      // Console-only diagnostics; keys/tokens redacted, never shown to cooks.
+      final detail = '$error'
+          .replaceAll(RegExp(r'AIza[0-9A-Za-z_-]{20,}'), '[key]')
+          .replaceAll(RegExp(r'ey[A-Za-z0-9_-]{20,}\.[A-Za-z0-9._-]+'), '[token]');
+      debugPrint(
+        'Nearby request failed (${error.runtimeType}, '
+        'location=${cleaned.coordinates != null}): '
+        '${detail.length > 400 ? detail.substring(0, 400) : detail}',
+      );
       throw const NearbyException(
         NearbyFailure.unavailable,
         'Nearby search is unavailable right now. Please try again.',
