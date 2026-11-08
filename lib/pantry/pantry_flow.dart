@@ -11,6 +11,8 @@ import 'pantry_client.dart';
 import 'pantry_handoff.dart';
 import 'pantry_screen.dart';
 import 'recipe_catalog.dart';
+import 'recipe_draft.dart';
+import 'recipe_draft_client.dart';
 
 typedef CookingPageBuilder = Widget Function(
   Recipe recipe,
@@ -26,6 +28,7 @@ class PantryFlow extends StatefulWidget {
     required this.isDemo,
     this.initialRecipeId,
     this.client,
+    this.draftClient,
     this.mediaFactory,
     this.loadRecipes = loadRecipeCatalog,
     this.cookingBuilder,
@@ -35,6 +38,9 @@ class PantryFlow extends StatefulWidget {
   final bool isDemo;
   final String? initialRecipeId;
   final PantryClient? client;
+
+  /// Drafts a recipe from confirmed pantry items when no reviewed one fits.
+  final RecipeDraftClient? draftClient;
   final LiveMedia Function()? mediaFactory;
   final Future<List<Recipe>> Function() loadRecipes;
   final CookingPageBuilder? cookingBuilder;
@@ -48,6 +54,10 @@ class _PantryFlowState extends State<PantryFlow> {
   late final PantryClient _client =
       widget.client ??
       (widget.isDemo ? const FakePantryClient() : GeminiPantryClient());
+  // SS-053: the only place the default draft clients are chosen.
+  late final RecipeDraftClient _draftClient =
+      widget.draftClient ??
+      (widget.isDemo ? FakeRecipeDraftClient() : GeminiRecipeDraftClient());
   bool _opening = false;
 
   Widget _cooking(Recipe recipe, VoidCallback onBack) =>
@@ -63,6 +73,7 @@ class _PantryFlowState extends State<PantryFlow> {
   Widget _pantry(List<Recipe> recipes) => PantryScreen(
     recipes: recipes,
     client: _client,
+    draftClient: _draftClient,
     isDemo: widget.isDemo,
     mediaFactory: widget.isDemo
         ? null

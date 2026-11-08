@@ -21,6 +21,7 @@ import '../app/how_it_works.dart';
 import 'allergen_chip.dart';
 import 'cooking_coordinator.dart';
 import 'demo_live.dart';
+import 'draft_recipe_chip.dart';
 import 'dinner_review.dart';
 import 'meal_complete.dart';
 
@@ -482,6 +483,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         icon: const Icon(Icons.restart_alt),
         label: Text(widget.startingNewCook ? 'Starting…' : 'New cook'),
       ),
+      DraftRecipeChip(recipe: cook.recipe),
       AllergenChip(recipe: cook.recipe),
       HowItWorksButton(isDemo: widget.isDemo),
     ],

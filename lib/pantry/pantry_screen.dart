@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../app/how_it_works.dart';
 import '../core/models.dart';
+import '../learner/draft_recipe_chip.dart';
 import '../live/live_types.dart';
 import '../nearby/nearby_client.dart';
 import '../nearby/nearby_sheet.dart';
@@ -12,6 +13,7 @@ import 'pantry_client.dart';
 import 'pantry_handoff.dart';
 import 'pantry_models.dart';
 import 'pantry_ui.dart';
+import 'recipe_draft.dart';
 import 'wav.dart';
 
 enum PantryMode { scan, say, type }
@@ -32,6 +34,7 @@ class PantryScreen extends StatefulWidget {
     required this.recipes,
     required this.client,
     required this.onChooseRecipe,
+    this.draftClient,
     this.isDemo = false,
     this.mediaFactory,
     this.recordDuration = const Duration(seconds: 6),
@@ -43,6 +46,10 @@ class PantryScreen extends StatefulWidget {
   final List<Recipe> recipes;
   final PantryClient client;
   final PantryRecipeChosen onChooseRecipe;
+
+  /// Drafts an unreviewed recipe from confirmed items (SS-053). When null,
+  /// the draft actions are hidden.
+  final RecipeDraftClient? draftClient;
   final bool isDemo;
 
   /// Browser camera + microphone bridge. Not used in rehearsal mode.
@@ -92,6 +99,10 @@ class _PantryScreenState extends State<PantryScreen> {
   bool _thinking = false;
   String? _error;
   PantryResult? _result;
+  bool _drafting = false;
+  String? _draftError;
+  Recipe? _drafted;
+  int _draftEpoch = 0;
 
   @override
   void dispose() {
@@ -264,6 +275,10 @@ class _PantryScreenState extends State<PantryScreen> {
       _ui.show(result, widget.recipes);
       setState(() {
         _result = result;
+        _draftEpoch++;
+        _drafting = false;
+        _draftError = null;
+        _drafted = null;
         _answer.clear();
       });
     } on PantryException catch (error) {
@@ -291,6 +306,42 @@ class _PantryScreenState extends State<PantryScreen> {
         widget.locate ??
         (widget.isDemo ? () async => NearbyCoordinates(28.54, -81.38) : null),
     openLink: widget.openLink,
+  );
+
+  Future<void> _draft() async {
+    final client = widget.draftClient;
+    final items = _ui.confirmedItems;
+    if (client == null || _drafting || items.isEmpty) return;
+    final epoch = ++_draftEpoch;
+    setState(() {
+      _drafting = true;
+      _draftError = null;
+    });
+    try {
+      final recipe = await client.draft(
+        RecipeDraftRequest(confirmedItems: items, note: _text.text.trim()),
+      );
+      if (!mounted || epoch != _draftEpoch) return;
+      setState(() => _drafted = recipe);
+      _choose(recipe);
+    } on RecipeDraftException catch (error) {
+      if (mounted && epoch == _draftEpoch) {
+        setState(() => _draftError = error.message);
+      }
+    } catch (_) {
+      if (mounted && epoch == _draftEpoch) {
+        setState(
+          () => _draftError =
+              'Recipe drafting is unavailable right now. Pick a recipe below.',
+        );
+      }
+    } finally {
+      if (mounted && epoch == _draftEpoch) setState(() => _drafting = false);
+    }
+  }
+
+  bool _hasMeals(PantryResult result) => result.meals.any(
+    (meal) => widget.recipes.any((recipe) => recipe.id == meal.recipeId),
   );
 
   void _chooseById(String recipeId) {
@@ -383,6 +434,13 @@ class _PantryScreenState extends State<PantryScreen> {
                     const SizedBox(height: 18),
                   ],
                   PantrySurface(controller: _ui),
+                  if (widget.draftClient != null) ...[
+                    const SizedBox(height: 18),
+                    AnimatedBuilder(
+                      animation: _ui,
+                      builder: (_, _) => _draftSection(result),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 24),
                 _nearbyCard(),
@@ -789,6 +847,111 @@ class _PantryScreenState extends State<PantryScreen> {
       ],
     ),
   );
+
+  Widget _draftSection(PantryResult result) {
+    final hasMeals = _hasMeals(result);
+    final canDraft = _ui.confirmedItems.isNotEmpty && !_drafting;
+    final status = <Widget>[
+      if (_drafting) ...[
+        const SizedBox(height: 12),
+        const Row(
+          key: ValueKey('draft-progress'),
+          children: [
+            SizedBox.square(
+              dimension: 20,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            SizedBox(width: 10),
+            Expanded(child: Text('Drafting a recipe from your items…')),
+          ],
+        ),
+      ],
+      if (_draftError case final error?) ...[
+        const SizedBox(height: 12),
+        _notice(error, Icons.info_outline, color: const Color(0xFFFBE3DC)),
+      ],
+      if (_drafted case final drafted?) ...[
+        const SizedBox(height: 12),
+        Text(
+          drafted.title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: DraftRecipeChip(recipe: drafted),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('cook-drafted'),
+          icon: const Icon(Icons.restaurant),
+          label: const Text('Cook this draft'),
+          onPressed: () => _choose(drafted),
+        ),
+      ],
+    ];
+    if (hasMeals) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextButton.icon(
+            key: const ValueKey('draft-something-else'),
+            icon: const Icon(Icons.auto_awesome_outlined),
+            label: const Text('Draft something else with these'),
+            onPressed: canDraft ? () => unawaited(_draft()) : null,
+          ),
+          if (_ui.confirmedItems.isEmpty)
+            const Text(
+              'Tap the items you have first',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: Color(0xFF6B5A3E)),
+            ),
+          ...status,
+        ],
+      );
+    }
+    return Container(
+      key: const ValueKey('draft-card'),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: pantryMustard, width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'None of our reviewed recipes fit — want me to draft one?',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Gemini can draft a recipe from the items you confirmed. It will be '
+            'labelled as not reviewed by a person.',
+            style: TextStyle(fontSize: 14, height: 1.4),
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            key: const ValueKey('draft-recipe'),
+            style: _bigButton(pantryGreen),
+            icon: const Icon(Icons.auto_awesome),
+            label: Text(_drafting ? 'Drafting…' : 'Draft a recipe with these'),
+            onPressed: canDraft ? () => unawaited(_draft()) : null,
+          ),
+          if (_ui.confirmedItems.isEmpty) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Tap the items you have first',
+              key: ValueKey('draft-hint'),
+              style: TextStyle(fontSize: 13, color: Color(0xFF6B5A3E)),
+            ),
+          ],
+          ...status,
+        ],
+      ),
+    );
+  }
 
   Widget _nearbyCard() => Material(
     color: const Color(0xFFE4EBDF),
