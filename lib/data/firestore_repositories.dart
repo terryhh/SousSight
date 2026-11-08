@@ -28,13 +28,6 @@ class FirebaseAuthService implements AuthService {
   }
 
   @override
-  Future<String> signInInstructor(String email, String password) async {
-    final cred =
-        await _auth.signInWithEmailAndPassword(email: email, password: password);
-    return cred.user!.uid;
-  }
-
-  @override
   Future<void> signOut() => _auth.signOut();
 }
 
@@ -53,14 +46,6 @@ class FirestoreRecipeRepository implements RecipeRepository {
         if (data == null) return _bundled;
         return Recipe.fromMap({...data, 'id': recipeId});
       });
-
-  @override
-  Future<void> addReviewedSubstitution(
-      String recipeId, ReviewedSubstitution s) async {
-    await _doc(recipeId).update({
-      'reviewedSubstitutions': FieldValue.arrayUnion([s.toMap()]),
-    });
-  }
 }
 
 class FirestoreSessionRepository implements SessionRepository {
@@ -122,18 +107,8 @@ class FirestoreSessionRepository implements SessionRepository {
   }
 
   @override
-  Future<void> saveCheckpoint(CheckpointRecord record) => _checkpoints(record.sessionId)
-      .doc(record.id)
-      .set(encodeDoc(record.toMap()));
-
-  @override
-  Stream<List<CheckpointRecord>> watchCheckpoints(String sessionId) =>
-      _checkpoints(sessionId).orderBy('capturedAt').snapshots().map((q) => [
-            for (final d in q.docs) CheckpointRecord.fromMap(d.id, d.data()),
-          ]);
-
-  @override
   Future<void> deleteSession(String sessionId) async {
+    // Also clears legacy checkpoint photos stored under the session.
     final cps = await _checkpoints(sessionId).get();
     final batch = _db.batch();
     for (final d in cps.docs) {
@@ -142,90 +117,4 @@ class FirestoreSessionRepository implements SessionRepository {
     batch.delete(_sessions.doc(sessionId));
     await batch.commit();
   }
-}
-
-class FirestoreRequestRepository implements RequestRepository {
-  FirestoreRequestRepository(this._db);
-  final FirebaseFirestore _db;
-  final _submitted = <String>{};
-
-  CollectionReference<Map<String, dynamic>> get _requests =>
-      _db.collection('requests');
-
-  HelpRequest _from(DocumentSnapshot<Map<String, dynamic>> d) =>
-      HelpRequest.fromMap(d.id, d.data()!);
-
-  @override
-  Future<void> submit(HelpRequest request) async {
-    // Plain set so it queues offline. The id is created when the help sheet
-    // opens, and this guard stops a double tap from writing twice; rules also
-    // reject any update that moves a request back to 'submitted'.
-    if (!_submitted.add(request.id)) return;
-    await _requests.doc(request.id).set(encodeDoc(request.toMap()));
-  }
-
-  @override
-  Stream<HelpRequest?> watch(String requestId) => _requests
-      .doc(requestId)
-      .snapshots()
-      .map((s) => s.exists ? _from(s) : null);
-
-  @override
-  Stream<List<HelpRequest>> watchAll() => _requests
-      .orderBy('createdAt')
-      .snapshots()
-      .map((q) => [for (final d in q.docs) _from(d)]);
-
-  @override
-  Stream<List<HelpRequest>> watchForLearner(String learnerId) => _requests
-      .where('learnerId', isEqualTo: learnerId)
-      .snapshots()
-      .map((q) => [for (final d in q.docs) _from(d)]
-        ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
-
-  @override
-  Future<HelpRequest> transact(
-      String requestId, HelpRequest Function(HelpRequest current) mutate) {
-    final ref = _requests.doc(requestId);
-    return _db.runTransaction((tx) async {
-      final snap = await tx.get(ref);
-      final next = mutate(_from(snap));
-      // update (not set) so Functions-owned `notify` is never overwritten.
-      tx.update(ref, encodeDoc(next.toMap()));
-      return next;
-    });
-  }
-
-  @override
-  Future<void> resetDemo() async {
-    final batch = _db.batch();
-    for (final d in (await _requests.get()).docs) {
-      batch.delete(d.reference);
-    }
-    final sessions = await _db.collection('sessions').get();
-    for (final s in sessions.docs) {
-      for (final c in (await s.reference.collection('checkpoints').get()).docs) {
-        batch.delete(c.reference);
-      }
-      batch.delete(s.reference);
-    }
-    await batch.commit();
-  }
-}
-
-class FirestoreInstructorRepository implements InstructorRepository {
-  FirestoreInstructorRepository(this._db);
-  final FirebaseFirestore _db;
-
-  @override
-  Stream<List<Instructor>> watchRoster() =>
-      _db.collection('instructors').snapshots().map((q) => [
-            for (final d in q.docs) Instructor.fromMap(d.id, d.data()),
-          ]);
-
-  @override
-  Future<void> setAvailable(String instructorId, bool available) => _db
-      .collection('instructors')
-      .doc(instructorId)
-      .update({'available': available});
 }
