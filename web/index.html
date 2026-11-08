@@ -23,7 +23,7 @@
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="soussight">
+  <meta name="apple-mobile-web-app-title" content="SousSight">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
@@ -31,8 +31,24 @@
 
   <title>SousSight · Your cooking companion</title>
   <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#285b43">
+  <style>
+    html, body { margin: 0; height: 100%; background: #f5f1e8; }
+    #ss-loading { position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px; color: #285b43;
+      font: 600 22px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 24px; }
+    #ss-loading small { font-weight: 400; font-size: 15px; color: #4d5a52; }
+    #ss-loading .dot { width: 14px; height: 14px; border-radius: 50%; background: #bf5b32;
+      animation: ss-pulse 1s ease-in-out infinite; }
+    @keyframes ss-pulse { 50% { transform: scale(1.6); opacity: .5; } }
+  </style>
 </head>
 <body>
+  <div id="ss-loading" aria-live="polite">
+    <div class="dot"></div>
+    SousSight
+    <small>Opening your kitchen&hellip;</small>
+  </div>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -42,6 +58,12 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="soussight_live.js"></script>
+  <script>
+    // Remove the static loading screen once Flutter paints its first frame.
+    const hideLoading = () => document.getElementById('ss-loading')?.remove();
+    window.addEventListener('flutter-first-frame', hideLoading);
+    setTimeout(hideLoading, 20000);
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

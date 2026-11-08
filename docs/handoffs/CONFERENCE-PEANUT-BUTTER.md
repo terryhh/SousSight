@@ -10,9 +10,9 @@ Have bread, peanut butter, a plate and a spreading utensil ready; jam is optiona
 
 Open [SousSight](https://devfest-flutter-a59e8.web.app) on the conference device over HTTPS. Confirm the selected recipe and visible labels actually say peanut butter sandwich. Record the deployed build/commit, browser/device and whether this is real mode or a clearly labeled simulated rehearsal. Check the camera view can show the bread and spreading surface without capturing bystanders. Keep input and Stop visible. If the deployed recipe is still chickpeas, record that mismatch and wait for the sandwich rollout rather than presenting it as complete.
 
-## Repeatability limitation
+## Repeatability
 
-There is currently no New cook/reset control: a completed recipe resumes its existing session. Do not promise an automatic reset. SS-033 tracks an explicit future New cook action that preserves old sessions and stable latest-session resume, after sandwich deployment.
+Use **New cook** (SS-033) to start a fresh session between runs; earlier sessions are preserved. Each dinner notification belongs to one session, so start a New cook before any repeated real send.
 
 For a separate rehearsal identity, the user can choose a new browser profile or a fresh private session. A new private tab alone can share the existing private identity; a fresh private session requires the user to close all private windows first and then open a new one. Do not automatically close the user's windows or delete cooking data. Record which identity/session approach was used; a new identity does not prove existing-session reset behavior.
 
@@ -24,6 +24,35 @@ For a separate rehearsal identity, the user can choose a new browser profile or 
 4. Assemble the sandwich. Let the workspace follow the current step. Spreading and assembly do not require a timer, so do not create a countdown merely to demonstrate a feature. If the cook explicitly wants a short reminder for their own reason, label it as their requested reminder rather than a recipe requirement.
 5. Use a visible-change watch only if useful and explicitly requested, for example checking whether spread coverage has reached the visible edges. Show the active watch state, describe uncertainty/occlusion and ask for cook confirmation. If there is no useful watch, skip it and explain that opt-in watches remain available. Appearance cannot establish temperature or food safety.
 6. Stop and confirm camera/microphone are off. A dinner-ready message can be reviewed as a separate capability, but do not click send during this rehearsal without fresh explicit authorization for the exact recipient and text. The previous one-message authorization was exhausted; no automatic retry is allowed.
+
+## On-stage run sheet (3:00 PM showcase)
+
+Updated November 8 for the pantry-first build. Each beat names the Google or Vonage capability it shows. Mark every beat live, rehearsal or skipped in SS-040 (#95).
+
+| # | Beat (about 30 s each) | What the judges see | Capability |
+|---|---|---|---|
+| 1 | "I just got this from the UCF pantry." Scan the haul (bread, peanut butter, canned beans, corn, tomato), or say it, or type it. | Candidate items to confirm; ranked meals with matched/missing items; one clarifying question | Gemini Flash multimodal + structured output (Firebase AI Logic), GenUI |
+| 1b | Tap **Find food help nearby** (Orlando). | Nearby pantries and stores with Google Maps links | Grounding with Google Maps |
+| 2 | Pick **Peanut Butter Sandwich** and press **Start**. | Live coach greets the cook; generated step panel | Gemini Live voice + vision, GenUI/A2UI |
+| 3 | The coach opens with its allergy check (peanut, wheat). Answer, then ask "Can I use sunflower seed butter instead?" | Cook-question panel; grounded answer with source links and Google suggestions | `ask_cook` human-in-the-loop, Grounding with Google Search |
+| 4 | Spread on camera: "Am I doing this right?" Optionally "Watch until it's spread to the edges." | Comparison panel describing visible coverage; watch status | Live vision, opt-in watch |
+| 5 | Optional: speak Spanish for one exchange. | Coach answers in Spanish | Live native multilingual audio |
+| 6 | **Text household: started cooking**, then **Simulate delivery (demo)**. A real send happens only with fresh approval. | "Sent to Vonage → Delivered ✓ (simulated)" | Vonage Messages API + signed status webhook |
+| 7 | **Dinner is ready**, review. Then **Simulate failed delivery (demo)**. | "Simulated failure: Illegal Sender Address (1120)", plus recovery options | Vonage failure handling (challenge requirement) |
+| 8 | Close on the architecture slide (README diagram): routing and storage choices. | One slide | Devs-track requirement |
+
+Fallbacks:
+- `?recipe=black_bean_corn_salsa_v1` skips the scan. The salsa has a real 5-minute meld timer.
+- Rehearsal build (`FAKE_BACKEND=true`), labelled simulated.
+- Backup screen recording.
+
+Venue checklist:
+- Headset mic.
+- Phone stand angled at the counter.
+- Camera and mic permissions pre-granted.
+- Slides in a separate window, never covering the app tab: a hidden tab stops capture.
+- Allow at least 3 s between Stop and Start.
+- **Real SMS needs fresh explicit approval of the recipient and text, to a Vonage-verified trial number only.**
 
 ## Honest fallback and completion record
 

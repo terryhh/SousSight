@@ -1,5 +1,7 @@
 # SousSight PR stack
 
+> **Superseded (November 8, 2026).** Historical record kept for traceability. For the current product see [README](../README.md) and [SPEC](SPEC.md); November 8 work is tracked in SS-031 to SS-040.
+
 Prepared locally November 7, 2026. The cook is the human in the loop; there is no instructor workflow in the active app.
 
 | Head branch | PR base | Contents |

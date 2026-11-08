@@ -1,5 +1,7 @@
 # SousSight Jenna (`@jennajh`) nightly handoff — November 7, 2026
 
+> **Superseded (November 8, 2026).** Historical record kept for traceability. For the current product see [README](../../README.md) and [SPEC](../SPEC.md); November 8 work is tracked in SS-031 to SS-040.
+
 Published before the 8:00 PM EST freeze on November 7, 2026 (`origin/main` at `8b0647e`, companion to Terry's nightly handoff in [PR #77](https://github.com/terryhh/SousSight/pull/77)).
 
 ## Start tomorrow here

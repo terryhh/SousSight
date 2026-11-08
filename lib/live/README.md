@@ -21,7 +21,9 @@ Add direct dependency `web_socket_channel: ^3.0.3`. The browser bridge uses
 only browser media primitives and a local AudioWorklet. Call `start` directly
 from the Connect button's user gesture, call `stop` when leaving, and dispose
 the controller with the screen. Render `latestFrame` with `Image.memory`.
-Camera frames are sent once per second, maximum dimension 768 px. Microphone
+Camera frames are sent once per second, maximum dimension 768 px, at
+`MEDIA_RESOLUTION_LOW` (locked server-side in the ephemeral token's setup and
+field mask). Microphone
 input is PCM16 little-endian at 16 kHz; model playback is PCM16 at 24 kHz.
 
 Listen to controller changes for status, user/coach transcripts, frame, error,
@@ -49,8 +51,10 @@ Host tool handler names:
 
 Return JSON-compatible `{ok: true, ...}` or `{ok: false, error: '...'}`. Tools
 are bounded/validated and deduplicated by call ID. The receiver stays active
-across turnComplete messages. Interruptions clear queued speech. GoAway uses a
-resumption handle and holds text/tool replies until reconnection completes.
+across turnComplete messages. Interruptions clear queued speech. GoAway, a clean close, or
+a WebSocket error with a valid handle triggers session resumption; text/tool
+replies wait until reconnection completes. Invalid `show_cooking_ui` payloads
+return the validation reason so the model can correct and resend.
 
 Primary references checked 2026-11-07:
 - https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens

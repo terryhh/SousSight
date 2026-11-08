@@ -1,5 +1,7 @@
 # Remaining MVP work and ownership — November 7, 2026
 
+> **Superseded (November 8, 2026).** Historical record kept for traceability. For the current product see [README](../README.md) and [SPEC](SPEC.md); November 8 work is tracked in SS-031 to SS-040.
+
 The target remains a live cooking companion on Android Chrome and desktop: camera vision, two-way voice, Gemini-generated Flutter GenUI/A2UI panels, grounded research, cook clarification, real timers, opt-in visible-change watches, and a reviewed Vonage dinner message. APK work stays deferred. Assignment means available for pickup, not work started or verified.
 
 ## Jenna pickup order

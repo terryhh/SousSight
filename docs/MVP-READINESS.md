@@ -1,5 +1,7 @@
 # MVP readiness — November 7, 2026
 
+> **Superseded (November 8, 2026).** Historical record kept for traceability. For the current product see [README](../README.md) and [SPEC](SPEC.md); November 8 work is tracked in SS-031 to SS-040.
+
 The MVP is a cook-led companion: live camera and two-way voice, Gemini-generated Flutter panels, grounded research, real timers, opt-in visible-change watches, and an explicitly reviewed dinner message. Vision never establishes internal temperature or food safety. Jenna owns SS-005 and her research-panel files; validation work does not implement her assignment.
 
 ## Verified in this session
