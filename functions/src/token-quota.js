@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { TokenRequestError } from './live-token.js';
 
-const MIN_INTERVAL_MS = 10_000;
+// Short enough for a stage Stop/Start; the window cap still bounds abuse.
+export const MIN_INTERVAL_MS = 3_000;
 const WINDOW_MS = 10 * 60_000;
 const MAX_TOKENS_PER_WINDOW = 8;
 

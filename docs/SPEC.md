@@ -44,7 +44,7 @@ The five-minute onion timer remains a genuine five-minute recipe timer. Do not s
 | Rehearsal | `FAKE_BACKEND=true` uses simulated AI and in-memory services. It does not capture camera/audio, run a real watch, search Google, or send a message. |
 | Reference assets | Existing target JPEGs are small placeholders. Recipe fixture fields saying `Recipe reviewer` are not evidence of a real human review. |
 
-Structured assessment and triage code from the earlier foundation remains in `lib/ai/` and the shared service container. The current cook UI uses the Live flow above. Do not describe an inactive still-image comparison path, legacy routing code, placeholder photos, or seeded reviewer names as demonstrated product functionality. Replace reference assets and establish a documented recipe review before claiming reviewed visual targets.
+The earlier still-image assessment, triage, help-request and routing code was removed (SS-034); the cook UI uses the Live flow above. Do not describe placeholder photos or seeded reviewer names as demonstrated product functionality. Replace reference assets and establish a documented recipe review before claiming reviewed visual targets.
 
 ## Architecture
 

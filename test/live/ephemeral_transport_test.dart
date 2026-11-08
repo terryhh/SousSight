@@ -93,6 +93,10 @@ void main() {
       expect(setup['model'], 'models/gemini-3.8-live');
       expect(setup['generationConfig']['responseModalities'], ['AUDIO']);
       expect(
+        setup['generationConfig']['mediaResolution'],
+        'MEDIA_RESOLUTION_LOW',
+      );
+      expect(
         setup['tools'][0]['functionDeclarations'][0]['behavior'],
         'BLOCKING',
       );
@@ -313,6 +317,98 @@ void main() {
       [true, false],
     );
     expect(errors, isEmpty);
+  });
+
+  group('network error mid-session', () {
+    Future<
+      ({
+        EphemeralGeminiLiveTransport transport,
+        List<LiveEvent> events,
+        List<Object> errors,
+        int Function() opened,
+      })
+    >
+    connected(List<TestSocket> sockets, {bool resumable = true}) async {
+      var opened = 0;
+      final transport = EphemeralGeminiLiveTransport(
+        tokenProvider: () async =>
+            const LiveEphemeralToken(token: 'auth_tokens/test-session-token'),
+        socketFactory: (_) => sockets[opened++],
+      );
+      final events = <LiveEvent>[];
+      final errors = <Object>[];
+      final subscription = transport.events.listen(
+        events.add,
+        onError: errors.add,
+      );
+      addTearDown(() async {
+        await transport.close();
+        await subscription.cancel();
+      });
+      final connecting = transport.connect(systemInstruction: 'Keep cooking.');
+      await flush();
+      sockets.first.receive({'setupComplete': {}});
+      await connecting;
+      if (resumable) {
+        sockets.first.receive({
+          'sessionResumptionUpdate': {
+            'resumable': true,
+            'newHandle': 'resume-meal',
+          },
+        });
+        await flush();
+      }
+      return (
+        transport: transport,
+        events: events,
+        errors: errors,
+        opened: () => opened,
+      );
+    }
+
+    test('resumes once with the latest handle instead of failing', () async {
+      final original = TestSocket();
+      final replacement = TestSocket();
+      final live = await connected([original, replacement]);
+      original.incoming.addError(StateError('network dropped'));
+      // A dropped socket usually closes right after the error; it must not
+      // trigger a second resume.
+      unawaited(original.incoming.close());
+      await flush();
+      expect(live.opened(), 2);
+      final setup = jsonDecode(replacement.outgoing.single as String)['setup'];
+      expect(setup['sessionResumption']['handle'], 'resume-meal');
+      replacement.receive({'setupComplete': {}});
+      await flush();
+      expect(live.errors, isEmpty);
+      expect(
+        live.events.whereType<LiveConnectionNotice>().map((e) => e.reconnecting),
+        [true, false],
+      );
+    });
+
+    test('without a resume handle the error is surfaced', () async {
+      final original = TestSocket();
+      final live = await connected([original], resumable: false);
+      original.incoming.addError(StateError('network dropped'));
+      await flush();
+      expect(live.opened(), 1);
+      expect(live.errors, hasLength(1));
+      expect(live.events.whereType<LiveConnectionNotice>(), isEmpty);
+    });
+
+    test('falls back to an error when the resume attempt fails', () async {
+      final original = TestSocket();
+      final replacement = TestSocket();
+      final live = await connected([original, replacement]);
+      original.incoming.addError(StateError('network dropped'));
+      await flush();
+      expect(live.opened(), 2);
+      replacement.receive({'error': {'code': 503}});
+      await flush();
+      expect(live.errors, hasLength(1));
+      expect(live.errors.single.toString(), contains('Could not resume'));
+    });
   });
 
   test(

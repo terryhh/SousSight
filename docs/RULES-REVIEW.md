@@ -72,3 +72,13 @@ Before deployment, run emulator assertions covering:
 The implementation uses Firebase's documented [field validation and changed-key checks](https://firebase.google.com/docs/firestore/security/rules-fields),
 [owner conditions](https://firebase.google.com/docs/firestore/security/rules-conditions),
 and [authentication/custom claims](https://firebase.google.com/docs/rules/rules-and-auth).
+
+## Update — 2026-11-08 (SS-034)
+
+The `/requests`, `/instructors`, `/config` and `/instructorContacts` matches were
+removed along with the instructor-era client code. Those paths now fall through to
+the default deny for every client, including catalog editors; Admin SDK access is
+unaffected. Scenarios 5 and 6 above are superseded by an emulator test asserting
+that all three retired collections deny reads, writes and deletes. Legacy request
+records, if any exist, are no longer readable or deletable by their owner from the
+client; remove them with Admin SDK during teardown.

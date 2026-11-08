@@ -3,7 +3,7 @@
   "repository": "terryhh/SousSight",
   "projectOwner": "terryhh",
   "projectTitle": "SousSight",
-  "updatedAt": "2026-11-07",
+  "updatedAt": "2026-11-08",
   "product": "Live cooking companion: camera vision, two-way voice, dynamic Flutter GenUI/A2UI panels, cook clarification, grounded research, timers, visible-change watches, and reviewed dinner-ready messages. No external instructor workflow.",
   "tasks": [
     {
@@ -747,6 +747,76 @@
       "evidence": [
         "2026-11-07: Root authorized a focused DEF001 fix; backend agent started implementation. No real notification sent or fix acceptance claimed.",
         "2026-11-07: PR #73 passed CI and independent review with 16 focused tests, then merged as 4326019. Issue #72 closed/Project Done with terryhh preserved. This completes the finite correction implementation; hosted post-deployment correction verification remains SS-007/#17. No real send claimed."
+      ]
+    },
+    {
+      "id": "SS-031",
+      "priority": "P0",
+      "title": "Make a peanut butter sandwich the conference demo recipe",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "User requested a no-cooking peanut butter sandwich as the main conference demo. Recipe agent owns recipe integration and assets; preserve live camera/voice, generated panels, cook clarification and grounded research. Do not edit Jenna-owned implementation or imply old chickpea evidence verifies the new recipe.",
+      "acceptance": [
+        "The primary learner/demo recipe is a coherent peanut butter sandwich with correct ingredients, steps, labels and selected recipe identity. No heating or cooking equipment is required.",
+        "Prompt for missing bread/texture/optional jam preferences as targeted cook questions; only explicit answers become confirmed facts. Do not assume optional ingredients or preferences.",
+        "Generated panels and research receive the selected recipe/step/ingredients; no chickpea-specific labels or fixture assumptions leak into the main sandwich flow.",
+        "No mandatory timer is invented for spreading/assembly. Visible-change watching is opt-in and used only for a meaningful visible cue; it does not infer internal temperature or safety.",
+        "Focused recipe/integration checks pass; publish a reviewed PR and record deployed sandwich acceptance separately from historical chickpea evidence."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-08: Terry requested the conference sandwich demo and parallel implementation; recipe agent is working in an isolated branch. No new-recipe deployment or live acceptance claimed.",
+        "2026-11-08: https://github.com/terryhh/SousSight/issues/79 created with terryhh assignee and Project In progress. Conference cutoff is 3:00 PM Eastern today; record actual deployed evidence and remaining gaps by that time."
+      ]
+    },
+    {
+      "id": "SS-032",
+      "priority": "P0",
+      "title": "Verify the sandwich conference flow and recipe context regressions",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Flutter regression agent verifies the new main recipe while recipe implementation proceeds. Own focused shared-learner/coordinator tests, not Jenna research or physical-acceptance files. Record a short conference rehearsal with the actual deployed recipe after merge.",
+      "acceptance": [
+        "Meaningful tests catch wrong selected recipe/context, stale step or preference responses, and old chickpea labels in the default sandwich flow.",
+        "Check targeted cook clarification for bread/texture/optional jam, explicit confirmation and preserved confirmed facts without duplicate research or automatic ingredient changes.",
+        "Verify input/Stop remain reachable during generated-panel updates and no mandatory timer appears for untimed sandwich steps. Keep visible watching opt-in.",
+        "After deployment, record exact build/URL and actual sandwich outcomes for voice/camera, generated question/choice and research; label unavailable scenarios and simulations honestly. No notification send without fresh explicit authorization.",
+        "Record results on the card/runbook; preserve Jenna\u2019s separate full physical cook acceptance and do not mark the whole MVP Done from this short conference rehearsal."
+      ],
+      "dependsOn": [
+        "SS-031"
+      ],
+      "evidence": [
+        "2026-11-08: Parallel focused regression work started for the conference recipe. Local tests, deployed rehearsal and any remaining gaps must be reported separately.",
+        "2026-11-08: https://github.com/terryhh/SousSight/issues/80 created with terryhh assignee and Project In progress. Conference cutoff is 3:00 PM Eastern today; record actual deployed evidence and remaining gaps by that time.",
+        "2026-11-08: Root inspected FAKE_BACKEND=true at localhost:7360 on the app branch before the copy correction. Chrome showed the peanut-butter title and three ingredients, neutral Watch my food, Start \u2192 Rehearsal on, Next \u2192 step 2/4 Spread peanut butter, and Check my food produced a simulated comparison matching the peanut-butter text cue without chickpea/reference-image claims. The pinned dock stayed stable as the panel grew; Stop returned Rehearsal ready. No actual media, AI request or SMS was used. Recipe copy was then corrected in PR #81 commit aacf777 to three cook-facing strings; those updated strings need their own build verification."
+      ]
+    },
+    {
+      "id": "SS-033",
+      "priority": "P1",
+      "title": "Start a new cook while preserving prior cooking sessions",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Add an explicit repeatable New cook action after the conference sandwich deployment. Current completed recipes resume their existing session; no reset UI exists. Preserve prior records and deterministic latest-session resume. This is planned follow-up, not scope added to the sandwich PR.",
+      "acceptance": [
+        "An explicit New cook action creates a new owned cooking session for the chosen recipe without deleting or overwriting previous sessions or confirmed facts.",
+        "Normal reload/reopen resumes the deterministic latest active session; creation and resume have stable ordering even with identical timestamps or repeated clicks.",
+        "Completed prior sessions remain preserved and cannot leak timers, watches, messages or stale model results into the new session.",
+        "Meaningful creation/resume/duplicate-action tests pass and hosted repeatability is verified without automatic notification sends."
+      ],
+      "dependsOn": [
+        "SS-031"
+      ],
+      "evidence": [
+        "2026-11-08: Backend confirmed the app currently resumes a completed recipe and has no New cook/reset control. Terry requested this P1 follow-up; Backlog, not started.",
+        "2026-11-08: Terry assigned backend createNew/latest-resume persistence work and a separate Flutter UI/test stack. Work is now InProgress after the sandwich deployment priority. Explicit New cook will stop media before creating a fresh session; no auth reset or prior-data deletion. Not implemented/verified by this documentation update."
       ]
     }
   ]

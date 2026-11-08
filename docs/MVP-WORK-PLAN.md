@@ -14,7 +14,7 @@ Jenna owns `lib/research/**`, `test/research/**`, `lib/main_research_demo.dart`,
 
 ## Complete board map
 
-The 30 linked cards contain acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
+The 33 linked cards contain acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
 
 | Card | Owner | State | Completion dependencies |
 | --- | --- | --- | --- |
@@ -48,6 +48,9 @@ The 30 linked cards contain acceptance criteria and dated evidence; `docs/backlo
 | [SS-028: Keep input and stop controls stable during generated workspace updates](https://github.com/terryhh/SousSight/issues/63) | @terryhh | Done | None |
 | [SS-029: Guard repository history and browser builds against secrets](https://github.com/terryhh/SousSight/issues/65) | @terryhh | Done | None |
 | [SS-030: Allow correction of known dinner pre-send validation failures](https://github.com/terryhh/SousSight/issues/72) | @terryhh | Done | SS-007 |
+| [SS-031: Make a peanut butter sandwich the conference demo recipe](https://github.com/terryhh/SousSight/issues/79) | @terryhh | InProgress | None |
+| [SS-032: Verify the sandwich conference flow and recipe context regressions](https://github.com/terryhh/SousSight/issues/80) | @terryhh | InProgress | SS-031 |
+| [SS-033: Start a new cook while preserving prior cooking sessions](https://github.com/terryhh/SousSight/issues/83) | @terryhh | InProgress | SS-031 |
 
 ## Integration and release gates
 
@@ -78,3 +81,9 @@ Final hosted interaction verified a real Chunky/Smooth cook question, explicit S
 Terry subsequently confirmed that his spoken input was understood; combined with earlier audible-coach confirmation this verifies the desktop two-way exchange. Physical Android and remaining failure paths remain separate. SS-030/#72 tracks the active focused dinner-validation correction; the current board now has 30 cards: 14 Done, 13 In progress, 3 Backlog. Runtime access to the four Vonage secrets is verified, but sending remains disabled and delivery is unverified.
 
 Final board/manifest reconciliation: **30 cards, 16 Done, 11 In progress, 3 Backlog, all assigned**. SS-022 photo fixtures completed through PR #67; SS-030 correction completed through PR #73. Keeping these manifest stages aligned prevents the publisher from reverting completed project cards. Runtime photo evaluation and hosted notification correction remain their separate integration criteria.
+
+## November 8 conference integration
+
+Terry requested a peanut butter sandwich as the main conference recipe and a **3:00 PM Eastern hard cutoff today**. SS-031/#79 covers recipe/default integration; SS-032/#80 covers focused regressions and actual deployed rehearsal. Both are Terry-assigned and In progress. Use the [technical conference quickstart](handoffs/CONFERENCE-PEANUT-BUTTER.md); Jenna retains her separate SS-024 story/demo preparation and all other assigned scopes. The new recipe uses untimed prep/spread/optional-jam/close steps and a live text-cue checkpoint, not reference photos. Prior chickpea verification does not establish the new recipe’s live acceptance.
+
+SS-033/#83 is a Terry-assigned P1 follow-up **In progress**, with backend persistence and separate Flutter UI work assigned after the immediate sandwich rollout. It will provide repeatable New cook without deleting prior sessions. The current app still resumes the completed recipe session; New cook is not yet verified as available. The technical quickstart documents a user-controlled fresh-private-session/new-profile workaround, not automatic data deletion or reset. This follow-up stays outside the immediate sandwich implementation; update the runbook only after hosted New cook acceptance.

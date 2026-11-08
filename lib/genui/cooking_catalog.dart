@@ -143,25 +143,46 @@ Catalog buildCookingCatalog(CookingUiController controller) {
                 data['question'] as String,
                 style: const TextStyle(height: 1.5),
               ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final option in data['options'] as List)
-                    OutlinedButton(
-                      onPressed: () =>
-                          controller.dispatch('cook_answer', context.id, {
-                            'question': data['question'],
-                            'answer': option['label'],
-                            'optionId': option['id'],
-                          }),
-                      child: Text((option as Map)['label'] as String),
-                    ),
-                ],
-              ),
-              const Text(
-                'You can also answer by voice or text.',
-                style: TextStyle(fontSize: 12),
+              AnimatedBuilder(
+                animation: controller,
+                builder: (_, _) {
+                  final answered = controller.answerFor(
+                    data['question'] as String,
+                  );
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 14,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final option in data['options'] as List)
+                            OutlinedButton(
+                              onPressed: answered != null
+                                  ? null
+                                  : () => controller.dispatch(
+                                      'cook_answer',
+                                      context.id,
+                                      {
+                                        'question': data['question'],
+                                        'answer': option['label'],
+                                        'optionId': option['id'],
+                                      },
+                                    ),
+                              child: Text((option as Map)['label'] as String),
+                            ),
+                        ],
+                      ),
+                      Text(
+                        answered != null
+                            ? 'Answered: $answered'
+                            : 'You can also answer by voice or text.',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           ),
