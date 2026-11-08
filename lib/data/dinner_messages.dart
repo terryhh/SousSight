@@ -19,6 +19,41 @@ class DinnerMessageResult {
   };
 }
 
+/// A known validation rejection that occurs before the backend claims a send.
+class DinnerValidationException implements Exception {
+  const DinnerValidationException(this.explanation);
+  final String explanation;
+}
+
+DinnerMessageResult parseDinnerMessageResponse(http.Response response) {
+  if (response.statusCode != 200) {
+    // Match both status and code. Unknown/malformed responses remain ambiguous;
+    // never expose arbitrary server text or unlock retries after a claimed send.
+    Object? body;
+    try {
+      body = jsonDecode(response.body);
+    } on FormatException {
+      // Keep the conservative unavailable result below.
+    }
+    final error = body is Map ? body['error'] : null;
+    final code = error is Map ? error['code'] : null;
+    final explanation = switch ((response.statusCode, code)) {
+      (400, 'invalid-recipient') =>
+        'Use a phone number with its country code. No message was sent.',
+      (400, 'invalid-request') => 'Review the recipient and message (up to 320 characters). No message was sent.',
+      (403, 'recipient-not-allowed') => 'Choose your configured household contact. This recipient is not enabled. No message was sent.',
+      _ => null,
+    };
+    if (explanation != null) throw DinnerValidationException(explanation);
+    throw StateError('Message request unavailable (${response.statusCode}).');
+  }
+  final json = jsonDecode(response.body) as Map<String, dynamic>;
+  return DinnerMessageResult(
+    json['status'] as String,
+    json['channel'] as String? ?? 'Vonage',
+  );
+}
+
 Future<DinnerMessageResult> sendDinnerMessage({
   required String sessionId,
   required String notificationId,
@@ -52,12 +87,5 @@ Future<DinnerMessageResult> sendDinnerMessage({
         }),
       )
       .timeout(const Duration(seconds: 25));
-  if (response.statusCode != 200) {
-    throw StateError('Message request unavailable (${response.statusCode}).');
-  }
-  final json = jsonDecode(response.body) as Map<String, dynamic>;
-  return DinnerMessageResult(
-    json['status'] as String,
-    json['channel'] as String? ?? 'Vonage',
-  );
+  return parseDinnerMessageResponse(response);
 }

@@ -862,6 +862,10 @@ class _CookingScreenState extends State<CookingScreen>
                         if (context.mounted) {
                           update(() => result = response.explanation);
                         }
+                      } on DinnerValidationException catch (error) {
+                        if (context.mounted) {
+                          update(() => validationError = error.explanation);
+                        }
                       } catch (_) {
                         if (context.mounted) {
                           update(
