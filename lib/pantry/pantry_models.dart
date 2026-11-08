@@ -66,36 +66,34 @@ PantryResult parsePantryResult(String? text, Set<String> allowedRecipeIds) {
   if (rawItems is! List || rawMeals is! List) {
     throw const FormatException('items and meals are required lists');
   }
-  if (rawItems.length > 30 || rawMeals.length > allowedRecipeIds.length) {
-    throw const FormatException('Too many pantry items or meals');
-  }
   final items = <PantryItem>[];
   final seenItems = <String>{};
-  for (final raw in rawItems) {
-    if (raw is! Map) throw const FormatException('Invalid item');
+  for (final raw in rawItems.take(30)) {
+    // Skip unusable entries instead of discarding the whole answer.
+    if (raw is! Map || raw['name'] is! String) continue;
     final name = _text(raw['name'], 80);
-    if (name.isEmpty) throw const FormatException('Empty item name');
-    final confidence = PantryConfidence.values.where(
-      (value) => value.name == raw['confidence'],
+    if (name.isEmpty) continue;
+    final level = '${raw['confidence'] ?? ''}'.trim().toLowerCase();
+    final confidence = PantryConfidence.values.firstWhere(
+      (value) => value.name == level,
+      orElse: () => PantryConfidence.low,
     );
-    if (confidence.isEmpty) throw const FormatException('Invalid confidence');
     if (seenItems.add(name.toLowerCase())) {
-      items.add(PantryItem(name: name, confidence: confidence.single));
+      items.add(PantryItem(name: name, confidence: confidence));
     }
   }
   final meals = <PantryMeal>[];
   final seenMeals = <String>{};
-  for (final raw in rawMeals) {
-    if (raw is! Map) throw const FormatException('Invalid meal');
+  for (final raw in rawMeals.take(10)) {
+    // Only reviewed catalog recipes are ever shown; anything else is dropped.
+    if (raw is! Map) continue;
     final id = raw['recipeId'];
-    if (id is! String || !allowedRecipeIds.contains(id)) {
-      throw FormatException('Unknown recipeId: $id');
-    }
-    if (!seenMeals.add(id)) throw FormatException('Duplicate recipeId: $id');
+    if (id is! String || !allowedRecipeIds.contains(id)) continue;
+    if (!seenMeals.add(id)) continue;
     meals.add(
       PantryMeal(
         recipeId: id,
-        why: _text(raw['why'], 400),
+        why: raw['why'] is String ? _text(raw['why'], 400) : '',
         matched: _strings(raw['matched']),
         missing: _strings(raw['missing']),
       ),
@@ -113,20 +111,21 @@ PantryResult parsePantryResult(String? text, Set<String> allowedRecipeIds) {
   );
 }
 
+/// Display text from the model. Structure is strict (must be a string), but
+/// length is not a validity signal: models often copy long catalog ingredient
+/// names or write a long reason, so over-long text is shortened, not rejected.
 String _text(Object? value, int maxLength) {
-  if (value is! String || value.length > maxLength) {
-    throw const FormatException('Invalid text field');
-  }
-  return value.trim();
+  if (value is! String) throw const FormatException('Invalid text field');
+  final text = value.trim();
+  if (text.length <= maxLength) return text;
+  return '${text.substring(0, maxLength - 1).trimRight()}…';
 }
 
 List<String> _strings(Object? value) {
   if (value == null) return const [];
-  if (value is! List || value.length > 20) {
-    throw const FormatException('Invalid string list');
-  }
+  if (value is! List) throw const FormatException('Invalid string list');
   return List.unmodifiable([
-    for (final item in value)
+    for (final item in value.take(20))
       if (_text(item, 80) case final text when text.isNotEmpty) text,
   ]);
 }
