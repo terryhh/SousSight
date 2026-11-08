@@ -1,0 +1,55 @@
+{
+  "id": "peanut_butter_sandwich_v1",
+  "version": 1,
+  "title": "Peanut Butter Sandwich",
+  "summary": "A simple no-cook sandwich. Choose plain peanut butter or add jam, then spread and assemble.",
+  "ingredients": [
+    {"id": "bread", "name": "Bread", "qty": "2 slices", "allergens": ["wheat"]},
+    {"id": "peanut_butter", "name": "Peanut butter", "qty": "about 2 tbsp, to preference", "allergens": ["peanut"]},
+    {"id": "jam", "name": "Jam, only if the cook chooses it", "qty": "about 1 tbsp, optional", "optional": true, "allergens": []}
+  ],
+  "equipment": ["Plate or clean board", "Butter knife or spoon for spreading"],
+  "steps": [
+    {
+      "id": "prep",
+      "title": "Set out the bread",
+      "instruction": "Place two slices of bread side by side on a plate or clean board. Have your peanut butter ready. Would you like jam, or just peanut butter?",
+      "cue": "Both slices lie flat with their upper surfaces visible and room to spread. Jam is a cook choice, not an assumed ingredient."
+    },
+    {
+      "id": "spread",
+      "title": "Spread the peanut butter",
+      "instruction": "Put some peanut butter on one slice. Use the back of a spoon or a butter knife to spread it gently across the bread, adding more only if you want it.",
+      "cue": "Peanut butter covers most of the slice in an even layer, leaving a small border. Look for large bare patches or a thick mound in the middle; avoid pressing hard enough to tear the bread.",
+      "checkpointId": "cp_spread"
+    },
+    {
+      "id": "optional_jam",
+      "title": "Add jam if you chose it",
+      "instruction": "If you chose jam and have it, spread a thin layer on the second slice. Otherwise, leave that slice plain and move on to closing the sandwich.",
+      "cue": "With jam, the second slice has a thin spread layer rather than a large mound. Without jam, a plain second slice is the intended result. No waiting is needed."
+    },
+    {
+      "id": "close",
+      "title": "Close the sandwich",
+      "instruction": "Turn the second slice onto the first with any spread facing inward. Line up the edges and press gently with your hand. Leave the sandwich whole for the demo.",
+      "cue": "The two slices are aligned, the filling sits between them, and gentle pressure keeps it from squeezing out at the edges."
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "cp_spread",
+      "stepId": "spread",
+      "target": "The cook's peanut butter is spread across most of one slice in a reasonably even layer with a small border. Large bare patches and a tall central mound have been smoothed out without tearing the bread. Judge visible coverage using the live camera and these text cues; no target photo is supplied.",
+      "cues": ["most of the slice covered", "reasonably even layer", "small border", "bread stays intact"],
+      "targetImageAsset": "",
+      "allowedAdjustments": ["spread_to_bare_patch", "smooth_mound", "ease_pressure"]
+    }
+  ],
+  "reviewedSubstitutions": [],
+  "adjustmentLabels": {
+    "spread_to_bare_patch": "Gently move some spread onto the large bare patch",
+    "smooth_mound": "Smooth the thick mound toward the uncovered bread",
+    "ease_pressure": "Use lighter pressure so the bread stays intact"
+  }
+}
