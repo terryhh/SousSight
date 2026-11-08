@@ -43,7 +43,7 @@ The 33 linked cards contain acceptance criteria and dated evidence; `docs/backlo
 | [SS-021: Set up Vonage account and delivery configuration](https://github.com/terryhh/SousSight/issues/39) | @jennajh | InProgress | None |
 | [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | Done | None |
 | [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | InProgress | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006 |
-| [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Backlog | None |
+| [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Done | None |
 | [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | Done | None |
 | [SS-026: Integrate Jenna research panel with the live learner workspace](https://github.com/terryhh/SousSight/issues/58) | @terryhh | Done | SS-005, SS-004 |
 | [SS-027: Add optional Google account sign-in and saved cooking sessions](https://github.com/terryhh/SousSight/issues/59) | @terryhh | Backlog | SS-001, SS-009 |

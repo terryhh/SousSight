@@ -589,8 +589,8 @@
       "priority": "P0",
       "owner": "Jenna (jennajh)",
       "assignee": "jennajh",
-      "status": "Todo",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Own docs/demo/**. Split script and preparation from SS-012 final recording/submission, which remains Terry-owned. Can draft immediately; accurate final live claims depend on SS-023 and notification readiness.",
       "acceptance": [
         "Write a pantry-cooking recipe/runbook covering live camera and two-way voice, generated panel, targeted clarification, grounded substitution, real timer, opt-in watch and reviewed dinner message.",
@@ -602,7 +602,8 @@
       "dependsOn": [],
       "evidence": [
         "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
-        "2026-11-07: https://github.com/terryhh/SousSight/issues/42 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim."
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/42 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim.",
+        "2026-11-08: Jenna started; PR #122 adds docs/demo/ (runbook, script and shot list, Central Florida narrative, recording checklist, per-segment evidence table from current cards) and hands it to Terry for SS-012. Docs only: no live test was run for this card, and no deadline or submission is claimed. Segment status must be refreshed from the linked cards before recording."
       ]
     },
     {
