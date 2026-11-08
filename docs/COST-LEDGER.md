@@ -40,11 +40,18 @@ Later on November 7, Terry explicitly authorized one SMS with the exact text
 configuration-only Cloud Functions patch. The agent clicked Confirm and send
 once in the production UI using real browser Auth/App Check, without a debug
 registration. The UI reported “Vonage accepted the message. Delivery is not yet
-confirmed.” Terry reports no handset receipt yet. No retry was attempted.
+confirmed.” Terry reported no handset receipt. Subsequent authenticated Vonage
+logs show REJECTED with error 1120 Illegal Sender Address for the nonnumeric
+`Vonage APIs` sender. App delivery failed. No retry was attempted.
 Sending was then disabled; runtime metadata at `2026-11-08T00:25:07Z` confirms
 ACTIVE with sending=false, and the GitHub variable is false. No further send is
-authorized. The actual charge and current trial balance are unknown; the earlier
-approximately $0.01 trial charge does not establish the cost of this app send.
+authorized. Authenticated dashboard inspection shows the earlier dashboard test
+DELIVERED using a numeric sender, price US$0.01, and current displayed balance
+US$1.99. The rejected app attempt price is Unknown; do not infer a zero charge.
+`VONAGE_FROM` version 3 now stores the verified numeric sender; its value is not
+recorded here. Runtime read-back at `2026-11-08T00:31:18Z` confirms ACTIVE with
+`VONAGE_FROM` bound to version 3 and sending=false; GitHub variable remains false. PR #74 removes the rejected sender exception and corrects setup
+instructions. Corrected app delivery remains unverified.
 
 ## Current authorization
 
@@ -78,8 +85,8 @@ Sources: [Google Cloud trial](https://cloud.google.com/signup-faqs), [Gemini bil
 | App Check web provider | Production Enterprise provider configured for both Hosting domains; hosted real research verified the production Auth/App Check path without a CI debug token | Attestation-provider quotas; never publish debug tokens | Production browser behavior verified; actual attestation units and monetary cost remain unmeasured |
 | Hosting | Production release served HTTP 200 after run 42422724152 attempt 2; native Chrome loaded the real-mode app | Storage and outbound transfer | Free allowance then eligible cloud billing; credit coverage and actual transfer/storage charges remain unverified |
 | Cloud Functions `liveToken`, `dinnerReady` | liveToken previously verified ACTIVE on Node 22; run 42427944291 attempt 1 failed before dinner creation/Hosting release on runtime secret-access binding; runtime secret access corrected; newer main run 42428461526 at 92ea3737 succeeded; dinnerReady ACTIVE on Node 22 with sms and sending=false, hosted routing/auth boundary checks pass | Invocations, compute, network, build/artifact storage and logs | Billing enabled; credit coverage remains unverified |
-| Secret Manager | Gemini key and four Vonage secrets configured; latest enabled Vonage versions verified by metadata only: API_KEY/3, API_SECRET/3, FROM/2, ALLOWED_TO/1 | Active versions and access operations; no secret value accessed during verification | Billing enabled; credit coverage remains unverified |
-| Vonage | SMS selected; Jenna retains SS-021 provider setup (In progress), Terry retains SS-007 integration. App sending disabled; earlier provider trial user-reported, subsequent authorized app send provider-accepted with handset receipt pending | Channel/recipient-specific message charges, sender fees; no upgrade or top-up authorized | Approximately $1.99 previously user-reported; current balance unverified. Google credits do not establish Vonage coverage |
+| Secret Manager | Gemini key and four Vonage secrets configured; latest enabled Vonage versions verified by metadata only: API_KEY/3, API_SECRET/3, FROM/3, ALLOWED_TO/1 | Active versions and access operations; no secret value accessed during verification | Billing enabled; credit coverage remains unverified |
+| Vonage | SMS selected; Jenna retains SS-021 provider setup (In progress), Terry retains SS-007 integration. App sending disabled; earlier provider trial user-reported, subsequent authorized app send initially accepted then REJECTED 1120 Illegal Sender Address; numeric sender version 3 bound with sending=false, no retry | Channel/recipient-specific message charges, sender fees; no upgrade or top-up authorized | Authenticated dashboard balance US$1.99; earlier delivered test US$0.01, rejected app attempt price Unknown. Google credits do not establish Vonage coverage |
 | Local test/runtime resources | Temporary Java, emulator tests and simulated local web server | Local compute only; synthetic emulator project | Not a cloud deployment or billable service verification |
 
 ## GitHub Actions infrastructure
@@ -117,7 +124,7 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Synthetic transcript retry, maxOutputTokens 512 | 580 prompt + 248 response = 828 total tokens; thoughts 89 reported separately; dollar cost unknown | Not inspected | 465,600 audio bytes in 11,195 ms; no user media; temporary identities cleaned |
 | 2026-11-07 | Synthetic real GenUI tool probe through hosted protected token | 1,205 prompt + 150 response = 1,355 total tokens; thoughts 252 reported separately; dollar cost unknown | Not inspected | Valid-looking root/stepCue/two-option cookQuestion in 1,780 ms; widget/render and hosted UI verification pending; no user media; temporary identities cleaned |
 | 2026-11-07 | Verified four enabled Vonage secret versions by metadata; set SMS deployment readiness true with sending false after PR #62 passed CI and merged | Secret-version storage, builds/artifacts and private Actions minutes may incur usage; no provider call performed by setup verification | Not inspected | Run 42427944291 attempt 1 failed after rules/index and source uploads, before dinner creation/Hosting release, on runtime secret-access binding. Runtime secret access corrected and read back; attempt 2 canceled while pending to avoid stale deployment. Newer main run 42428461526 at 92ea3737 succeeded; dinnerReady ACTIVE on Node 22 with sending=false. Hosted 405/401/204 checks pass without ledger/provider calls. These boundary checks did not send SMS; the subsequent authorized app send is recorded separately below |
-| 2026-11-07 | Temporarily enabled messaging by configuration-only patch for one explicitly authorized production UI SMS; clicked Confirm and send once using real Auth/App Check; disabled sending afterward | One provider-accepted SMS attempt; actual charge and current trial balance unknown. Do not assume the earlier $0.01 charge applies | Not inspected | Provider acceptance shown, handset receipt not yet reported. No retry. Runtime ACTIVE/sending=false read back at 2026-11-08T00:25:07Z; GitHub variable false. No further send authorized |
+| 2026-11-07 | Temporarily enabled messaging by configuration-only patch for one explicitly authorized production UI SMS; clicked Confirm and send once using real Auth/App Check; disabled sending afterward | One initially accepted then rejected SMS attempt, price Unknown. Dashboard balance US$1.99; earlier delivered test US$0.01 does not establish this attempt’s charge | Not inspected | Provider acceptance initially shown; authenticated log later confirms REJECTED 1120 Illegal Sender Address. App delivery failed. No retry. Runtime ACTIVE/sending=false read back at 2026-11-08T00:25:07Z; GitHub variable false. No further send authorized |
 
 ## Planning estimate — not a quote or cap
 

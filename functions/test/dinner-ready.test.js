@@ -152,30 +152,18 @@ test('provider payload uses WhatsApp sandbox or SMS endpoint with Basic auth', a
   }
 });
 
-test('SMS dashboard trial sender is preserved without widening sender or recipient validation', async () => {
+test('nonnumeric senders are rejected before transport for both channels', async () => {
   const request = validateDinnerRequest(input(), settings.allowedRecipients);
   let calls = 0;
-  const fetchImpl = async (url, options) => {
-    calls++;
-    assert.equal(url, 'https://api.nexmo.com/v1/messages');
-    assert.deepEqual(JSON.parse(options.body), {
-      channel: 'sms', message_type: 'text', to: request.recipient,
-      from: 'Vonage APIs', text: request.message, client_ref: request.notificationId,
-    });
-    return new Response(JSON.stringify({ message_uuid: 'trial-123' }), { status: 202 });
-  };
-  const credentials = { apiKey: 'key', apiSecret: 'secret', from: 'Vonage APIs' };
-  assert.deepEqual(await sendVonageDinner({ request, channel: 'sms', credentials, fetchImpl }),
-    { status: 'submitted', providerMessageId: 'trial-123' });
-  for (const [channel, from] of [
-    ['whatsapp', 'Vonage APIs'], ['sms', 'vonage apis'],
-    ['sms', ' Vonage APIs'], ['sms', 'Vonage APIs '], ['sms', 'SousSight'],
-  ]) {
-    assert.deepEqual(await sendVonageDinner({ request, channel,
-      credentials: { ...credentials, from }, fetchImpl }),
-    { status: 'failed', reason: 'invalid-sender' });
+  for (const channel of ['sms', 'whatsapp']) {
+    for (const from of ['Vonage APIs', 'vonage apis', ' Vonage APIs', 'Vonage APIs ', 'SousSight']) {
+      assert.deepEqual(await sendVonageDinner({ request, channel,
+        credentials: { apiKey: 'key', apiSecret: 'secret', from },
+        fetchImpl: async () => { calls++; throw new Error('Unexpected provider call'); },
+      }), { status: 'failed', reason: 'invalid-sender' });
+    }
   }
-  assert.equal(calls, 1);
+  assert.equal(calls, 0);
   assert.throws(() => validateDinnerRequest({ ...input(), from: 'Vonage APIs' }, settings.allowedRecipients),
     { code: 'invalid-request' });
   assert.throws(() => validateDinnerRequest({ ...input(), recipient: 'Vonage APIs' }, settings.allowedRecipients),
@@ -187,7 +175,7 @@ test('disabled SMS trial service never contacts provider', async () => {
   const { service } = harness({
     settings: { ...settings, channel: 'sms', enabled: false },
     sendMessage: ({ request, channel }) => sendVonageDinner({ request, channel,
-      credentials: { apiKey: 'key', apiSecret: 'secret', from: 'Vonage APIs' },
+      credentials: { apiKey: 'key', apiSecret: 'secret', from: '+14075550999' },
       fetchImpl: async () => { calls++; throw new Error('Unexpected provider call'); },
     }),
   });
