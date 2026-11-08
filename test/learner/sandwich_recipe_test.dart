@@ -8,7 +8,6 @@ import 'package:soussight/core/fakes.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
-import 'package:soussight/live/live_types.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
