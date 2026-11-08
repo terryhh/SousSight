@@ -1,20 +1,21 @@
 # SousSight
 
-**Turn what you got from the food pantry into a meal, with a cooking coach that can see, listen and talk back.**
+**Turn whatever you got from the food pantry, even a random mix, into a real meal, with a cooking coach that can see, listen and talk back.**
 
 Inspired by UCF's [garden-to-pantry work](https://www.ucf.edu/pegasus/how-does-your-garden-grow/) and [FreshU cooking demos](https://whps.sswb.ucf.edu/cooking-demos-classes/), SousSight helps a novice cook turn pantry staples and fresh produce into a real meal. Getting groceries doesn't give you confidence at the counter, so SousSight coaches you through the cooking.
 
-**Live app:** https://devfest-flutter-a59e8.web.app · Chrome on desktop or Android · no account needed
+**Live app:** https://devfest-flutter-a59e8.web.app · Chrome on desktop or Android (Firefox isn't supported) · no account needed
 
-## The demo in seven beats
+## The demo in eight beats
 
-1. **Show what you got.** Scan your pantry haul with the camera, say it out loud, or type it. Gemini lists the items it thinks it sees; only the ones you tap count. It then suggests meals you can actually make and shows what's missing. **Find food help nearby** uses Grounding with Google Maps to list nearby pantries and stores, linked to Google Maps.
-2. **Cook with a live coach.** Gemini Live watches the camera and talks with you. It builds the cooking workspace on the fly as Flutter panels: step cues, comparisons, questions and timers.
-3. **Allergy check first.** Before anything else, the coach asks whether anyone eating has an allergy to the recipe's allergens (for example peanut). If someone does, it researches a safe swap, and you confirm it.
-4. **"Am I doing this right?"** Show the spread, the dice or the mash. The coach describes what it can see. When a fact is missing it asks you instead of guessing, and only your answer counts.
-5. **Ask anything.** For questions like "Can I swap sunflower butter for peanut butter?", the coach runs a separate Google Search–grounded answer and shows the source links.
-6. **Call everyone to the table.** You review a Vonage SMS before it goes out: "dinner's started", then "dinner is ready". The app tracks real delivery status, and if delivery fails it shows the reason and how to recover.
-7. **You made it!** Finishing the last step shows a meal-complete moment. It lists the pantry items you confirmed, pauses the live coach to save cost, and offers three next steps: text the household (still reviewed), find food help nearby, or cook something else. It shows no invented impact numbers.
+1. **Show what you got.** Scan your pantry haul with the camera, say it out loud, or type it. Gemini lists the items it thinks it sees; only the ones you tap count.
+2. **Make a meal from it.** The main action is **Make a meal from these ingredients**: Gemini creates a recipe from exactly the items you confirmed, in the app's recipe format. It's checked before use, safety rules are applied in code, and it's labelled **AI-drafted · not reviewed**. Our reviewed recipes that fit are shown as alternatives. **Find food help nearby** uses Grounding with Google Maps to list nearby pantries and stores, linked to Google Maps.
+3. **Cook with a live coach.** Gemini Live watches the camera and talks with you. It builds the cooking workspace on the fly as Flutter panels: step cues, comparisons, questions and timers.
+4. **Allergy check first.** Before anything else, the coach asks whether anyone eating has an allergy to the recipe's allergens (for example peanut). If someone does, it researches a safe swap, and you confirm it.
+5. **"Am I doing this right?"** Show the spread, the dice or the mash. The coach describes what it can see. When a fact is missing it asks you instead of guessing, and only your answer counts.
+6. **Ask anything.** For questions like "Can I swap sunflower butter for peanut butter?", the coach runs a separate Google Search–grounded answer and shows the source links.
+7. **Call everyone to the table.** You review a Vonage SMS before it goes out: "dinner's started", then "dinner is ready". The app tracks real delivery status, and if delivery fails it shows the reason and how to recover.
+8. **You made it!** Finishing the last step shows a meal-complete moment. It lists the pantry items you confirmed, pauses the live coach to save cost, and offers three next steps: text the household (still reviewed), find food help nearby, or cook something else. It shows no invented impact numbers.
 
 ## Architecture
 
@@ -36,7 +37,7 @@ flowchart LR
     Auth["Firebase Auth<br/>anonymous"]
   end
   Live["Gemini Live API<br/>vision + voice + tools"]
-  Flash["Gemini Flash via Firebase AI Logic<br/>Search + Maps grounding · structured pantry vision"]
+  Flash["Gemini Flash via Firebase AI Logic<br/>pantry vision · recipe creation · Search + Maps grounding"]
   Vonage["Vonage Messages API<br/>SMS"]
 
   Pantry -->|image/audio/text, nearby help| Flash
@@ -63,7 +64,7 @@ flowchart LR
 | App | Flutter web (3.47, Dart 3.13), Material 3, mobile-first layout |
 | Generated UI | Flutter **GenUI** (`genui`, `a2ui_core`, A2UI v0.9). Gemini composes panels only from a trusted, schema-validated cooking catalog, never arbitrary code or HTML |
 | Live vision and voice | **Gemini Live API** over WebSocket: camera frames, mic audio, native spoken replies, transcription, function calling, context-window compression and session resumption |
-| Pantry scan, research and local help | **Gemini Flash via Firebase AI Logic**: multimodal structured output for pantry items and meal matches; **Grounding with Google Search**, with source links and search suggestions; **Grounding with Google Maps** for nearby food help, listing only grounded places with Maps links |
+| Pantry scan, recipe creation, research and local help | **Gemini Flash via Firebase AI Logic**: multimodal structured output for pantry items and meal matches; **AI recipe creation** from any confirmed mix of ingredients, using the app's recipe schema; **Grounding with Google Search**, with source links and search suggestions; **Grounding with Google Maps** for nearby food help, listing only grounded places with Maps links |
 | Identity and abuse protection | Firebase Anonymous Auth (no sign-up), **Firebase App Check** with reCAPTCHA Enterprise |
 | Data | Cloud Firestore: owner-scoped sessions, server-only ledgers, emulator-tested security rules |
 | Backend | Cloud Functions for Firebase (2nd gen, Cloud Run, Node 22): Live token minting, dinner messages, Vonage status webhooks |
@@ -101,7 +102,7 @@ flowchart LR
 |---|---|
 | Status update when **accepted** | A "dinner's started" SMS the cook reviews, sent when cooking begins |
 | Status update when **resolved** | A "dinner is ready" SMS the cook reviews |
-| Delivery status | Signed Messages API status webhook: submitted → delivered or read, or rejected / undeliverable with Vonage's reason, shown live in the app |
+| Delivery status | Signed Messages API status webhook: submitted → delivered or read, or rejected / undeliverable with Vonage's reason, shown live in the app. **Verified on production:** a real text sent from the hosted app reached the phone, and the app showed Delivered ✓ from the signed callback |
 | **Simulated failed delivery** | A clearly labelled demo action that replays a rejected status (error 1120 Illegal Sender, a real failure we hit during setup) through the same webhook handler. The app shows the reason and offers a new reviewed attempt, and never resends silently |
 
 ## Cost guardrails
@@ -111,7 +112,7 @@ The demo runs on a $10 Gemini budget and a $1.99 Vonage trial balance:
 - **Watch checks** run every 15 s and expire after a few minutes.
 - **Video** frames are sent at low media resolution.
 - **Live tokens** are rate-limited per user, per day and project-wide.
-- **Vonage outcomes** (delivered and failed) can be demonstrated without sending an SMS. They are clearly labelled simulated events that run through the real status handler.
+- **Vonage:** real sends go only to allowlisted numbers. Simulated delivered and failed outcomes, clearly labelled and running through the real status handler, make repeat demos cost nothing.
 - **Rehearsal mode** uses no paid services.
 
 ## Safety boundaries
@@ -119,6 +120,7 @@ The demo runs on a $10 Gemini budget and a $1.99 Vonage trial balance:
 - **The cook is the human in the loop.** The coach asks when it doesn't know something, and the cook confirms ingredients, substitutions, progress and messages.
 - **Camera appearance is not food safety.** It cannot establish internal temperature, freshness or the absence of an allergen, and the coach says so.
 - **Nothing is sent automatically.** No message goes out without the cook's explicit review, and no step is marked complete by the model alone.
+- **AI-drafted recipes are labelled and constrained.** They're never presented as reviewed. Any heated step with meat, poultry, fish, shellfish or egg tells the cook to check doneness with a thermometer. Every heated step says the camera can't confirm doneness. Only the nine major allergens are listed.
 - **Allergies come first.** The coach asks about allergens before giving guidance, and the camera can't confirm their absence.
 - **Simulation is always labelled.** Rehearsal mode and simulated delivery are marked as simulated in the UI.
 
@@ -139,9 +141,9 @@ flutter run -d chrome -t lib/main_learner.dart --web-port=7357 --dart-define-fro
 | `APPCHECK_DEBUG_TOKEN` | Development only; never in a published build |
 | `RECAPTCHA_SITE_KEY` | Public reCAPTCHA Enterprise key for the hosted origin |
 | `LIVE_TOKEN_URL`, `DINNER_MESSAGE_URL` | Optional absolute endpoints for local testing (the defaults are `/api/...` on the same origin) |
-| `RESEARCH_MODEL` | Grounded research model override |
+| `RESEARCH_MODEL` | Grounded research model override; also the default for `PANTRY_MODEL`, `NEARBY_MODEL` and `DRAFT_MODEL` |
 
-Bundled recipes are in `assets/recipes/`: Peanut Butter Sandwich, Smashed Chickpea Salad Wrap, and Black Bean & Corn Salsa.
+Reviewed recipes are in `assets/recipes/`: Peanut Butter Sandwich, Smashed Chickpea Salad Wrap, and Black Bean & Corn Salsa. Any other mix of ingredients goes through the AI recipe creator (`lib/pantry/recipe_draft_client.dart`).
 
 ## Test
 

@@ -57,6 +57,19 @@ dependencies: `node --test test/*.test.js` and `npm run check`. These cover auth
 quota, provider payloads, and errors through injected boundaries; they do not
 verify an actual Gemini WebSocket connection or deployed IAM/Firestore rules.
 
+## Production state (November 8, 2026)
+
+| Variable / secret | Value | Meaning |
+|---|---|---|
+| `DINNER_SERVICE_READY` | true | `dinnerReady` deployed |
+| `DINNER_CHANNEL` | sms | Vonage Messages API SMS |
+| `ENABLE_DINNER_MESSAGES` | true | Real sends allowed, to `VONAGE_ALLOWED_TO` numbers only. Set it back to false after the showcase |
+| `DINNER_STATUS_READY` | true | Signed `vonageStatus` webhook deployed at `/api/vonage-status` |
+| `ALLOW_DELIVERY_SIMULATION` | true | Labelled simulated delivered/failed outcomes through the real status handler |
+| `VONAGE_SIGNATURE_SECRET` | Secret Manager v1 | Runtime-only `secretAccessor` for the default compute account |
+
+Verified: a real cook-reviewed SMS from the hosted app was received, and the dialog showed Delivered from the signed callback (#39, #112). Unsigned callbacks get 503 and forged signatures get 401 (#126).
+
 ## Dinner-ready notifications
 
 `dinnerReady` is a second HTTPS function in `us-central1`; rewrite Hosting

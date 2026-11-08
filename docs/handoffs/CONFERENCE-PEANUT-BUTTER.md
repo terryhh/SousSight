@@ -32,12 +32,13 @@ Updated November 8 for the pantry-first build. Each beat names the Google or Von
 | # | Beat (about 30 s each) | What the judges see | Capability |
 |---|---|---|---|
 | 1 | "I just got this from the UCF pantry." Scan the haul (bread, peanut butter, canned beans, corn, tomato), or say it, or type it. | Candidate items to confirm; ranked meals with matched/missing items; one clarifying question | Gemini Flash multimodal + structured output (Firebase AI Logic), GenUI |
+| 1a | Type a random mix (for example "tortillas, canned tuna, frozen peas, rice"), tap the items, then **Make a meal from these ingredients**. | An AI-drafted recipe with the **not reviewed** label and any thermometer reminders; **Cook this draft** | Gemini structured recipe creation (Firebase AI Logic) |
 | 1b | Tap **Find food help nearby** (Orlando). | Nearby pantries and stores with Google Maps links | Grounding with Google Maps |
 | 2 | Pick **Peanut Butter Sandwich** and press **Start**. | Live coach greets the cook; generated step panel | Gemini Live voice + vision, GenUI/A2UI |
 | 3 | The coach opens with its allergy check (peanut, wheat). Answer, then ask "Can I use sunflower seed butter instead?" | Cook-question panel; grounded answer with source links and Google suggestions | `ask_cook` human-in-the-loop, Grounding with Google Search |
 | 4 | Spread on camera: "Am I doing this right?" Optionally "Watch until it's spread to the edges." | Comparison panel describing visible coverage; watch status | Live vision, opt-in watch |
 | 5 | Optional: speak Spanish for one exchange. | Coach answers in Spanish | Live native multilingual audio |
-| 6 | **Text household: started cooking**, then **Simulate delivery (demo)**. A real send happens only with fresh approval. | "Sent to Vonage → Delivered ✓ (simulated)" | Vonage Messages API + signed status webhook |
+| 6 | **Text household: started cooking** to the allowlisted number, then **Confirm and send** (real; verified working), or **Simulate delivery (demo)** for repeat takes. | "Sent to Vonage → Delivered ✓" (real) or "(simulated)" | Vonage Messages API + signed status webhook |
 | 7 | **Dinner is ready**, review. Then **Simulate failed delivery (demo)**. | "Simulated failure: Illegal Sender Address (1120)", plus recovery options | Vonage failure handling (challenge requirement) |
 | 7b | Finish the last step. | "You made Peanut Butter Sandwich!": confirmed pantry items, coach paused, next steps | Closes the pantry-to-plate story; cost guardrail |
 | 8 | Close on the architecture slide (README diagram) or open **How it works → Under the hood**: routing and storage choices. | One slide or the in-app sheet | Devs-track requirement |
@@ -46,6 +47,8 @@ Fallbacks:
 - `?recipe=black_bean_corn_salsa_v1` skips the scan. The salsa has a real 5-minute meld timer.
 - Rehearsal build (`FAKE_BACKEND=true`), labelled simulated.
 - Backup screen recording.
+
+Use **Chrome** (desktop or Android). Firefox isn't supported.
 
 Venue checklist:
 - Headset mic.
