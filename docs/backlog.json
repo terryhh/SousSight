@@ -767,7 +767,8 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-08: Terry requested the conference sandwich demo and parallel implementation; recipe agent is working in an isolated branch. No new-recipe deployment or live acceptance claimed."
+        "2026-11-08: Terry requested the conference sandwich demo and parallel implementation; recipe agent is working in an isolated branch. No new-recipe deployment or live acceptance claimed.",
+        "2026-11-08: https://github.com/terryhh/SousSight/issues/79 created with terryhh assignee and Project In progress. Conference cutoff is 3:00 PM Eastern today; record actual deployed evidence and remaining gaps by that time."
       ]
     },
     {
@@ -790,7 +791,8 @@
         "SS-031"
       ],
       "evidence": [
-        "2026-11-08: Parallel focused regression work started for the conference recipe. Local tests, deployed rehearsal and any remaining gaps must be reported separately."
+        "2026-11-08: Parallel focused regression work started for the conference recipe. Local tests, deployed rehearsal and any remaining gaps must be reported separately.",
+        "2026-11-08: https://github.com/terryhh/SousSight/issues/80 created with terryhh assignee and Project In progress. Conference cutoff is 3:00 PM Eastern today; record actual deployed evidence and remaining gaps by that time."
       ]
     }
   ]

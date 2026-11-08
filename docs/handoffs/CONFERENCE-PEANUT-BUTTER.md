@@ -1,6 +1,8 @@
 # Conference rehearsal: peanut butter sandwich
 
-November 8, 2026. Terry requested this as the main demo recipe. This runbook is a rehearsal plan, not proof that the new recipe is deployed. Terry owns the recipe/integration and focused regression cards SS-031/SS-032; Jenna's separate demo preparation, research implementation and physical acceptance remain hers. No cooking or heating is needed.
+November 8, 2026. **Hard stop: 3:00 PM Eastern today.** Prioritize deploying the sandwich flow, then meaningful live checks, with time reserved to record results and stop media. Terry requested this as the main demo recipe. This is Terry’s technical integration quickstart and rehearsal checklist, not Jenna’s SS-024 demo story or proof that the new recipe is deployed. Terry owns the recipe/integration and focused regression cards SS-031/SS-032; Jenna's separate demo preparation, research implementation and physical acceptance remain hers. No cooking or heating is needed.
+
+The intended recipe ID is `peanut_butter_sandwich_v1`, with untimed steps `prep`, `spread`, `optional_jam`, and `close`. The peanut-butter checkpoint uses a live text cue; no reference photograph is required or expected. Existing chickpea/reference-photo assets remain intact for their separate work.
 
 ## Before opening the camera
 
