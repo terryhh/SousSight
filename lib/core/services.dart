@@ -27,8 +27,11 @@ abstract class RecipeRepository {
 }
 
 abstract class SessionRepository {
-  /// Resumes the learner's open session for [recipe], or creates one.
+  /// Resumes the learner's most recently created session for [recipe], or creates one.
   Future<CookingSession> createOrResume(String learnerId, Recipe recipe);
+
+  /// Creates a fresh cook without changing any earlier session or recipe progress.
+  Future<CookingSession> createNew(String learnerId, Recipe recipe);
   Stream<CookingSession> watch(String sessionId);
 
   /// Read-modify-write in a transaction. The mutation should bump `revision`

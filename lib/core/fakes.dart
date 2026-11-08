@@ -104,9 +104,20 @@ class FakeSessionRepository implements SessionRepository {
 
   @override
   Future<CookingSession> createOrResume(String learnerId, Recipe recipe) async {
-    for (final s in _sessions.items.values) {
-      if (s.learnerId == learnerId && s.recipeId == recipe.id) return s;
-    }
+    final matching =
+        _sessions.items.values
+            .where((s) => s.learnerId == learnerId && s.recipeId == recipe.id)
+            .toList()
+          ..sort((a, b) {
+            final byCreation = b.createdAt.compareTo(a.createdAt);
+            return byCreation != 0 ? byCreation : b.id.compareTo(a.id);
+          });
+    if (matching.isNotEmpty) return matching.first;
+    return createNew(learnerId, recipe);
+  }
+
+  @override
+  Future<CookingSession> createNew(String learnerId, Recipe recipe) async {
     final now = DateTime.now();
     final s = CookingSession(
       id: const Uuid().v4(),
