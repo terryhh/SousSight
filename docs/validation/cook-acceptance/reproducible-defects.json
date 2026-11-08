@@ -3,9 +3,26 @@
   "ticket": "SS-023",
   "issueUrl": "https://github.com/terryhh/SousSight/issues/41",
   "evaluatedAt": "2026-11-07",
-  "evaluatedCommit": "d350601",
+  "evaluatedCommit": "303a22e",
   "owner": "jennajh",
   "runtimeFixOwner": "terryhh",
+  "resolvedSinceInitialBaseline": [
+    {
+      "cards": ["SS-005", "SS-026"],
+      "mergedCommits": ["7ce623b", "f079303", "2bad9dd", "75c5380"],
+      "summary": "CookingResearchPanel (SS-005) is merged to main and mounted in CookingScreen via ResearchPanelClient (PR #61), preventing duplicate initial requests and wiring explicit substitution confirmation into session.confirmedFacts."
+    },
+    {
+      "cards": ["SS-028", "SS-019"],
+      "mergedCommits": ["da97bf9", "303a22e"],
+      "summary": "Session Start/Stop, Mute, message input, and Research button moved to a sticky bottom _controlDock outside generated workspace scrolling (PR #64); awaiting post-deploy hosted and physical phone verification."
+    },
+    {
+      "cards": ["SS-003"],
+      "mergedCommits": ["9f28b14", "3e074e6"],
+      "summary": "show_cooking_ui now requires stepId and rejects stale generated workspaces after step advancement (PR #56)."
+    }
+  ],
   "defects": [
     {
       "id": "DEF-001",
@@ -14,7 +31,7 @@
       "relatedCards": ["SS-007", "SS-023"],
       "files": [
         "lib/data/dinner_messages.dart:55-57",
-        "lib/learner/cooking_app.dart:807-827",
+        "lib/learner/cooking_app.dart:803-823",
         "functions/src/dinner-ready.js:25-27"
       ],
       "expected": "When POST /api/dinner-ready returns HTTP 403 (recipient-not-allowed) or 400 (invalid-recipient) before claiming any ledger entry, the UI surfaces the rejection reason and lets the cook edit the recipient.",
@@ -27,7 +44,7 @@
       "relatedCards": ["SS-007", "SS-025"],
       "files": [
         "lib/learner/cooking_app.dart:93",
-        "lib/learner/cooking_app.dart:808-813",
+        "lib/learner/cooking_app.dart:804-809",
         "functions/src/dinner-ready.js:37-57"
       ],
       "expected": "Distinct review attempts after a non-pending validation or configuration fix do not collide on a stale notificationId with a different message/recipient fingerprint.",
@@ -36,28 +53,27 @@
     {
       "id": "DEF-003",
       "severity": "medium",
-      "title": "Answering a cook clarification (ask_cook / cookQuestion) leaves the question panel and option buttons active in the GenUI workspace",
+      "title": "Answering a cook clarification (ask_cook / cookQuestion) leaves the question panel and option buttons active in the GenUI workspace until a new workspace arrives",
       "relatedCards": ["SS-003"],
       "files": [
-        "lib/learner/cooking_coordinator.dart:180-195",
-        "lib/learner/cooking_coordinator.dart:395-404",
-        "lib/learner/cooking_coordinator.dart:474-478",
+        "lib/learner/cooking_coordinator.dart:199-219",
+        "lib/learner/cooking_coordinator.dart:467-476",
+        "lib/learner/cooking_coordinator.dart:562-566",
         "lib/genui/cooking_catalog.dart:118-169"
       ],
-      "expected": "Confirming an answer transitions or removes the active question/cookQuestion GenUI panel so repeated taps on option buttons cannot append duplicate confirmed facts.",
-      "actual": "confirmCookAnswer sets cookQuestion = null and saves the fact, but leaves the GenUI 'question' or 'cookQuestion' panel mounted with active OutlinedButton options."
+      "expected": "Confirming an answer immediately transitions or disables the active question/cookQuestion GenUI panel locally so repeated taps on option buttons cannot append duplicate confirmed facts before the model responds.",
+      "actual": "confirmCookAnswer sets cookQuestion = null and saves the fact, but leaves the GenUI 'question' or 'cookQuestion' panel mounted with active OutlinedButton options until a later show_cooking_ui replaces the surface."
     },
     {
       "id": "DEF-004",
-      "severity": "medium",
-      "title": "Main cooking workspace does not yet mount CookingResearchPanel (SS-005) and requires two taps when starting research from an empty input box",
-      "relatedCards": ["SS-003", "SS-004", "SS-005"],
+      "severity": "low",
+      "title": "Tapping Research a cooking question (Icons.travel_explore) in _controlDock with an empty input box only populates text without focusing or starting research",
+      "relatedCards": ["SS-026", "SS-028"],
       "files": [
-        "lib/learner/cooking_app.dart:513-525",
-        "lib/learner/cooking_app.dart:648-686"
+        "lib/learner/cooking_app.dart:589-600"
       ],
-      "expected": "CookingScreen renders CookingResearchPanel (with targeted clarification and editable substitution confirmation) and clearly guides or initiates research when tapping Research a cooking question.",
-      "actual": "On origin/main (d350601), CookingScreen renders an inline Card without clarification/substitution confirmation, and tapping Research a cooking question with an empty text box only pre-fills _message.text without focusing or submitting."
+      "expected": "Tapping the Research a cooking question icon button with an empty input either focuses the seeded prompt with a clear cue or initiates research directly.",
+      "actual": "The first tap silently assigns _message.text = 'Can I use vinegar instead of lemon in this recipe?' without focusing the field or calling cook.researchQuestionNow, requiring a second tap on Icons.travel_explore."
     },
     {
       "id": "DEF-005",
