@@ -53,3 +53,23 @@ dart_defines.local.json
 
 # Isolated local agent checkouts
 .worktrees/
+
+# Local environment and cloud credentials (examples remain reviewable).
+.env
+.env.*
+!.env.example
+!.env.*.example
+.envrc
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+service-account*.json
+service_account*.json
+*-service-account.json
+*-service-account-key.json
+application_default_credentials.json
+credentials.json
+gha-creds-*.json

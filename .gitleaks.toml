@@ -1,0 +1,28 @@
+title = "SousSight credential guard"
+minVersion = "v8.30.1"
+
+[extend]
+useDefault = true
+
+# Firebase client configuration is public application metadata. Permit only the
+# exact existing client keys, only in their intended config files. A different
+# key in either file, or these keys elsewhere, must still be detected.
+
+[[allowlists]]
+description = "Exact public Firebase client configuration"
+targetRules = ["gcp-api-key", "generic-api-key"]
+condition = "AND"
+paths = ['''^lib/firebase_options\.dart$''']
+regexes = [
+  '''^AIzaSyAmHNYWdxNPq6qgark3xXfDiqVXAEQ1Ff4$''',
+  '''^AIzaSyD_pIsMs49Y3cbEHtCHEJds89b8jzdODgk$''',
+]
+
+[[allowlists]]
+description = "Exact public Firebase client configuration"
+targetRules = ["gcp-api-key", "generic-api-key"]
+condition = "AND"
+paths = ['''^android/app/google\-services\.json$''']
+regexes = [
+  '''^AIzaSyD_pIsMs49Y3cbEHtCHEJds89b8jzdODgk$''',
+]
