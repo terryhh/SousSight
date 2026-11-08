@@ -1,6 +1,14 @@
 # SousSight design specification
 
-Updated November 7, 2026 for the DevFest Orlando submission. This document is the current product direction; earlier handoffs describe an older design.
+Updated November 8, 2026 for the DevFest Florida (Orlando) showcase. This document is the current product direction; earlier handoffs describe an older design.
+
+## November 8 changes
+
+- **Pantry-first start (SS-038).** The app opens on "What did you get from the pantry?" The cook scans with the camera, records a short voice clip, or types. One structured Gemini Flash call (Firebase AI Logic, multimodal input, JSON schema output) returns candidate items, ranked bundled meals with matched/missing ingredients, and at most one clarifying question. Items are candidates the cook confirms. Picking a meal opens the live cooking screen for that recipe. `?recipe=<id>` and `RECIPE_ID` skip the scan.
+- **Recipes.** Peanut Butter Sandwich (default demo, untimed), Smashed Chickpea Salad Wrap (real 5-minute pickle timer, mash/mix visual checks), and Black Bean & Corn Salsa (produce-forward, real 5-minute meld timer, dice-size visual cue). Sessions are keyed by cook and recipe; "New cook" starts a fresh session without deleting history (SS-033).
+- **Vonage lifecycle (SS-036/037).** Cook-reviewed "dinner's started" and "dinner is ready" SMS from server-side templates; a signed Messages API status webhook (`/api/vonage-status`) records submitted/delivered/read/rejected/undeliverable and mirrors it to an owner-readable `sessions/{id}/notifications/{nid}` doc the UI listens to. A labelled demo action simulates a failed delivery through the same handler. Failures show the reason and offer a new reviewed attempt; there are no automatic retries.
+- **Live reliability (SS-035).** Validation errors go back to the model; duplicate cook answers are blocked; socket errors attempt resumption; low media resolution; replies in the cook's language.
+- **Removed (SS-034).** The instructor board, help-request routing, triage/assessment clients, seed data and their Firestore rules are gone. References to them below are historical.
 
 ## Product
 
