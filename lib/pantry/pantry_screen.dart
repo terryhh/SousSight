@@ -894,10 +894,16 @@ class _PantryScreenState extends State<PantryScreen> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextButton.icon(
+          const SizedBox(height: 8),
+          FilledButton.icon(
             key: const ValueKey('draft-something-else'),
-            icon: const Icon(Icons.auto_awesome_outlined),
-            label: const Text('Draft something else with these'),
+            style: _bigButton(pantryTomato),
+            icon: const Icon(Icons.auto_awesome),
+            label: Text(
+              _drafting
+                  ? 'Drafting…'
+                  : 'Not feeling these? Draft a new recipe with Gemini',
+            ),
             onPressed: canDraft ? () => unawaited(_draft()) : null,
           ),
           if (_ui.confirmedItems.isEmpty)

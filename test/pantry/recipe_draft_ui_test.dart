@@ -193,7 +193,10 @@ void main() {
     expect(find.byKey(const ValueKey('draft-card')), findsNothing);
     final secondary = find.byKey(const ValueKey('draft-something-else'));
     await tester.ensureVisible(secondary);
-    expect(find.text('Draft something else with these'), findsOneWidget);
+    expect(
+      find.text('Not feeling these? Draft a new recipe with Gemini'),
+      findsOneWidget,
+    );
     await tapVisible(
       tester,
       find.bySemanticsLabel(RegExp('^canned black beans, ')),
