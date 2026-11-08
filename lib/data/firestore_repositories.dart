@@ -67,12 +67,19 @@ class FirestoreSessionRepository implements SessionRepository {
     final existing = await _sessions
         .where('learnerId', isEqualTo: learnerId)
         .where('recipeId', isEqualTo: recipe.id)
+        .orderBy('createdAt', descending: true)
+        .orderBy(FieldPath.documentId, descending: true)
         .limit(1)
         .get();
     if (existing.docs.isNotEmpty) {
       final d = existing.docs.first;
       return CookingSession.fromMap(d.id, d.data());
     }
+    return createNew(learnerId, recipe);
+  }
+
+  @override
+  Future<CookingSession> createNew(String learnerId, Recipe recipe) async {
     final now = DateTime.now();
     final session = CookingSession(
       id: const Uuid().v4(),
