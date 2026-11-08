@@ -181,9 +181,22 @@ class GeminiPantryClient implements PantryClient {
       throw const PantryException(
         'I could not read that answer. Please try again or type your list.',
       );
-    } catch (_) {
-      throw const PantryException(
-        'Ingredient matching is unavailable right now. Pick a recipe below.',
+    } catch (error) {
+      // Console-only diagnostics (never shown to the cook). Strip anything
+      // that looks like a key or token before logging.
+      final detail = '$error'
+          .replaceAll(RegExp(r'AIza[0-9A-Za-z_-]{20,}'), '[key]')
+          .replaceAll(RegExp(r'ey[A-Za-z0-9_-]{20,}\.[A-Za-z0-9._-]+'), '[token]');
+      debugPrint(
+        'Pantry request failed (${error.runtimeType}, '
+        'photo=${input.photoJpeg?.length ?? 0}B, '
+        'audio=${input.audioWav?.length ?? 0}B): '
+        '${detail.length > 400 ? detail.substring(0, 400) : detail}',
+      );
+      throw PantryException(
+        input.photoJpeg?.isNotEmpty ?? false
+            ? 'I could not use that photo. Try again, or type your list below.'
+            : 'Ingredient matching is unavailable right now. Pick a recipe below.',
       );
     }
   }
