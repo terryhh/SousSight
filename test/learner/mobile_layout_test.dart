@@ -39,6 +39,7 @@ void main() {
     WidgetTester tester,
     Size size, {
     double textScale = 1,
+    String recipeId = kRecipeId,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = size;
@@ -46,7 +47,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    final services = await tester.runAsync(fakeServices);
+    final services = await tester.runAsync(
+      () => fakeServices(recipeId: recipeId),
+    );
     await tester.pumpWidget(CookingApp(services: services!, isDemo: true));
     await tester.pumpAndSettle();
   }
@@ -239,7 +242,12 @@ void main() {
   testWidgets('large text preserves mobile live controls and timer', (
     tester,
   ) async {
-    await openKitchen(tester, const Size(320, 740), textScale: 1.5);
+    await openKitchen(
+      tester,
+      const Size(320, 740),
+      textScale: 1.5,
+      recipeId: 'chickpea_wrap_v1',
+    );
     expect(tester.takeException(), isNull);
     final start = find.byKey(const ValueKey('live-session-toggle'));
     await tester.ensureVisible(start);
@@ -248,7 +256,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.scrollUntilVisible(
-      find.text('Watch my bowl'),
+      find.text('Watch my food'),
       300,
       scrollable: find.byType(Scrollable).first,
     );
@@ -257,7 +265,7 @@ void main() {
       find.byKey(const ValueKey('live-session-toggle')),
       find.byKey(const ValueKey('microphone-toggle')),
       find.ancestor(
-        of: find.text('Watch my bowl'),
+        of: find.text('Watch my food'),
         matching: find.byWidgetPredicate(
           (widget) => widget is ButtonStyleButton,
         ),
@@ -278,15 +286,15 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('5:00'), findsOneWidget);
     await tester.scrollUntilVisible(
-      find.text('Check my bowl').last,
+      find.text('Check my food').last,
       -250,
       scrollable: find.byType(Scrollable).first,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Check my bowl').last);
+    await tester.tap(find.text('Check my food').last);
     await tester.pump();
     await tester.pump();
-    expect(find.text('Rehearsal: a little more mashing'), findsOneWidget);
+    expect(find.text('Rehearsal: compare your progress'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

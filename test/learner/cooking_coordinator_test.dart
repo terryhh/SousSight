@@ -909,6 +909,7 @@ void main() {
     'a cancelled step timer can restart with a new ID and one active deadline',
     () async {
       await fixture.initialize();
+      await fixture.cook.advanceStep();
       await fixture.cook.startStepTimer();
       final original = fixture.cook.ui.timers.single;
       fixture.cook.ui.dismissTimer(original.id);

@@ -216,7 +216,7 @@ $cookingUiInstructions
 
   Future<void> checkNow([String prediction = 'Not sure']) async {
     if (!live.isActive) {
-      alert = 'Connect the live coach first, then show your bowl.';
+      alert = 'Connect the live coach first, then show your food.';
       _notify();
       return;
     }
@@ -224,7 +224,7 @@ $cookingUiInstructions
       'Am I doing this right? My prediction is: $prediction. '
       'currentStepId: ${step.id}. Current step: ${step.title}. Compare the latest visible frame against this '
       'recipe cue: ${step.cue}. Use show_cooking_ui to make a comparison panel. '
-      'If the bowl is unclear, ask for a better view. Ask me any missing facts.',
+      'If the food is unclear, ask for a better view. Ask me any missing facts.',
     );
   }
 
@@ -275,16 +275,18 @@ $cookingUiInstructions
   }
 
   Future<void> startStepTimer() {
+    final seconds = step.timerSeconds;
+    if (seconds == null || seconds <= 0) return Future<void>.value();
     final prefix = 'step-${step.id}';
     for (final timer in ui.timers) {
       if (timer.id == prefix || timer.id.startsWith('$prefix-')) {
-        return startTimer(timer.id, timer.label, step.timerSeconds ?? 60);
+        return startTimer(timer.id, timer.label, seconds);
       }
     }
     return startTimer(
       '$prefix-${services.clock().millisecondsSinceEpoch}-${_timerSequence++}',
       step.title,
-      step.timerSeconds ?? 60,
+      seconds,
     );
   }
 
@@ -316,7 +318,7 @@ $cookingUiInstructions
     _watchPanel(
       'watching',
       'Watching ${step.title.toLowerCase()}',
-      'Keep the bowl in view. I’ll ask you to check when the visible cue appears.',
+      'Keep the food in view. I’ll ask you to check when the visible cue appears.',
     );
   }
 
@@ -504,7 +506,7 @@ $cookingUiInstructions
           (a['seconds'] as num).toInt(),
         );
       case 'watch_cooking':
-        _watchPanel('watching', 'Watching your bowl', a['goal'] as String);
+        _watchPanel('watching', 'Watching your food', a['goal'] as String);
       case 'report_readiness':
         final ready = a['state'] == 'ready';
         _watchPanel(
@@ -516,7 +518,7 @@ $cookingUiInstructions
           ready ? 'Looks ready for your check' : 'Watching the visible cue',
           a['observation'] as String,
         );
-        if (ready) alert = 'Check your bowl: ${a['observation']}';
+        if (ready) alert = 'Check your food: ${a['observation']}';
       case 'ask_cook':
         cookQuestion = a['question'] as String;
         ui.upsertPanel({
@@ -547,7 +549,7 @@ $cookingUiInstructions
               'grounding when sources is empty; research is not cook confirmation.',
         };
       case 'check_now':
-        alert = 'Make your prediction, then tap Check my bowl.';
+        alert = 'Make your prediction, then tap Check my food.';
       case 'next_step':
         alert = 'Ready for the next step? Confirm with the Next step button.';
       case 'dinner_ready':

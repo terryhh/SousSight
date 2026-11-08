@@ -11,7 +11,11 @@ import '../core/fakes.dart';
 import '../core/models.dart';
 import '../core/services.dart';
 
-const kRecipeId = 'chickpea_wrap_v1';
+// Override for a reviewed alternate recipe without changing saved sessions.
+const kRecipeId = String.fromEnvironment(
+  'RECIPE_ID',
+  defaultValue: 'peanut_butter_sandwich_v1',
+);
 const kFakeBackend = bool.fromEnvironment('FAKE_BACKEND');
 
 class AppServices {
@@ -45,8 +49,8 @@ Future<Recipe> loadBundledRecipe([String id = kRecipeId]) async {
   return Recipe.fromMap(jsonDecode(json) as Map<String, dynamic>);
 }
 
-Future<AppServices> fakeServices() async {
-  final recipe = await loadBundledRecipe();
+Future<AppServices> fakeServices({String recipeId = kRecipeId}) async {
+  final recipe = await loadBundledRecipe(recipeId);
   return AppServices(
     auth: FakeAuthService(),
     recipes: FakeRecipeRepository(recipe),

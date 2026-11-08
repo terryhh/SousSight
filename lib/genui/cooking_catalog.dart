@@ -189,7 +189,7 @@ Catalog buildCookingCatalog(CookingUiController controller) {
             crossAxisAlignment: CrossAxisAlignment.start,
             spacing: 12,
             children: [
-              _LabeledText('In your bowl', data['observed'] as String),
+              _LabeledText('In your food', data['observed'] as String),
               _LabeledText('What to aim for', data['target'] as String),
               Container(
                 width: double.infinity,
@@ -429,7 +429,7 @@ class _TimerPanel extends StatelessWidget {
 }
 
 String _actionLabel(String action) => switch (action) {
-  'check_now' => 'Check my bowl',
+  'check_now' => 'Check my food',
   'next_step' => 'Next step',
   'ask_cook' => 'Let’s clarify',
   _ => 'Watch with me',
