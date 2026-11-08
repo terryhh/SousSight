@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'ai/gemini_clients.dart';
 import 'app/services_scope.dart';
 import 'data/firebase_services.dart';
 import 'learner/cooking_app.dart';
@@ -20,10 +19,7 @@ class _SousSightBootstrapState extends State<SousSightBootstrap> {
   late Future<AppServices> _services = _load();
   Future<AppServices> _load() => kFakeBackend
       ? fakeServices()
-      : firebaseServices(
-          assessment: GeminiAssessmentClient(),
-          triage: GeminiTriageClient(),
-        );
+      : firebaseServices();
 
   @override
   Widget build(BuildContext context) => FutureBuilder<AppServices>(

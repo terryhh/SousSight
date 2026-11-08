@@ -120,15 +120,15 @@ test('catalog privilege does not grant access to cooking sessions', async () => 
   await assertSucceeds(getDoc(doc(db(), 'recipes/wrap')));
 });
 
-test('legacy records require owned sessions and never allow client notification data', async () => {
+test('retired request, instructor and config collections deny all client access', async () => {
   await seed('sessions/meal', session());
-  const request = { learnerId: 'cook-a', sessionId: 'meal', recipeId: 'wrap', stepId: 'mash',
-    createdAt: Timestamp.fromMillis(1000), status: 'submitted' };
-  const ref = doc(db(), 'requests/question');
-  await assertSucceeds(setDoc(ref, request));
-  await assertFails(getDoc(doc(db('cook-b'), ref.path)));
-  await assertFails(setDoc(doc(db(), 'requests/notify'), { ...request, notify: {} }));
-  await assertFails(setDoc(doc(db('cook-b'), 'requests/forged'), { ...request, learnerId: 'cook-b' }));
-  await assertFails(updateDoc(ref, { notify: {}, status: 'resolved' }));
-  await assertSucceeds(updateDoc(ref, { status: 'resolved' }));
+  for (const path of ['requests/question', 'instructors/ana', 'config/demo']) {
+    await seed(path, { learnerId: 'cook-a', sessionId: 'meal', status: 'submitted' });
+    for (const client of [db(), db('editor', { soussightCatalogEditor: true })]) {
+      const ref = doc(client, path);
+      await assertFails(getDoc(ref));
+      await assertFails(setDoc(ref, { learnerId: 'cook-a', sessionId: 'meal', status: 'submitted' }));
+      await assertFails(deleteDoc(ref));
+    }
+  }
 });
