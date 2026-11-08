@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node --check src/index.js && node --check src/live-token.js && node --check src/token-quota.js && node --check src/dinner-ready.js && node --check src/live-index.js && node --check src/dinner-index.js && node --check src/firebase-app.js"
+    "check": "node --check src/index.js && node --check src/live-token.js && node --check src/token-quota.js && node --check src/dinner-ready.js && node --check src/live-index.js && node --check src/dinner-index.js && node --check src/firebase-app.js && node --check src/vonage-status.js && node --check src/status-index.js && node --check src/live-dinner-index.js"
   },
   "dependencies": {
     "firebase-admin": "14.5.0",

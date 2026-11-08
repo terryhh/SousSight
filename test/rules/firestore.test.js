@@ -100,7 +100,8 @@ test('checkpoint parent linkage, rating and photo size are validated', async () 
 });
 
 test('all server ledgers and contacts deny reads and writes even to catalog editors', async () => {
-  for (const name of ['_liveTokenLimits', '_dinnerNotifications', '_dinnerMealClaims', 'instructorContacts', 'learnerContacts']) {
+  for (const name of ['_liveTokenLimits', '_dinnerNotifications', '_dinnerMealClaims', '_dinnerSendLimits',
+    '_dinnerProviderMessages', 'instructorContacts', 'learnerContacts']) {
     await seed(`${name}/private`, { secret: 'fixture' });
     for (const client of [db(), db('editor', { soussightCatalogEditor: true })]) {
       const ref = doc(client, `${name}/private`);
@@ -131,4 +132,25 @@ test('legacy records require owned sessions and never allow client notification 
   await assertFails(setDoc(doc(db('cook-b'), 'requests/forged'), { ...request, learnerId: 'cook-b' }));
   await assertFails(updateDoc(ref, { notify: {}, status: 'resolved' }));
   await assertSucceeds(updateDoc(ref, { status: 'resolved' }));
+});
+
+test('household message status is readable only by the session owner and never client-writable', async () => {
+  await seed('sessions/meal', session());
+  const status = { kind: 'ready', status: 'rejected', errorTitle: 'Illegal Sender Address',
+    errorCode: '1120', simulated: true, updatedAt: 1000 };
+  await seed('sessions/meal/notifications/notice-1', status);
+  const ref = doc(db(), 'sessions/meal/notifications/notice-1');
+  await assertSucceeds(getDoc(ref));
+  // Listening before the server creates the document must also work.
+  await assertSucceeds(getDoc(doc(db(), 'sessions/meal/notifications/not-yet')));
+  await assertFails(setDoc(ref, { ...status, status: 'delivered' }));
+  await assertFails(updateDoc(ref, { status: 'delivered' }));
+  await assertFails(deleteDoc(ref));
+  await assertFails(setDoc(doc(db(), 'sessions/meal/notifications/forged'), status));
+  for (const client of [db('cook-b'), db('editor', { soussightCatalogEditor: true }),
+    environment.unauthenticatedContext().firestore()]) {
+    await assertFails(getDoc(doc(client, ref.path)));
+    await assertFails(setDoc(doc(client, ref.path), status));
+  }
+  await assertFails(getDoc(doc(db(), 'sessions/missing/notifications/notice-1')));
 });
