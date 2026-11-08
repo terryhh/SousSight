@@ -174,6 +174,7 @@ class _CookingScreenState extends State<CookingScreen> {
     onNewCook: _startingNewCook ? null : _newCook,
     startingNewCook: _startingNewCook,
     sendDinner: widget.sendDinner,
+    dinnerStatus: widget.dinnerStatus,
   );
 
   @override
@@ -193,6 +194,7 @@ class _CookingSessionScreen extends StatefulWidget {
     required this.onNewCook,
     required this.startingNewCook,
     required this.sendDinner,
+    required this.dinnerStatus,
   });
   final AppServices services;
   final bool isDemo;
@@ -200,7 +202,8 @@ class _CookingSessionScreen extends StatefulWidget {
   final bool initialized;
   final VoidCallback? onNewCook;
   final bool startingNewCook;
-  final DinnerMessageSender sendDinner;
+  final DinnerMessageSender? sendDinner;
+  final DinnerStatusSource? dinnerStatus;
 
   @override
   State<_CookingSessionScreen> createState() => _CookingSessionScreenState();
