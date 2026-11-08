@@ -311,6 +311,79 @@ Catalog buildCookingCatalog(CookingUiController controller) {
         );
       },
     ),
+    CatalogItem(
+      name: 'donenessGauge',
+      dataSchema: _schema(
+        {
+          'title': S.string(),
+          'percent': S.integer(minimum: 0, maximum: 100),
+          'currentTexture': S.string(),
+          'targetTexture': S.string(),
+          'cue': S.string(),
+        },
+        ['title', 'percent', 'currentTexture', 'targetTexture', 'cue'],
+      ),
+      widgetBuilder: (context) {
+        final data = _data(context);
+        final pct = (((data['percent'] as num?) ?? 0).clamp(0, 100) / 100.0);
+        return _Panel(
+          icon: Icons.speed_outlined,
+          title: data['title'] as String,
+          eyebrow: 'VISUAL DONENESS GAUGE',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 12,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: pct,
+                  minHeight: 14,
+                  backgroundColor: _green.withValues(alpha: .12),
+                  color: pct >= 0.85
+                      ? const Color(0xFF2E7D32)
+                      : pct >= 0.5
+                          ? const Color(0xFFF57F17)
+                          : const Color(0xFFE65100),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${(pct * 100).toInt()}% toward target texture',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    pct >= 0.85 ? 'Looks ready for you!' : 'Keep mashing',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: pct >= 0.85
+                          ? const Color(0xFF2E7D32)
+                          : const Color(0xFFE65100),
+                    ),
+                  ),
+                ],
+              ),
+              _LabeledText('Current texture', data['currentTexture'] as String),
+              _LabeledText('Target texture', data['targetTexture'] as String),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _green.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  data['cue'] as String,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
   ], catalogId: CookingUiController.catalogId);
 }
 

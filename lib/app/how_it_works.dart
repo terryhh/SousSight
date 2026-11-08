@@ -183,7 +183,7 @@ class HowItWorksSheet extends StatelessWidget {
           icon: Icons.lock_outline,
         ),
         bullet('No account needed.', icon: Icons.lock_outline),
-        heading('Safety'),
+        bullet('Safety'),
         bullet('You confirm everything; the coach suggests, you decide.'),
         bullet(
           "Vision can't certify internal temperature, freshness, or allergens. "
@@ -191,7 +191,94 @@ class HowItWorksSheet extends StatelessWidget {
           icon: Icons.warning_amber_rounded,
         ),
         bullet('Nothing is sent without your review.'),
+        heading('DevFest 2026 Judge X-Ray'),
+        _DevFestXRayCard(isDemo: isDemo),
       ],
     );
   }
+}
+
+class _DevFestXRayCard extends StatelessWidget {
+  const _DevFestXRayCard({required this.isDemo});
+
+  final bool isDemo;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      key: const ValueKey('devfest-x-ray-card'),
+      elevation: 0,
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.2)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.terminal, size: 20, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'LIVE ARCHITECTURE & GUARANTEES',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _diagRow(
+              'Gemini Live Protocol',
+              isDemo ? 'Rehearsal Fake' : 'WebSocket w/ Ephemeral Auth',
+            ),
+            _diagRow('Audio Capture & Playback', '16 kHz Mono In · 24 kHz PCM Out'),
+            _diagRow('Video Frame Ingestion', '1 fps JPEG (≤768px, client-rendered)'),
+            _diagRow(
+              'GenUI / A2UI Safety',
+              'Strict JSON Schema (9 validated catalog items)',
+            ),
+            _diagRow(
+              'Grounding Engines',
+              'Google Search & Google Maps (Knights Pantry / UCF)',
+            ),
+            _diagRow('Client Secret Isolation', 'Zero long-lived keys in web bundle'),
+            _diagRow(
+              'Budget Guardrail',
+              '8 min session cap · 3 min idle watchdog · 15s watch',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _diagRow(String label, String value) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '• $label',
+          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+        ),
+        const SizedBox(height: 2),
+        Padding(
+          padding: const EdgeInsets.only(left: 10),
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+          ),
+        ),
+      ],
+    ),
+  );
 }
