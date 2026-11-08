@@ -89,3 +89,7 @@ Jenna’s SS-005 independent panel/demo is Done, with eight widget tests, analys
 2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition.
 
 2026-11-07: A simulated 360px mobile viewport exercised the stable control dock, scrolling and Stop. No human media was used. PR #64 has 131 passing local tests; hosted controls and physical mobile keyboard/focus acceptance remain pending.
+
+## Hosted research handoff and current board
+
+2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003. Current read-back: 29 cards, 12 Done, 14 In progress, 3 Backlog; all assigned. Jenna’s photos PR #67 and physical acceptance PR #68 remain open. Secret guard PR #66 has green CI and awaits merge. Manual run 42427944291 passed validation but failed deployment; its Hosting check was skipped.

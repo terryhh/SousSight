@@ -150,3 +150,7 @@ On November 7, Terry reported that his billing page currently displays **$0**. T
 2026-11-07: A simulated 360px mobile viewport exercised the stable control dock, scrolling and Stop. No human media was used. PR #64 has 131 passing local tests; hosted controls and physical mobile keyboard/focus acceptance remain pending. These checks do not establish that all infrastructure costs are zero; hosting/requests and prior billable usage remain subject to delayed reporting.
 
 Google states cost details typically become available within a day, but sometimes take longer than 24 hours; this general reporting delay does not establish this project’s current charges or credit coverage. [Cloud Billing reports](https://docs.cloud.google.com/billing/docs/how-to/reports).
+
+## Hosted research panel check
+
+2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003. Research usage units and dollar amount were not captured for this panel check; do not infer zero cost from camera/microphone being off. Manual deployment run 42427944291 failed after validation; build/Actions usage may still accrue, amount unknown.
