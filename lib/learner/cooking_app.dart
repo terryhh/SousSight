@@ -15,6 +15,8 @@ import '../genui/cooking_ui.dart';
 import '../live/browser_live_media.dart';
 import '../live/ephemeral_live_transport.dart';
 import '../live/live_controller.dart';
+import '../core/models.dart';
+import '../pantry/pantry_flow.dart';
 import 'cooking_coordinator.dart';
 import 'demo_live.dart';
 
@@ -50,15 +52,32 @@ final cookingTheme = ThemeData(
 );
 
 class CookingApp extends StatelessWidget {
-  const CookingApp({super.key, required this.services, this.isDemo = false});
+  const CookingApp({
+    super.key,
+    required this.services,
+    this.isDemo = false,
+    this.pantryFirst = false,
+    this.initialRecipeId,
+  });
   final AppServices services;
   final bool isDemo;
+
+  /// Opens "What did you get from the pantry?" before cooking. A valid
+  /// [initialRecipeId] deep link skips straight to that recipe.
+  final bool pantryFirst;
+  final String? initialRecipeId;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'SousSight',
     debugShowCheckedModeBanner: false,
     theme: cookingTheme,
-    home: CookingScreen(services: services, isDemo: isDemo),
+    home: pantryFirst
+        ? PantryFlow(
+            services: services,
+            isDemo: isDemo,
+            initialRecipeId: initialRecipeId,
+          )
+        : CookingScreen(services: services, isDemo: isDemo),
   );
 }
 
@@ -77,9 +96,15 @@ class CookingScreen extends StatefulWidget {
     required this.isDemo,
     this.createCoordinator,
     this.sendDinner = sendDinnerMessage,
+    this.recipe,
+    this.onBackToPantry,
   });
   final AppServices services;
   final bool isDemo;
+
+  /// The recipe chosen at runtime; defaults to the bundled build-time recipe.
+  final Recipe? recipe;
+  final VoidCallback? onBackToPantry;
   final CookingCoordinator Function()? createCoordinator;
   final DinnerMessageSender sendDinner;
   @override
@@ -104,6 +129,7 @@ class _CookingScreenState extends State<CookingScreen>
         CookingCoordinator(
           services: widget.services,
           isDemo: widget.isDemo,
+          recipe: widget.recipe,
           research: widget.isDemo
               ? FakeCookingResearchClient()
               : GeminiCookingResearchClient(),
@@ -266,6 +292,16 @@ class _CookingScreenState extends State<CookingScreen>
     spacing: 24,
     runSpacing: 12,
     children: [
+      if (widget.onBackToPantry case final back?)
+        TextButton.icon(
+          key: const ValueKey('back-to-pantry'),
+          onPressed: () {
+            unawaited(cook.live.stop());
+            back();
+          },
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('Back to pantry'),
+        ),
       Row(
         mainAxisSize: MainAxisSize.min,
         children: [
