@@ -113,9 +113,15 @@ class EphemeralGeminiLiveTransport implements LiveTransport {
         }
       },
       onError: (Object _) {
-        if (!_closed && epoch == _connectionEpoch) {
-          _connectionError('Live WebSocket failed.');
+        if (_closed || epoch != _connectionEpoch) return;
+        // A dropped network mid-session is often recoverable: resume with the
+        // latest handle (same path as goAway/onDone) before surfacing an error.
+        // _resume bumps the epoch, so a trailing onDone cannot resume twice.
+        if (setup.isCompleted && _resumeHandle != null) {
+          if (!_resuming) unawaited(_resume());
+          return;
         }
+        _connectionError('Live WebSocket failed.');
       },
       onDone: () {
         if (_closed || epoch != _connectionEpoch) return;
@@ -142,6 +148,9 @@ class EphemeralGeminiLiveTransport implements LiveTransport {
             'model': 'models/${_token!.model}',
             'generationConfig': {
               'responseModalities': ['AUDIO'],
+              // Also locked by the server-minted token (fieldMask); periodic
+              // low-resolution frames keep the session cheap and responsive.
+              'mediaResolution': 'MEDIA_RESOLUTION_LOW',
             },
             'systemInstruction': {
               'parts': [

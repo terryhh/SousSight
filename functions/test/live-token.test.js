@@ -8,7 +8,7 @@ import {
   TOKEN_ENDPOINT,
   TokenRequestError,
 } from '../src/live-token.js';
-import { createQuotaReservation, nextQuota } from '../src/token-quota.js';
+import { MIN_INTERVAL_MS, createQuotaReservation, nextQuota } from '../src/token-quota.js';
 
 const nowMs = Date.parse('2026-11-07T21:00:00Z');
 const origin = 'https://devfest-flutter-a59e8.web.app';
@@ -143,9 +143,12 @@ test('REST AuthToken wire payload locks only model and audio while preserving cl
         newSessionExpireTime: '2026-11-07T21:01:00.000Z',
         bidiGenerateContentSetup: {
           model: `models/${LIVE_MODEL}`,
-          generationConfig: { responseModalities: ['AUDIO'] },
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            mediaResolution: 'MEDIA_RESOLUTION_LOW',
+          },
         },
-        fieldMask: 'model,generationConfig.responseModalities',
+        fieldMask: 'model,generationConfig.responseModalities,generationConfig.mediaResolution',
       });
       return new Response(JSON.stringify({ name: 'auth_tokens/short-lived' }), { status: 200 });
     },
@@ -168,10 +171,15 @@ test('provider rejection, missing configuration and non-ephemeral response fail 
   }
 });
 
-test('quota requires 10 seconds between starts and permits only eight in ten minutes', () => {
+test('quota requires 3 seconds between starts and permits only eight in ten minutes', () => {
+  assert.equal(MIN_INTERVAL_MS, 3_000);
   let quota = nextQuota(null, nowMs);
-  assert.throws(() => nextQuota(quota, nowMs + 9999), { code: 'rate-limited', status: 429 });
-  for (let i = 1; i < 8; i++) quota = nextQuota(quota, nowMs + i * 10_000);
+  assert.throws(() => nextQuota(quota, nowMs + 2999), (error) =>
+    error.code === 'rate-limited' && error.status === 429 && error.retryAfterSeconds === 1);
+  // A quick stage Stop/Start succeeds after 3 seconds.
+  quota = nextQuota(quota, nowMs + 3_000);
+  assert.equal(quota.count, 2);
+  for (let i = 2; i < 8; i++) quota = nextQuota(quota, nowMs + i * 10_000);
   assert.equal(quota.count, 8);
   assert.throws(() => nextQuota(quota, nowMs + 80_000), { code: 'rate-limited', status: 429 });
   quota = nextQuota(quota, nowMs + 600_000);
