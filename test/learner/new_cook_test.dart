@@ -75,10 +75,6 @@ class _Fixture {
       auth: auth,
       recipes: FakeRecipeRepository(recipe),
       sessions: sessions,
-      requests: FakeRequestRepository(),
-      instructors: FakeInstructorRepository(),
-      assessment: FakeAssessmentClient(),
-      triage: FakeTriageClient(),
       bundledRecipe: recipe,
     );
   }
