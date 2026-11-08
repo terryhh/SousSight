@@ -138,3 +138,23 @@ Reviewed merged token configuration uses one session, 30-minute token expiry, on
 ## Hosted dynamic-workspace media check
 
 2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue "Quick-pickle the onion", a real "Pickle onions" timer counting 4:57 → 4:44 → 4:34, then updated the workspace to comparison "Mash texture check" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured. This brief authorized session is additional to earlier synthetic probes. Reconcile provider usage and billed amount later; no notification was sent.
+
+## User-reported billing display and non-inference checks
+
+On November 7, Terry reported that his billing page currently displays **$0**. The agent did not inspect billing: Terry canceled that check and elected to review it himself. Display scope, date filters, gross versus net charges, applied credits and reporting lag have not been independently verified. This is a user-reported current display, not a final bill, proof of no incurred usage, or verified credit availability.
+
+2026-11-07: In hosted Chrome after the earlier reload, the persisted timer advanced 0:36 → 0:22 → 0:00 and showed TIME TO CHECK. Dismiss removed it; after another reload and scrolling the same workspace, it did not reappear. Camera/microphone stayed OFF and no AI calls were made. This verifies that timer persistence/expiry/dismiss path; real opt-in watch acceptance remains open.
+
+2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition.
+
+2026-11-07: A simulated 360px mobile viewport exercised the stable control dock, scrolling and Stop. No human media was used. PR #64 has 131 passing local tests; hosted controls and physical mobile keyboard/focus acceptance remain pending. These checks do not establish that all infrastructure costs are zero; hosting/requests and prior billable usage remain subject to delayed reporting.
+
+Google states cost details typically become available within a day, but sometimes take longer than 24 hours; this general reporting delay does not establish this project’s current charges or credit coverage. [Cloud Billing reports](https://docs.cloud.google.com/billing/docs/how-to/reports).
+
+## Hosted research panel check
+
+2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003. This panel check reused a prior research result rather than making a new research call. Usage units and dollar amount for that earlier request were not captured; do not infer zero cost from camera/microphone being off. Manual deployment run 42427944291 failed after validation; build/Actions usage may still accrue, amount unknown.
+
+## Hosted explicit fact confirmation
+
+2026-11-07: Hosted research answer visibly recommended a manual fork/masher to preserve chickpea chunkiness and displayed nine sources plus Google suggestion chips. The cook entered "Acceptance test: use a fork to keep the chickpea mixture chunky." in the Fact field and clicked Confirm; the accessibility tree showed Cook-confirmed kitchen facts and Confirmed with the exact entered prefix. Camera/microphone stayed OFF. Reload returned the app with camera OFF, but the panel was not mounted and fact persistence after reload was not verified. This reused the prior research result; no new research call occurred in this sprint. Secret guard PR #66 is merged and the main secret scan passed.

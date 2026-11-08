@@ -78,7 +78,9 @@
         "2026-11-07: PR #54 replays the actual model-generated GenUI fixture with 110 passing Flutter tests; an additional 19 coordinator tests pass. This verifies local widget/render behavior against the real fixture, not hosted generated-panel behavior. SS-003 remains InProgress. PR #53 transcript/workspace fix passed CI and merged; hosted verification remains pending.",
         "2026-11-07: PRs #53 and #54 merged. PR #56 stale-workspace guard remains under this existing card; no hosted generated-panel acceptance claimed.",
         "2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue \"Quick-pickle the onion\", a real \"Pickle onions\" timer counting 4:57 \u2192 4:44 \u2192 4:34, then updated the workspace to comparison \"Mash texture check\" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured.",
-        "Explicit cook question/answer and deployed stale-step guard verification remain required; keep InProgress despite the now-verified real panel rendering criterion."
+        "Explicit cook question/answer and deployed stale-step guard verification remain required; keep InProgress despite the now-verified real panel rendering criterion.",
+        "2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003.",
+        "2026-11-07: Hosted research answer visibly recommended a manual fork/masher to preserve chickpea chunkiness and displayed nine sources plus Google suggestion chips. The cook entered \"Acceptance test: use a fork to keep the chickpea mixture chunky.\" in the Fact field and clicked Confirm; the accessibility tree showed Cook-confirmed kitchen facts and Confirmed with the exact entered prefix. Camera/microphone stayed OFF. Reload returned the app with camera OFF, but the panel was not mounted and fact persistence after reload was not verified. This reused the prior research result; no new research call occurred in this sprint."
       ],
       "assignee": "terryhh"
     },
@@ -146,7 +148,8 @@
       ],
       "evidence": [
         "Deadline-based timer and generated timer component at feb9542; lifecycle and real watcher behavior remain unverified.",
-        "2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue \"Quick-pickle the onion\", a real \"Pickle onions\" timer counting 4:57 \u2192 4:44 \u2192 4:34, then updated the workspace to comparison \"Mash texture check\" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured."
+        "2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue \"Quick-pickle the onion\", a real \"Pickle onions\" timer counting 4:57 \u2192 4:44 \u2192 4:34, then updated the workspace to comparison \"Mash texture check\" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured.",
+        "2026-11-07: In hosted Chrome after the earlier reload, the persisted timer advanced 0:36 \u2192 0:22 \u2192 0:00 and showed TIME TO CHECK. Dismiss removed it; after another reload and scrolling the same workspace, it did not reappear. Camera/microphone stayed OFF and no AI calls were made. This verifies that timer persistence/expiry/dismiss path; real opt-in watch acceptance remains open."
       ],
       "assignee": "terryhh"
     },
@@ -341,7 +344,8 @@
       "evidence": [
         "2026-11-07: User explicitly approved linking My Billing Account and a $20 monthly budget before credits, accepting delayed cap enforcement. Billing linked successfully.",
         "2026-11-07: API read-back confirms total gross project alert budget $20/month; Gemini $15, Cloud Run $2 and Cloud Run functions $1 monthly service caps CONFIGURED. This is not a hard total spending ceiling; some infrastructure remains uncapped.",
-        "$300 welcome-credit and $10 Developer Program benefit balances, scope, redemption and expiry remain unverified."
+        "$300 welcome-credit and $10 Developer Program benefit balances, scope, redemption and expiry remain unverified.",
+        "2026-11-07: User reports the billing page currently displays $0. Display scope, date filters, gross/net/credits and reporting lag were not independently verified. This is not a final bill or verification of credit balances. User elected to check billing personally; no billing inspection performed by the agent."
       ],
       "assignee": "terryhh"
     },
@@ -395,7 +399,9 @@
         "PR #48 omits routine Auth provisioning after one-time setup; deployment success is separate from Live token protocol correctness tracked in SS-008.",
         "2026-11-07: The initial rollout attempt failed only at artifact cleanup after function creation. Terry explicitly approved one-day artifact retention; firebase functions:artifacts:setpolicy succeeded and read-back confirmed DELETE, tagState ANY, olderThan 86400s on gcf-artifacts. This permits automatic deletion of matching images and limits artifact-based rollback; it does not delete source history or prove immediate cleanup.",
         "2026-11-07: Subsequent deployment run 42424326318 succeeded.",
-        "2026-11-07: Dynamic-workspace rollout 42425656543 succeeded; cache rollout 42425937906 remains pending verification."
+        "2026-11-07: Dynamic-workspace rollout 42425656543 succeeded; cache rollout 42425937906 remains pending verification.",
+        "2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition.",
+        "2026-11-07: Manual run 42427944291 passed validation but failed at Deploy reviewed production resources; Hosting response check was skipped. This is not a successful new release and does not erase earlier verified deployments."
       ],
       "assignee": "terryhh"
     },
@@ -463,7 +469,8 @@
         "2026-11-07: Mobile PR #35 (1315dbd) has 88 passing local Flutter tests including seven responsive-layout cases; analysis and web build pass. GitHub CI passed and PR #35 merged.",
         "Issue #34 is assigned terryhh and In progress. Physical Android Chrome permissions/audio/keyboard checks remain outstanding; APK delivery is deferred.",
         "2026-11-07: Fresh Incognito Chrome after successful run 42424326318 displayed the correct full-width CAMERA OFF placeholder. A normal tab still showed older layout, consistent with a stale-cache hypothesis rather than proof of its cause; a cache-header fix is being prepared.",
-        "2026-11-07: PR #55 cache revalidation merged; latest cache rollout pending. Fresh Incognito layout verified; physical Android acceptance remains open."
+        "2026-11-07: PR #55 cache revalidation merged; latest cache rollout pending. Fresh Incognito layout verified; physical Android acceptance remains open.",
+        "2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition."
       ]
     },
     {
@@ -494,7 +501,7 @@
       "priority": "P0",
       "owner": "Jenna (jennajh)",
       "assignee": "jennajh",
-      "status": "Todo",
+      "status": "InProgress",
       "verified": false,
       "description": "Set up the Vonage account and delivery configuration for reviewed dinner-ready messages. Terry explicitly assigned this provider setup to Jenna. SS-007 remains Terry/Codex integration work. Share only secret locations, never credentials or private recipient details.",
       "acceptance": [
@@ -507,7 +514,8 @@
       "dependsOn": [],
       "evidence": [
         "2026-11-07: Issue #39 created and assigned jennajh with project status Backlog; assigned does not mean started.",
-        "DINNER_SERVICE_READY and ENABLE_DINNER_MESSAGES remain false until their respective prerequisites and authorization are satisfied. No automatic or unreviewed send is authorized."
+        "DINNER_SERVICE_READY and ENABLE_DINNER_MESSAGES remain false until their respective prerequisites and authorization are satisfied. No automatic or unreviewed send is authorized.",
+        "2026-11-07: Project read-back shows Jenna\u2019s Vonage setup In progress. PR #62 SMS trial sender support merged; no send or completed provider setup inferred."
       ]
     },
     {
@@ -529,7 +537,8 @@
       "evidence": [
         "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/40 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim.",
-        "2026-11-07: Read-back of Terry project shows In progress and jennajh assigned. Preserving the observed human-owned stage; no completion inferred."
+        "2026-11-07: Read-back of Terry project shows In progress and jennajh assigned. Preserving the observed human-owned stage; no completion inferred.",
+        "2026-11-07: Jenna photo-fixture PR #67 is open; ownership and InProgress retained pending review/acceptance."
       ]
     },
     {
@@ -559,7 +568,8 @@
       "evidence": [
         "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/41 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim.",
-        "2026-11-07: Read-back of Terry project shows In progress and jennajh assigned. Preserving the observed human-owned stage; no completion inferred."
+        "2026-11-07: Read-back of Terry project shows In progress and jennajh assigned. Preserving the observed human-owned stage; no completion inferred.",
+        "2026-11-07: Jenna physical acceptance PR #68 is open; ownership and InProgress retained pending review/acceptance."
       ]
     },
     {
@@ -612,8 +622,8 @@
       "title": "Integrate Jenna research panel with the live learner workspace",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Integrate Jenna\u2019s completed panel after PR #57 main handoff without editing her owned research implementation. Own shared learner adapter/coordinator wiring only; coordinate contract changes with Jenna.",
       "acceptance": [
         "PR #57 passes CI and brings Jenna\u2019s original implementation into main with authorship preserved.",
@@ -628,7 +638,9 @@
       "evidence": [
         "2026-11-07: Terry/backend agent started the shared learner adapter in an isolated branch. Jenna\u2019s original implementation and ownership are preserved; depends on SS-005 and SS-004.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/58 added to Terry project with actual terryhh assignee; stage read back.",
-        "2026-11-07: PR #61 shared research integration has 129 passing Flutter tests; GitHub CI pending. No hosted integrated-panel acceptance claimed."
+        "2026-11-07: PR #61 shared research integration has 129 passing Flutter tests; GitHub CI pending. No hosted integrated-panel acceptance claimed.",
+        "2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003.",
+        "2026-11-07: Hosted research answer visibly recommended a manual fork/masher to preserve chickpea chunkiness and displayed nine sources plus Google suggestion chips. The cook entered \"Acceptance test: use a fork to keep the chickpea mixture chunky.\" in the Fact field and clicked Confirm; the accessibility tree showed Cook-confirmed kitchen facts and Confirmed with the exact entered prefix. Camera/microphone stayed OFF. Reload returned the app with camera OFF, but the panel was not mounted and fact persistence after reload was not verified. This reused the prior research result; no new research call occurred in this sprint."
       ]
     },
     {
@@ -673,7 +685,32 @@
       "dependsOn": [],
       "evidence": [
         "2026-11-07: Root observed input displacement during a real hosted generated-workspace session. Terry/mobile agent started isolated implementation stacked after PR #61; no fix verification yet.",
-        "2026-11-07: https://github.com/terryhh/SousSight/issues/63 created with terryhh assignee and Project In progress."
+        "2026-11-07: https://github.com/terryhh/SousSight/issues/63 created with terryhh assignee and Project In progress.",
+        "2026-11-07: A simulated 360px mobile viewport exercised the stable control dock, scrolling and Stop. No human media was used. PR #64 has 131 passing local tests; hosted controls and physical mobile keyboard/focus acceptance remain pending."
+      ]
+    },
+    {
+      "id": "SS-029",
+      "priority": "P0",
+      "title": "Guard repository history and browser builds against secrets",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "Done",
+      "verified": true,
+      "description": "User explicitly requires no secrets in GitHub, including a future public repository. Backend agent is implementing ignore rules and a redacted full-history CI scan using a trusted pinned scanner. Public Firebase browser configuration is not a server secret; allow only exact reviewed public values.",
+      "acceptance": [
+        "Keep server credentials, service-account private keys and other secrets out of tracked source, commit history, browser bundles and logs. Runtime secrets remain in the approved secret store.",
+        "Ignore local environment/configuration secrets, service-account files, private keys and generated GitHub Actions credential files without hiding required safe templates.",
+        "Run a trusted pinned scanner across available Git history in CI; allowlist only exact reviewed public Firebase configuration values, never broad credential patterns.",
+        "A synthetic canary test proves detection fails safely while scanner/tool output remains redacted; do not commit real credentials to test the guard.",
+        "Record audit coverage and limits, including skipped binary content and pattern-based detection limitations. A clean scan does not guarantee the absence of every possible secret."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-07: User explicitly requested permanent repository secret protection before any future public release; backend agent started isolated implementation.",
+        "2026-11-07: Current audit inspected 170 commits and 332 text blobs; 25 binary blobs were skipped. No pattern-matching server secrets were found; observed Firebase browser keys were public configuration. This limited pattern-based result is not a universal no-secret guarantee.",
+        "2026-11-07: PR #66 has green gitleaks and validation CI; checksum-verified Gitleaks 8.30.1 history/worktree scans and synthetic redaction/canary checks passed. Merge/completion not yet inferred.",
+        "2026-11-07: Secret guard PR #66 merged and main secret scan passed. Full-history/worktree scans and redacted synthetic-canary checks passed; documented binary/pattern coverage limitations remain. No claim of universal secret absence."
       ]
     }
   ]
