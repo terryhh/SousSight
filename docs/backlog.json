@@ -3,7 +3,7 @@
   "repository": "terryhh/SousSight",
   "projectOwner": "terryhh",
   "projectTitle": "SousSight",
-  "updatedAt": "2026-11-07",
+  "updatedAt": "2026-11-08",
   "product": "Live cooking companion: camera vision, two-way voice, dynamic Flutter GenUI/A2UI panels, cook clarification, grounded research, timers, visible-change watches, and reviewed dinner-ready messages. No external instructor workflow.",
   "tasks": [
     {
@@ -747,6 +747,50 @@
       "evidence": [
         "2026-11-07: Root authorized a focused DEF001 fix; backend agent started implementation. No real notification sent or fix acceptance claimed.",
         "2026-11-07: PR #73 passed CI and independent review with 16 focused tests, then merged as 4326019. Issue #72 closed/Project Done with terryhh preserved. This completes the finite correction implementation; hosted post-deployment correction verification remains SS-007/#17. No real send claimed."
+      ]
+    },
+    {
+      "id": "SS-031",
+      "priority": "P0",
+      "title": "Make a peanut butter sandwich the conference demo recipe",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "User requested a no-cooking peanut butter sandwich as the main conference demo. Recipe agent owns recipe integration and assets; preserve live camera/voice, generated panels, cook clarification and grounded research. Do not edit Jenna-owned implementation or imply old chickpea evidence verifies the new recipe.",
+      "acceptance": [
+        "The primary learner/demo recipe is a coherent peanut butter sandwich with correct ingredients, steps, labels and selected recipe identity. No heating or cooking equipment is required.",
+        "Prompt for missing bread/texture/optional jam preferences as targeted cook questions; only explicit answers become confirmed facts. Do not assume optional ingredients or preferences.",
+        "Generated panels and research receive the selected recipe/step/ingredients; no chickpea-specific labels or fixture assumptions leak into the main sandwich flow.",
+        "No mandatory timer is invented for spreading/assembly. Visible-change watching is opt-in and used only for a meaningful visible cue; it does not infer internal temperature or safety.",
+        "Focused recipe/integration checks pass; publish a reviewed PR and record deployed sandwich acceptance separately from historical chickpea evidence."
+      ],
+      "dependsOn": [],
+      "evidence": [
+        "2026-11-08: Terry requested the conference sandwich demo and parallel implementation; recipe agent is working in an isolated branch. No new-recipe deployment or live acceptance claimed."
+      ]
+    },
+    {
+      "id": "SS-032",
+      "priority": "P0",
+      "title": "Verify the sandwich conference flow and recipe context regressions",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "InProgress",
+      "verified": false,
+      "description": "Flutter regression agent verifies the new main recipe while recipe implementation proceeds. Own focused shared-learner/coordinator tests, not Jenna research or physical-acceptance files. Record a short conference rehearsal with the actual deployed recipe after merge.",
+      "acceptance": [
+        "Meaningful tests catch wrong selected recipe/context, stale step or preference responses, and old chickpea labels in the default sandwich flow.",
+        "Check targeted cook clarification for bread/texture/optional jam, explicit confirmation and preserved confirmed facts without duplicate research or automatic ingredient changes.",
+        "Verify input/Stop remain reachable during generated-panel updates and no mandatory timer appears for untimed sandwich steps. Keep visible watching opt-in.",
+        "After deployment, record exact build/URL and actual sandwich outcomes for voice/camera, generated question/choice and research; label unavailable scenarios and simulations honestly. No notification send without fresh explicit authorization.",
+        "Record results on the card/runbook; preserve Jenna\u2019s separate full physical cook acceptance and do not mark the whole MVP Done from this short conference rehearsal."
+      ],
+      "dependsOn": [
+        "SS-031"
+      ],
+      "evidence": [
+        "2026-11-08: Parallel focused regression work started for the conference recipe. Local tests, deployed rehearsal and any remaining gaps must be reported separately."
       ]
     }
   ]
