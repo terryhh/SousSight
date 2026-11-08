@@ -111,4 +111,19 @@ void main() {
     final sandwich = await sessions.createOrResume(uid, recipes.first);
     expect(sandwich.ingredients, isEmpty);
   });
+
+  test('a second pantry scan starts a fresh session for the same recipe', () async {
+    final recipes = await loadRecipeCatalog();
+    final salsa = recipes.last;
+    final services = await fakeServices();
+    final uid = await services.auth.signInLearner();
+    await applyPantryHandoff(services, salsa,
+        const PantryHandoff(confirmedItems: ['canned corn']));
+    final first = await services.sessions.createOrResume(uid, salsa);
+    await applyPantryHandoff(services, salsa,
+        const PantryHandoff(confirmedItems: ['canned black beans']));
+    final second = await services.sessions.createOrResume(uid, salsa);
+    expect(second.id, isNot(first.id));
+    expect(second.ingredients, {'black_beans': IngredientStatus.have});
+  });
 }

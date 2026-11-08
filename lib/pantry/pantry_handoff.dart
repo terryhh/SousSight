@@ -67,7 +67,7 @@ String? matchIngredientId(String item, Recipe recipe) {
 }
 
 /// Writes pantry context into the cook's session before the cooking screen
-/// opens, using the same session the coordinator resumes (learner + recipe).
+/// opens, in a fresh session that the coordinator resumes as the newest one.
 /// Matched items become `have` ingredients (never overriding a prior choice);
 /// everything else is kept as a cook-confirmed fact, not a guess.
 Future<void> applyPantryHandoff(
@@ -77,7 +77,9 @@ Future<void> applyPantryHandoff(
 ) async {
   if (handoff.isEmpty) return;
   final uid = await services.auth.signInLearner();
-  final session = await services.sessions.createOrResume(uid, recipe);
+  // A pantry scan is a new meal: start a fresh session (earlier sessions are
+  // preserved) that the coordinator then resumes as the newest one.
+  final session = await services.sessions.createNew(uid, recipe);
   final matched = {
     for (final item in handoff.confirmedItems) ?matchIngredientId(item, recipe),
   };
