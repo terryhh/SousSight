@@ -10,6 +10,12 @@ Have bread, peanut butter, a plate and a spreading utensil ready; jam is optiona
 
 Open [SousSight](https://devfest-flutter-a59e8.web.app) on the conference device over HTTPS. Confirm the selected recipe and visible labels actually say peanut butter sandwich. Record the deployed build/commit, browser/device and whether this is real mode or a clearly labeled simulated rehearsal. Check the camera view can show the bread and spreading surface without capturing bystanders. Keep input and Stop visible. If the deployed recipe is still chickpeas, record that mismatch and wait for the sandwich rollout rather than presenting it as complete.
 
+## Repeatability limitation
+
+There is currently no New cook/reset control: a completed recipe resumes its existing session. Do not promise an automatic reset. SS-033 tracks an explicit future New cook action that preserves old sessions and stable latest-session resume, after sandwich deployment.
+
+For a separate rehearsal identity, the user can choose a new browser profile or a fresh private session. A new private tab alone can share the existing private identity; a fresh private session requires the user to close all private windows first and then open a new one. Do not automatically close the user's windows or delete cooking data. Record which identity/session approach was used; a new identity does not prove existing-session reset behavior.
+
 ## Short live sequence
 
 1. Start camera/voice only when ready. Say, “Help me make a peanut butter sandwich.” Confirm that the coach responds to the actual sandwich context. Ask one targeted question about the missing bread, texture or jam preference rather than reciting a long questionnaire.

@@ -794,6 +794,28 @@
         "2026-11-08: Parallel focused regression work started for the conference recipe. Local tests, deployed rehearsal and any remaining gaps must be reported separately.",
         "2026-11-08: https://github.com/terryhh/SousSight/issues/80 created with terryhh assignee and Project In progress. Conference cutoff is 3:00 PM Eastern today; record actual deployed evidence and remaining gaps by that time."
       ]
+    },
+    {
+      "id": "SS-033",
+      "priority": "P1",
+      "title": "Start a new cook while preserving prior cooking sessions",
+      "owner": "Terry + Codex",
+      "assignee": "terryhh",
+      "status": "Todo",
+      "verified": false,
+      "description": "Add an explicit repeatable New cook action after the conference sandwich deployment. Current completed recipes resume their existing session; no reset UI exists. Preserve prior records and deterministic latest-session resume. This is planned follow-up, not scope added to the sandwich PR.",
+      "acceptance": [
+        "An explicit New cook action creates a new owned cooking session for the chosen recipe without deleting or overwriting previous sessions or confirmed facts.",
+        "Normal reload/reopen resumes the deterministic latest active session; creation and resume have stable ordering even with identical timestamps or repeated clicks.",
+        "Completed prior sessions remain preserved and cannot leak timers, watches, messages or stale model results into the new session.",
+        "Meaningful creation/resume/duplicate-action tests pass and hosted repeatability is verified without automatic notification sends."
+      ],
+      "dependsOn": [
+        "SS-031"
+      ],
+      "evidence": [
+        "2026-11-08: Backend confirmed the app currently resumes a completed recipe and has no New cook/reset control. Terry requested this P1 follow-up; Backlog, not started."
+      ]
     }
   ]
 }
