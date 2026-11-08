@@ -18,10 +18,27 @@ class AllergenChip extends StatelessWidget {
     if (allergens.isEmpty) return const SizedBox.shrink();
     final text =
         'Contains: ${allergens.map((a) => a.optionalOnly ? '${a.name} (optional)' : a.name).join(', ')}';
+    void showAdvice() => showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.warning_amber_rounded),
+        title: Text(text),
+        content: const Text(allergenLabelNote),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+    // excludeSemantics hides the InkWell's own action, so forward the tap to
+    // the merged node; screen-reader activation must open the advice too.
     return Semantics(
       button: true,
       label: 'Allergens. $text. Tap for label advice.',
       excludeSemantics: true,
+      onTap: showAdvice,
       child: Material(
         key: const ValueKey('allergen-chip'),
         color: const Color(0xFFFFF0D6),
@@ -31,20 +48,7 @@ class AllergenChip extends StatelessWidget {
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
-          onTap: () => showDialog<void>(
-            context: context,
-            builder: (context) => AlertDialog(
-              icon: const Icon(Icons.warning_amber_rounded),
-              title: Text(text),
-              content: const Text(allergenLabelNote),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Got it'),
-                ),
-              ],
-            ),
-          ),
+          onTap: showAdvice,
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 44),
             child: Padding(

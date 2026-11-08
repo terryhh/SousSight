@@ -1,3 +1,4 @@
+import 'package:flutter/semantics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -178,6 +179,28 @@ void main() {
     expect(find.text(allergenLabelNote), findsOneWidget);
   });
 
+  testWidgets('screen-reader activation of the allergen chip opens advice', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    final sandwich = (await tester.runAsync(
+      () => loadBundledRecipe('peanut_butter_sandwich_v1'),
+    ))!;
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: AllergenChip(recipe: sandwich))),
+    );
+    final node = tester.getSemantics(
+      find.bySemanticsLabel(RegExp('Allergens. Contains: wheat, peanut')),
+    );
+    expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+    tester.semantics.tap(
+      find.semantics.byLabel(RegExp('Allergens. Contains: wheat, peanut')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(allergenLabelNote), findsOneWidget);
+    handle.dispose();
+  });
+
   Future<void> phone(WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
@@ -215,6 +238,7 @@ void main() {
       await expectListed(find.descendant(of: sheet, matching: find.text(tech)));
     }
     await expectListed(find.text('Your privacy'));
+    await expectListed(find.textContaining('Pantry photos, voice clips'));
     await expectListed(find.text('Safety'));
   }
 

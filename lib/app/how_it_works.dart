@@ -175,8 +175,11 @@ class HowItWorksSheet extends StatelessWidget {
           bullet(tech, icon: Icons.build_circle_outlined),
         heading('Your privacy'),
         bullet(
-          'Camera and audio stream to Gemini only during your cooking session '
-          'and are not stored by SousSight.',
+          'Pantry photos, voice clips and typed lists you choose to send go to '
+          'Google Gemini once to identify ingredients. During cooking, camera '
+          'and audio stream to Gemini only while the live coach is on. '
+          'SousSight does not store photos, audio or transcripts; only your '
+          'confirmed cooking progress is saved.',
           icon: Icons.lock_outline,
         ),
         bullet('No account needed.', icon: Icons.lock_outline),
