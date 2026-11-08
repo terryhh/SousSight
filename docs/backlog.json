@@ -169,7 +169,7 @@
         "Dry-run is default; real sending requires configured secrets and ENABLE_DINNER_MESSAGES=true.",
         "Persist an attempt before sending; duplicate/unknown attempts never blind-resend.",
         "UI distinguishes provider acceptance from delivery and shows skipped, failed and unknown states.",
-        "WhatsApp Sandbox enrollment/window or SMS sender registration is configured before the real send."
+        "The selected channel's account, recipient and sender requirements are verified before a real send; the limited SMS trial path is distinguished from ordinary US sender registration."
       ],
       "dependsOn": [
         "SS-001",
@@ -177,8 +177,11 @@
         "SS-021"
       ],
       "evidence": [
-        "Backend at 527034a; 19 combined backend Node tests passed. No real message was sent or backend deployed.",
-        "2026-11-07: Four explicitly approved runtime Secret Accessor grants were applied and read-back verified on the Vonage secret resources for the existing Compute runtime identity, not the GitHub deployer. ENABLE_DINNER_MESSAGES remains false. Prior access-403 fix awaits CD; no real send verified."
+        "2026-11-07: PR #62 merged with passing CI; the SMS transport accepts the exact backend-configured Vonage APIs trial sender. Local sender and disabled-send regressions use simulated transport and consume no Vonage credit.",
+        "2026-11-07: Four Vonage Secret Manager latest versions verified ENABLED by metadata only: VONAGE_API_KEY/3, VONAGE_API_SECRET/3, VONAGE_FROM/2 and VONAGE_ALLOWED_TO/1. Values and recipient details are not recorded.",
+        "2026-11-07: DINNER_CHANNEL=sms and DINNER_SERVICE_READY=true; ENABLE_DINNER_MESSAGES=false. Deployment run 42427944291 attempt 1 failed after rules/index and source uploads, before dinner creation or Hosting release, because CI could not bind runtime secret access. Runtime secretAccessor grants on the four Vonage secrets were completed and read back without expanding deployer IAM. Attempt 2 was canceled while pending to avoid a stale deployment; newer main run 42428461526 at 92ea3737 completed validation and deployment successfully. dinnerReady metadata is ACTIVE on Node 22 with sms and sending=false; hosted GET returned JSON 405, unauthenticated POST JSON 401, and OPTIONS 204 with matching origin. These checks reached no ledger or provider call.",
+        "Earlier provider trial SMS success was user-reported. Subsequently, Terry explicitly authorized one cook-reviewed production UI SMS: Dinner is ready! SousSight test. Confirm and send was clicked once through real browser Auth/App Check, with no debug registration. The UI reported provider acceptance with delivery unconfirmed; Terry has not received the message. Sending was temporarily enabled by configuration-only patch, then disabled; runtime read-back at 2026-11-08T00:25:07Z was ACTIVE with sending=false, and the GitHub variable is false. No retry was attempted or authorized. Subsequent authenticated provider logs confirm REJECTED 1120 Illegal Sender Address. App delivery failed; rejected-attempt price is Unknown.",
+        "2026-11-07: Authenticated dashboard logs show the earlier dashboard test DELIVERED using a numeric sender, price US$0.01; current displayed balance US$1.99. VONAGE_FROM latest secret version 3 now stores that verified numeric sender, with its value excluded from evidence. Runtime read-back at 2026-11-08T00:31:18Z confirms dinnerReady ACTIVE with VONAGE_FROM bound to version 3 and sending=false; GitHub variable remains false. PR #74 removes the known-rejected nonnumeric sender exception and corrects setup guidance. No retry performed; corrected app delivery remains unverified, so InProgress and verified=false are retained."
       ],
       "assignee": "terryhh"
     },
@@ -510,7 +513,7 @@
       "verified": false,
       "description": "Set up the Vonage account and delivery configuration for reviewed dinner-ready messages. Terry explicitly assigned this provider setup to Jenna. SS-007 remains Terry/Codex integration work. Share only secret locations, never credentials or private recipient details.",
       "acceptance": [
-        "Confirm the supported channel (currently WhatsApp), sending identity, test recipient, and any required Vonage account/channel approval.",
+        "Confirm SMS, the dashboard trial sending identity, registered test recipient, and applicable Vonage trial restrictions; ordinary US traffic has separate sender registration requirements.",
         "Configure real `VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM`, and `VONAGE_ALLOWED_TO` in Google Secret Manager for `devfest-flutter-a59e8`; share secret locations only, never values in GitHub or browser code.",
         "Document applicable Vonage charges/free credits and any sender/channel restrictions before a paid test.",
         "Coordinate with Terry on deployment readiness. Keep `DINNER_SERVICE_READY=false` until prerequisites are verified and `ENABLE_DINNER_MESSAGES=false` until sending is explicitly authorized.",
@@ -518,9 +521,11 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Issue #39 created and assigned jennajh with project status Backlog; assigned does not mean started.",
-        "DINNER_SERVICE_READY and ENABLE_DINNER_MESSAGES remain false until their respective prerequisites and authorization are satisfied. No automatic or unreviewed send is authorized.",
-        "2026-11-07: Project read-back shows Jenna\u2019s Vonage setup In progress. PR #62 SMS trial sender support merged; no send or completed provider setup inferred."
+        "2026-11-07: Terry and Jenna are working on SMS provider setup; Jenna remains assigned to SS-021 and Terry retains SS-007 integration ownership.",
+        "2026-11-07: Four Vonage Secret Manager latest versions verified ENABLED by metadata only: VONAGE_API_KEY/3, VONAGE_API_SECRET/3, VONAGE_FROM/2 and VONAGE_ALLOWED_TO/1. No secret values or private recipient details are recorded.",
+        "Terry reported a successful Vonage trial SMS and approximately $1.99 remaining after approximately $0.01 consumed. This earlier provider trial is user-reported evidence; the current balance remains unverified. A subsequent authorized app test is recorded below. Trial-only use: no account upgrade or top-up.",
+        "2026-11-07: PR #62 merged with passing CI. DINNER_CHANNEL=sms and DINNER_SERVICE_READY=true; ENABLE_DINNER_MESSAGES=false. Deployment run 42427944291 attempt 1 failed on runtime secret-access binding before dinner creation or Hosting release; runtime secretAccessor grants on the four secrets were completed and read back without deployer IAM expansion. Attempt 2 was canceled while pending in favor of newer main run 42428461526 at 92ea3737, which completed validation and deployment successfully. dinnerReady is ACTIVE on Node 22 with sms and sending=false; hosted GET/unauthenticated POST/OPTIONS returned expected 405/401/204 without a ledger or provider call. Later, Terry explicitly authorized one cook-reviewed production UI SMS: Dinner is ready! SousSight test. The browser used real Auth/App Check without debug registration and Confirm and send was clicked once. The UI reported provider acceptance, not delivery; Terry reports no receipt yet. Sending was temporarily enabled by configuration-only patch and then disabled, verified ACTIVE/sending=false at 2026-11-08T00:25:07Z and GitHub variable=false. No retry or further send is authorized; subsequent authenticated provider logs confirm REJECTED 1120 Illegal Sender Address. App delivery failed; rejected-attempt price is Unknown.",
+        "2026-11-07: Authenticated dashboard logs show the earlier dashboard test DELIVERED using a numeric sender, price US$0.01; current displayed balance US$1.99. VONAGE_FROM latest secret version 3 now stores that verified numeric sender, with its value excluded from evidence. Runtime read-back at 2026-11-08T00:31:18Z confirms dinnerReady ACTIVE with VONAGE_FROM bound to version 3 and sending=false; GitHub variable remains false. PR #74 removes the known-rejected nonnumeric sender exception and corrects setup guidance. No retry performed; corrected app delivery remains unverified, so InProgress and verified=false are retained."
       ]
     },
     {

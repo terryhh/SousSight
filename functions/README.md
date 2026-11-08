@@ -120,21 +120,27 @@ transport so they never send a message.
 
 ## SMS trial setup without an account upgrade
 
-The [dashboard SMS example](https://developer.vonage.com/en/dashboard/build/messaging/send-sms)
-uses the Messages API with Basic API key/secret authentication and the sender
-`Vonage APIs`. SousSight accepts that exact backend-configured sender for SMS
-only; WhatsApp and other sender values still require a numeric phone number.
-Recipients always require a phone number and the server allowlist. This exception
-does not establish approval to use arbitrary sender names or an unregistered US
-local number. Vonage describes its limited dashboard trial campaign in the
-[trial guide](https://api.support.vonage.com/hc/en-us/articles/14841470272540-Understanding-the-10DLC-Trial-Campaign-in-SMS-API).
+The earlier instruction to use `Vonage APIs` for `VONAGE_FROM` was incorrect
+for this account. The authorized app request was initially accepted, then the
+authenticated Vonage log showed **REJECTED, 1120 Illegal Sender Address**.
+The earlier delivered dashboard test used a numeric sender. Configure the exact
+numeric sender from the account's delivered-message log, after verifying it is
+appropriate for that account and destination; keep the number out of Git.
+SousSight requires numeric senders for both SMS and WhatsApp and rejects the
+previous special-case label before transport.
 
-Terry reported a successful Vonage trial SMS on November 7, 2026 and a trial balance
-change from approximately $2.00 to $1.99. The supplied dashboard code uses the
-sender above. This is user-reported provider evidence; the SousSight endpoint
-has not been verified live. Automated tests inject transport and consume no
-Vonage credit. No upgrade, top-up or additional send is authorized by this setup.
-Reserve live sends for explicitly authorized, cook-reviewed tests.
+The [dashboard SMS example](https://developer.vonage.com/en/dashboard/build/messaging/send-sms)
+and [trial guide](https://api.support.vonage.com/hc/en-us/articles/14841470272540-Understanding-the-10DLC-Trial-Campaign-in-SMS-API)
+do not guarantee that the same visible dashboard label works in an app request.
+A successful dashboard test is not app delivery verification. Provider acceptance
+is not delivery; inspect the corresponding provider log when delivery is absent.
+
+Authenticated dashboard inspection showed the earlier test as DELIVERED at
+US$0.01 and a current balance of US$1.99. The rejected app attempt's price is
+Unknown; do not infer it was free or cost US$0.01. Sending remains disabled and
+no retry, upgrade or top-up is authorized. The corrected numeric sender has not
+yet been tested through the app. Automated tests inject transport and consume no
+Vonage credit. Reserve any further live send for explicit cook-reviewed approval.
 
 Enter the four secrets interactively in your own terminal, not in chat, command
 arguments, GitHub, Dart defines or browser assets:
@@ -146,7 +152,8 @@ firebase functions:secrets:set VONAGE_FROM --project devfest-flutter-a59e8
 firebase functions:secrets:set VONAGE_ALLOWED_TO --project devfest-flutter-a59e8
 ```
 
-For this trial, enter `Vonage APIs` exactly for `VONAGE_FROM`. For
+For `VONAGE_FROM`, enter the exact numeric sender verified from the delivered
+message in this account, including country code. For
 `VONAGE_ALLOWED_TO`, enter only the registered/verified receiving phone number,
 including country code, without spaces. It is not the purchased sender number.
 Use the actual key and secret from the same dashboard account. Do not add
