@@ -110,7 +110,7 @@ void main() {
 
   FilledButton draftButton(WidgetTester tester) => tester.widget<FilledButton>(
     find.ancestor(
-      of: find.text('Draft a recipe with these'),
+      of: find.text('Make a meal from these ingredients'),
       matching: find.byWidgetPredicate((w) => w is FilledButton),
     ),
   );
@@ -128,16 +128,16 @@ void main() {
     );
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
     expect(
-      find.text('None of our reviewed recipes fit — want me to draft one?'),
+      find.text('Make a real meal from your pantry haul'),
       findsOneWidget,
     );
     // Disabled until the cook confirms at least one item.
     expect(draftButton(tester).onPressed, isNull);
-    expect(find.text('Tap the items you have first'), findsOneWidget);
+    expect(find.text('Tap the ingredients you have below first'), findsOneWidget);
 
     await tapVisible(tester, find.bySemanticsLabel(RegExp('^rice, ')));
     expect(draftButton(tester).onPressed, isNotNull);
-    expect(find.text('Tap the items you have first'), findsNothing);
+    expect(find.text('Tap the ingredients you have below first'), findsNothing);
     await tapVisible(tester, find.byKey(const ValueKey('draft-recipe')));
 
     expect(drafts.request!.confirmedItems, ['rice']);
@@ -180,7 +180,7 @@ void main() {
     expect(draftButton(tester).onPressed, isNotNull);
   });
 
-  testWidgets('meals exist: a secondary draft action is offered', (
+  testWidgets('meals exist: making a meal from the haul is still the primary action', (
     tester,
   ) async {
     await setUp360(tester);
@@ -190,10 +190,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
-    expect(find.byKey(const ValueKey('draft-card')), findsNothing);
-    final secondary = find.byKey(const ValueKey('draft-something-else'));
+    // The hero card leads the results even when reviewed recipes fit, and
+    // reviewed recipes are labelled as such.
+    expect(find.byKey(const ValueKey('draft-card')), findsOneWidget);
+    expect(find.text('REVIEWED RECIPE'), findsWidgets);
+    final secondary = find.byKey(const ValueKey('draft-recipe'));
     await tester.ensureVisible(secondary);
-    expect(find.text('Draft something else with these'), findsOneWidget);
     await tapVisible(
       tester,
       find.bySemanticsLabel(RegExp('^canned black beans, ')),

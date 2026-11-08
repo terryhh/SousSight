@@ -340,10 +340,6 @@ class _PantryScreenState extends State<PantryScreen> {
     }
   }
 
-  bool _hasMeals(PantryResult result) => result.meals.any(
-    (meal) => widget.recipes.any((recipe) => recipe.id == meal.recipeId),
-  );
-
   void _chooseById(String recipeId) {
     final recipe = widget.recipes.where((r) => r.id == recipeId).firstOrNull;
     if (recipe != null) _choose(recipe);
@@ -433,14 +429,14 @@ class _PantryScreenState extends State<PantryScreen> {
                     _questionCard(question),
                     const SizedBox(height: 18),
                   ],
-                  PantrySurface(controller: _ui),
                   if (widget.draftClient != null) ...[
-                    const SizedBox(height: 18),
                     AnimatedBuilder(
                       animation: _ui,
                       builder: (_, _) => _draftSection(result),
                     ),
+                    const SizedBox(height: 18),
                   ],
+                  PantrySurface(controller: _ui),
                 ],
                 const SizedBox(height: 24),
                 _nearbyCard(),
@@ -782,7 +778,7 @@ class _PantryScreenState extends State<PantryScreen> {
     children: [
       const Expanded(
         child: Text(
-          'Meals you can make',
+          'Your pantry haul',
           style: TextStyle(
             fontSize: 26,
             fontWeight: FontWeight.w800,
@@ -849,7 +845,6 @@ class _PantryScreenState extends State<PantryScreen> {
   );
 
   Widget _draftSection(PantryResult result) {
-    final hasMeals = _hasMeals(result);
     final canDraft = _ui.confirmedItems.isNotEmpty && !_drafting;
     final status = <Widget>[
       if (_drafting) ...[
@@ -890,26 +885,6 @@ class _PantryScreenState extends State<PantryScreen> {
         ),
       ],
     ];
-    if (hasMeals) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextButton.icon(
-            key: const ValueKey('draft-something-else'),
-            icon: const Icon(Icons.auto_awesome_outlined),
-            label: const Text('Draft something else with these'),
-            onPressed: canDraft ? () => unawaited(_draft()) : null,
-          ),
-          if (_ui.confirmedItems.isEmpty)
-            const Text(
-              'Tap the items you have first',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Color(0xFF6B5A3E)),
-            ),
-          ...status,
-        ],
-      );
-    }
     return Container(
       key: const ValueKey('draft-card'),
       padding: const EdgeInsets.all(18),
@@ -922,13 +897,13 @@ class _PantryScreenState extends State<PantryScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'None of our reviewed recipes fit — want me to draft one?',
+            'Make a real meal from your pantry haul',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
           const Text(
-            'Gemini can draft a recipe from the items you confirmed. It will be '
-            'labelled as not reviewed by a person.',
+            'Tap the ingredients you have below, then Gemini creates a recipe '
+            'from exactly those. It is labelled as not reviewed by a person.',
             style: TextStyle(fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 14),
@@ -936,13 +911,17 @@ class _PantryScreenState extends State<PantryScreen> {
             key: const ValueKey('draft-recipe'),
             style: _bigButton(pantryGreen),
             icon: const Icon(Icons.auto_awesome),
-            label: Text(_drafting ? 'Drafting…' : 'Draft a recipe with these'),
+            label: Text(
+              _drafting
+                  ? 'Creating your recipe…'
+                  : 'Make a meal from these ingredients',
+            ),
             onPressed: canDraft ? () => unawaited(_draft()) : null,
           ),
           if (_ui.confirmedItems.isEmpty) ...[
             const SizedBox(height: 8),
             const Text(
-              'Tap the items you have first',
+              'Tap the ingredients you have below first',
               key: ValueKey('draft-hint'),
               style: TextStyle(fontSize: 13, color: Color(0xFF6B5A3E)),
             ),
