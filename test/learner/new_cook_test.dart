@@ -144,6 +144,61 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('duplicate New cook actions create one replacement while saving', (
+    tester,
+  ) async {
+    final f = await open(tester);
+    final old = f.cooks.single;
+    await old.connect();
+    await tester.pumpAndSettle();
+    final gate = Completer<void>();
+    f.sessions.gate = gate;
+    final button = find.byKey(const ValueKey('new-cook'));
+    final start = tester.widget<TextButton>(button).onPressed!;
+
+    // Two events can use the same enabled callback before Flutter rebuilds.
+    start();
+    start();
+    await tester.pumpAndSettle();
+    expect(find.text('Start a new cook?'), findsOneWidget);
+    expect(f.sessions.creations, 1, reason: 'review alone creates nothing');
+    await tester.tap(find.text('Start new cook'));
+    await tester.pumpAndSettle();
+
+    expect(f.cooks, hasLength(2));
+    expect(f.sessions.creations, 2);
+    expect(tester.widget<TextButton>(button).onPressed, isNull);
+    // An already queued action must also be ignored while persistence waits.
+    start();
+    await tester.pump();
+    expect(find.text('Start a new cook?'), findsNothing);
+    expect(f.cooks, hasLength(2));
+    expect(f.sessions.creations, 2);
+    expect(old.live.isActive, isTrue);
+    expect(f.media.first.active, isTrue);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    final current = f.cooks.last;
+    expect(current.session!.id, isNot(f.original.id));
+    expect(current.step.id, 'prep');
+    expect(current.ui.timers, isEmpty);
+    expect(f.sessions.creations, 2, reason: 'exactly one replacement was saved');
+    expect(f.media.first.active, isFalse);
+    expect(tester.widget<TextButton>(button).onPressed, isNotNull);
+    final resumed = await f.sessions.createOrResume(
+      current.session!.learnerId,
+      current.recipe,
+    );
+    expect(resumed.id, current.session!.id);
+    expect(
+      (await f.sessions.watch(f.original.id).first).confirmedFacts,
+      f.original.confirmedFacts,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'explicit new cook retires old async work and preserves saved history',
     (tester) async {
