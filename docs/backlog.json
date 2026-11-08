@@ -163,7 +163,7 @@
         "Dry-run is default; real sending requires configured secrets and ENABLE_DINNER_MESSAGES=true.",
         "Persist an attempt before sending; duplicate/unknown attempts never blind-resend.",
         "UI distinguishes provider acceptance from delivery and shows skipped, failed and unknown states.",
-        "WhatsApp Sandbox enrollment/window or SMS sender registration is configured before the real send."
+        "The selected channel's account, recipient and sender requirements are verified before a real send; the limited SMS trial path is distinguished from ordinary US sender registration."
       ],
       "dependsOn": [
         "SS-001",
@@ -171,7 +171,10 @@
         "SS-021"
       ],
       "evidence": [
-        "Backend at 527034a; 19 combined backend Node tests passed. No real message was sent or backend deployed."
+        "2026-11-07: PR #62 merged with passing CI; the SMS transport accepts the exact backend-configured Vonage APIs trial sender. Local sender and disabled-send regressions use simulated transport and consume no Vonage credit.",
+        "2026-11-07: Four Vonage Secret Manager latest versions verified ENABLED by metadata only: VONAGE_API_KEY/3, VONAGE_API_SECRET/3, VONAGE_FROM/2 and VONAGE_ALLOWED_TO/1. Values and recipient details are not recorded.",
+        "2026-11-07: DINNER_CHANNEL=sms and DINNER_SERVICE_READY=true; ENABLE_DINNER_MESSAGES=false. Deployment run 42427944291 attempt 1 failed after rules/index and source uploads, before dinner creation or Hosting release, because CI could not bind runtime secret access. Runtime secretAccessor grants on the four Vonage secrets were completed and read back without expanding deployer IAM. Attempt 2 was canceled while pending to avoid a stale deployment; newer main run 42428461526 at 92ea3737 completed validation and deployment successfully. dinnerReady metadata is ACTIVE on Node 22 with sms and sending=false; hosted GET returned JSON 405, unauthenticated POST JSON 401, and OPTIONS 204 with matching origin. These checks reached no ledger or provider call.",
+        "Terry reported a successful provider trial SMS, not a verified SousSight endpoint send. A real cook-reviewed app send and delivery confirmation remain unverified; no additional send is authorized."
       ],
       "assignee": "terryhh"
     },
@@ -494,11 +497,11 @@
       "priority": "P0",
       "owner": "Jenna (jennajh)",
       "assignee": "jennajh",
-      "status": "Todo",
+      "status": "InProgress",
       "verified": false,
       "description": "Set up the Vonage account and delivery configuration for reviewed dinner-ready messages. Terry explicitly assigned this provider setup to Jenna. SS-007 remains Terry/Codex integration work. Share only secret locations, never credentials or private recipient details.",
       "acceptance": [
-        "Confirm the supported channel (currently WhatsApp), sending identity, test recipient, and any required Vonage account/channel approval.",
+        "Confirm SMS, the dashboard trial sending identity, registered test recipient, and applicable Vonage trial restrictions; ordinary US traffic has separate sender registration requirements.",
         "Configure real `VONAGE_API_KEY`, `VONAGE_API_SECRET`, `VONAGE_FROM`, and `VONAGE_ALLOWED_TO` in Google Secret Manager for `devfest-flutter-a59e8`; share secret locations only, never values in GitHub or browser code.",
         "Document applicable Vonage charges/free credits and any sender/channel restrictions before a paid test.",
         "Coordinate with Terry on deployment readiness. Keep `DINNER_SERVICE_READY=false` until prerequisites are verified and `ENABLE_DINNER_MESSAGES=false` until sending is explicitly authorized.",
@@ -506,8 +509,10 @@
       ],
       "dependsOn": [],
       "evidence": [
-        "2026-11-07: Issue #39 created and assigned jennajh with project status Backlog; assigned does not mean started.",
-        "DINNER_SERVICE_READY and ENABLE_DINNER_MESSAGES remain false until their respective prerequisites and authorization are satisfied. No automatic or unreviewed send is authorized."
+        "2026-11-07: Terry and Jenna are working on SMS provider setup; Jenna remains assigned to SS-021 and Terry retains SS-007 integration ownership.",
+        "2026-11-07: Four Vonage Secret Manager latest versions verified ENABLED by metadata only: VONAGE_API_KEY/3, VONAGE_API_SECRET/3, VONAGE_FROM/2 and VONAGE_ALLOWED_TO/1. No secret values or private recipient details are recorded.",
+        "Terry reported a successful Vonage trial SMS and approximately $1.99 remaining after approximately $0.01 consumed. This is user-reported provider evidence; current balance and a SousSight endpoint send are unverified. Trial-only use: no account upgrade or top-up.",
+        "2026-11-07: PR #62 merged with passing CI. DINNER_CHANNEL=sms and DINNER_SERVICE_READY=true; ENABLE_DINNER_MESSAGES=false. Deployment run 42427944291 attempt 1 failed on runtime secret-access binding before dinner creation or Hosting release; runtime secretAccessor grants on the four secrets were completed and read back without deployer IAM expansion. Attempt 2 was canceled while pending in favor of newer main run 42428461526 at 92ea3737, which completed validation and deployment successfully. dinnerReady is ACTIVE on Node 22 with sms and sending=false; hosted GET/unauthenticated POST/OPTIONS returned expected 405/401/204 without a ledger or provider call. No additional or unreviewed send is authorized."
       ]
     },
     {

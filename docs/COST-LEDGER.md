@@ -14,9 +14,25 @@ user tests is unknown. No credentials or recipient numbers are recorded here.
 Terry requests trial-only messaging: no paid account upgrade or top-up. Use
 simulated transport while building and reserve credit for occasional explicitly
 authorized, cook-reviewed tests. `DINNER_CHANNEL=sms` has been configured;
-readiness and sending remain disabled. The sender compatibility change uses
-local automated tests only and causes no provider calls. The Google infrastructure
-authorization below is separate from Vonage trial credit.
+`DINNER_SERVICE_READY=true` now permits deployment after four enabled secret
+versions were verified by metadata. `ENABLE_DINNER_MESSAGES=false` still prevents
+provider sends. PR #62 merged with passing CI; its sender compatibility tests use
+simulated transport and consume no Vonage credit. Deployment run
+[42427944291](https://github.com/terryhh/SousSight/actions/runs/42427944291) attempt 1
+failed after rules/index and source uploads, before dinner creation or Hosting
+release: CI lacked `secretmanager.secrets.setIamPolicy` for runtime access binding.
+Runtime `secretAccessor` grants on the four Vonage secrets were completed and
+read back without expanding the deployer role or accessing secret values. Attempt
+2 was canceled while pending to avoid a stale deployment; newer main run
+[42428461526](https://github.com/terryhh/SousSight/actions/runs/42428461526) at
+`92ea3737` completed validation and deployment successfully. `dinnerReady` metadata
+is ACTIVE on Node 22, with `sms` and sending disabled, updated at
+`2026-11-08T00:16:32Z` (November 7 locally). Hosted GET returned JSON 405,
+unauthenticated POST returned JSON 401, and OPTIONS returned 204 with the hosted
+origin. These checks did not reach ledger or provider calls and read no secret
+values. No SMS credit was used by the agent; cloud build, Hosting, function and
+Secret Manager costs remain unmeasured, not established as zero.
+The Google infrastructure authorization below is separate from Vonage trial credit.
 
 ## Current authorization
 
@@ -49,9 +65,9 @@ Sources: [Google Cloud trial](https://cloud.google.com/signup-faqs), [Gemini bil
 | Firebase AI Logic + Gemini Developer API | APIs enabled; AI Logic App Check enforcement verified ENFORCED; one authenticated AI request smoke succeeded (5 prompt / 17 total tokens), content not asserted | Model tokens, search grounding, live media; API enablement is not a measured inference charge | Welcome credit excluded for current Gemini API; $10 benefit not yet verified |
 | App Check web provider | Production Enterprise provider configured for both Hosting domains; hosted real research verified the production Auth/App Check path without a CI debug token | Attestation-provider quotas; never publish debug tokens | Production browser behavior verified; actual attestation units and monetary cost remain unmeasured |
 | Hosting | Production release served HTTP 200 after run 42422724152 attempt 2; native Chrome loaded the real-mode app | Storage and outbound transfer | Free allowance then eligible cloud billing; credit coverage and actual transfer/storage charges remain unverified |
-| Cloud Functions `liveToken`, `dinnerReady` | liveToken ACTIVE on Node 22 after successful run 42422724152 attempt 2; dinnerReady remains undeployed/disabled | Invocations, compute, network, build/artifact storage and logs | Billing enabled; credit coverage remains unverified |
-| Secret Manager | Enabled; Gemini-only server key stored as GEMINI_API_KEY without printing or writing the value to disk | Active versions and access operations | Billing enabled; credit coverage remains unverified |
-| Vonage | App sending disabled; Jenna owns SS-021 provider setup (Backlog); no credentials or paid sends configured in this setup | Channel/recipient-specific message charges, sender fees | Google credits do not establish Vonage coverage; keep disabled |
+| Cloud Functions `liveToken`, `dinnerReady` | liveToken previously verified ACTIVE on Node 22; run 42427944291 attempt 1 failed before dinner creation/Hosting release on runtime secret-access binding; runtime secret access corrected; newer main run 42428461526 at 92ea3737 succeeded; dinnerReady ACTIVE on Node 22 with sms and sending=false, hosted routing/auth boundary checks pass | Invocations, compute, network, build/artifact storage and logs | Billing enabled; credit coverage remains unverified |
+| Secret Manager | Gemini key and four Vonage secrets configured; latest enabled Vonage versions verified by metadata only: API_KEY/3, API_SECRET/3, FROM/2, ALLOWED_TO/1 | Active versions and access operations; no secret value accessed during verification | Billing enabled; credit coverage remains unverified |
+| Vonage | SMS selected; Jenna retains SS-021 provider setup (In progress), Terry retains SS-007 integration. App sending disabled; successful provider trial user-reported | Channel/recipient-specific message charges, sender fees; no upgrade or top-up authorized | Approximately $1.99 previously user-reported; current balance unverified. Google credits do not establish Vonage coverage |
 | Local test/runtime resources | Temporary Java, emulator tests and simulated local web server | Local compute only; synthetic emulator project | Not a cloud deployment or billable service verification |
 
 ## GitHub Actions infrastructure
@@ -88,6 +104,7 @@ Append entries after every provisioning, deployment, model/traffic-limit change,
 | 2026-11-07 | Synthetic transcript diagnostic, maxOutputTokens 180 | One text fragment, no audio; usage unavailable; cost unknown | Not inspected | Failed diagnostic; no user media; temporary identities cleaned |
 | 2026-11-07 | Synthetic transcript retry, maxOutputTokens 512 | 580 prompt + 248 response = 828 total tokens; thoughts 89 reported separately; dollar cost unknown | Not inspected | 465,600 audio bytes in 11,195 ms; no user media; temporary identities cleaned |
 | 2026-11-07 | Synthetic real GenUI tool probe through hosted protected token | 1,205 prompt + 150 response = 1,355 total tokens; thoughts 252 reported separately; dollar cost unknown | Not inspected | Valid-looking root/stepCue/two-option cookQuestion in 1,780 ms; widget/render and hosted UI verification pending; no user media; temporary identities cleaned |
+| 2026-11-07 | Verified four enabled Vonage secret versions by metadata; set SMS deployment readiness true with sending false after PR #62 passed CI and merged | Secret-version storage, builds/artifacts and private Actions minutes may incur usage; no provider call performed by setup verification | Not inspected | Run 42427944291 attempt 1 failed after rules/index and source uploads, before dinner creation/Hosting release, on runtime secret-access binding. Runtime secret access corrected and read back; attempt 2 canceled while pending to avoid stale deployment. Newer main run 42428461526 at 92ea3737 succeeded; dinnerReady ACTIVE on Node 22 with sending=false. Hosted 405/401/204 checks pass without ledger/provider calls. No app SMS send or delivery verified |
 
 ## Planning estimate — not a quote or cap
 
