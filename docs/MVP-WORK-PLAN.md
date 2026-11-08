@@ -45,7 +45,7 @@ The 29 linked cards contain acceptance criteria and dated evidence; `docs/backlo
 | [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | Done | None |
 | [SS-026: Integrate Jenna research panel with the live learner workspace](https://github.com/terryhh/SousSight/issues/58) | @terryhh | Done | SS-005, SS-004 |
 | [SS-027: Add optional Google account sign-in and saved cooking sessions](https://github.com/terryhh/SousSight/issues/59) | @terryhh | Backlog | SS-001, SS-009 |
-| [SS-028: Keep input and stop controls stable during generated workspace updates](https://github.com/terryhh/SousSight/issues/63) | @terryhh | InProgress | None |
+| [SS-028: Keep input and stop controls stable during generated workspace updates](https://github.com/terryhh/SousSight/issues/63) | @terryhh | Done | None |
 | [SS-029: Guard repository history and browser builds against secrets](https://github.com/terryhh/SousSight/issues/65) | @terryhh | Done | None |
 
 ## Integration and release gates
@@ -71,3 +71,5 @@ The latest hosted check rendered real Gemini panels and a visibly advancing time
 Latest read-back supersedes the earlier snapshot: **29 cards — 12 Done, 14 In progress, 0 In review, 3 Backlog**, all assigned. SS-026 finite adapter is Done after merged integration and the hosted nine-source panel. Explicit fact confirmation remains unverified under SS-003. Jenna’s Vonage setup is In progress; her photo/physical-acceptance PRs #67/#68 await review. SS-029 secret protection has green PR #66 CI but remains In progress until completion.
 
 Final confirmation update: the hosted panel accepted the exact fork/chunky-mixture test fact through an explicit Confirm click and showed it under cook-confirmed facts. Post-reload fact persistence was not inspected; SS-003 remains open for its remaining acceptance. This reused prior research, with media off and no new research call. Secret guard PR #66 merged and main scan passed, completing SS-029. Board after that finite completion: 13 Done, 13 In progress, 3 Backlog; Jenna’s SS-021 remains In progress.
+
+Final hosted interaction verified a real Chunky/Smooth cook question, explicit Smooth choice, updated acknowledgement panel, stable pinned composer and Stop releasing camera/microphone. SS-028 is Done; physical Android acceptance remains SS-019/SS-023. SS-003 retains only its remaining unverified acceptance rather than re-testing the now-proven question/choice path. Board after SS-028 completion: 14 Done, 12 In progress, 3 Backlog, all assigned.
