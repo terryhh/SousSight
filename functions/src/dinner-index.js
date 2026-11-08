@@ -18,7 +18,9 @@ const enableDinnerMessages = defineString('ENABLE_DINNER_MESSAGES', { default: '
 // Demo-only: lets the cook trigger a server-side simulated Vonage rejection.
 const allowDeliverySimulation = defineString('ALLOW_DELIVERY_SIMULATION', { default: 'false' });
 // Per-message status webhook, e.g. https://devfest-flutter-a59e8.web.app/api/vonage-status.
-const statusWebhookUrl = defineString('DINNER_STATUS_WEBHOOK_URL', { default: '' });
+// A non-empty default keeps non-interactive deploys working when the status
+// webhook is not configured; any non-HTTPS value (e.g. 'disabled') means unset.
+const statusWebhookUrl = defineString('DINNER_STATUS_WEBHOOK_URL', { default: 'disabled' });
 
 function webhookUrl() {
   const value = statusWebhookUrl.value().trim();
