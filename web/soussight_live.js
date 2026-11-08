@@ -121,8 +121,12 @@ registerProcessor('soussight-pcm-input', SousSightPcmInput);
       const buffer = this.audioContext.createBuffer(1, count, 24000);
       const samples = buffer.getChannelData(0);
       for (let i = 0; i < count; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
-      // Flush a stale queue before adding the new source so it stays tracked.
-      if (this.nextPlayAt - this.audioContext.currentTime > 15) this.interrupt();
+      // Browsers may suspend audio (autoplay policy, backgrounding); resume so
+      // queued speech is heard instead of silently piling up.
+      if (this.audioContext.state === 'suspended') this.audioContext.resume().catch(() => {});
+      // Flush only a runaway queue; long spoken answers can legitimately queue
+      // tens of seconds of audio ahead of the playhead.
+      if (this.nextPlayAt - this.audioContext.currentTime > 60) this.interrupt();
       const source = this.audioContext.createBufferSource(); source.buffer = buffer;
       source.connect(this.audioContext.destination);
       this.sources.add(source);

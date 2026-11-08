@@ -65,6 +65,7 @@ class CookingUiController extends ChangeNotifier {
   final Map<String, CookingTimerState> _timers = {};
   final Set<String> _confirmedIngredients = {};
   final Set<String> _dismissedTimerIds = {};
+  final Map<String, String> _answeredQuestions = {};
   List<Map<String, dynamic>> _components = [
     {'id': 'root', 'component': 'CookingColumn', 'children': <String>[]},
   ];
@@ -226,6 +227,22 @@ class CookingUiController extends ChangeNotifier {
   }
 
   CookingTimerState? timerById(String id) => _timers[id];
+
+  /// The cook's saved answer for [question], if any. Question panels use it to
+  /// disable their options so an answered question cannot be answered twice.
+  String? answerFor(String question) => _answeredQuestions[question.trim()];
+
+  void markQuestionAnswered(String question, String answer) {
+    if (_disposed) return;
+    _answeredQuestions[question.trim()] = answer;
+    notifyListeners();
+  }
+
+  /// The coach explicitly asked again; allow a fresh answer.
+  void reopenQuestion(String question) {
+    if (_disposed || _answeredQuestions.remove(question.trim()) == null) return;
+    notifyListeners();
+  }
 
   /// Restore learner-confirmed state without manufacturing a user action.
   void restoreConfirmedIngredients(Iterable<String> ids) {

@@ -30,10 +30,15 @@ export function tokenConfiguration(nowMs, model = LIVE_MODEL) {
     newSessionExpireTime: new Date(nowMs + 60_000).toISOString(),
     bidiGenerateContentSetup: {
       model: `models/${model}`,
-      generationConfig: { responseModalities: ['AUDIO'] },
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        mediaResolution: 'MEDIA_RESOLUTION_LOW',
+      },
     },
     // Lock only these server choices; retain client tools, instructions and resumption.
-    fieldMask: 'model,generationConfig.responseModalities',
+    // Per the AuthToken reference, masked token fields overwrite the client's
+    // setup, so low media resolution applies even if a client omits it.
+    fieldMask: 'model,generationConfig.responseModalities,generationConfig.mediaResolution',
   };
 }
 

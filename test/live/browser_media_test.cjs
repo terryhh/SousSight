@@ -27,7 +27,7 @@ function harness(permission, { frameBytes } = {}) {
   let workletSource;
   class AudioContext {
     constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; this.audioWorklet = { addModule: async () => {} }; contexts.push(this); }
-    resume() { return Promise.resolve(); }
+    resume() { this.resumes = (this.resumes ?? 0) + 1; this.state = 'running'; return Promise.resolve(); }
     close() { this.state = 'closed'; return Promise.resolve(); }
     createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
     createGain() { return { gain: {}, connect() {}, disconnect() {} }; }
@@ -147,3 +147,23 @@ for (const reason of ['hidden tab', 'page exit', 'device disconnect']) {
     assert.equal(media.active, false);
   });
 }
+
+test('playback keeps long answers queued, resumes a suspended context and flushes only past 60s', async () => {
+  const h = harness();
+  const media = h.bridge.create(() => {}, () => {}, () => {});
+  await media.start();
+  const context = h.contexts[0];
+  const before = context.resumes ?? 0;
+  context.state = 'suspended';
+  // 24 kHz PCM16: 48000 bytes per second; enqueue 30 seconds of speech.
+  const second = new Uint8Array(48000);
+  for (let i = 0; i < 30; i++) media.play(second);
+  assert.equal(context.resumes, before + 1);
+  assert.equal(context.state, 'running');
+  assert.equal(h.playback.length, 30);
+  assert.equal(h.playback.some(source => source.stopped), false);
+  // Push past the 60s runaway threshold; the stale queue is flushed once.
+  for (let i = 0; i < 32; i++) media.play(second);
+  assert.equal(h.playback.filter(source => source.stopped).length > 0, true);
+  media.stop();
+});

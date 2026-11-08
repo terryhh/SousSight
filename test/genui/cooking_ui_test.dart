@@ -394,6 +394,25 @@ void main() {
       'optionId': 'unsure',
     });
     expect(tester.takeException(), isNull);
+    // Once the host records the answer, the options disable and show it, even
+    // after the model re-renders the same question.
+    controller.markQuestionAnswered(
+      'Are the chickpeas already cooked?',
+      'I am not sure',
+    );
+    await tester.pump();
+    expect(find.text('Answered: I am not sure'), findsOneWidget);
+    for (final button in tester.widgetList<OutlinedButton>(
+      find.byType(OutlinedButton),
+    )) {
+      expect(button.onPressed, isNull);
+    }
+    await tester.tap(find.text('Yes, canned and drained'));
+    expect(events, hasLength(1));
+    controller.reopenQuestion('Are the chickpeas already cooked?');
+    await tester.pump();
+    await tester.tap(find.text('Yes, canned and drained'));
+    expect(events, hasLength(2));
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
