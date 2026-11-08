@@ -6,7 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 import '../app/services_scope.dart';
-import '../core/services.dart';
 import '../firebase_options.dart';
 import 'firestore_repositories.dart';
 
@@ -28,12 +27,7 @@ Future<void> initFirebase() async {
   }
 }
 
-/// AI clients are injected so the app can mix real data with fake AI (or the
-/// reverse) while testing.
-Future<AppServices> firebaseServices({
-  required AssessmentClient assessment,
-  required TriageClient triage,
-}) async {
+Future<AppServices> firebaseServices() async {
   await initFirebase();
   final db = FirebaseFirestore.instance;
   final recipe = await loadBundledRecipe();
@@ -41,10 +35,6 @@ Future<AppServices> firebaseServices({
     auth: FirebaseAuthService(FirebaseAuth.instance),
     recipes: FirestoreRecipeRepository(db, recipe),
     sessions: FirestoreSessionRepository(db),
-    requests: FirestoreRequestRepository(db),
-    instructors: FirestoreInstructorRepository(db),
-    assessment: assessment,
-    triage: triage,
     bundledRecipe: recipe,
   );
 }

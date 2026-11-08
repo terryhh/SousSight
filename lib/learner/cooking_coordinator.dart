@@ -60,6 +60,7 @@ class CookingCoordinator extends ChangeNotifier {
   bool loading = true;
   bool researching = false;
   bool advancing = false;
+  bool _answering = false;
   bool _disposed = false;
   bool _wasWatching = false;
   int _researchEpoch = 0;
@@ -189,7 +190,7 @@ $cookingUiInstructions
       return;
     }
     final question = cookQuestion;
-    if (question != null) {
+    if (question != null && !_answering) {
       await confirmCookAnswer(question, text);
     } else {
       await live.sendText(text);
@@ -197,22 +198,50 @@ $cookingUiInstructions
   }
 
   Future<void> confirmCookAnswer(String question, String answer) async {
-    final fact = '$question Answer from cook: ${answer.trim()}';
-    await _save(
-      (current) => current.copyWith(
-        confirmedFacts: [
-          ...current.confirmedFacts,
-          fact,
-        ].reversed.take(30).toList().reversed.toList(),
-      ),
-    );
-    cookQuestion = null;
-    await live.sendText(
-      'The cook answered your clarification: $fact. Use this confirmed context. '
-      'currentStepId: ${step.id}. Call show_cooking_ui with stepId=${step.id} '
-      'to adapt the workspace to this answer.',
-    );
-    _notify();
+    final trimmed = answer.trim();
+    // Ignore re-entrant taps/typing while an answer is saving, and answers to a
+    // question the cook already answered (its option buttons are disabled).
+    if (trimmed.isEmpty || _answering || ui.answerFor(question) != null) return;
+    _answering = true;
+    try {
+      final fact = '$question Answer from cook: $trimmed';
+      await _save(
+        (current) => current.copyWith(
+          confirmedFacts: [
+            ...current.confirmedFacts,
+            if (!current.confirmedFacts.contains(fact)) fact,
+          ].reversed.take(30).toList().reversed.toList(),
+        ),
+      );
+      if (_disposed) return;
+      if (cookQuestion == question) cookQuestion = null;
+      ui.markQuestionAnswered(question, trimmed);
+      _markAskCookPanelAnswered(question, trimmed);
+      await live.sendText(
+        'The cook answered your clarification: $fact. Use this confirmed context. '
+        'currentStepId: ${step.id}. Call show_cooking_ui with stepId=${step.id} '
+        'to adapt the workspace to this answer.',
+      );
+    } finally {
+      _answering = false;
+      _notify();
+    }
+  }
+
+  void _markAskCookPanelAnswered(String question, String answer) {
+    final panel = ui.components.where((c) => c['id'] == 'question').firstOrNull;
+    if (panel == null ||
+        panel['component'] != 'stepCue' ||
+        panel['action'] != 'ask_cook' ||
+        panel['body'] != question) {
+      return;
+    }
+    ui.upsertPanel({
+      'id': 'question',
+      'component': 'stepCue',
+      'title': 'Answered',
+      'body': '$question\nYour answer: $answer',
+    });
   }
 
   Future<void> checkNow([String prediction = 'Not sure']) async {
@@ -248,6 +277,9 @@ $cookingUiInstructions
         );
       });
       if (_disposed) return;
+      // A pending question belongs to the previous step; text typed now is a
+      // new message, not an answer to the old question.
+      cookQuestion = null;
       live.stopWatch();
       ui.applyToolPayload({
         'components': [
@@ -499,7 +531,13 @@ $cookingUiInstructions
             'currentStepId': step.id,
           };
         }
-        ui.applyJson(a['uiJson'] as String);
+        try {
+          ui.applyJson(a['uiJson'] as String);
+        } on FormatException catch (e) {
+          return _invalidUi(e.message);
+        } on TypeError catch (e) {
+          return _invalidUi(e.toString());
+        }
       case 'start_timer':
         await startTimer(
           a['id'] as String,
@@ -522,6 +560,7 @@ $cookingUiInstructions
         if (ready) alert = 'Check your food: ${a['observation']}';
       case 'ask_cook':
         cookQuestion = a['question'] as String;
+        ui.reopenQuestion(cookQuestion!);
         ui.upsertPanel({
           'id': 'question',
           'component': 'stepCue',
@@ -561,6 +600,12 @@ $cookingUiInstructions
     _notify();
     return {'ok': true, 'currentStep': step.id, 'currentStepId': step.id};
   }
+
+  Map<String, Object?> _invalidUi(String message) => {
+    'ok': false,
+    'error': 'Invalid uiJson: $message. Fix and call show_cooking_ui again.',
+    'currentStepId': step.id,
+  };
 
   void draftDinner([String message = 'Dinner is ready! Come join me.']) {
     dinnerDraft = message;

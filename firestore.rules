@@ -1,7 +1,7 @@
 rules_version = '2';
 
-// The cook is the human in the loop. Sessions, photos, and legacy questions
-// stay private to that cook. Email addresses never grant privileges.
+// The cook is the human in the loop. Sessions and photos stay private to
+// that cook. Email addresses never grant privileges.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -24,19 +24,8 @@ service cloud.firestore {
       allow write: if isCatalogEditor();
     }
 
-    // Retained demo catalog contracts; none grants access to private cooking.
-    match /instructors/{id} {
-      allow read: if signedIn();
-      allow write: if isCatalogEditor();
-    }
-    match /config/{id} {
-      allow read: if signedIn() && id == 'demo';
-      allow write: if isCatalogEditor();
-    }
-
     // Server-only credentials/contact records and function-owned ledgers. Admin
     // SDK bypasses these rules; client custom claims never bypass these denials.
-    match /instructorContacts/{id} { allow read, write: if false; }
     match /learnerContacts/{id} { allow read, write: if false; }
     match /_liveTokenLimits/{id} { allow read, write: if false; }
     match /_dinnerNotifications/{id} { allow read, write: if false; }
@@ -113,25 +102,6 @@ service cloud.firestore {
         allow update: if ownsSession() && validCheckpoint(request.resource.data)
           && changed().hasOnly(['assessment', 'learnerConfirmed']);
       }
-    }
-
-    // Legacy records remain available to their original cook for compatibility
-    // and deletion. There is no external instructor read or write capability.
-    match /requests/{requestId} {
-      function sessionOwnedByRequester() {
-        return owns(get(/databases/$(database)/documents/sessions/$(request.resource.data.sessionId)).data);
-      }
-      allow read, delete: if owns(resource.data);
-      allow create: if owns(request.resource.data)
-        && sessionOwnedByRequester()
-        && request.resource.data.status == 'submitted'
-        && !('notify' in request.resource.data);
-      allow update: if owns(resource.data)
-        && !changed().hasAny(['learnerId', 'sessionId', 'recipeId', 'stepId', 'createdAt', 'notify'])
-        && request.resource.data.status != 'submitted'
-        && request.resource.data.status in [
-          'needsOwner', 'suggested', 'accepted', 'answered', 'resolved', 'cancelled'
-        ];
     }
 
     match /{document=**} { allow read, write: if false; }

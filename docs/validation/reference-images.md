@@ -16,7 +16,7 @@
   - `docs/validation/reference-images.md` (this provenance, cue, limitation, and evaluation specification)
 - **Terry (`SS-013`) retains:**
   - Wiring replacement target images into `assets/recipes/chickpea_wrap_v1/target_mash.jpg`, `assets/recipes/chickpea_wrap_v1/target_mix.jpg`, and `pubspec.yaml` if needed.
-  - Running paid live `GeminiAssessmentClient` (`gemini-3.8-flash`) evaluations against `devfest-flutter-a59e8`.
+  - Running paid live model evaluations against `devfest-flutter-a59e8`. (The still-image `GeminiAssessmentClient` was removed in SS-034; evaluate through the Live flow.)
 - **Verification Honesty (`AGENTS.md`):**
   - **Zero synthetic or AI-generated images** are used in this pack. Every image is a real food photograph captured by a human photographer under an open license (`CC0 1.0`, `CC BY 2.0`, or `CC BY-SA 2.0`).
   - **Zero paid model calls** were executed for this asset-only deliverable (`paidModelCallsExecuted: false`).
@@ -27,7 +27,7 @@
   - **`cp_mix` (`Dress and fold`):** diced vegetables distributed across the bowl and lightly coated vs. clumped toppings or unmixed white dressing pools/streaks, and whether full-bowl framing is clear.
 - **Vision cannot establish internal temperature, microbial food safety, freshness, spoilage, or allergen absence.**
   - No reference photo or model output may be represented as proof that food is safe to eat or free of allergens (`egg`, `mustard`, `wheat`, `sesame`, etc.).
-  - In `GeminiAssessmentClient.assess()` (`lib/ai/gemini_clients.dart`), any safety/allergen concern must return `outOfScope: true`, `outcome: AssessmentOutcome.uncertain`, and the fixed `safetyReply`.
+  - Any model path that compares these fixtures must treat a safety/allergen concern as out of scope and return a fixed safety reply rather than a visual verdict.
 
 ---
 

@@ -1,5 +1,5 @@
-// Dependency container passed down the widget tree. The data PR provides
-// `firebaseServices()`; `fakeServices()` runs either app with no backend
+// Dependency container passed down the widget tree. lib/data/ provides
+// `firebaseServices()`; `fakeServices()` runs the app with no backend
 // (`--dart-define=FAKE_BACKEND=true`).
 
 import 'dart:convert';
@@ -23,10 +23,6 @@ class AppServices {
     required this.auth,
     required this.recipes,
     required this.sessions,
-    required this.requests,
-    required this.instructors,
-    required this.assessment,
-    required this.triage,
     required this.bundledRecipe,
     this.clock = DateTime.now,
   });
@@ -34,10 +30,6 @@ class AppServices {
   final AuthService auth;
   final RecipeRepository recipes;
   final SessionRepository sessions;
-  final RequestRepository requests;
-  final InstructorRepository instructors;
-  final AssessmentClient assessment;
-  final TriageClient triage;
 
   /// The recipe as shipped in assets (used for target images and offline).
   final Recipe bundledRecipe;
@@ -55,10 +47,6 @@ Future<AppServices> fakeServices({String recipeId = kRecipeId}) async {
     auth: FakeAuthService(),
     recipes: FakeRecipeRepository(recipe),
     sessions: FakeSessionRepository(),
-    requests: FakeRequestRepository(),
-    instructors: FakeInstructorRepository(),
-    assessment: FakeAssessmentClient(),
-    triage: FakeTriageClient(),
     bundledRecipe: recipe,
   );
 }

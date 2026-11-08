@@ -158,10 +158,6 @@ class _Fixture {
         auth: FakeAuthService(),
         recipes: FakeRecipeRepository(_recipe),
         sessions: sessions,
-        requests: FakeRequestRepository(),
-        instructors: FakeInstructorRepository(),
-        assessment: FakeAssessmentClient(),
-        triage: FakeTriageClient(),
         bundledRecipe: _recipe,
         clock: () => now,
       ),
@@ -791,6 +787,133 @@ void main() {
     await fixture.cook.say('What next?');
     expect(fixture.transport.texts.last, 'What next?');
     expect(fixture.cook.session!.confirmedFacts, hasLength(1));
+  });
+
+  test('invalid generated UI is reported to the model so it can self-correct', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    final before = fixture.cook.ui.components;
+    fixture.transport.source.add(
+      LiveToolCall(
+        id: 'bad-ui',
+        name: 'show_cooking_ui',
+        arguments: {
+          'stepId': 'prep',
+          'uiJson': jsonEncode({
+            'components': [
+              {'id': 'root', 'component': 'stepCue', 'title': 'x', 'body': 'y'},
+            ],
+          }),
+        },
+      ),
+    );
+    await _flush();
+    final response = fixture.transport.responses.single;
+    expect(response['ok'], isFalse);
+    expect(response['error'], startsWith('Invalid uiJson: root must be a CookingColumn.'));
+    expect(response['error'], endsWith('Fix and call show_cooking_ui again.'));
+    expect(fixture.cook.ui.components, before);
+    expect(fixture.cook.live.error, isNull);
+    // The corrected call under a new id succeeds.
+    fixture.transport.source.add(_workspaceCall('prep', 'fixed-ui'));
+    await _flush();
+    expect(fixture.transport.responses.last['ok'], isTrue);
+  });
+
+  test('repeated answer taps save one fact and disable the question', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.source.add(
+      LiveToolCall(
+        id: 'question-ui',
+        name: 'show_cooking_ui',
+        arguments: {
+          'stepId': 'prep',
+          'uiJson': jsonEncode({
+            'components': [
+              {'id': 'root', 'component': 'CookingColumn', 'children': ['q']},
+              {
+                'id': 'q',
+                'component': 'cookQuestion',
+                'title': 'Your yogurt',
+                'question': 'Is it plain?',
+                'options': [
+                  {'id': 'yes', 'label': 'Yes'},
+                  {'id': 'no', 'label': 'No'},
+                ],
+              },
+            ],
+          }),
+        },
+      ),
+    );
+    await _flush();
+    fixture.transport.texts.clear();
+    final gate = Completer<void>();
+    fixture.sessions.updateGate = gate;
+    void tap(String answer) => fixture.cook.ui.dispatch('cook_answer', 'q', {
+      'question': 'Is it plain?',
+      'answer': answer,
+      'optionId': answer.toLowerCase(),
+    });
+    tap('Yes');
+    tap('Yes');
+    tap('No');
+    await _flush();
+    expect(fixture.sessions.updateCalls, 1);
+    gate.complete();
+    await _flush();
+    expect(fixture.cook.session!.confirmedFacts, [
+      'Is it plain? Answer from cook: Yes',
+    ]);
+    expect(fixture.cook.ui.answerFor('Is it plain?'), 'Yes');
+    expect(fixture.transport.texts, hasLength(1));
+    tap('Yes');
+    await _flush();
+    expect(fixture.sessions.updateCalls, 1);
+    expect(fixture.transport.texts, hasLength(1));
+  });
+
+  test('an identical answer to a re-asked question is not stored twice', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    for (final id in ['ask-1', 'ask-2']) {
+      fixture.transport.source.add(
+        LiveToolCall(
+          id: id,
+          name: 'ask_cook',
+          arguments: {'question': 'Is your yogurt plain?', 'reason': 'Check.'},
+        ),
+      );
+      await _flush();
+      await fixture.cook.say('Yes');
+    }
+    expect(fixture.cook.session!.confirmedFacts, [
+      'Is your yogurt plain? Answer from cook: Yes',
+    ]);
+    final question = fixture.cook.ui.components.firstWhere(
+      (c) => c['id'] == 'question',
+    );
+    expect(question['action'], isNull);
+    expect(question['body'], contains('Your answer: Yes'));
+  });
+
+  test('advancing clears a pending question so new text is not an old answer', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.source.add(
+      const LiveToolCall(
+        id: 'ask',
+        name: 'ask_cook',
+        arguments: {'question': 'Is your yogurt plain?', 'reason': 'Check.'},
+      ),
+    );
+    await _flush();
+    await fixture.cook.advanceStep();
+    expect(fixture.cook.cookQuestion, isNull);
+    await fixture.cook.say('How long do I mash?');
+    expect(fixture.transport.texts.last, 'How long do I mash?');
+    expect(fixture.cook.session!.confirmedFacts, isEmpty);
   });
 
   test('failed clarification save keeps the question pending and sends no false fact', () async {
