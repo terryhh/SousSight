@@ -143,9 +143,12 @@ class _CookingScreenState extends State<CookingScreen> {
       // Creation failure must leave the old cook usable. Only after a new
       // session exists do we stop capture and retire the old async/UI boundary.
       final previous = _cook;
-      await previous.live.stop();
-      if (!mounted) return;
+      // Disposing retires the old research epoch, timers and watches, and its
+      // live controller synchronously stops capture and the transport. Only
+      // socket cleanup continues asynchronously; never block the new cook on
+      // a slow close.
       previous.dispose();
+      if (!mounted) return;
       setState(() {
         _cook = candidate!;
         candidate = null;
