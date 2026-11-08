@@ -60,6 +60,7 @@ class CookingCoordinator extends ChangeNotifier {
   bool researching = false;
   bool advancing = false;
   bool _answering = false;
+  String? _answersStepId;
   bool _disposed = false;
   bool _wasWatching = false;
   int _researchEpoch = 0;
@@ -699,7 +700,15 @@ $cookingUiInstructions
   }
 
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (_disposed) return;
+    // Answers are scoped to the step they were given on: the same wording
+    // (for example "Ready to continue?") on a later step is a new question.
+    final stepId = session == null ? null : step.id;
+    if (stepId != _answersStepId) {
+      _answersStepId = stepId;
+      ui.clearAnsweredQuestions();
+    }
+    notifyListeners();
   }
 
   @override

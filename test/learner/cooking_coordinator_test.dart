@@ -874,6 +874,28 @@ void main() {
     expect(fixture.transport.texts, hasLength(1));
   });
 
+  test('the same question wording on a later step can be answered again', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    await fixture.cook.confirmCookAnswer('Ready to continue?', 'Yes');
+    await _flush();
+    expect(fixture.cook.ui.answerFor('Ready to continue?'), 'Yes');
+    final firstStep = fixture.cook.step.id;
+    await fixture.cook.advanceStep();
+    await _flush();
+    expect(fixture.cook.step.id, isNot(firstStep));
+    expect(fixture.cook.ui.answerFor('Ready to continue?'), isNull);
+    fixture.transport.texts.clear();
+    await fixture.cook.confirmCookAnswer('Ready to continue?', 'Yes');
+    await _flush();
+    expect(fixture.cook.ui.answerFor('Ready to continue?'), 'Yes');
+    // The later answer reaches the coach; an identical fact is stored once.
+    expect(
+      fixture.transport.texts.where((t) => t.contains('Ready to continue?')),
+      hasLength(1),
+    );
+  });
+
   test('an identical answer to a re-asked question is not stored twice', () async {
     await fixture.initialize();
     await fixture.cook.connect();
