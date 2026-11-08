@@ -4,8 +4,8 @@ This directory stores dated verification artifacts, HTTP probe logs, reproducibl
 
 ## Contents
 
-- [`hosted-http-probe-2026-11-07.txt`](./hosted-http-probe-2026-11-07.txt) — Sanitized HTTP `HEAD` and `GET` probe evidence against the deployed production origin (`https://devfest-flutter-a59e8.web.app`) captured from `ENV-DESKTOP-WIN` on `2026-11-07`.
-- [`reproducible-defects.json`](./reproducible-defects.json) — Structured machine-readable defect handoff (`DEF-001` through `DEF-005`) with exact file/line references and expected vs. actual behavior for Terry's runtime fix pass (`SS-003`, `SS-007`, `SS-019`).
+- [`hosted-http-probe-2026-11-07.txt`](./hosted-http-probe-2026-11-07.txt) — Sanitized HTTP `HEAD` and `GET` reachability/HSTS probe against the deployed production origin (`https://devfest-flutter-a59e8.web.app`) captured from `ENV-DESKTOP-WIN` on `2026-11-07` (see [`docs/MVP-READINESS.md`](../../MVP-READINESS.md) for real-mode/no-debug rollout verification).
+- [`reproducible-defects.json`](./reproducible-defects.json) — Structured machine-readable defect handoff (`DEF-001` through `DEF-004`) with exact file/line references and expected vs. actual behavior for Terry's runtime fix pass (`SS-030`, `SS-003`, `SS-019`).
 
 ## Screenshot Naming & Redaction Rules
 
