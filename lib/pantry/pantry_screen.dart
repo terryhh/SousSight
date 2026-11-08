@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 
 import '../core/models.dart';
 import '../live/live_types.dart';
+import '../nearby/nearby_client.dart';
+import '../nearby/nearby_sheet.dart';
 import 'pantry_client.dart';
 import 'pantry_handoff.dart';
 import 'pantry_models.dart';
@@ -32,6 +34,9 @@ class PantryScreen extends StatefulWidget {
     this.isDemo = false,
     this.mediaFactory,
     this.recordDuration = const Duration(seconds: 6),
+    this.nearbyClient,
+    this.locate,
+    this.openLink,
   });
 
   final List<Recipe> recipes;
@@ -43,6 +48,15 @@ class PantryScreen extends StatefulWidget {
   final LiveMedia Function()? mediaFactory;
   final Duration recordDuration;
 
+  /// Grounding with Google Maps search. Defaults to the rehearsal client in
+  /// demo mode and the Gemini client otherwise.
+  final NearbyClient? nearbyClient;
+
+  /// One-time location lookup; defaults to browser geolocation (real mode)
+  /// or a simulated Orlando position (rehearsal mode).
+  final NearbyLocator? locate;
+  final NearbyLinkOpener? openLink;
+
   @override
   State<PantryScreen> createState() => _PantryScreenState();
 }
@@ -50,7 +64,12 @@ class PantryScreen extends StatefulWidget {
 class _PantryScreenState extends State<PantryScreen> {
   late final PantryUiController _ui = PantryUiController(
     onChooseMeal: _chooseById,
+    onFindMissing: (missing) =>
+        unawaited(_openNearby(NearbyKind.groceries, missing: missing)),
   );
+  late final NearbyClient _nearby =
+      widget.nearbyClient ??
+      (widget.isDemo ? const FakeNearbyClient() : GeminiNearbyClient());
   final _text = TextEditingController();
   final _answer = TextEditingController();
   PantryMode _mode = PantryMode.type;
@@ -246,6 +265,20 @@ class _PantryScreenState extends State<PantryScreen> {
     }
   }
 
+  Future<void> _openNearby(
+    NearbyKind kind, {
+    List<String> missing = const [],
+  }) => showNearbySheet(
+    context,
+    client: _nearby,
+    kind: kind,
+    missingItems: missing,
+    locate:
+        widget.locate ??
+        (widget.isDemo ? () async => NearbyCoordinates(28.54, -81.38) : null),
+    openLink: widget.openLink,
+  );
+
   void _chooseById(String recipeId) {
     final recipe = widget.recipes.where((r) => r.id == recipeId).firstOrNull;
     if (recipe != null) _choose(recipe);
@@ -337,6 +370,8 @@ class _PantryScreenState extends State<PantryScreen> {
                   ],
                   PantrySurface(controller: _ui),
                 ],
+                const SizedBox(height: 24),
+                _nearbyCard(),
                 const SizedBox(height: 32),
                 _skipList(),
               ],
@@ -737,6 +772,52 @@ class _PantryScreenState extends State<PantryScreen> {
           ),
         ),
       ],
+    ),
+  );
+
+  Widget _nearbyCard() => Material(
+    color: const Color(0xFFE4EBDF),
+    borderRadius: BorderRadius.circular(22),
+    child: InkWell(
+      key: const ValueKey('nearby-food-help'),
+      borderRadius: BorderRadius.circular(22),
+      onTap: () => unawaited(_openNearby(NearbyKind.foodHelp)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 72),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.volunteer_activism_outlined,
+                color: pantryGreen,
+                size: 30,
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Find food help nearby',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Food pantries and free meals near you, from Google Maps.',
+                      style: TextStyle(fontSize: 14, color: Color(0xFF3B3328)),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
     ),
   );
 

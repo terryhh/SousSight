@@ -15,7 +15,7 @@ const pantryCream = Color(0xFFFFF8EC);
 /// with a small trusted catalog. The model's structured output supplies the
 /// content; only these app-owned components can be displayed.
 class PantryUiController extends ChangeNotifier {
-  PantryUiController({required this.onChooseMeal}) {
+  PantryUiController({required this.onChooseMeal, this.onFindMissing}) {
     catalog = buildPantryCatalog(this);
     engine = SurfaceController(catalogs: [catalog]);
     engine.handleMessage(
@@ -27,6 +27,9 @@ class PantryUiController extends ChangeNotifier {
   static const catalogId = 'app.soussight.pantry';
 
   final void Function(String recipeId) onChooseMeal;
+
+  /// Opens "Where to get the missing items" for a meal choice.
+  final void Function(List<String> missing)? onFindMissing;
   late final Catalog catalog;
   late final SurfaceController engine;
   List<String> _items = const [];
@@ -52,6 +55,10 @@ class PantryUiController extends ChangeNotifier {
 
   void chooseMeal(String recipeId) {
     if (!_disposed) onChooseMeal(recipeId);
+  }
+
+  void findMissing(List<String> missing) {
+    if (!_disposed && missing.isNotEmpty) onFindMissing?.call(missing);
   }
 
   /// Replaces the surface with components built from a validated result.
@@ -251,6 +258,9 @@ Catalog buildPantryCatalog(PantryUiController controller) => Catalog([
         best: data['best'] as bool? ?? false,
         steps: data['steps'] as int?,
         onChoose: controller.chooseMeal,
+        onFindMissing: controller.onFindMissing == null
+            ? null
+            : controller.findMissing,
       );
     },
   ),
@@ -375,6 +385,7 @@ class _MealCard extends StatelessWidget {
     required this.best,
     required this.steps,
     required this.onChoose,
+    this.onFindMissing,
   });
   final String recipeId;
   final String title;
@@ -384,6 +395,7 @@ class _MealCard extends StatelessWidget {
   final bool best;
   final int? steps;
   final void Function(String recipeId) onChoose;
+  final void Function(List<String> missing)? onFindMissing;
 
   @override
   Widget build(BuildContext context) => _PantryCard(
@@ -424,6 +436,27 @@ class _MealCard extends StatelessWidget {
             missing,
             pantryTomato,
           ),
+          if (onFindMissing case final find?) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              key: ValueKey('nearby-missing-$recipeId'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+                foregroundColor: pantryGreen,
+                side: const BorderSide(color: pantryGreen, width: 1.5),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: const Icon(Icons.storefront_outlined),
+              label: const Text('Where to get the missing items'),
+              onPressed: () => find(missing),
+            ),
+          ],
         ],
         const SizedBox(height: 16),
         SizedBox(
