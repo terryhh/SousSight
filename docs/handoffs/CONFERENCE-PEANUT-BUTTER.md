@@ -39,7 +39,8 @@ Updated November 8 for the pantry-first build. Each beat names the Google or Von
 | 5 | Optional: speak Spanish for one exchange. | Coach answers in Spanish | Live native multilingual audio |
 | 6 | **Text household: started cooking**, then **Simulate delivery (demo)**. A real send happens only with fresh approval. | "Sent to Vonage → Delivered ✓ (simulated)" | Vonage Messages API + signed status webhook |
 | 7 | **Dinner is ready**, review. Then **Simulate failed delivery (demo)**. | "Simulated failure: Illegal Sender Address (1120)", plus recovery options | Vonage failure handling (challenge requirement) |
-| 8 | Close on the architecture slide (README diagram): routing and storage choices. | One slide | Devs-track requirement |
+| 7b | Finish the last step. | "You made Peanut Butter Sandwich!": confirmed pantry items, coach paused, next steps | Closes the pantry-to-plate story; cost guardrail |
+| 8 | Close on the architecture slide (README diagram) or open **How it works → Under the hood**: routing and storage choices. | One slide or the in-app sheet | Devs-track requirement |
 
 Fallbacks:
 - `?recipe=black_bean_corn_salsa_v1` skips the scan. The salsa has a real 5-minute meld timer.

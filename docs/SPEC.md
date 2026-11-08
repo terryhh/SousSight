@@ -11,6 +11,7 @@ Updated November 8, 2026 for the DevFest Florida (Orlando) showcase. This docume
 - **Nearby food help (SS-041).** Grounding with Google Maps (Firebase AI Logic `Tool.googleMaps` with an opt-in `RetrievalConfig` location, or a typed city/ZIP) lists nearby food pantries and stores. It shows only places from Maps grounding metadata, with Maps links and attribution, never invented hours or eligibility, and doesn't store the location.
 - **Allergy-aware start and How it works (SS-042).** When a recipe has allergens, the coach first asks once about allergies (`ask_cook`), then researches a substitution if needed. The header shows an allergen chip. An in-app "How it works" sheet lists the flow, technologies, privacy and safety boundaries.
 - **Cost guardrails (SS-043).** Live session cap with a warning, idle stop, a 15 s watch cadence that expires, low media resolution, and per-user, daily and global Live token caps. Zero-cost simulated Vonage outcomes.
+- **Meal-complete moment (SS-049).** Completing the final step stops the live coach (no further model call) and shows a recap built only from cook-confirmed facts, with reviewed dinner text, nearby help and cook-again actions.
 - **Removed (SS-034).** The instructor board, help-request routing, triage/assessment clients, seed data and their Firestore rules are gone. References to them below are historical.
 
 ## Product
