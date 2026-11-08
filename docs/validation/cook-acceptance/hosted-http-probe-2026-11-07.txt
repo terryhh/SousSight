@@ -1,7 +1,8 @@
 Timestamp: 2026-11-07T18:18:30-05:00
 Workstation: Microsoft Windows NT 10.0.26300.0 (Google Chrome 157.0.8103.38 installed)
-Evaluated Repository Commit (origin/main): d350601 (Merge pull request #48 from terryhh/codex/cd-auth-fix)
+Historical Probe Commit Baseline: d350601 (Merge pull request #48 from terryhh/codex/cd-auth-fix)
 Target URL: https://devfest-flutter-a59e8.web.app
+Scope Note: This unauthenticated HTTP HEAD/GET log establishes HTTPS origin reachability and HSTS headers only. It does NOT establish compiled Dart flags (FAKE_BACKEND=false, no debug token), App Check attestation, or deployment identity; see docs/MVP-READINESS.md (rollouts 42422724152, 42425656543, 42425937906, 42428461526) for verified real-mode browser and function evidence.
 
 --- Probe 1: HEAD https://devfest-flutter-a59e8.web.app ---
 HTTP/1.1 200 OK
