@@ -8,7 +8,15 @@ import {
   TOKEN_ENDPOINT,
   TokenRequestError,
 } from '../src/live-token.js';
-import { MIN_INTERVAL_MS, createQuotaReservation, nextQuota } from '../src/token-quota.js';
+import {
+  GLOBAL_LIMIT_COLLECTION,
+  MAX_GLOBAL_TOKENS_PER_MINUTE,
+  MAX_TOKENS_PER_DAY,
+  MIN_INTERVAL_MS,
+  createQuotaReservation,
+  nextGlobalQuota,
+  nextQuota,
+} from '../src/token-quota.js';
 
 const nowMs = Date.parse('2026-11-07T21:00:00Z');
 const origin = 'https://devfest-flutter-a59e8.web.app';
@@ -187,30 +195,104 @@ test('quota requires 3 seconds between starts and permits only eight in ten minu
   assert.equal(quota.windowStartedAt, nowMs + 600_000);
 });
 
-test('quota reservation uses transaction serialization and hashed user IDs', async () => {
+function fakeQuotaDb() {
   const docs = new Map();
   let queue = Promise.resolve();
   const db = {
     collection(name) {
+      if (name === GLOBAL_LIMIT_COLLECTION) {
+        return { doc(id) { return `${name}/${id}`; } };
+      }
       assert.equal(name, '_liveTokenLimits');
-      return { doc(id) { assert.match(id, /^[a-f0-9]{64}$/); return id; } };
+      return { doc(id) { assert.match(id, /^[a-f0-9]{64}$/); return `${name}/${id}`; } };
     },
     runTransaction(callback) {
-      const task = queue.then(() => callback({
-        get: async (ref) => ({ exists: docs.has(ref), data: () => docs.get(ref) }),
-        set: (ref, data) => docs.set(ref, data),
-      }));
+      // Writes apply only if the callback succeeds, like a real transaction.
+      const task = queue.then(async () => {
+        const pending = new Map();
+        await callback({
+          get: async (ref) => ({ exists: docs.has(ref), data: () => docs.get(ref) }),
+          set: (ref, data) => pending.set(ref, data),
+        });
+        for (const [ref, data] of pending) docs.set(ref, data);
+      });
       queue = task.catch(() => {});
       return task;
     },
   };
+  return { db, docs };
+}
+const globalKey = `${GLOBAL_LIMIT_COLLECTION}/project`;
+
+test('quota reservation uses transaction serialization and hashed user IDs', async () => {
+  const { db, docs } = fakeQuotaDb();
   const reserve = createQuotaReservation(db);
   const results = await Promise.allSettled([
     reserve('learner', nowMs), reserve('learner', nowMs), reserve('learner', nowMs),
   ]);
   assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
-  assert.equal(docs.size, 1);
-  assert.equal([...docs.values()][0].count, 1);
+  assert.equal(docs.size, 2);
+  const userDoc = [...docs].find(([key]) => key.startsWith('_liveTokenLimits/'))[1];
+  assert.equal(userDoc.count, 1);
+  assert.equal(userDoc.dayCount, 1);
+  // Rejected per-user attempts do not consume the project-wide allowance.
+  assert.equal(docs.get(globalKey).count, 1);
+});
+
+test('per-user daily cap allows thirty tokens per UTC day then returns Retry-After', () => {
+  assert.equal(MAX_TOKENS_PER_DAY, 30);
+  const dayStart = Date.parse('2026-11-08T00:00:00Z');
+  let quota = null;
+  // Spread across the day so the ten-minute window never applies.
+  for (let i = 0; i < 30; i++) quota = nextQuota(quota, dayStart + i * 11 * 60_000);
+  assert.equal(quota.dayCount, 30);
+  const late = dayStart + 23 * 60 * 60_000;
+  assert.throws(() => nextQuota(quota, late), (error) =>
+    error.code === 'rate-limited' && error.status === 429 &&
+    error.retryAfterSeconds === 3600 && /tomorrow/.test(error.message));
+  quota = nextQuota(quota, dayStart + 24 * 60 * 60_000);
+  assert.equal(quota.dayCount, 1);
+});
+
+test('legacy quota documents without a day counter start a fresh daily count', () => {
+  const quota = nextQuota({ windowStartedAt: nowMs - 60_000, lastIssuedAt: nowMs - 60_000, count: 2 }, nowMs);
+  assert.equal(quota.count, 3);
+  assert.equal(quota.dayCount, 1);
+});
+
+test('project-wide cap allows twenty tokens per minute across all cooks', () => {
+  assert.equal(MAX_GLOBAL_TOKENS_PER_MINUTE, 20);
+  let quota = null;
+  for (let i = 0; i < 20; i++) quota = nextGlobalQuota(quota, nowMs + i * 1_000);
+  assert.equal(quota.count, 20);
+  assert.throws(() => nextGlobalQuota(quota, nowMs + 45_000), (error) =>
+    error.code === 'rate-limited' && error.status === 429 && error.retryAfterSeconds === 15);
+  quota = nextGlobalQuota(quota, nowMs + 60_000);
+  assert.equal(quota.count, 1);
+});
+
+test('reservation rejects the twenty-first distinct cook in one minute without writing', async () => {
+  const { db, docs } = fakeQuotaDb();
+  const reserve = createQuotaReservation(db);
+  for (let i = 0; i < 20; i++) await reserve(`cook-${i}`, nowMs + i * 100);
+  await assert.rejects(reserve('cook-late', nowMs + 30_000), (error) =>
+    error.status === 429 && error.retryAfterSeconds === 30);
+  assert.equal(docs.size, 21);
+  assert.equal(docs.get(globalKey).count, 20);
+  await reserve('cook-late', nowMs + 60_000);
+  assert.equal(docs.get(globalKey).count, 1);
+});
+
+test('handler returns 429 with Retry-After when a cap rejects the reservation', async () => {
+  const { handler, calls } = harness({ reserveQuota: async () => {
+    throw new TokenRequestError('rate-limited', 429, 'Live coaching is busy right now. Try again in a minute.', 42);
+  } });
+  const res = response();
+  await handler(request(), res);
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.headers['Retry-After'], '42');
+  assert.equal(res.body.error.retryAfterSeconds, 42);
+  assert.equal(calls.some(([kind]) => kind === 'mint'), false);
 });
 
 
@@ -237,4 +319,28 @@ test('invalid deployment settings fail before any provider request', async () =>
       fetchImpl: async () => assert.fail('invalid settings must not reach provider'),
     }), { code: 'not-configured', status: 503 });
   }
+});
+
+test('an earlier request never resets a newer full global window', () => {
+  const t = Date.UTC(2026, 10, 8, 15, 0, 0);
+  const full = { windowStartedAt: t + 100, count: MAX_GLOBAL_TOKENS_PER_MINUTE };
+  assert.throws(() => nextGlobalQuota(full, t), (error) =>
+    error.code === 'rate-limited' && error.status === 429);
+  const partial = { windowStartedAt: t + 100, count: 3 };
+  assert.deepEqual(nextGlobalQuota(partial, t), { windowStartedAt: t + 100, count: 4 });
+});
+
+test('reversed arrival keeps the per-cook window and day monotonic', () => {
+  const t = Date.UTC(2026, 10, 8, 23, 59, 59, 500);
+  let quota = nextQuota(null, t + 10_000);
+  // A retried request stamped earlier is refused, never resetting counters.
+  assert.throws(() => nextQuota(quota, t), (error) => error.status === 429);
+  // A full window is not reset by an earlier timestamp after the interval.
+  const full = { ...quota, count: 8, lastIssuedAt: t - 60_000 };
+  assert.throws(() => nextQuota(full, t), (error) => error.status === 429);
+  // The day index never moves backwards across midnight.
+  const nextDay = nextQuota(null, t + 1_000);
+  const later = nextQuota({ ...nextDay, lastIssuedAt: t - 60_000 }, t);
+  assert.equal(later.day, nextDay.day);
+  assert.equal(later.dayCount, 2);
 });

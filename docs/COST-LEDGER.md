@@ -207,3 +207,33 @@ Four explicitly approved runtime Secret Accessor bindings were applied and read 
 At 00:19 UTC November 8, read-only metadata showed dinnerReady ACTIVE on Node 22, min instances 0 / max instances 2, with ENABLE_DINNER_MESSAGES=false (updated 00:16:32 UTC). Runtime secret access was verified; this is not proof of a send or final current-main deployment completion. No SMS delivery or amount is claimed.
 
 Terry confirmed spoken input was understood and earlier confirmed audible coach output on desktop. He also reported the hosted controls fit and work on his phone; device/OS and full Android media/keyboard acceptance were not recorded. These confirmations add no measured usage figures. The reported $0 billing display remains unverified as to scope, credits and reporting lag. Final CD run 42429383604 is pending verification in this record.
+
+## November 8 guardrails (SS-043)
+
+Budget for the November 8 showcase: **$10 of Gemini spend**. Whether the $300
+GCP trial credit covers any Gemini usage is **unverified** (see the credit table
+above: welcome credits generally exclude current Gemini Developer API usage), so
+plan as if it does not. The remaining Vonage trial balance (about $1.99,
+user-reported) is **not to be spent**: dinner-ready messages use the clearly
+labeled simulated transport path during the demo.
+
+Application guardrails added in SS-043 (verified only with fakes and unit tests,
+not against live billing):
+
+- Live sessions auto-stop after `LIVE_SESSION_MAX_MINUTES` (default 8; set with
+  `--dart-define`), with a visible warning one minute before and one optional
+  +5 minute extension. Sessions with no cook speech or typed text for 3 minutes
+  stop with "Paused to save cost — tap Start to continue."
+- Watch checks run every 15 seconds (was 8) and pause after 3 minutes unless the
+  cook starts the watch again.
+- Stopping (manual, capped, idle or hidden tab) cancels capture and media
+  subscriptions, so no further camera frames or audio are sent.
+- `/api/live-token` now enforces, in addition to the existing 3-second spacing
+  and 8 tokens per 10 minutes per cook: 30 tokens per cook per UTC day and 20
+  tokens per minute across the project (server-only `_liveTokenGlobalLimits`
+  document; Firestore rules deny client access). Rejections return 429 with
+  `Retry-After`.
+
+These limits bound session count and length; they are not a dollar ceiling.
+Per-session cost has not been measured. Reconcile provider usage and billed
+amounts after the showcase.
