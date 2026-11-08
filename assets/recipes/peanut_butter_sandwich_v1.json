@@ -13,20 +13,20 @@
     {
       "id": "prep",
       "title": "Set out the bread",
-      "instruction": "Place two slices of bread side by side on a plate or clean board. Confirm the cook has peanut butter and ask: Would you like jam, or just peanut butter? Keep their choice for the filling step.",
+      "instruction": "Place two slices of bread side by side on a plate or clean board. Have your peanut butter ready. Would you like jam, or just peanut butter?",
       "cue": "Both slices lie flat with their upper surfaces visible and room to spread. Jam is a cook choice, not an assumed ingredient."
     },
     {
       "id": "spread",
       "title": "Spread the peanut butter",
-      "instruction": "Put some peanut butter on one slice. Use the back of a spoon or a butter knife to spread it gently across the bread, adding more only if the cook wants it.",
+      "instruction": "Put some peanut butter on one slice. Use the back of a spoon or a butter knife to spread it gently across the bread, adding more only if you want it.",
       "cue": "Peanut butter covers most of the slice in an even layer, leaving a small border. Look for large bare patches or a thick mound in the middle; avoid pressing hard enough to tear the bread.",
       "checkpointId": "cp_spread"
     },
     {
       "id": "optional_jam",
       "title": "Add jam if you chose it",
-      "instruction": "If the cook confirmed they want jam and have it, spread a thin layer on the second slice. If their choice is unknown, ask now. If they prefer plain peanut butter or have no jam, leave the second slice plain and move straight to closing the sandwich.",
+      "instruction": "If you chose jam and have it, spread a thin layer on the second slice. Otherwise, leave that slice plain and move on to closing the sandwich.",
       "cue": "With jam, the second slice has a thin spread layer rather than a large mound. Without jam, a plain second slice is the intended result. No waiting is needed."
     },
     {
