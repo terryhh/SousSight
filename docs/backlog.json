@@ -79,7 +79,8 @@
         "2026-11-07: PRs #53 and #54 merged. PR #56 stale-workspace guard remains under this existing card; no hosted generated-panel acceptance claimed.",
         "2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue \"Quick-pickle the onion\", a real \"Pickle onions\" timer counting 4:57 \u2192 4:44 \u2192 4:34, then updated the workspace to comparison \"Mash texture check\" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured.",
         "Explicit cook question/answer and deployed stale-step guard verification remain required; keep InProgress despite the now-verified real panel rendering criterion.",
-        "2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003."
+        "2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003.",
+        "2026-11-07: Hosted research answer visibly recommended a manual fork/masher to preserve chickpea chunkiness and displayed nine sources plus Google suggestion chips. The cook entered \"Acceptance test: use a fork to keep the chickpea mixture chunky.\" in the Fact field and clicked Confirm; the accessibility tree showed Cook-confirmed kitchen facts and Confirmed with the exact entered prefix. Camera/microphone stayed OFF. Reload returned the app with camera OFF, but the panel was not mounted and fact persistence after reload was not verified. This reused the prior research result; no new research call occurred in this sprint."
       ],
       "assignee": "terryhh"
     },
@@ -638,7 +639,8 @@
         "2026-11-07: Terry/backend agent started the shared learner adapter in an isolated branch. Jenna\u2019s original implementation and ownership are preserved; depends on SS-005 and SS-004.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/58 added to Terry project with actual terryhh assignee; stage read back.",
         "2026-11-07: PR #61 shared research integration has 129 passing Flutter tests; GitHub CI pending. No hosted integrated-panel acceptance claimed.",
-        "2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003."
+        "2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003.",
+        "2026-11-07: Hosted research answer visibly recommended a manual fork/masher to preserve chickpea chunkiness and displayed nine sources plus Google suggestion chips. The cook entered \"Acceptance test: use a fork to keep the chickpea mixture chunky.\" in the Fact field and clicked Confirm; the accessibility tree showed Cook-confirmed kitchen facts and Confirmed with the exact entered prefix. Camera/microphone stayed OFF. Reload returned the app with camera OFF, but the panel was not mounted and fact persistence after reload was not verified. This reused the prior research result; no new research call occurred in this sprint."
       ]
     },
     {
@@ -693,8 +695,8 @@
       "title": "Guard repository history and browser builds against secrets",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "User explicitly requires no secrets in GitHub, including a future public repository. Backend agent is implementing ignore rules and a redacted full-history CI scan using a trusted pinned scanner. Public Firebase browser configuration is not a server secret; allow only exact reviewed public values.",
       "acceptance": [
         "Keep server credentials, service-account private keys and other secrets out of tracked source, commit history, browser bundles and logs. Runtime secrets remain in the approved secret store.",
@@ -707,7 +709,8 @@
       "evidence": [
         "2026-11-07: User explicitly requested permanent repository secret protection before any future public release; backend agent started isolated implementation.",
         "2026-11-07: Current audit inspected 170 commits and 332 text blobs; 25 binary blobs were skipped. No pattern-matching server secrets were found; observed Firebase browser keys were public configuration. This limited pattern-based result is not a universal no-secret guarantee.",
-        "2026-11-07: PR #66 has green gitleaks and validation CI; checksum-verified Gitleaks 8.30.1 history/worktree scans and synthetic redaction/canary checks passed. Merge/completion not yet inferred."
+        "2026-11-07: PR #66 has green gitleaks and validation CI; checksum-verified Gitleaks 8.30.1 history/worktree scans and synthetic redaction/canary checks passed. Merge/completion not yet inferred.",
+        "2026-11-07: Secret guard PR #66 merged and main secret scan passed. Full-history/worktree scans and redacted synthetic-canary checks passed; documented binary/pattern coverage limitations remain. No claim of universal secret absence."
       ]
     }
   ]

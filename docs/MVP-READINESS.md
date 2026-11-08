@@ -93,3 +93,7 @@ Jenna’s SS-005 independent panel/demo is Done, with eight widget tests, analys
 ## Hosted research handoff and current board
 
 2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003. Current read-back: 29 cards, 12 Done, 14 In progress, 3 Backlog; all assigned. Jenna’s photos PR #67 and physical acceptance PR #68 remain open. Secret guard PR #66 has green CI and awaits merge. Manual run 42427944291 passed validation but failed deployment; its Hosting check was skipped.
+
+## Hosted explicit fact confirmation
+
+2026-11-07: Hosted research answer visibly recommended a manual fork/masher to preserve chickpea chunkiness and displayed nine sources plus Google suggestion chips. The cook entered "Acceptance test: use a fork to keep the chickpea mixture chunky." in the Fact field and clicked Confirm; the accessibility tree showed Cook-confirmed kitchen facts and Confirmed with the exact entered prefix. Camera/microphone stayed OFF. Reload returned the app with camera OFF, but the panel was not mounted and fact persistence after reload was not verified. This reused the prior research result; no new research call occurred in this sprint. Secret guard PR #66 is merged and the main secret scan passed.
