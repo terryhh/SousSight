@@ -17,6 +17,8 @@ import '../live/ephemeral_live_transport.dart';
 import '../live/live_controller.dart';
 import '../core/models.dart';
 import '../pantry/pantry_flow.dart';
+import '../app/how_it_works.dart';
+import 'allergen_chip.dart';
 import 'cooking_coordinator.dart';
 import 'demo_live.dart';
 
@@ -353,6 +355,8 @@ class _CookingScreenState extends State<CookingScreen>
           ),
         ),
       ),
+      AllergenChip(recipe: cook.recipe),
+      HowItWorksButton(isDemo: widget.isDemo),
     ],
   );
 

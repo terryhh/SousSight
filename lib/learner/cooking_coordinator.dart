@@ -9,6 +9,7 @@ import '../core/models.dart';
 import '../genui/cooking_ui.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
+import 'recipe_allergens.dart';
 import 'research_panel_client.dart';
 
 /// The cook confirms facts and actions; Gemini chooses how to coach and present
@@ -97,6 +98,7 @@ The initial checklist is a fallback, not your finished workspace. On connection,
 call show_cooking_ui to compose useful panels for this step and the cook's known
 context. Recompose when the cook answers, ingredients change, or research arrives;
 do not only narrate the preset recipe. Keep unanswered facts as questions.
+${allergyContextLine(recipe, session?.confirmedFacts ?? const []) ?? ''}
 $cookingUiInstructions
 ''';
 
