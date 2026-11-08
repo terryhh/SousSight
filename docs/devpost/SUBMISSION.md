@@ -1,6 +1,6 @@
 # SousSight: Devpost submission draft
 
-> Draft for review before pasting into Devpost (DevFest Florida 2026). Each claim is checked against the merged code. Live-service behavior still under hosted testing is worded accordingly.
+> Draft for review before pasting into Devpost (DevFest Florida 2026). Each claim is checked against the merged code and the hosted acceptance cards. Verified on production: real Vonage SMS delivered with a signed **Delivered ✓** callback (#39/#112), pantry typed input to meals (#109), Maps grounding (#110), and grounded research (#111).
 
 ## Inspiration
 
@@ -56,7 +56,7 @@ We built SousSight so anyone can walk into their kitchen with everyday pantry in
 2. **Live conversation vs. grounded search.** Mixing real-time custom tool calls with Google Search grounding in one session caused tool conflicts. Splitting the work across two models, Gemini Live for the kitchen conversation and Gemini Flash for grounded research, gave fast voice replies plus verifiable sources.
 3. **Keeping cooking state in sync.** A cook may move to the next step while an earlier camera check or search is still running. Generated panels, watch reports and research results carry **step IDs, watch IDs and request epochs**, so late results from an earlier step are rejected instead of overwriting newer state.
 4. **Timers that survive a changing UI.** Gemini recomposes the workspace constantly, and naive replacement would reset countdowns. Timers run from absolute deadlines in the state layer, so they stay accurate through UI changes, and the active timer survives a page reload.
-5. **Showing Vonage failure honestly without spending credit.** Our first real send was rejected with error 1120 (Illegal Sender Address). That taught us to treat provider acceptance and delivery as different things. Our status handler now distinguishes submitted, delivered and failed, and a clearly labelled demo mode runs simulated delivered and failed events through that same handler, so no SMS credit is spent.
+5. **Proving delivery, not just acceptance.** Our first real send was rejected with error 1120 (Illegal Sender Address), even though Vonage had accepted the request. That taught us to treat acceptance and delivery as different things. We now verify Vonage's signed status callbacks and show the cook the real outcome. A real text sent from the hosted app reached the phone, and the app showed **Delivered ✓** from the signed callback. For repeatable demos, a clearly labelled mode runs simulated delivered and failed events through that same handler without spending SMS credit.
 
 ## Accomplishments that we're proud of
 
@@ -76,7 +76,7 @@ We built SousSight so anyone can walk into their kitchen with everyday pantry in
 
 * **More pantry and seasonal recipes:** a growing catalog built around what local pantries and campus gardens actually hand out.
 * **Community kitchen field testing:** hands-on sessions with student groups and local pantries to measure cooking confidence and food use.
-* **Live delivery receipts in production:** switch on the signed Vonage status webhook already built, and add failover from SMS to WhatsApp.
+* **Channel failover:** fall back from SMS to WhatsApp or another channel when delivery fails, using the delivery-status pipeline already in place.
 * **Fully bilingual experience:** go from a coach that replies in the cook's language to a bilingual interface, starting with Spanish.
 
 ## Built with
