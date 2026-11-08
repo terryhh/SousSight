@@ -163,7 +163,11 @@ void main() {
     );
     expect(
       label('rejected', simulated: true),
-      startsWith('Simulated failure (demo).'),
+      startsWith('Simulated — no SMS sent. Not delivered'),
+    );
+    expect(
+      label('delivered', simulated: true),
+      'Simulated — no SMS sent. Delivered ✓',
     );
     expect(
       DinnerDeliveryStatus.fromMap({'status': 'undeliverable'}).isFailure,

@@ -107,36 +107,66 @@ export const providerIndexId = (messageUuid) => sha256Hex(messageUuid);
 export const notificationPath = (sessionId, notificationId) =>
   `sessions/${sessionId}/notifications/${notificationId}`;
 
+export const pendingStatusPath = (messageUuid) => `_dinnerPendingStatus/${providerIndexId(messageUuid)}`;
+export const MAX_BUFFERED_EVENTS = 20;
+const BUFFER_TTL_MS = 7 * 24 * 60 * 60_000;
+
+/** Folds one status event into a ledger record. Returns null when the event
+ * must not change anything (monotonic, failures terminal). */
+export function foldStatus(record, event, nowMs) {
+  if (!shouldAdvance(record.deliveryStatus ?? null, event.status)) return null;
+  const failure = FAILURES.has(event.status);
+  return {
+    deliveryStatus: event.status,
+    statusHistory: [...(Array.isArray(record.statusHistory) ? record.statusHistory : []),
+      { status: event.status, at: nowMs }].slice(-20),
+    updatedAt: nowMs,
+    errorTitle: failure ? event.errorTitle ?? 'Not delivered' : null,
+    errorCode: failure ? event.errorCode ?? null : null,
+  };
+}
+
+/** Cook-readable mirror fields for a folded ledger state. */
+export const mirrorFor = (record, simulated, nowMs) => ({
+  kind: record.kind ?? 'ready', status: record.deliveryStatus,
+  errorTitle: record.errorTitle ?? null, errorCode: record.errorCode ?? null,
+  simulated: simulated === true, updatedAt: nowMs,
+});
+
 /** Applies a delivery status to the server ledger and the cook-readable mirror.
- * Shared by the signed webhook and the server-side failure simulation. */
+ * Shared by the signed webhook and the server-side demo simulation.
+ *
+ * A verified callback can arrive before the send response returns and `settle`
+ * writes the provider index. Such events are buffered under
+ * `_dinnerPendingStatus/{sha256(uuid)}` and folded in by `settle`, so a fast
+ * rejection is never discarded. */
 export function createDeliveryStatusStore(db) {
   return async function applyStatus(event, nowMs) {
     const indexRef = db.collection('_dinnerProviderMessages').doc(providerIndexId(event.messageUuid));
+    const pendingRef = db.doc(pendingStatusPath(event.messageUuid));
     return db.runTransaction(async (transaction) => {
       const index = await transaction.get(indexRef);
-      if (!index.exists) return { matched: false };
+      if (!index.exists) {
+        const pending = await transaction.get(pendingRef);
+        const prior = pending.exists && Array.isArray(pending.data().events) ? pending.data().events : [];
+        transaction.set(pendingRef, {
+          events: [...prior, { status: event.status, errorTitle: event.errorTitle ?? null,
+            errorCode: event.errorCode ?? null, at: nowMs }].slice(-MAX_BUFFERED_EVENTS),
+          createdAt: pending.exists ? pending.data().createdAt ?? nowMs : nowMs,
+          updatedAt: nowMs, expireAt: new Date(nowMs + BUFFER_TTL_MS),
+        });
+        return { matched: false, buffered: true };
+      }
       const { ledgerKey, sessionId, notificationId } = index.data();
       const ledgerRef = db.collection('_dinnerNotifications').doc(ledgerKey);
       const ledger = await transaction.get(ledgerRef);
       if (!ledger.exists) return { matched: false };
       const record = ledger.data();
-      if (!shouldAdvance(record.deliveryStatus ?? null, event.status)) {
-        return { matched: true, applied: false, status: record.deliveryStatus ?? null };
-      }
-      const failure = FAILURES.has(event.status);
-      const history = [...(Array.isArray(record.statusHistory) ? record.statusHistory : []),
-        { status: event.status, at: nowMs }].slice(-20);
-      transaction.update(ledgerRef, {
-        deliveryStatus: event.status, statusHistory: history, updatedAt: nowMs,
-        errorTitle: failure ? event.errorTitle ?? null : null,
-        errorCode: failure ? event.errorCode ?? null : null,
-      });
-      transaction.set(db.doc(notificationPath(sessionId, notificationId)), {
-        kind: record.kind ?? 'ready', status: event.status,
-        errorTitle: failure ? event.errorTitle ?? 'Not delivered' : null,
-        errorCode: failure ? event.errorCode ?? null : null,
-        simulated: index.data().simulated === true, updatedAt: nowMs,
-      }, { merge: true });
+      const update = foldStatus(record, event, nowMs);
+      if (!update) return { matched: true, applied: false, status: record.deliveryStatus ?? null };
+      transaction.update(ledgerRef, update);
+      transaction.set(db.doc(notificationPath(sessionId, notificationId)),
+        mirrorFor({ ...record, ...update }, index.data().simulated, nowMs), { merge: true });
       return { matched: true, applied: true, status: event.status };
     });
   };
@@ -169,7 +199,8 @@ export function createVonageStatusHandler({ secret, applyStatus, now = Date.now,
     if (!event) return res.status(200).json({ ok: true, ignored: 'unsupported' });
     try {
       const result = await applyStatus(event, nowMs);
-      if (!result.matched) report('vonage-status-unmatched', { status: event.status });
+      if (result.buffered) report('vonage-status-buffered', { status: event.status });
+      else if (!result.matched) report('vonage-status-unmatched', { status: event.status });
       return res.status(200).json({ ok: true });
     } catch {
       report('vonage-status-store-failed', { status: event.status });

@@ -32,6 +32,7 @@ service cloud.firestore {
     match /_dinnerMealClaims/{id} { allow read, write: if false; }
     match /_dinnerSendLimits/{id} { allow read, write: if false; }
     match /_dinnerProviderMessages/{id} { allow read, write: if false; }
+    match /_dinnerPendingStatus/{id} { allow read, write: if false; }
 
     match /sessions/{sessionId} {
       function validSession(data) {

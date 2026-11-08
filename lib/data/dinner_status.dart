@@ -52,9 +52,12 @@ class DinnerDeliveryStatus {
       'skipped' => 'Rehearsal only: no message was sent.',
       _ => 'The delivery state is uncertain. We will not resend automatically.',
     };
-    return simulated ? 'Simulated failure (demo). $text' : text;
+    return simulated ? '$simulatedLabel $text' : text;
   }
 }
+
+/// Prefix on every simulated status so a demo can never pass for a real SMS.
+const simulatedLabel = 'Simulated — no SMS sent.';
 
 abstract interface class DinnerStatusSource {
   Stream<DinnerDeliveryStatus?> watch(String sessionId, String notificationId);
@@ -82,7 +85,7 @@ class FirestoreDinnerStatusSource implements DinnerStatusSource {
 }
 
 /// Visibly simulated backend for FAKE_BACKEND builds and widget tests. Real
-/// sends become rehearsals; `simulateFailure` follows the server's demo path.
+/// sends become rehearsals; `simulate` follows the server's demo path.
 class FakeDinnerBackend implements DinnerStatusSource {
   final _controllers = <String, StreamController<DinnerDeliveryStatus?>>{};
   final _latest = <String, DinnerDeliveryStatus>{};
@@ -114,15 +117,17 @@ class FakeDinnerBackend implements DinnerStatusSource {
   Future<DinnerMessageResult> send(DinnerMessageRequest request) async {
     sent.add(request);
     final kind = request.kind.name;
-    if (request.simulateFailure) {
+    final simulate = request.simulate;
+    if (simulate != null) {
+      final rejected = simulate == DinnerSimulation.rejected;
       emit(
         request.sessionId,
         request.notificationId,
         DinnerDeliveryStatus(
-          status: 'rejected',
+          status: simulate.name,
           kind: kind,
-          errorTitle: 'Illegal Sender Address',
-          errorCode: '1120',
+          errorTitle: rejected ? 'Illegal Sender Address' : null,
+          errorCode: rejected ? '1120' : null,
           simulated: true,
         ),
       );
@@ -130,7 +135,7 @@ class FakeDinnerBackend implements DinnerStatusSource {
         'submitted',
         'demo',
         message: request.preview,
-        deliveryStatus: 'rejected',
+        deliveryStatus: simulate.name,
         simulated: true,
       );
     }

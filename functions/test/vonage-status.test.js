@@ -121,7 +121,10 @@ test('ledger history and cook mirror update without downgrading', async () => {
   assert.deepEqual(ledger.statusHistory.map((entry) => entry.status), ['delivered', 'read']);
   assert.deepEqual(db.docs.get('sessions/meal-1/notifications/notice-123'), { kind: 'started', status: 'read',
     errorTitle: null, errorCode: null, simulated: false, updatedAt: nowMs + 2 });
-  assert.deepEqual(await apply({ messageUuid: 'unknown-uuid', status: 'delivered' }, nowMs), { matched: false });
+  assert.deepEqual(await apply({ messageUuid: 'unknown-uuid', status: 'delivered' }, nowMs),
+    { matched: false, buffered: true });
+  assert.deepEqual(db.docs.get(`_dinnerPendingStatus/${providerIndexId('unknown-uuid')}`).events,
+    [{ status: 'delivered', errorTitle: null, errorCode: null, at: nowMs }]);
 });
 
 function harness(applyStatus) {

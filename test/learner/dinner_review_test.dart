@@ -99,6 +99,8 @@ void main() {
   Finder getConfirm() => find.widgetWithText(FilledButton, 'Rehearse send');
   Finder simulate() =>
       find.widgetWithText(OutlinedButton, 'Simulate failed delivery (demo)');
+  Finder simulateDelivery() =>
+      find.widgetWithText(OutlinedButton, 'Simulate delivery (demo)');
   String statusText(WidgetTester tester) =>
       tester.widget<Text>(find.byKey(const Key('dinner-status'))).data!;
 
@@ -142,7 +144,8 @@ void main() {
     expect(sent.sessionId, cook.session!.id);
     expect(sent.kind, DinnerKind.ready);
     expect(sent.recipeTitle, cook.recipe.title);
-    expect(sent.simulateFailure, isFalse);
+    expect(sent.simulate, isNull);
+    expect(sent.toJson().containsKey('simulateOutcome'), isFalse);
     expect(sent.toJson().containsKey('message'), isFalse);
     expect(tester.widget<FilledButton>(getConfirm()).onPressed, isNull);
     response.complete(
@@ -256,8 +259,8 @@ void main() {
     await tester.enterText(field('Recipient'), '+14075550123');
     await tester.tap(simulate());
     await tester.pump();
-    expect(submissions.single.simulateFailure, isTrue);
-    expect(submissions.single.toJson()['simulateFailure'], isTrue);
+    expect(submissions.single.simulate, DinnerSimulation.rejected);
+    expect(submissions.single.toJson()['simulateOutcome'], 'rejected');
     response.complete(
       const DinnerMessageResult(
         'submitted',
@@ -278,10 +281,76 @@ void main() {
     );
     expect(
       statusText(tester),
-      'Simulated failure (demo). Not delivered: Illegal Sender Address (error 1120)',
+      'Simulated — no SMS sent. Not delivered: Illegal Sender Address (error 1120)',
     );
     expect(simulate(), findsNothing);
+    expect(simulateDelivery(), findsNothing);
     expect(find.text('Edit and send as new message'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('simulated delivery is labelled, never a real send, and locks', (
+    tester,
+  ) async {
+    await openDraft(tester);
+    await tester.enterText(field('Recipient'), '+14075550123');
+    expect(simulateDelivery(), findsOneWidget);
+    expect(simulate(), findsOneWidget);
+    await tester.tap(simulateDelivery());
+    await tester.pump();
+    expect(submissions.single.simulate, DinnerSimulation.delivered);
+    expect(submissions.single.toJson()['simulateOutcome'], 'delivered');
+    expect(tester.widget<FilledButton>(getConfirm()).onPressed, isNull);
+    response.complete(
+      const DinnerMessageResult(
+        'submitted',
+        'sms',
+        deliveryStatus: 'delivered',
+        simulated: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(statusText(tester), 'Simulated — no SMS sent. Delivered ✓');
+    await emit(
+      tester,
+      const DinnerDeliveryStatus(status: 'submitted', simulated: true),
+    );
+    expect(statusText(tester), startsWith('Simulated — no SMS sent. Sent to'));
+    await emit(
+      tester,
+      const DinnerDeliveryStatus(status: 'delivered', simulated: true),
+    );
+    expect(statusText(tester), 'Simulated — no SMS sent. Delivered ✓');
+    expect(simulateDelivery(), findsNothing);
+    expect(simulate(), findsNothing);
+    expect(find.text('Edit and send as new message'), findsNothing);
+    expect(submissions, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('started-cooking dialog offers simulated delivery', (
+    tester,
+  ) async {
+    await pumpScreen(tester);
+    await open(tester, 'Text household: started cooking');
+    await tester.enterText(field('Recipient'), '+14075550123');
+    await tester.enterText(field('Minutes until dinner'), '20');
+    expect(simulate(), findsOneWidget);
+    await tester.tap(simulateDelivery());
+    await tester.pump();
+    final sent = submissions.single;
+    expect(sent.kind, DinnerKind.started);
+    expect(sent.toJson(), containsPair('simulateOutcome', 'delivered'));
+    response.complete(
+      const DinnerMessageResult(
+        'submitted',
+        'sms',
+        deliveryStatus: 'delivered',
+        simulated: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(statusText(tester), 'Simulated — no SMS sent. Delivered ✓');
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -77,7 +77,7 @@ free-form client or model text reaches the household:
   "recipeTitle": "Chickpea wraps",
   "minutes": 25,
   "cookName": "Optional, started only",
-  "simulateFailure": false
+  "simulateOutcome": null
 }
 ```
 
@@ -121,8 +121,15 @@ in `Authorization` verifies:
 
 Invalid signatures get 401. A missing `Authorization` header gets 503 because
 Vonage documents that it may send an unsigned callback after an internal error and
-retries a 5xx signed. Unknown `message_uuid` or unsupported statuses get 200 (no
-retry storm). Storage failures get 500 so Vonage retries. Logs contain only event
+retries a 5xx signed. Unsupported statuses get 200 (no retry storm). A verified
+event whose `message_uuid` has no provider index yet (the callback beat the send
+response, or the UUID is unknown) is buffered, not dropped: it is appended to
+`_dinnerPendingStatus/{sha256(message_uuid)}` (capped at 20 events, with an
+`expireAt` timestamp 7 days out that a Firestore TTL policy may use) and answered
+200. When `settle` later writes the provider index, it reads that buffer in the
+same transaction, folds the events through the same monotonic logic, mirrors the
+result and deletes the buffer, so a fast rejection still surfaces with its error
+and recovery action. Storage failures get 500 so Vonage retries. Logs contain only event
 codes and statuses: never tokens, bodies, phone numbers or message UUIDs.
 
 On send, `settle` writes `_dinnerProviderMessages/{sha256(message_uuid)}` ->
@@ -142,16 +149,26 @@ meal/recipient/kind slot for a **new** notification ID only after the cook edits
 and confirms again. Pending or unknown attempts still block new IDs, and nothing
 is retried automatically.
 
-### Failure simulation (demo)
+### Delivery simulation (zero-cost demo)
 
-With `ALLOW_DELIVERY_SIMULATION=true`, a request with `"simulateFailure": true`
-never contacts Vonage. It claims the ledger (rate limit and ownership included),
-records a synthetic `sim-<uuid>` message ID, and then runs the **same** status
-function as the webhook with `status: rejected`, error `Illegal Sender Address`
-(code 1120, the rejection this account really recorded). The mirror is marked
-`simulated: true` and the app labels it "Simulated failure (demo)". With the
-parameter unset or `false`, the request returns 403 `simulation-disabled`. It
-works while `ENABLE_DINNER_MESSAGES=false`.
+With `ALLOW_DELIVERY_SIMULATION=true`, a request with `"simulateOutcome"` set to
+`"delivered"` or `"rejected"` never contacts Vonage (`"simulateFailure": true` is
+still accepted as an alias for `"rejected"`; a contradictory pair is 400). It
+claims the ledger (rate limit and ownership included), records a synthetic
+`sim-<uuid>` message ID, and then runs the **same** status function as the
+webhook with synthetic events:
+
+- `delivered`: `submitted` then `delivered`.
+- `rejected`: `rejected`, error `Illegal Sender Address` (code 1120, the
+  rejection this account really recorded), which enables the cook's recovery
+  action.
+
+The mirror is marked `simulated: true` and the app prefixes every such status
+with "Simulated — no SMS sent." With the parameter unset or `false`, the request
+returns 403 `simulation-disabled`. It works while `ENABLE_DINNER_MESSAGES=false`,
+so both lifecycle messages (`started`, `ready`) and both outcomes can be shown
+without spending Vonage credit. A real send stays optional and needs explicit
+approval.
 
 ### Rate limit
 
@@ -173,7 +190,7 @@ Configuration:
 - `DINNER_STATUS_WEBHOOK_URL` (string param, default empty): set by the workflow
   to `https://devfest-flutter-a59e8.web.app/api/vonage-status` when
   `DINNER_STATUS_READY=true`.
-- `ALLOW_DELIVERY_SIMULATION=false` by default (demo failure simulation).
+- `ALLOW_DELIVERY_SIMULATION=false` by default (demo delivery/failure simulation).
 - Allowed origins reuse `LIVE_ALLOWED_ORIGINS`.
 
 The [Vonage Sandbox guide](https://developer.vonage.com/en/messages/concepts/messages-api-sandbox)
@@ -317,6 +334,7 @@ secret cannot break deployment. With it `true`, it packages `src/index.js`, adds
 
 Verification status: unit tests cover JWT verification (valid, bad signature,
 `alg` swap, stale/future `iat`, hash mismatch), status mapping and monotonicity,
-unknown UUIDs, simulation, templates, rate limit and pre-claim configuration
+unknown UUIDs, callbacks arriving before the send response (buffer and fold at
+settle), delivered/rejected simulation without any provider call, templates, rate limit and pre-claim configuration
 checks with an in-memory Firestore and injected transport. No real Vonage
 callback, SMS, deployment or live Firestore write has been exercised.

@@ -19,6 +19,7 @@ export function fakeFirestore(seed = [['sessions/meal-1', { learnerId: 'cook-1' 
             writes.push(() => docs.set(ref, options?.merge ? { ...docs.get(ref), ...data } : data));
           },
           update(ref, data) { writes.push(() => docs.set(ref, { ...docs.get(ref), ...data })); },
+          delete(ref) { writes.push(() => docs.delete(ref)); },
         });
         writes.forEach((write) => write());
         return result;

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { TokenRequestError as HttpError } from './live-token.js';
-import { notificationPath, providerIndexId } from './vonage-status.js';
+import {
+  foldStatus, mirrorFor, notificationPath, pendingStatusPath, providerIndexId,
+} from './vonage-status.js';
 
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 const publicStatuses = new Set(['submitted', 'skipped', 'failed', 'unknown']);
@@ -9,7 +11,8 @@ export const DINNER_KINDS = ['started', 'ready'];
 export const SEND_LIMIT_PER_HOUR = 5;
 const HOUR_MS = 60 * 60_000;
 const REQUEST_KEYS = ['sessionId', 'notificationId', 'recipient', 'kind', 'recipeTitle',
-  'minutes', 'cookName', 'simulateFailure'];
+  'minutes', 'cookName', 'simulateFailure', 'simulateOutcome'];
+export const SIMULATED_OUTCOMES = ['delivered', 'rejected'];
 
 // Simulated Vonage outcome for the demo. Error 1120 is the rejection this
 // account actually recorded for a non-numeric sender (see README).
@@ -18,6 +21,14 @@ export const SIMULATED_FAILURE = Object.freeze({
   errorTitle: 'Illegal Sender Address',
   errorCode: '1120',
   detail: 'Simulated: Vonage error 1120',
+});
+
+/** Synthetic status callbacks for each demo outcome, applied in order through
+ * the same status function a signed Vonage webhook uses. */
+export const SIMULATED_EVENTS = Object.freeze({
+  delivered: [{ status: 'submitted' }, { status: 'delivered' }],
+  rejected: [{ status: SIMULATED_FAILURE.status, errorTitle: SIMULATED_FAILURE.errorTitle,
+    errorCode: SIMULATED_FAILURE.errorCode }],
 });
 
 export function normalizeRecipient(value) {
@@ -57,9 +68,14 @@ export function validateDinnerRequest(body, allowedRecipients) {
       typeof body.recipeTitle !== 'string' || body.recipeTitle.length > 200 ||
       (body.cookName !== undefined && body.cookName !== null &&
         (typeof body.cookName !== 'string' || body.cookName.length > 80)) ||
-      (body.simulateFailure !== undefined && typeof body.simulateFailure !== 'boolean')) {
+      (body.simulateFailure !== undefined && typeof body.simulateFailure !== 'boolean') ||
+      (body.simulateOutcome !== undefined && body.simulateOutcome !== null &&
+        !SIMULATED_OUTCOMES.includes(body.simulateOutcome)) ||
+      // The legacy alias means "rejected"; a contradictory pair is ambiguous.
+      (body.simulateFailure === true && body.simulateOutcome && body.simulateOutcome !== 'rejected')) {
     throw invalid();
   }
+  const simulateOutcome = body.simulateOutcome || (body.simulateFailure === true ? 'rejected' : null);
   const recipeTitle = cleanTemplateText(body.recipeTitle, 60);
   if (!recipeTitle) throw invalid();
   let minutes = null;
@@ -77,7 +93,7 @@ export function validateDinnerRequest(body, allowedRecipients) {
   }
   const slots = { kind: body.kind, recipeTitle, minutes, cookName };
   return { sessionId: body.sessionId, notificationId: body.notificationId, recipient,
-    ...slots, simulateFailure: body.simulateFailure === true, message: composeDinnerMessage(slots) };
+    ...slots, simulateOutcome, message: composeDinnerMessage(slots) };
 }
 
 export function nextSendLimit(previous, nowMs, limit = SEND_LIMIT_PER_HOUR) {
@@ -134,12 +150,12 @@ export function createDinnerLedger(db) {
         const nextLimit = nextSendLimit(limit.exists ? limit.data() : null, nowMs);
         const record = { fingerprint, status: 'pending', channel, kind: request.kind,
           sessionId: request.sessionId, notificationId: request.notificationId,
-          simulated: request.simulateFailure, createdAt: nowMs, updatedAt: nowMs };
+          simulated: Boolean(request.simulateOutcome), createdAt: nowMs, updatedAt: nowMs };
         transaction.create(ref, record);
         transaction.set(mealRef, { notificationId: request.notificationId, ledgerKey: key, createdAt: nowMs });
         transaction.set(limitRef, nextLimit);
         transaction.set(mirrorRef, { kind: request.kind, status: 'pending', errorTitle: null,
-          errorCode: null, reason: null, simulated: request.simulateFailure, updatedAt: nowMs });
+          errorCode: null, reason: null, simulated: Boolean(request.simulateOutcome), updatedAt: nowMs });
         return { key, claimed: true, record };
       });
     },
@@ -150,8 +166,21 @@ export function createDinnerLedger(db) {
         if (!snapshot.exists || snapshot.data().status !== 'pending') return;
         const record = snapshot.data();
         const { providerMessageId, ...stored } = result;
-        transaction.update(ref, { ...stored, updatedAt: nowMs,
+        // Status callbacks verified before this index existed were buffered;
+        // fold them in now so a fast rejection/delivery is never lost.
+        const pendingRef = providerMessageId ? db.doc(pendingStatusPath(providerMessageId)) : null;
+        const pending = pendingRef ? await transaction.get(pendingRef) : null;
+        let folded = { ...record, ...stored };
+        for (const event of pending?.exists && Array.isArray(pending.data().events) ? pending.data().events : []) {
+          folded = { ...folded, ...(foldStatus(folded, event, nowMs) ?? {}) };
+        }
+        const delivery = folded.deliveryStatus
+          ? { deliveryStatus: folded.deliveryStatus, statusHistory: folded.statusHistory,
+            errorTitle: folded.errorTitle ?? null, errorCode: folded.errorCode ?? null }
+          : {};
+        transaction.update(ref, { ...stored, ...delivery, updatedAt: nowMs,
           ...(providerMessageId ? { providerMessageHash: providerIndexId(providerMessageId) } : {}) });
+        if (pending?.exists) transaction.delete(pendingRef);
         if (providerMessageId) {
           // Status webhooks carry only message_uuid; this index maps it back.
           transaction.set(db.collection('_dinnerProviderMessages').doc(providerIndexId(providerMessageId)), {
@@ -160,10 +189,12 @@ export function createDinnerLedger(db) {
           });
         }
         if (record.sessionId) {
-          transaction.set(db.doc(notificationPath(record.sessionId, record.notificationId)), {
-            kind: record.kind ?? 'ready', status: result.status, reason: result.reason ?? null,
-            simulated: record.simulated === true, updatedAt: nowMs,
-          }, { merge: true });
+          transaction.set(db.doc(notificationPath(record.sessionId, record.notificationId)),
+            folded.deliveryStatus
+              ? { ...mirrorFor(folded, record.simulated, nowMs), reason: result.reason ?? null }
+              : { kind: record.kind ?? 'ready', status: result.status, reason: result.reason ?? null,
+                simulated: record.simulated === true, updatedAt: nowMs },
+            { merge: true });
         }
       });
     },
@@ -230,17 +261,18 @@ export function createDinnerService({ ledger, sendMessage, applyStatus, settings
     if (!['whatsapp', 'sms'].includes(settings.channel)) {
       throw new HttpError('not-configured', 503, 'Dinner messaging is not configured yet.');
     }
-    if (request.simulateFailure && settings.allowSimulation !== true) {
-      throw new HttpError('simulation-disabled', 403, 'Delivery failure simulation is disabled.');
+    const simulation = request.simulateOutcome;
+    if (simulation && settings.allowSimulation !== true) {
+      throw new HttpError('simulation-disabled', 403, 'Delivery simulation is disabled.');
     }
     // Reject known configuration problems BEFORE claiming, so fixing them does
     // not leave the meal slot locked by an attempt that never reached Vonage.
-    if (!request.simulateFailure && settings.enabled && settings.checkProvider?.()) {
+    if (!simulation && settings.enabled && settings.checkProvider?.()) {
       throw new HttpError('not-configured', 503, 'Dinner messaging is not configured yet.');
     }
     const claim = await ledger.claim({ uid, request, channel: settings.channel, nowMs: now() });
     const base = { notificationId: request.notificationId, kind: request.kind, message: request.message,
-      simulated: request.simulateFailure };
+      simulated: Boolean(simulation) };
     if (!claim.claimed) {
       return { ...base, status: publicStatuses.has(claim.record.status) ? claim.record.status : 'unknown',
         channel: claim.record.channel, duplicate: true,
@@ -248,7 +280,7 @@ export function createDinnerService({ ledger, sendMessage, applyStatus, settings
         reason: claim.record.reason ?? (claim.record.status === 'pending' ? 'attempt-in-progress-or-unconfirmed' : null) };
     }
     let result;
-    if (request.simulateFailure) {
+    if (simulation) {
       // Demo path: Vonage is never contacted. A synthetic message UUID flows
       // through the same ledger, index and status function as a real callback.
       result = { status: 'submitted', providerMessageId: `sim-${randomUUID()}` };
@@ -267,13 +299,13 @@ export function createDinnerService({ ledger, sendMessage, applyStatus, settings
         deliveryStatus: null, reason: 'status-not-persisted' };
     }
     let deliveryStatus = null;
-    if (request.simulateFailure) {
+    if (simulation) {
       try {
-        const applied = await applyStatus({ messageUuid: result.providerMessageId,
-          status: SIMULATED_FAILURE.status, errorTitle: SIMULATED_FAILURE.errorTitle,
-          errorCode: SIMULATED_FAILURE.errorCode }, now());
-        deliveryStatus = applied?.status ?? null;
-      } catch { /* Mirror stays at submitted; the UI shows that honestly. */ }
+        for (const event of SIMULATED_EVENTS[simulation]) {
+          const applied = await applyStatus({ messageUuid: result.providerMessageId, ...event }, now());
+          deliveryStatus = applied?.status ?? deliveryStatus;
+        }
+      } catch { /* Mirror keeps its last applied status; the UI shows that honestly. */ }
     }
     return { ...base, status: result.status, channel: settings.channel, duplicate: false,
       deliveryStatus, reason: result.reason ?? null };

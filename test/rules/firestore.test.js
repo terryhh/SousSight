@@ -101,7 +101,7 @@ test('checkpoint parent linkage, rating and photo size are validated', async () 
 
 test('all server ledgers and contacts deny reads and writes even to catalog editors', async () => {
   for (const name of ['_liveTokenLimits', '_dinnerNotifications', '_dinnerMealClaims', '_dinnerSendLimits',
-    '_dinnerProviderMessages', 'instructorContacts', 'learnerContacts']) {
+    '_dinnerProviderMessages', '_dinnerPendingStatus', 'instructorContacts', 'learnerContacts']) {
     await seed(`${name}/private`, { secret: 'fixture' });
     for (const client of [db(), db('editor', { soussightCatalogEditor: true })]) {
       const ref = doc(client, `${name}/private`);

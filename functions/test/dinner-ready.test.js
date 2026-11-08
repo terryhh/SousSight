@@ -55,7 +55,8 @@ test('rejects free-form messages, bad kinds, minutes and recipients', () => {
     { message: 'Free-form text' }, { kind: 'reminder' }, { kind: undefined }, { recipeTitle: '' },
     { recipeTitle: '<>' }, { recipeTitle: 'x'.repeat(201) }, { recipeTitle: 7 }, { minutes: 10 },
     { notificationId: '../bad/key' }, { sessionId: '../../other' }, { channel: 'sms' },
-    { simulateFailure: 'yes' }, { cookName: 3 },
+    { simulateFailure: 'yes' }, { simulateOutcome: 'read' }, { simulateOutcome: true },
+    { simulateFailure: true, simulateOutcome: 'delivered' }, { cookName: 3 },
   ]) {
     assert.throws(() => validateDinnerRequest(input(change), settings.allowedRecipients), { code: 'invalid-request' }, JSON.stringify(change));
   }
@@ -185,13 +186,109 @@ test('simulated failure skips Vonage and runs the shared status update', async (
   assert.equal(index.simulated, true);
 });
 
-test('simulation is refused unless explicitly enabled', async () => {
-  const { service, sent, db } = harness();
-  await assert.rejects(service('cook-1', input({ simulateFailure: true })),
-    { code: 'simulation-disabled', status: 403 });
-  assert.equal(sent.length, 0);
-  assert.equal(db.docs.size, 1);
+test('simulated delivery never contacts Vonage and mirrors submitted then delivered', async () => {
+  const fetchCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args) => { fetchCalls.push(args); throw new Error('Unexpected network call'); };
+  try {
+    const { service, db } = harness({
+      settings: { ...settings, enabled: false, allowSimulation: true, checkProvider: () => 'not-configured' },
+      // The real transport with a spying fetch: any provider call would be recorded.
+      sendMessage: ({ request, channel }) => sendVonageDinner({ request, channel,
+        credentials: { apiKey: 'k', apiSecret: 's', from: '14075550999' },
+        fetchImpl: async (...args) => { fetchCalls.push(args); throw new Error('Unexpected Vonage call'); } }),
+    });
+    for (const body of [input({ simulateOutcome: 'delivered' }),
+      started({ simulateOutcome: 'delivered' })]) {
+      const result = await service('cook-1', body);
+      assert.equal(result.status, 'submitted');
+      assert.equal(result.deliveryStatus, 'delivered');
+      assert.equal(result.simulated, true);
+      assert.deepEqual(mirror(db, body.notificationId), { kind: body.kind, status: 'delivered', errorTitle: null,
+        errorCode: null, reason: null, simulated: true, updatedAt: nowMs });
+    }
+    assert.equal(fetchCalls.length, 0);
+    const ledgers = [...db.docs.entries()].filter(([key]) => key.startsWith('_dinnerNotifications/'));
+    for (const [, ledger] of ledgers) {
+      assert.equal(ledger.simulated, true);
+      assert.deepEqual(ledger.statusHistory.map((h) => h.status), ['submitted', 'delivered']);
+    }
+    const indexes = [...db.docs.keys()].filter((key) => key.startsWith('_dinnerProviderMessages/'));
+    assert.equal(indexes.length, 2);
+    // Simulations still count toward the hourly limit.
+    const limit = [...db.docs.entries()].find(([key]) => key.startsWith('_dinnerSendLimits/'))[1];
+    assert.equal(limit.count, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
+
+test('simulateOutcome rejected and the simulateFailure alias produce the same rejection', async () => {
+  for (const body of [{ simulateOutcome: 'rejected' }, { simulateFailure: true },
+    { simulateFailure: true, simulateOutcome: 'rejected' }]) {
+    const { service, db, sent } = harness({ settings: { ...settings, enabled: false, allowSimulation: true } });
+    const result = await service('cook-1', input(body));
+    assert.equal(result.deliveryStatus, 'rejected');
+    assert.equal(mirror(db).errorCode, '1120');
+    assert.equal(mirror(db).simulated, true);
+    assert.equal(sent.length, 0);
+  }
+});
+
+test('simulation is refused unless explicitly enabled', async () => {
+  for (const body of [{ simulateFailure: true }, { simulateOutcome: 'delivered' }, { simulateOutcome: 'rejected' }]) {
+    const { service, sent, db } = harness({ settings: { ...settings, enabled: false } });
+    await assert.rejects(service('cook-1', input(body)), { code: 'simulation-disabled', status: 403 });
+    assert.equal(sent.length, 0);
+    assert.equal(db.docs.size, 1);
+  }
+});
+
+test('simulations are rate limited like real sends', async () => {
+  const { service } = harness({ settings: { ...settings, allowSimulation: true } });
+  for (let i = 0; i < SEND_LIMIT_PER_HOUR; i++) {
+    await service('cook-1', input({ notificationId: `sim-notice-${i}`, sessionId: 'meal-1',
+      recipient: '+14075550100', simulateOutcome: 'rejected' }));
+  }
+  await assert.rejects(service('cook-1', input({ notificationId: 'sim-notice-x', simulateOutcome: 'delivered' })),
+    { code: 'rate-limited', status: 429 });
+});
+
+for (const [label, event, expected] of [
+  ['rejected', { status: 'rejected', errorTitle: 'Illegal Sender Address', errorCode: '1120' },
+    { status: 'rejected', errorTitle: 'Illegal Sender Address', errorCode: '1120' }],
+  ['delivered', { status: 'delivered' }, { status: 'delivered', errorTitle: null, errorCode: null }],
+]) {
+  test(`a verified ${label} callback arriving before the send response is applied at settle`, async () => {
+    const db = fakeFirestore();
+    const applyStatus = createDeliveryStatusStore(db);
+    let sends = 0;
+    const service = createDinnerService({ ledger: createDinnerLedger(db), settings, now: () => nowMs, applyStatus,
+      sendMessage: async () => {
+        sends++;
+        if (sends > 1) return { status: 'submitted', providerMessageId: `later-uuid-${sends}` };
+        // Vonage's callback lands while the send request is still in flight.
+        assert.deepEqual(await applyStatus({ messageUuid: 'fast-uuid', ...event }, nowMs),
+          { matched: false, buffered: true });
+        return { status: 'submitted', providerMessageId: 'fast-uuid' };
+      } });
+    const result = await service('cook-1', input());
+    assert.equal(result.status, 'submitted');
+    assert.deepEqual(mirror(db), { kind: 'ready', ...expected, reason: null, simulated: false, updatedAt: nowMs });
+    const ledger = [...db.docs.entries()].find(([key]) => key.startsWith('_dinnerNotifications/'))[1];
+    assert.equal(ledger.deliveryStatus, label);
+    assert.equal(ledger.status, 'submitted');
+    assert.equal(db.docs.has(`_dinnerPendingStatus/${providerIndexId('fast-uuid')}`), false);
+    // Later callbacks for the same UUID now match directly and stay monotonic.
+    assert.equal((await applyStatus({ messageUuid: 'fast-uuid', status: 'submitted' }, nowMs + 1)).applied, false);
+    if (label === 'rejected') {
+      // Recovery: a known failure frees the slot for a NEW cook-confirmed ID.
+      const retry = await service('cook-1', input({ notificationId: 'notice-456' }));
+      assert.equal(retry.status, 'submitted');
+      assert.equal(retry.duplicate, false);
+    }
+  });
+}
 
 test('dry-run skips provider and keeps a terminal, repeatable result', async () => {
   const { service, sent, db } = harness({ settings: { ...settings, enabled: false } });

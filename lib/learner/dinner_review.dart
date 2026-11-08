@@ -126,7 +126,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     super.dispose();
   }
 
-  DinnerMessageRequest _request({bool simulate = false}) =>
+  DinnerMessageRequest _request({DinnerSimulation? simulate}) =>
       DinnerMessageRequest(
         sessionId: widget.sessionId,
         notificationId: _attempt.notificationId,
@@ -135,10 +135,10 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
         recipeTitle: widget.recipeTitle,
         minutes: _started ? int.tryParse(_minutes.text.trim()) : null,
         cookName: _started ? _cookName.text : null,
-        simulateFailure: simulate,
+        simulate: simulate,
       );
 
-  Future<void> _submit({bool simulate = false}) async {
+  Future<void> _submit({DinnerSimulation? simulate}) async {
     // Guard the callback too: two taps can arrive before a rebuild.
     if (_locked) return;
     final minutes = int.tryParse(_minutes.text.trim());
@@ -187,11 +187,14 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     if (_status != null) return _status;
     final result = _attempt.result;
     if (result == null) return null;
+    final status = result.deliveryStatus ?? result.status;
+    final simulatedFailure =
+        result.simulated && (status == 'rejected' || status == 'undeliverable');
     return DinnerDeliveryStatus(
-      status: result.deliveryStatus ?? result.status,
+      status: status,
       kind: widget.kind.name,
-      errorTitle: result.simulated ? 'Illegal Sender Address' : null,
-      errorCode: result.simulated ? '1120' : null,
+      errorTitle: simulatedFailure ? 'Illegal Sender Address' : null,
+      errorCode: simulatedFailure ? '1120' : null,
       simulated: result.simulated,
     );
   }
@@ -311,11 +314,21 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
           onPressed: _sending ? null : () => Navigator.pop(context),
           child: const Text('Close'),
         ),
+        // Zero-cost demo: the server never contacts Vonage for these and
+        // labels every resulting status "Simulated — no SMS sent".
         if (!_attempt.claimed)
           OutlinedButton(
             onPressed: _locked
                 ? null
-                : () => unawaited(_submit(simulate: true)),
+                : () =>
+                      unawaited(_submit(simulate: DinnerSimulation.delivered)),
+            child: const Text('Simulate delivery (demo)'),
+          ),
+        if (!_attempt.claimed)
+          OutlinedButton(
+            onPressed: _locked
+                ? null
+                : () => unawaited(_submit(simulate: DinnerSimulation.rejected)),
             child: const Text('Simulate failed delivery (demo)'),
           ),
         FilledButton(

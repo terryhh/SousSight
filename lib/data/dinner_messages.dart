@@ -35,6 +35,9 @@ String composeDinnerMessage({
   return 'SousSight: Dinner is ready! $title is on the table.';
 }
 
+/// Demo-only outcomes the server simulates without contacting Vonage.
+enum DinnerSimulation { delivered, rejected }
+
 class DinnerMessageRequest {
   const DinnerMessageRequest({
     required this.sessionId,
@@ -44,7 +47,7 @@ class DinnerMessageRequest {
     required this.recipeTitle,
     this.minutes,
     this.cookName,
-    this.simulateFailure = false,
+    this.simulate,
   });
   final String sessionId;
   final String notificationId;
@@ -54,8 +57,9 @@ class DinnerMessageRequest {
   final int? minutes;
   final String? cookName;
 
-  /// Demo only: the server skips Vonage and records a simulated rejection.
-  final bool simulateFailure;
+  /// Demo only: the server skips Vonage and runs its real status handler with
+  /// synthetic events for this outcome. Null for a real send.
+  final DinnerSimulation? simulate;
 
   String get preview => composeDinnerMessage(
     kind: kind,
@@ -73,7 +77,7 @@ class DinnerMessageRequest {
     if (kind == DinnerKind.started) 'minutes': minutes,
     if (kind == DinnerKind.started && (cookName?.trim().isNotEmpty ?? false))
       'cookName': cookName!.trim(),
-    if (simulateFailure) 'simulateFailure': true,
+    if (simulate != null) 'simulateOutcome': simulate!.name,
   };
 }
 
@@ -140,8 +144,7 @@ DinnerMessageResult parseDinnerMessageResponse(http.Response response) {
       (400, 'invalid-request') =>
         'Review the recipient, recipe and minutes. No message was sent.',
       (403, 'recipient-not-allowed') => 'Choose your configured household contact. This recipient is not enabled. No message was sent.',
-      (403, 'simulation-disabled') =>
-        'Failure simulation is turned off on this server. No message was sent.',
+      (403, 'simulation-disabled') => 'Delivery simulation is turned off on this server. No message was sent.',
       (429, 'rate-limited') =>
         'Too many household messages this hour. No message was sent.',
       (503, 'not-configured') =>
