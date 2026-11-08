@@ -238,6 +238,13 @@ class CookingUiController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Forget all answered states, e.g. when the cook moves to another step.
+  void clearAnsweredQuestions() {
+    if (_disposed || _answeredQuestions.isEmpty) return;
+    _answeredQuestions.clear();
+    notifyListeners();
+  }
+
   /// The coach explicitly asked again; allow a fresh answer.
   void reopenQuestion(String question) {
     if (_disposed || _answeredQuestions.remove(question.trim()) == null) return;
