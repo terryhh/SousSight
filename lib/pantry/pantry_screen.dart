@@ -76,6 +76,10 @@ class _PantryScreenState extends State<PantryScreen> {
   LiveMedia? _media;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   bool _mediaStarting = false;
+  // Bumped whenever capture is stopped so a slow start (for example a pending
+  // permission prompt) can never activate the camera after the cook left.
+  int _mediaEpoch = 0;
+  LiveMedia? _pendingMedia;
   Uint8List? _preview;
   Uint8List? _photo;
   Uint8List? _audio;
@@ -106,6 +110,8 @@ class _PantryScreenState extends State<PantryScreen> {
     if (factory == null || _mediaStarting) return false;
     setState(() => _mediaStarting = true);
     final media = factory();
+    final epoch = _mediaEpoch;
+    _pendingMedia = media;
     try {
       _subscriptions.addAll([
         media.frames.listen((frame) {
@@ -121,7 +127,7 @@ class _PantryScreenState extends State<PantryScreen> {
         }),
       ]);
       await media.start();
-      if (!mounted) {
+      if (!mounted || epoch != _mediaEpoch) {
         await media.stop();
         return false;
       }
@@ -141,11 +147,18 @@ class _PantryScreenState extends State<PantryScreen> {
       }
       return false;
     } finally {
+      if (identical(_pendingMedia, media)) _pendingMedia = null;
       if (mounted) setState(() => _mediaStarting = false);
     }
   }
 
   Future<void> _stopMedia() async {
+    _mediaEpoch++;
+    final pending = _pendingMedia;
+    _pendingMedia = null;
+    if (pending != null && !identical(pending, _media)) {
+      unawaited(pending.stop());
+    }
     _recordTimer?.cancel();
     _recording = null;
     for (final subscription in _subscriptions) {

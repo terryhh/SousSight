@@ -111,7 +111,133 @@ class CookingScreen extends StatefulWidget {
   State<CookingScreen> createState() => _CookingScreenState();
 }
 
-class _CookingScreenState extends State<CookingScreen>
+/// Owns a cooking session's lifetime; a new cook gets a fresh screen and coordinator.
+class _CookingScreenState extends State<CookingScreen> {
+  late CookingCoordinator _cook;
+  bool _initialized = false;
+  bool _startingNewCook = false;
+
+  CookingCoordinator _createCoordinator() =>
+      widget.createCoordinator?.call() ??
+      CookingCoordinator(
+        services: widget.services,
+        isDemo: widget.isDemo,
+        recipe: widget.recipe,
+        research: widget.isDemo
+            ? FakeCookingResearchClient()
+            : GeminiCookingResearchClient(),
+        transportFactory: widget.isDemo
+            ? DemoLiveTransport.new
+            : () => EphemeralGeminiLiveTransport(tokenProvider: fetchLiveToken),
+        media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    _cook = _createCoordinator();
+  }
+
+  Future<void> _newCook() async {
+    if (_startingNewCook) return;
+    setState(() => _startingNewCook = true);
+    CookingCoordinator? candidate;
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Start a new cook?'),
+          scrollable: true,
+          content: const Text(
+            'Your current cook stays saved. The new cook starts with an empty '
+            'checklist and fresh progress. Camera, microphone and watches will '
+            'stop, and the current timer workspace will close.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep cooking')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Start new cook')),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      candidate = _createCoordinator();
+      await candidate.initialize(startNew: true);
+      if (!mounted) return;
+      if (candidate.session == null || candidate.error != null) {
+        throw StateError('New session was not ready.');
+      }
+      // Creation failure must leave the old cook usable. Only after a new
+      // session exists do we stop capture and retire the old async/UI boundary.
+      final previous = _cook;
+      // Disposing retires the old research epoch, timers and watches, and its
+      // live controller synchronously stops capture and the transport. Only
+      // socket cleanup continues asynchronously; never block the new cook on
+      // a slow close.
+      previous.dispose();
+      if (!mounted) return;
+      setState(() {
+        _cook = candidate!;
+        candidate = null;
+        _initialized = true;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Could not start a new cook. Your current cook is still available. Try again.'),
+        ));
+      }
+    } finally {
+      candidate?.dispose();
+      if (mounted) setState(() => _startingNewCook = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => _CookingSessionScreen(
+    key: ObjectKey(_cook),
+    services: widget.services,
+    isDemo: widget.isDemo,
+    cook: _cook,
+    initialized: _initialized,
+    onNewCook: _startingNewCook ? null : _newCook,
+    onBackToPantry: widget.onBackToPantry,
+    startingNewCook: _startingNewCook,
+    sendDinner: widget.sendDinner,
+  );
+
+  @override
+  void dispose() {
+    _cook.dispose();
+    super.dispose();
+  }
+}
+
+class _CookingSessionScreen extends StatefulWidget {
+  const _CookingSessionScreen({
+    super.key,
+    required this.services,
+    required this.isDemo,
+    required this.cook,
+    required this.initialized,
+    required this.onNewCook,
+    this.onBackToPantry,
+    required this.startingNewCook,
+    required this.sendDinner,
+  });
+  final AppServices services;
+  final bool isDemo;
+  final CookingCoordinator cook;
+  final bool initialized;
+  final VoidCallback? onNewCook;
+  final VoidCallback? onBackToPantry;
+  final bool startingNewCook;
+  final DinnerMessageSender sendDinner;
+
+  @override
+  State<_CookingSessionScreen> createState() => _CookingSessionScreenState();
+}
+
+class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
   final _message = TextEditingController();
@@ -124,23 +250,9 @@ class _CookingScreenState extends State<CookingScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    cook =
-        widget.createCoordinator?.call() ??
-        CookingCoordinator(
-          services: widget.services,
-          isDemo: widget.isDemo,
-          recipe: widget.recipe,
-          research: widget.isDemo
-              ? FakeCookingResearchClient()
-              : GeminiCookingResearchClient(),
-          transportFactory: widget.isDemo
-              ? DemoLiveTransport.new
-              : () =>
-                    EphemeralGeminiLiveTransport(tokenProvider: fetchLiveToken),
-          media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
-        );
+    cook = widget.cook;
     cook.addListener(_onChange);
-    unawaited(cook.initialize());
+    if (!widget.initialized) unawaited(cook.initialize());
   }
 
   void _onChange() {
@@ -188,7 +300,6 @@ class _CookingScreenState extends State<CookingScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
-    cook.dispose();
     _message.dispose();
     super.dispose();
   }
@@ -352,6 +463,12 @@ class _CookingScreenState extends State<CookingScreen>
                 : 'Your live cooking companion',
           ),
         ),
+      ),
+      TextButton.icon(
+        key: const ValueKey('new-cook'),
+        onPressed: cook.loading ? null : widget.onNewCook,
+        icon: const Icon(Icons.restart_alt),
+        label: Text(widget.startingNewCook ? 'Starting…' : 'New cook'),
       ),
     ],
   );
