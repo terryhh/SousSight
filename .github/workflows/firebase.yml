@@ -164,8 +164,10 @@ jobs:
           Path('dart_defines.local.json').write_text(json.dumps(build))
           # Package main is used by Firebase discovery AND the uploaded runtime.
           # --only functions:liveToken alone still discovers dinner secret params.
-          # vonageStatus binds VONAGE_SIGNATURE_SECRET, so it is only packaged
-          # when DINNER_STATUS_READY=true; otherwise discovery would fail.
+          # The signed vonageStatus binds VONAGE_SIGNATURE_SECRET, so it is only
+          # packaged when DINNER_STATUS_READY=true; otherwise discovery would fail.
+          # live-dinner-index.js instead exports a secret-free vonageStatus stub
+          # that answers 503 (Vonage retries), so the rewrite stays with dinner.
           dinner_ready = os.environ['DINNER_SERVICE_READY'] == 'true'
           status_ready = dinner_ready and os.environ['DINNER_STATUS_READY'] == 'true'
           package_path = Path('functions/package.json')
@@ -177,7 +179,6 @@ jobs:
           removed = set()
           if not dinner_ready:
               removed.add('/api/dinner-ready')
-          if not status_ready:
               removed.add('/api/vonage-status')
           if removed:
               config_path = Path('firebase.json')
@@ -219,10 +220,9 @@ jobs:
           # Auth provider provisioning is a one-time setup prerequisite.
           targets=firestore,functions:liveToken,hosting
           if [[ "$DINNER_SERVICE_READY" == true ]]; then
-            targets=firestore,functions:liveToken,functions:dinnerReady,hosting
-            if [[ "$DINNER_STATUS_READY" == true ]]; then
-              targets=firestore,functions:liveToken,functions:dinnerReady,functions:vonageStatus,hosting
-            fi
+            # vonageStatus is the signed handler when DINNER_STATUS_READY=true,
+            # otherwise the secret-free 503 stub from src/live-dinner-index.js.
+            targets=firestore,functions:liveToken,functions:dinnerReady,functions:vonageStatus,hosting
           fi
           firebase deploy --project "$FIREBASE_PROJECT" --only "$targets" --non-interactive
       - name: Check Hosting response

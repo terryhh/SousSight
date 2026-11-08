@@ -33,10 +33,13 @@ test('Live-only packaged entrypoint discovers no dinner exports or secret parame
   assert.ok(stack.params.some(p => p.name === 'GEMINI_API_KEY'));
 });
 
-test('live+dinner entrypoint omits the status webhook and its signature secret', () => {
+test('live+dinner entrypoint serves a secret-free rejecting status stub', () => {
   const stack = discover('src/live-dinner-index.js');
-  assert.deepEqual(Object.keys(stack.endpoints).sort(), ['dinnerReady', 'liveToken']);
+  assert.deepEqual(Object.keys(stack.endpoints).sort(), ['dinnerReady', 'liveToken', 'vonageStatus']);
   assert.equal(stack.params.some(p => p.name === 'VONAGE_SIGNATURE_SECRET'), false);
+  assert.deepEqual(stack.endpoints.vonageStatus.secretEnvironmentVariables ?? [], []);
+  assert.equal(stack.endpoints.vonageStatus.region[0], 'us-central1');
+  assert.ok(stack.endpoints.vonageStatus.httpsTrigger);
   assert.equal(stack.params.find(p => p.name === 'ALLOW_DELIVERY_SIMULATION').default, 'false');
   // A non-empty default keeps non-interactive deploys from prompting (2026-11-08 deploy failure).
   assert.equal(stack.params.find(p => p.name === 'DINNER_STATUS_WEBHOOK_URL').default, 'disabled');

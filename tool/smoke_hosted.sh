@@ -75,7 +75,8 @@ for path in /api/live-token /api/dinner-ready; do
 done
 
 # Status webhook: unsigned requests must never be accepted (503 asks Vonage to
-# retry signed; 401 for bad signatures). Absent before DINNER_STATUS_READY.
+# retry signed; 401 for bad signatures). Before DINNER_STATUS_READY the stub
+# answers 503 for every POST; the route is absent only without the dinner service.
 code=$(status -X POST -H 'Content-Type: application/json' -d '{"message_uuid":"smoke","status":"delivered"}' "$BASE/api/vonage-status")
 case "$code" in
   401|403|503) ok "POST /api/vonage-status unsigned -> $code" ;;

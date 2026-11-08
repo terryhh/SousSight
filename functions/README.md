@@ -327,10 +327,16 @@ session still need their own checks. The token was not persisted or logged.
    `ALLOW_DELIVERY_SIMULATION=true`. Then re-run the deploy workflow.
 
 Deploy gating mirrors `DINNER_SERVICE_READY`: with `DINNER_STATUS_READY=false` the
-workflow packages `src/live-dinner-index.js` (no `vonageStatus`, no signature
-secret parameter) and removes the `/api/vonage-status` rewrite, so a missing
-secret cannot break deployment. With it `true`, it packages `src/index.js`, adds
-`functions:vonageStatus` and writes `DINNER_STATUS_WEBHOOK_URL`.
+workflow packages `src/live-dinner-index.js`, whose `vonageStatus` is an interim
+stub (`src/status-stub.js`) that binds no secret, never reads or accepts an
+event, and answers every POST with 503 `{"error":"status-webhook-not-configured"}`
+(405 otherwise). The `/api/vonage-status` rewrite stays, so the route returns a
+handler rejection instead of the SPA fallback, a missing secret cannot break
+deployment, and Vonage's 5xx retries succeed once the real handler replaces the
+stub under the same function name. With it `true`, it packages `src/index.js`
+(the signed handler) and writes `DINNER_STATUS_WEBHOOK_URL`. Both modes deploy
+`functions:vonageStatus`; the rewrite is removed only when the dinner service
+itself is not ready.
 
 Verification status: unit tests cover JWT verification (valid, bad signature,
 `alg` swap, stale/future `iat`, hash mismatch), status mapping and monotonicity,
