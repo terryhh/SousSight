@@ -18,23 +18,24 @@ We built SousSight so anyone can walk into their kitchen with everyday pantry in
 
 **SousSight** is a live, multimodal cooking companion for the web. It turns what you got from the pantry into a meal, watches your counter, talks you through each step, and reshapes its Flutter workspace as you cook. Our demo is a hands-on *Peanut Butter Sandwich* session.
 
-1. **Start with your pantry haul.** Show it to the camera, say it out loud, or type it. **Gemini Flash** (multimodal input, structured JSON output) lists the items it spots, but nothing counts until you tap to confirm it. It then suggests meals from our recipe catalog, showing what you have and what's missing.
-2. **Find food help nearby.** Need more groceries? **Grounding with Google Maps** lists nearby food pantries and stores, with Google Maps links. Location is opt-in and never stored, and you can type a city or ZIP instead.
-3. **Allergy check first.** Before giving any guidance, the coach asks whether anyone eating has an allergy to the recipe's allergens (for example peanut and wheat). An allergen chip stays on screen.
-4. **Live camera and two-way voice.** Prop your phone on the counter and talk while your hands are busy. **Gemini Live** sees the prep board and talks back, with live captions. It can also reply in the cook's language, such as Spanish.
-5. **Dynamic GenUI / A2UI workspaces.** Instead of a long chat, Gemini uses **Flutter GenUI** to compose cooking panels on the fly from a trusted, schema-validated widget catalog: step cues, comparisons, cook questions and timers.
-6. **The cook decides.** When something is open (jam or no jam, which spread you have), the coach asks a targeted question and records only your explicit answer. Choices you haven't confirmed are never treated as confirmed.
-7. **Grounded substitution research.** Ask *"Can I use sunflower seed butter instead?"* and SousSight runs a separate **Gemini Flash** request grounded with **Google Search**, showing clickable source links. A suggested swap changes nothing until you confirm it.
-8. **Technique checks and opt-in watches.** Ask *"Am I doing this right?"* or turn on a visual watch to check spread coverage, such as bare corners or a mound in the middle. Vision handles visible technique only. It never certifies internal temperature, freshness or the absence of an allergen.
-9. **Dinner-ready texts through Vonage.** A cook-reviewed "dinner's started" message and then a "dinner is ready" message, each sent through the **Vonage Messages API** only after the cook reviews the recipient and the exact text. Signed **delivery-status webhooks** report delivered or failed, and on failure the app shows the reason and offers a fresh, reviewed retry. It never resends on its own.
-10. **"You made it!"** Finishing the last step shows a meal-complete moment: the pantry items you confirmed, the live coach paused to save cost, and next steps.
+1. **Start with your pantry haul, whatever's in it.** Show it to the camera, say it out loud, or type it. **Gemini Flash** (multimodal input, structured JSON output) lists the items it spots, but nothing counts until you tap to confirm it.
+2. **Make a real meal from it.** **Make a meal from these ingredients** creates a recipe from exactly what you confirmed, even a random mix. It's built in our recipe format, checked before use, and safety rules are applied in code: thermometer reminders for meat, poultry, fish and eggs, no doneness claims, and the major allergens listed. It's labelled **AI-drafted · not reviewed**. Our reviewed recipes that fit are offered as alternatives.
+3. **Find food help nearby.** Need more groceries? **Grounding with Google Maps** lists nearby food pantries and stores, with Google Maps links. Location is opt-in and never stored, and you can type a city or ZIP instead.
+4. **Allergy check first.** Before giving any guidance, the coach asks whether anyone eating has an allergy to the recipe's allergens (for example peanut and wheat). An allergen chip stays on screen.
+5. **Live camera and two-way voice.** Prop your phone on the counter and talk while your hands are busy. **Gemini Live** sees the prep board and talks back, with live captions. It can also reply in the cook's language, such as Spanish.
+6. **Dynamic GenUI / A2UI workspaces.** Instead of a long chat, Gemini uses **Flutter GenUI** to compose cooking panels on the fly from a trusted, schema-validated widget catalog: step cues, comparisons, cook questions and timers.
+7. **The cook decides.** When something is open (jam or no jam, which spread you have), the coach asks a targeted question and records only your explicit answer. Choices you haven't confirmed are never treated as confirmed.
+8. **Grounded substitution research.** Ask *"Can I use sunflower seed butter instead?"* and SousSight runs a separate **Gemini Flash** request grounded with **Google Search**, showing clickable source links. A suggested swap changes nothing until you confirm it.
+9. **Technique checks and opt-in watches.** Ask *"Am I doing this right?"* or turn on a visual watch to check spread coverage, such as bare corners or a mound in the middle. Vision handles visible technique only. It never certifies internal temperature, freshness or the absence of an allergen.
+10. **Dinner-ready texts through Vonage.** A cook-reviewed "dinner's started" message and then a "dinner is ready" message, each sent through the **Vonage Messages API** only after the cook reviews the recipient and the exact text. Signed **delivery-status webhooks** report delivered or failed, and on failure the app shows the reason and offers a fresh, reviewed retry. It never resends on its own.
+11. **"You made it!"** Finishing the last step shows a meal-complete moment: the pantry items you confirmed, the live coach paused to save cost, and next steps.
 
 ## How we built it
 
 * **Flutter Web and Generative UI (Flutter, GenUI, A2UI):** a responsive, mobile-first web app that captures camera frames and microphone audio in the browser and renders cooking panels from a trusted widget catalog. Every generated panel is validated before rendering, so Gemini can redesign the workspace for each step without breaking app state.
 * **Google Gemini (Gemini 3.8 Live and Gemini 3.8 Flash through Firebase AI Logic):** each model does what it's best at.
   - **Gemini Live** handles two-way voice, counter vision and workspace tool calls over WebSockets, with session resumption and context compression.
-  - **Gemini Flash** handles the pantry scan (image, audio or text in; structured JSON out), **Google Search** grounding for cited research, and **Google Maps** grounding for nearby food help.
+  - **Gemini Flash** handles the pantry scan (image, audio or text in; structured JSON out), **recipe creation** from any confirmed ingredients, **Google Search** grounding for cited research, and **Google Maps** grounding for nearby food help.
 * **Firebase (Auth, Firestore, App Check, Cloud Functions, Hosting, Secret Manager):**
   - Anonymous Auth means no account is needed.
   - Owner-scoped Firestore sessions keep progress across reloads.
@@ -63,7 +64,7 @@ We built SousSight so anyone can walk into their kitchen with everyday pantry in
 * **Truly human-in-the-loop.** Pantry items, answers, substitutions, step changes and every message all need the cook's explicit confirmation.
 * **From pantry bag to plate in one flow:** scan, choose a meal, cook with a live coach, text the household.
 * **Production-grade web security.** No Gemini or Vonage secrets in client code, owner-isolated Firestore rules, signed webhooks, and rate limits on every protected endpoint.
-* **Accessible and zero-install.** It runs in mobile Chrome and desktop browsers with no account or app install, which matters for students and busy households.
+* **Accessible and zero-install.** It runs in Chrome on Android and desktop with no account or app install, which matters for students and busy households.
 * **Transparent engineering.** We keep clear lines between simulated and live output, and between a provider accepting a message and a phone receiving it.
 
 ## What we learned
@@ -74,7 +75,7 @@ We built SousSight so anyone can walk into their kitchen with everyday pantry in
 
 ## What's next for SousSight
 
-* **More pantry and seasonal recipes:** a growing catalog built around what local pantries and campus gardens actually hand out.
+* **Reviewed recipe library:** promote well-tested AI-drafted recipes into reviewed ones, with input from local pantries and campus gardens.
 * **Community kitchen field testing:** hands-on sessions with student groups and local pantries to measure cooking confidence and food use.
 * **Channel failover:** fall back from SMS to WhatsApp or another channel when delivery fails, using the delivery-status pipeline already in place.
 * **Fully bilingual experience:** go from a coach that replies in the cook's language to a bilingual interface, starting with Spanish.
