@@ -754,6 +754,45 @@ void main() {
     expect(fixture.cook.error, contains('could not be saved'));
   });
 
+  test('typed clarification persists cook fact before requesting an adapted workspace', () async {
+    await fixture.initialize();
+    await fixture.cook.connect();
+    fixture.transport.source.add(
+      const LiveToolCall(
+        id: 'plain-question',
+        name: 'ask_cook',
+        arguments: {
+          'question': 'Is your yogurt plain?',
+          'reason': 'Confirm the ingredient.',
+        },
+      ),
+    );
+    await _flush();
+    fixture.transport.texts.clear();
+    final gate = Completer<void>();
+    fixture.sessions.updateGate = gate;
+    final answer = fixture.cook.say('Yes, unsweetened');
+    await _flush();
+    expect(fixture.cook.session!.confirmedFacts, isEmpty);
+    expect(fixture.transport.texts, isEmpty);
+    expect(fixture.cook.cookQuestion, 'Is your yogurt plain?');
+    gate.complete();
+    await answer;
+    expect(fixture.cook.session!.confirmedFacts, [
+      'Is your yogurt plain? Answer from cook: Yes, unsweetened',
+    ]);
+    expect(fixture.cook.cookQuestion, isNull);
+    expect(fixture.transport.texts, hasLength(1));
+    expect(fixture.transport.texts.single, contains('Yes, unsweetened'));
+    expect(
+      fixture.transport.texts.single,
+      contains('show_cooking_ui with stepId=prep'),
+    );
+    await fixture.cook.say('What next?');
+    expect(fixture.transport.texts.last, 'What next?');
+    expect(fixture.cook.session!.confirmedFacts, hasLength(1));
+  });
+
   test('failed clarification save keeps the question pending and sends no false fact', () async {
     await fixture.initialize();
     await fixture.cook.connect();
