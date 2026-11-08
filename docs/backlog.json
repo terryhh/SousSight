@@ -792,7 +792,8 @@
       ],
       "evidence": [
         "2026-11-08: Parallel focused regression work started for the conference recipe. Local tests, deployed rehearsal and any remaining gaps must be reported separately.",
-        "2026-11-08: https://github.com/terryhh/SousSight/issues/80 created with terryhh assignee and Project In progress. Conference cutoff is 3:00 PM Eastern today; record actual deployed evidence and remaining gaps by that time."
+        "2026-11-08: https://github.com/terryhh/SousSight/issues/80 created with terryhh assignee and Project In progress. Conference cutoff is 3:00 PM Eastern today; record actual deployed evidence and remaining gaps by that time.",
+        "2026-11-08: Root inspected FAKE_BACKEND=true at localhost:7360 on the app branch before the copy correction. Chrome showed the peanut-butter title and three ingredients, neutral Watch my food, Start \u2192 Rehearsal on, Next \u2192 step 2/4 Spread peanut butter, and Check my food produced a simulated comparison matching the peanut-butter text cue without chickpea/reference-image claims. The pinned dock stayed stable as the panel grew; Stop returned Rehearsal ready. No actual media, AI request or SMS was used. Recipe copy was then corrected in PR #81 commit aacf777 to three cook-facing strings; those updated strings need their own build verification."
       ]
     },
     {
