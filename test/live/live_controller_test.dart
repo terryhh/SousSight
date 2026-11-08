@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/live/live_controller.dart';
 import 'package:soussight/live/live_tools.dart';
@@ -630,5 +631,221 @@ void main() {
     );
     expect(error, startsWith('Invalid uiJson: malformed JSON'));
     expect(error, endsWith('Fix and call show_cooking_ui again.'));
+  });
+
+  group('cost guardrails', () {
+    final base = DateTime.utc(2026, 11, 8, 15);
+    late TestMedia guardMedia;
+    late TestTransport guardTransport;
+
+    LiveCookingController guarded(FakeAsync async) {
+      guardMedia = TestMedia();
+      guardTransport = TestTransport();
+      return LiveCookingController(
+        transportFactory: () => guardTransport,
+        media: guardMedia,
+        onToolCall: (_) async => {'ok': true},
+        clock: () => base.add(async.elapsed),
+      );
+    }
+
+    void connect(FakeAsync async, LiveCookingController live) {
+      live.start(cookingContext: 'wrap');
+      async.flushMicrotasks();
+      expect(live.status, LiveCookingStatus.listening);
+    }
+
+    void speak(FakeAsync async, LiveCookingController live) {
+      guardTransport.source.add(
+        const LiveTranscript('still here', isUser: true, finished: true),
+      );
+      async.flushMicrotasks();
+    }
+
+    test('default cap is 8 minutes and warns one minute before', () {
+      expect(liveSessionMaxMinutes, 8);
+      fakeAsync((async) {
+        final live = guarded(async);
+        expect(live.sessionLimit, const Duration(minutes: 8));
+        connect(async, live);
+        // Keep the cook active so only the session cap applies.
+        for (var minute = 1; minute < 7; minute++) {
+          async.elapse(const Duration(minutes: 1));
+          speak(async, live);
+        }
+        expect(live.sessionWarning, isNull);
+        async.elapse(const Duration(seconds: 59));
+        expect(live.sessionWarning, isNull);
+        async.elapse(const Duration(seconds: 1));
+        expect(live.sessionWarning, contains('1 minute'));
+        expect(live.canExtendSession, isTrue);
+        speak(async, live);
+        async.elapse(const Duration(minutes: 1));
+        expect(live.status, LiveCookingStatus.idle);
+        expect(live.notice, liveCostPauseMessage);
+        expect(live.sessionWarning, isNull);
+        expect(guardMedia.stops, greaterThan(0));
+        expect(guardTransport.closes, 1);
+        live.dispose();
+      });
+    });
+
+    test('one tap extends by five minutes exactly once', () {
+      fakeAsync((async) {
+        final live = guarded(async);
+        connect(async, live);
+        async.elapse(const Duration(minutes: 2));
+        speak(async, live);
+        async.elapse(const Duration(minutes: 2));
+        speak(async, live);
+        async.elapse(const Duration(minutes: 2));
+        speak(async, live);
+        async.elapse(const Duration(minutes: 1));
+        expect(live.sessionWarning, isNotNull);
+        live.extendSession();
+        expect(live.sessionWarning, isNull);
+        expect(live.canExtendSession, isFalse);
+        // New deadline: 13 minutes; warning at 12.
+        async.elapse(const Duration(minutes: 2));
+        speak(async, live);
+        async.elapse(const Duration(minutes: 2));
+        speak(async, live);
+        async.elapse(const Duration(minutes: 1));
+        expect(live.isActive, isTrue);
+        expect(live.sessionWarning, isNotNull);
+        expect(live.canExtendSession, isFalse);
+        live.extendSession();
+        speak(async, live);
+        async.elapse(const Duration(minutes: 1));
+        expect(live.status, LiveCookingStatus.idle);
+        expect(live.notice, liveCostPauseMessage);
+        live.dispose();
+      });
+    });
+
+    test('custom session cap is honored', () {
+      fakeAsync((async) {
+        guardMedia = TestMedia();
+        guardTransport = TestTransport();
+        final live = LiveCookingController(
+          transportFactory: () => guardTransport,
+          media: guardMedia,
+          onToolCall: (_) async => {'ok': true},
+          clock: () => base.add(async.elapsed),
+          sessionLimit: const Duration(minutes: 2),
+        );
+        connect(async, live);
+        async.elapse(const Duration(minutes: 1));
+        expect(live.sessionWarning, isNotNull);
+        async.elapse(const Duration(minutes: 1));
+        expect(live.isActive, isFalse);
+        live.dispose();
+      });
+    });
+
+    test('three quiet minutes stop the session and stop frames', () {
+      fakeAsync((async) {
+        final live = guarded(async);
+        connect(async, live);
+        guardMedia.video.add(Uint8List(8));
+        async.flushMicrotasks();
+        expect(guardTransport.framesSent, 1);
+        // Coach speech and model turns are not cook activity.
+        guardTransport.source.add(
+          const LiveTranscript('Looks good', isUser: false, finished: true),
+        );
+        async.elapse(const Duration(minutes: 2, seconds: 59));
+        expect(live.isActive, isTrue);
+        async.elapse(const Duration(seconds: 1));
+        expect(live.status, LiveCookingStatus.idle);
+        expect(live.notice, liveCostPauseMessage);
+        guardMedia.video.add(Uint8List(8));
+        guardMedia.audio.add(Uint8List(8));
+        async.flushMicrotasks();
+        expect(guardTransport.framesSent, 1);
+        expect(guardTransport.audioSent, 0);
+        live.dispose();
+      });
+    });
+
+    test('cook speech and typed text defer idle stop; watch checks do not', () {
+      fakeAsync((async) {
+        final live = guarded(async);
+        connect(async, live);
+        async.elapse(const Duration(minutes: 2));
+        speak(async, live);
+        async.elapse(const Duration(minutes: 2));
+        live.sendText('How thick should it be?');
+        async.flushMicrotasks();
+        async.elapse(const Duration(minutes: 2));
+        expect(live.isActive, isTrue);
+        // A watch sends automatic checks, which are not cook activity.
+        guardMedia.video.add(Uint8List(8));
+        async.flushMicrotasks();
+        live.startWatch('Evenly mixed');
+        Timer.periodic(const Duration(seconds: 2), (_) {
+          guardMedia.video.add(Uint8List(8));
+        });
+        async.elapse(const Duration(seconds: 59));
+        expect(
+          guardTransport.texts.where((t) => t.startsWith('Watch check')),
+          isNotEmpty,
+        );
+        async.elapse(const Duration(seconds: 1));
+        expect(live.status, LiveCookingStatus.idle);
+        expect(live.notice, liveCostPauseMessage);
+        live.dispose();
+      });
+    });
+
+    test('watch checks every 15 seconds and pauses after 3 minutes', () {
+      fakeAsync((async) {
+        final live = guarded(async);
+        connect(async, live);
+        final frames = Timer.periodic(const Duration(seconds: 1), (_) {
+          guardMedia.video.add(Uint8List(8));
+        });
+        final id = live.startWatch('Evenly mixed');
+        expect(id, isNotNull);
+        int checks() =>
+            guardTransport.texts.where((t) => t.startsWith('Watch check')).length;
+        async.elapse(const Duration(seconds: 14));
+        expect(checks(), 0);
+        async.elapse(const Duration(seconds: 1));
+        expect(checks(), 1);
+        speak(async, live);
+        async.elapse(const Duration(seconds: 164));
+        expect(checks(), 11);
+        speak(async, live);
+        async.elapse(const Duration(seconds: 1));
+        expect(live.watchId, isNull);
+        expect(live.notice, contains('Watch paused after 3 minutes'));
+        final atPause = checks();
+        async.elapse(const Duration(seconds: 30));
+        expect(checks(), atPause);
+        // The cook continues by starting the watch again.
+        expect(live.startWatch('Evenly mixed'), isNot(id));
+        speak(async, live);
+        async.elapse(const Duration(seconds: 15));
+        expect(checks(), atPause + 1);
+        frames.cancel();
+        live.dispose();
+      });
+    });
+
+    test('manual stop cancels cost timers without a cost notice', () {
+      fakeAsync((async) {
+        final live = guarded(async);
+        connect(async, live);
+        live.stop();
+        async.flushMicrotasks();
+        async.elapse(const Duration(minutes: 10));
+        expect(live.notice, isNull);
+        expect(live.sessionWarning, isNull);
+        expect(live.canExtendSession, isFalse);
+        expect(guardTransport.closes, 1);
+        live.dispose();
+      });
+    });
   });
 }

@@ -663,13 +663,33 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Pinned with Stop so the cost warning stays visible while cooking.
+          if (cook.live.sessionWarning case final warning?)
+            Row(
+              children: [
+                const Icon(Icons.hourglass_bottom, size: 20),
+                const SizedBox(width: 8),
+                Expanded(child: Text(warning)),
+                if (cook.live.canExtendSession)
+                  TextButton(
+                    key: const ValueKey('extend-live-session'),
+                    onPressed: cook.live.extendSession,
+                    child: Text(
+                      'Keep going (+${cook.live.sessionExtension.inMinutes} min)',
+                    ),
+                  ),
+              ],
+            ),
           Row(
             children: [
               Expanded(
                 child: Semantics(
                   liveRegion: true,
                   child: Text(
-                    widget.isDemo
+                    !cook.live.isActive &&
+                            cook.live.notice == liveCostPauseMessage
+                        ? liveCostPauseMessage
+                        : widget.isDemo
                         ? (cook.live.isActive
                               ? 'Rehearsal on'
                               : 'Rehearsal ready')
