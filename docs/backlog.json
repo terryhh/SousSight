@@ -474,7 +474,8 @@
         "Issue #34 is assigned terryhh and In progress. Physical Android Chrome permissions/audio/keyboard checks remain outstanding; APK delivery is deferred.",
         "2026-11-07: Fresh Incognito Chrome after successful run 42424326318 displayed the correct full-width CAMERA OFF placeholder. A normal tab still showed older layout, consistent with a stale-cache hypothesis rather than proof of its cause; a cache-header fix is being prepared.",
         "2026-11-07: PR #55 cache revalidation merged; latest cache rollout pending. Fresh Incognito layout verified; physical Android acceptance remains open.",
-        "2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition."
+        "2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition.",
+        "2026-11-07: User reported \"Fits and works on my phone\" for hosted input/Start/Stop layout. Device/OS unrecorded; this does not establish full physical Android camera/voice/keyboard acceptance. Keep InProgress for remaining criteria."
       ]
     },
     {
@@ -528,8 +529,8 @@
       "priority": "P1",
       "owner": "Jenna (jennajh)",
       "assignee": "jennajh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Split asset preparation from SS-013 integration. Own assets/reference-cooking/** and docs/validation/reference-images.md. Terry retains recipe wiring and paid model evaluation.",
       "acceptance": [
         "Capture or obtain licensed real chickpea mash/mixing photos: reviewed target, clearly different texture, and obscured/uncertain view; no synthetic image is reference truth.",
@@ -542,7 +543,8 @@
         "2026-11-07: Terry explicitly requested additional Jenna pickup work. Assigned for pickup only; no implementation or validation claimed.",
         "2026-11-07: https://github.com/terryhh/SousSight/issues/40 assigned jennajh and added to Terry's SousSight project as Backlog. No work-start claim.",
         "2026-11-07: Read-back of Terry project shows In progress and jennajh assigned. Preserving the observed human-owned stage; no completion inferred.",
-        "2026-11-07: Jenna photo-fixture PR #67 is open; ownership and InProgress retained pending review/acceptance."
+        "2026-11-07: Jenna photo-fixture PR #67 is open; ownership and InProgress retained pending review/acceptance.",
+        "2026-11-07: Jenna\u2019s real-photo fixture PR #67 merged and issue #40 is Done on the project. Preserve jennajh ownership. Runtime integration and real-model evaluation remain SS-013."
       ]
     },
     {
@@ -725,8 +727,8 @@
       "title": "Allow correction of known dinner pre-send validation failures",
       "owner": "Terry + Codex",
       "assignee": "terryhh",
-      "status": "InProgress",
-      "verified": false,
+      "status": "Done",
+      "verified": true,
       "description": "Fix DEF001: safely allow the cook to correct a known pre-send invalid-request, invalid-recipient or recipient-not-allowed result while preserving locks for uncertain outcomes. Backend agent owns lib/data/dinner_messages.dart, lib/learner/cooking_app.dart and focused tests in an isolated branch.",
       "acceptance": [
         "Known pre-send invalid-request, invalid-recipient and recipient-not-allowed responses permit editing and explicit resubmission; no automatic send/retry occurs.",
@@ -738,7 +740,8 @@
         "SS-007"
       ],
       "evidence": [
-        "2026-11-07: Root authorized a focused DEF001 fix; backend agent started implementation. No real notification sent or fix acceptance claimed."
+        "2026-11-07: Root authorized a focused DEF001 fix; backend agent started implementation. No real notification sent or fix acceptance claimed.",
+        "2026-11-07: PR #73 passed CI and independent review with 16 focused tests, then merged as 4326019. Issue #72 closed/Project Done with terryhh preserved. This completes the finite correction implementation; hosted post-deployment correction verification remains SS-007/#17. No real send claimed."
       ]
     }
   ]
