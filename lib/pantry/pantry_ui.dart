@@ -403,6 +403,7 @@ class _MealCard extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
+            _badge('REVIEWED RECIPE', pantryCream, const Color(0xFF6B5A3E)),
             if (best) _badge('BEST MATCH', pantryGreen, Colors.white),
             if (steps != null)
               _badge('$steps STEPS', pantryCream, const Color(0xFF6B5A3E)),

@@ -153,7 +153,7 @@ void main() {
 
       await tester.tap(find.text('Back'));
       await tester.pumpAndSettle();
-      expect(find.text('Meals you can make'), findsOneWidget);
+      expect(find.text('Your pantry haul'), findsOneWidget);
     },
   );
 
@@ -264,7 +264,7 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('Back to pantry'));
     await tester.pumpAndSettle();
-    expect(find.text('Meals you can make'), findsOneWidget);
+    expect(find.text('Your pantry haul'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
