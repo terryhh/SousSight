@@ -1,11 +1,11 @@
 {
-    "name": "soussight",
-    "short_name": "soussight",
+    "name": "SousSight \u2014 pantry cooking coach",
+    "short_name": "SousSight",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#f5f1e8",
+    "theme_color": "#285b43",
+    "description": "Turn what you got from the food pantry into a meal with a live Gemini cooking coach.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

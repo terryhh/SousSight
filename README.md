@@ -1,82 +1,151 @@
 # SousSight
 
-Show your ingredients, talk while you cook, and ask “am I doing this right?” SousSight combines Gemini Live camera and voice with dynamically generated Flutter cooking panels, timers, visual watches, and a cook-reviewed dinner-ready message.
+**Turn what you got from the food pantry into a meal, with a cooking coach that can see, listen and talk back.**
 
-The cook supplies human direction. The coach asks targeted questions when facts are missing and uses a separate Google Search grounded request when it needs outside information. The current demonstration uses one Smashed Chickpea Salad Wrap recipe.
+Inspired by UCF's [garden-to-pantry work](https://www.ucf.edu/pegasus/how-does-your-garden-grow/) and [FreshU cooking demos](https://whps.sswb.ucf.edu/cooking-demos-classes/), SousSight helps a novice cook turn pantry staples and fresh produce into a real meal. Getting groceries doesn't give you confidence at the counter, so SousSight coaches you through the cooking.
 
-- [Current product specification](docs/SPEC.md)
-- [AGY task for the research and substitution experience](docs/handoffs/AGY-COOKING-RESEARCH.md)
-- [Backend setup and messaging contract](functions/README.md)
-- [Live transport integration](lib/live/README.md)
-- [Infrastructure costs and credit coverage](docs/COST-LEDGER.md)
-- [Teardown plan](docs/TEARDOWN.md)
+**Live app:** https://devfest-flutter-a59e8.web.app · Chrome on desktop or Android · no account needed
 
-## Run a rehearsal
+## The demo in five beats
 
-Use Flutter on the stable channel compatible with Dart `^3.13.7` (the working setup uses Flutter 3.47.9). Chrome is the initial development target.
+1. **Show what you got.** Scan your pantry haul with the camera, say it out loud, or type it. Gemini lists the items it thinks it sees, you confirm them, and it suggests meals you can actually make, including anything you're missing.
+2. **Cook with a live coach.** Gemini Live watches the camera and talks with you. It builds the cooking workspace on the fly as Flutter panels: step cues, comparisons, questions and timers.
+3. **"Am I doing this right?"** Show the spread, the dice or the mash. The coach describes what it can see. When a fact is missing it asks you instead of guessing, and only your answer counts.
+4. **Ask anything.** For questions like "Can I swap sunflower butter for peanut butter?", the coach runs a separate Google Search–grounded answer and shows the source links.
+5. **Call everyone to the table.** You review a Vonage SMS before it goes out: "dinner's started", then "dinner is ready". The app tracks real delivery status, and if delivery fails it shows the reason and how to recover.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Browser["Browser · Flutter web"]
+    UI["Cook UI<br/>GenUI / A2UI catalog"]
+    Pantry["Pantry scan<br/>photo · voice · text"]
+    Bridge["JS media bridge<br/>1 fps JPEG · 16 kHz mic · 24 kHz playback"]
+  end
+  subgraph Google["Google Cloud · Firebase"]
+    Hosting["Firebase Hosting"]
+    Token["/api/live-token<br/>Cloud Functions"]
+    Dinner["/api/dinner-ready<br/>Cloud Functions"]
+    Status["/api/vonage-status<br/>Cloud Functions"]
+    FS[("Cloud Firestore")]
+    SM["Secret Manager"]
+    AC["App Check<br/>reCAPTCHA Enterprise"]
+    Auth["Firebase Auth<br/>anonymous"]
+  end
+  Live["Gemini Live API<br/>vision + voice + tools"]
+  Flash["Gemini Flash via Firebase AI Logic<br/>Google Search grounding · structured pantry vision"]
+  Vonage["Vonage Messages API<br/>SMS"]
+
+  Pantry -->|image/audio/text| Flash
+  UI -->|grounded research| Flash
+  Bridge <-->|WebSocket, ephemeral token| Live
+  Live -->|tool calls: show_cooking_ui, ask_cook, start_timer, research_cooking…| UI
+  UI -->|ID token + App Check| Token
+  Token -->|mint single-use token| Live
+  UI -->|cook-reviewed kind + recipe| Dinner
+  Dinner -->|SMS| Vonage
+  Vonage -->|signed status webhook| Status
+  Status --> FS
+  Dinner --> FS
+  UI <-->|owner-scoped sessions, live status| FS
+  Token & Dinner & Status --- SM
+  UI --- AC & Auth
+  Hosting --- UI
+```
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| App | Flutter web (3.47, Dart 3.13), Material 3, mobile-first layout |
+| Generated UI | Flutter **GenUI** (`genui`, `a2ui_core`, A2UI v0.9). Gemini composes panels only from a trusted, schema-validated cooking catalog, never arbitrary code or HTML |
+| Live vision and voice | **Gemini Live API** over WebSocket: camera frames, mic audio, native spoken replies, transcription, function calling, context-window compression and session resumption |
+| Pantry scan and research | **Gemini Flash via Firebase AI Logic**: multimodal structured output for pantry items and meal matches; **Grounding with Google Search**, with source links and Google search suggestions |
+| Identity and abuse protection | Firebase Anonymous Auth (no sign-up), **Firebase App Check** with reCAPTCHA Enterprise |
+| Data | Cloud Firestore: owner-scoped sessions, server-only ledgers, emulator-tested security rules |
+| Backend | Cloud Functions for Firebase (2nd gen, Cloud Run, Node 22): Live token minting, dinner messages, Vonage status webhooks |
+| Messaging | **Vonage Messages API** (SMS) with signed delivery-status webhooks |
+| Secrets and operations | Google Secret Manager, Firebase Hosting, Cloud Billing budget and per-service caps |
+| CI/CD | GitHub Actions (SHA-pinned) → Workload Identity Federation → Firebase deploy on every merge to `main`; gitleaks secret scanning |
+
+## Routing and storage choices
+
+**Routing: who handles each request.**
+- Gemini Live decides *what* to do next by calling a tool. The app decides *whether it is allowed*: every tool call is schema-checked and deduplicated by its call ID before it touches app state.
+
+| Tool | Routed to |
+|---|---|
+| `show_cooking_ui` | GenUI validator, then the Flutter surface. Bad output goes back to the model with the reason, so it can fix it |
+| `ask_cook` | The cook, who is the human in the loop. Only an explicit answer becomes a confirmed fact |
+| `research_cooking` | A separate Search-grounded Gemini request. Live custom tools and Search are kept apart, and citations come only from grounding metadata |
+| `start_timer` / `watch_cooking` / `report_readiness` | Timers owned by the app with absolute deadlines; watches have IDs, so stale reports are rejected |
+| `dinner_ready` | Opens a draft only. Sending always needs a separate, explicit cook action |
+
+- Dinner messages go to a Cloud Function. It checks Auth, App Check, session ownership and the recipient allowlist, and claims an idempotency ledger entry before calling Vonage. Vonage then reports delivery to `/api/vonage-status`, which verifies the signature.
+
+**Storage: what is kept where.**
+- **Firestore `sessions/{id}`:** step progress, confirmed ingredients and facts, and the latest timer. Only the owner can read or write it. Fresh "New cook" sessions keep older ones intact.
+- **`sessions/{id}/notifications/{nid}`:** a read-only delivery-status mirror that the dinner screen listens to.
+- **Server-only collections:** token quotas, the send ledger and rate limits. Clients cannot read or write them.
+- **Not stored:** camera frames, audio and transcripts. They stream to Gemini during the session and are never written to storage.
+- **Credentials:** no long-lived Gemini or Vonage keys reach the browser. Live uses short-lived ephemeral tokens, and secrets live in Secret Manager.
+
+## Vonage challenge mapping
+
+> *"Vonage Messages API can send a status update when a request is accepted or resolved. Simulate a failed delivery to show how your app responds."*
+
+| Challenge | SousSight |
+|---|---|
+| Status update when **accepted** | A "dinner's started" SMS the cook reviews, sent when cooking begins |
+| Status update when **resolved** | A "dinner is ready" SMS the cook reviews |
+| Delivery status | Signed Messages API status webhook: submitted → delivered or read, or rejected / undeliverable with Vonage's reason, shown live in the app |
+| **Simulated failed delivery** | A clearly labelled demo action that replays a rejected status (error 1120 Illegal Sender, a real failure we hit during setup) through the same webhook handler. The app shows the reason and offers a new reviewed attempt, and never resends silently |
+
+## Safety boundaries
+
+- **The cook is the human in the loop.** The coach asks when it doesn't know something, and the cook confirms ingredients, substitutions, progress and messages.
+- **Camera appearance is not food safety.** It cannot establish internal temperature, freshness or the absence of an allergen, and the coach says so.
+- **Nothing is sent automatically.** No message goes out without the cook's explicit review, and no step is marked complete by the model alone.
+- **Simulation is always labelled.** Rehearsal mode and simulated delivery are marked as simulated in the UI.
+
+## Run it
 
 ```sh
 flutter pub get
+# Rehearsal (no credentials, simulated AI, labelled in the UI)
 flutter run -d chrome -t lib/main_learner.dart --dart-define=FAKE_BACKEND=true
+# Real services (see functions/README.md for backend setup)
+flutter run -d chrome -t lib/main_learner.dart --web-port=7357 --dart-define-from-file=dart_defines.local.json
 ```
 
-Rehearsal mode is visibly labelled. It uses in-memory data and simulated coach responses; it does not capture video/audio, perform Google searches, run an actual vision watch, or send messages. Ingredient panels, step progression, and real client countdowns can be exercised without credentials.
-
-## Run with real services
-
-Use the Firebase project configured in `lib/firebase_options.dart`, or regenerate that file for your own project. Enable anonymous Firebase Authentication, Firestore, Firebase AI Logic with the Gemini Developer API, and App Check for the web app. Follow [functions/README.md](functions/README.md) to configure the protected Live-token and dinner-ready endpoints and their server-side secrets.
-
-Create the ignored `dart_defines.local.json` locally. Its supported configuration keys are:
-
-| Key | Purpose |
+| Dart define | Purpose |
 |---|---|
-| `APPCHECK_DEBUG_TOKEN` | Development-only registered App Check debug token. Never publish a build containing it. |
-| `RECAPTCHA_SITE_KEY` | Public reCAPTCHA Enterprise site key for the production web origin. |
-| `LIVE_TOKEN_URL` | Optional absolute URL to the protected token endpoint. Defaults to `/api/live-token` on the app's origin. |
-| `DINNER_MESSAGE_URL` | Optional absolute URL to the dinner endpoint. Defaults to `/api/dinner-ready` on the app's origin. |
-| `RESEARCH_MODEL` | Optional grounded research model override; current default is `gemini-3.8-flash`. |
+| `FAKE_BACKEND` | `true` runs the labelled rehearsal with in-memory services |
+| `RECIPE_ID` | Default recipe for deep links. `?recipe=<id>` in the URL skips the pantry scan |
+| `APPCHECK_DEBUG_TOKEN` | Development only; never in a published build |
+| `RECAPTCHA_SITE_KEY` | Public reCAPTCHA Enterprise key for the hosted origin |
+| `LIVE_TOKEN_URL`, `DINNER_MESSAGE_URL` | Optional absolute endpoints for local testing (the defaults are `/api/...` on the same origin) |
+| `RESEARCH_MODEL` | Grounded research model override |
 
-Only set the App Check provider appropriate for the environment. The local Flutter development server does not provide Firebase Hosting API rewrites. For local real-service testing, configure the endpoint URLs and explicitly allow that localhost origin on the backend. A hosted same-origin build uses the `/api/` defaults.
+Bundled recipes are in `assets/recipes/`: Peanut Butter Sandwich, Smashed Chickpea Salad Wrap, and Black Bean & Corn Salsa.
 
-```sh
-flutter run -d chrome -t lib/main_learner.dart \
-  --web-port=7357 \
-  --dart-define-from-file=dart_defines.local.json
-```
-
-Allow camera and microphone access, then choose **Cook with me**. Browser capture needs HTTPS or localhost. The backend returns a short-lived token and model/version metadata for Gemini 3.8 Live; the browser never needs a long-lived Gemini API key. Keep `GEMINI_API_KEY` and all Vonage secrets in the backend, never in Dart defines.
-
-## Build
+## Test
 
 ```sh
-./tool/build_web.sh --dart-define=FAKE_BACKEND=true
-```
-
-For a real-service build, pass an appropriate local config file instead:
-
-```sh
-./tool/build_web.sh --dart-define-from-file=dart_defines.local.json
-```
-
-Before publishing, ensure that file contains production configuration and no App Check debug token. The script builds `lib/main_learner.dart` into `build/web`; it does not build a board application or deploy anything. Firebase Hosting should serve `build/web` and route `/api/live-token` and `/api/dinner-ready` to the functions before its application fallback.
-
-## Check changes
-
-```sh
-flutter analyze
-flutter test
+flutter analyze && flutter test
 node --test test/live/browser_media_test.cjs
-npm --prefix functions run check
-node --test functions/test/*.test.js
+npm --prefix functions ci && npm --prefix functions test
+npm --prefix test/rules ci && npm --prefix test/rules test   # Firestore emulator
 ./tool/build_web.sh --dart-define=FAKE_BACKEND=true
 ```
 
-Use `--no-pub` with Flutter commands when dependencies have already been resolved and network access is intentionally unavailable. If a restricted environment cannot write Flutter's user configuration, point `XDG_CONFIG_HOME` at a writable temporary directory and set `FLUTTER_SUPPRESS_ANALYTICS=true`. Do not treat a denied localhost test socket as a passing test. Build success does not verify camera hardware, credentials, or a real Gemini connection.
+CI runs all of these on every pull request and deploys `main` to Firebase. Passing builds and fake-backend tests do not prove real camera, Gemini or SMS behavior; that is recorded separately on the project cards.
 
-## Current limits
+## More
 
-- The target JPEG assets are placeholders. Fixture labels such as `Recipe reviewer` do not establish a completed human review.
-- Multiple timers run in the active workspace, but only the latest timer ID, label, and deadline restore from the cooking session after reload.
-- Vision watches observe appearance and pause when the tab or session stops. Neither vision nor timer expiration certifies food safety; closed/background tabs are not reliable alarm devices.
-- Vonage sending is disabled by default and requires an explicit reviewed send, an allowed recipient, and configured services. Provider acceptance is shown as delivery unconfirmed; delivery callbacks are not implemented.
-- Production services and a complete phone-to-Gemini-to-Vonage demonstration still require real-service validation. Rehearsal output is deliberately identified as simulated.
+- [Product specification](docs/SPEC.md)
+- [Backend and messaging setup](functions/README.md)
+- [Live transport](lib/live/README.md)
+- [Conference quickstart](docs/handoffs/CONFERENCE-PEANUT-BUTTER.md)
+- [Cost ledger](docs/COST-LEDGER.md) · [Teardown plan](docs/TEARDOWN.md) · [Auto-deploy](docs/AUTODEPLOY.md)
