@@ -195,9 +195,11 @@ jobs:
           params['LIVE_ALLOWED_ORIGINS'] = (
               'https://devfest-flutter-a59e8.web.app,'
               'https://devfest-flutter-a59e8.firebaseapp.com')
-          if status_ready:
-              params['DINNER_STATUS_WEBHOOK_URL'] = (
-                  'https://devfest-flutter-a59e8.web.app/api/vonage-status')
+          # Always provide a value: an empty param default blocks
+          # non-interactive deploys. 'disabled' is ignored by the runtime.
+          params['DINNER_STATUS_WEBHOOK_URL'] = (
+              'https://devfest-flutter-a59e8.web.app/api/vonage-status'
+              if status_ready else 'disabled')
           Path('functions/.env.devfest-flutter-a59e8').write_text(
               ''.join(f'{key}={value}\n' for key, value in params.items()))
           PY
