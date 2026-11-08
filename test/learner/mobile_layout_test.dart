@@ -8,6 +8,7 @@ import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
 import 'package:soussight/ai/cooking_research_client.dart';
 import 'package:soussight/live/live_types.dart';
+import 'package:soussight/live/live_controller.dart';
 
 class _CaptionTransport extends DemoLiveTransport {
   final source = StreamController<LiveEvent>.broadcast();
@@ -19,6 +20,17 @@ class _CaptionTransport extends DemoLiveTransport {
   Future<void> close() async {
     await source.close();
     await super.close();
+  }
+}
+
+class _PendingCapture extends DemoLiveMedia {
+  final permission = Completer<void>();
+  int stops = 0;
+  @override
+  Future<void> start() => permission.future;
+  @override
+  Future<void> stop() async {
+    stops++;
   }
 }
 
@@ -38,6 +50,61 @@ void main() {
     await tester.pumpWidget(CookingApp(services: services!, isDemo: true));
     await tester.pumpAndSettle();
   }
+
+  testWidgets('pinned Stop cancels pending capture above the phone keyboard', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 740);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final services = (await tester.runAsync(fakeServices))!;
+    final media = _PendingCapture();
+    final cook = CookingCoordinator(
+      services: services,
+      research: FakeCookingResearchClient(),
+      transportFactory: _CaptionTransport.new,
+      media: media,
+      isDemo: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: cookingTheme,
+        home: CookingScreen(
+          services: services,
+          isDemo: true,
+          createCoordinator: () => cook,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('live-session-toggle'));
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(cook.live.status, LiveCookingStatus.connecting);
+    expect(
+      find.descendant(of: toggle, matching: find.text('Stop')),
+      findsOneWidget,
+    );
+    expect(toggle.hitTestable(), findsOneWidget);
+    expect(tester.getRect(toggle).bottom, lessThanOrEqualTo(440));
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(media.stops, greaterThan(0));
+    expect(cook.live.isActive, isFalse);
+    // A permission result arriving after Stop must not resurrect the session.
+    media.permission.complete();
+    await tester.pumpAndSettle();
+    expect(cook.live.isActive, isFalse);
+    expect(
+      find.descendant(of: toggle, matching: find.text('Start')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   for (final size in [
     const Size(320, 640),
