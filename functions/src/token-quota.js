@@ -24,16 +24,23 @@ function utcDay(nowMs) {
   return Math.floor(nowMs / DAY_MS);
 }
 
-export function nextQuota(previous, nowMs) {
+export function nextQuota(previous, requestMs) {
   const validPrevious = previous && Number.isFinite(previous.lastIssuedAt) &&
     Number.isFinite(previous.windowStartedAt) && Number.isInteger(previous.count);
-  const inWindow = validPrevious && nowMs >= previous.windowStartedAt &&
-    nowMs - previous.windowStartedAt < WINDOW_MS;
-  const day = utcDay(nowMs);
+  // Request timestamps are captured before the transaction and kept across
+  // retries, so they can arrive out of order. Use a monotonic effective time:
+  // an earlier request counts inside the newer active window/day and can
+  // never reset it.
+  const nowMs = validPrevious
+    ? Math.max(requestMs, previous.windowStartedAt, previous.lastIssuedAt)
+    : requestMs;
+  const inWindow = validPrevious && nowMs - previous.windowStartedAt < WINDOW_MS;
+  const previousDay = validPrevious && Number.isInteger(previous.day) ? previous.day : -1;
+  const day = Math.max(utcDay(nowMs), previousDay);
   const sameDay = validPrevious && previous.day === day && Number.isInteger(previous.dayCount);
-  if (validPrevious && nowMs - previous.lastIssuedAt < MIN_INTERVAL_MS) {
+  if (validPrevious && requestMs - previous.lastIssuedAt < MIN_INTERVAL_MS) {
     throw new TokenRequestError('rate-limited', 429, 'Please wait before reconnecting.',
-      retryAfter(MIN_INTERVAL_MS - (nowMs - previous.lastIssuedAt)));
+      retryAfter(MIN_INTERVAL_MS - Math.max(0, requestMs - previous.lastIssuedAt)));
   }
   if (sameDay && previous.dayCount >= MAX_TOKENS_PER_DAY) {
     throw new TokenRequestError('rate-limited', 429,
@@ -54,10 +61,13 @@ export function nextQuota(previous, nowMs) {
 }
 
 /** Project-wide fixed one-minute window across all cooks. */
-export function nextGlobalQuota(previous, nowMs) {
-  const inWindow = previous && Number.isFinite(previous.windowStartedAt) &&
-    Number.isInteger(previous.count) && nowMs >= previous.windowStartedAt &&
-    nowMs - previous.windowStartedAt < GLOBAL_WINDOW_MS;
+export function nextGlobalQuota(previous, requestMs) {
+  const valid = previous && Number.isFinite(previous.windowStartedAt) &&
+    Number.isInteger(previous.count);
+  // Monotonic: an earlier (delayed or retried) request joins the newer
+  // active window instead of resetting a full shared quota.
+  const nowMs = valid ? Math.max(requestMs, previous.windowStartedAt) : requestMs;
+  const inWindow = valid && nowMs - previous.windowStartedAt < GLOBAL_WINDOW_MS;
   if (inWindow && previous.count >= MAX_GLOBAL_TOKENS_PER_MINUTE) {
     throw new TokenRequestError('rate-limited', 429,
       'Live coaching is busy right now. Try again in a minute.',

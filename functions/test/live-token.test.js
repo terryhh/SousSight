@@ -320,3 +320,27 @@ test('invalid deployment settings fail before any provider request', async () =>
     }), { code: 'not-configured', status: 503 });
   }
 });
+
+test('an earlier request never resets a newer full global window', () => {
+  const t = Date.UTC(2026, 10, 8, 15, 0, 0);
+  const full = { windowStartedAt: t + 100, count: MAX_GLOBAL_TOKENS_PER_MINUTE };
+  assert.throws(() => nextGlobalQuota(full, t), (error) =>
+    error.code === 'rate-limited' && error.status === 429);
+  const partial = { windowStartedAt: t + 100, count: 3 };
+  assert.deepEqual(nextGlobalQuota(partial, t), { windowStartedAt: t + 100, count: 4 });
+});
+
+test('reversed arrival keeps the per-cook window and day monotonic', () => {
+  const t = Date.UTC(2026, 10, 8, 23, 59, 59, 500);
+  let quota = nextQuota(null, t + 10_000);
+  // A retried request stamped earlier is refused, never resetting counters.
+  assert.throws(() => nextQuota(quota, t), (error) => error.status === 429);
+  // A full window is not reset by an earlier timestamp after the interval.
+  const full = { ...quota, count: 8, lastIssuedAt: t - 60_000 };
+  assert.throws(() => nextQuota(full, t), (error) => error.status === 429);
+  // The day index never moves backwards across midnight.
+  const nextDay = nextQuota(null, t + 1_000);
+  const later = nextQuota({ ...nextDay, lastIssuedAt: t - 60_000 }, t);
+  assert.equal(later.day, nextDay.day);
+  assert.equal(later.dayCount, 2);
+});
