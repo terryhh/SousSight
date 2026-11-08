@@ -64,24 +64,100 @@ verify an actual Gemini WebSocket connection or deployed IAM/Firestore rules.
 recipient and exact message in the app. A model/tool call must only open that
 review; it must not submit this endpoint automatically.
 
-Request: `POST` with the same Auth/App Check headers as the token endpoint:
+Request: `POST` with the same Auth/App Check headers as the token endpoint.
+The client sends template **slots only**; the server composes the text, so no
+free-form client or model text reaches the household:
 
 ```json
 {
   "sessionId": "SESSION_ID",
-  "notificationId": "STABLE_UUID_FOR_THIS_ATTEMPT",
+  "notificationId": "NEW_UUID_FOR_THIS_ATTEMPT",
   "recipient": "+14075550100",
-  "message": "Dinner is ready! Chickpea wraps are on the table."
+  "kind": "ready",
+  "recipeTitle": "Chickpea wraps",
+  "minutes": 25,
+  "cookName": "Optional, started only",
+  "simulateFailure": false
 }
 ```
 
-Success returns `{notificationId, status, channel, duplicate, reason}`. Status is
-`submitted` (provider accepted, **delivery unconfirmed**), `skipped` (dry-run),
-`failed` (known rejection/configuration problem), or `unknown` (ambiguous outcome).
-Never label `submitted` as delivered. This demo does not accept delivery callbacks;
-adding that later requires signature verification and correlation with the stored
-provider UUID. The [Vonage status guide](https://developer.vonage.com/en/messages/concepts/messages-status-callbacks)
-describes the distinction between submission, delivery and rejection.
+Templates (`kind`):
+
+- `started`: `SousSight: {cookName or 'Your cook'} started {recipeTitle}. Dinner in about {minutes} min.`
+  (`minutes` required, integer 1-120)
+- `ready`: `SousSight: Dinner is ready! {recipeTitle} is on the table.` (no `minutes`)
+
+`recipeTitle` (raw <= 200 chars) and `cookName` (raw <= 80) are reduced to
+letters, numbers, spaces and `' & , ( ) ! -`, whitespace-collapsed and cut to
+60/30 characters, so links and markup cannot pass. A `message` field is rejected.
+
+Success returns `{notificationId, kind, message, status, deliveryStatus, simulated,
+channel, duplicate, reason}`. `status` is the send outcome: `submitted` (provider
+accepted, **delivery unconfirmed**), `skipped` (dry-run), `failed` (known
+rejection/configuration problem), or `unknown` (ambiguous). Never label
+`submitted` as delivered; only a verified status webhook sets `delivered`/`read`.
+
+Errors: 400 `invalid-request`/`invalid-recipient`, 403 `recipient-not-allowed`,
+`session-not-owned`, `simulation-disabled`, 409 `idempotency-conflict` (same ID,
+different content) and `meal-already-notified` (another ID already holds this
+meal/recipient/kind slot), 429 `rate-limited` (with `Retry-After`), 503
+`not-configured`. Configuration and sender checks run **before** the ledger claim,
+so a misconfiguration never locks the meal slot.
+
+### Delivery status (Vonage status webhook)
+
+`vonageStatus` (HTTPS, `us-central1`, Hosting rewrite `/api/vonage-status`)
+receives [Message Status webhooks](https://developer.vonage.com/en/api/messages)
+(`message_uuid`, `status` = `submitted|delivered|rejected|undeliverable`, plus
+`read` on WhatsApp, `error {type,title,detail,instance}`, `timestamp`, `to`,
+`from`, `channel`, `client_ref`). It trusts nothing until the
+[signed-webhook JWT](https://developer.vonage.com/en/getting-started/concepts/webhooks#decoding-signed-webhooks)
+in `Authorization` verifies:
+
+- HS256 only (header `alg` pinned), HMAC-SHA256 with `VONAGE_SIGNATURE_SECRET`,
+  constant-time comparison (`node:crypto`, no new dependency);
+- `iat` no older than 5 minutes and no more than 60 s in the future;
+- `payload_hash` equals SHA-256 (hex) of the received body.
+
+Invalid signatures get 401. A missing `Authorization` header gets 503 because
+Vonage documents that it may send an unsigned callback after an internal error and
+retries a 5xx signed. Unknown `message_uuid` or unsupported statuses get 200 (no
+retry storm). Storage failures get 500 so Vonage retries. Logs contain only event
+codes and statuses: never tokens, bodies, phone numbers or message UUIDs.
+
+On send, `settle` writes `_dinnerProviderMessages/{sha256(message_uuid)}` ->
+ledger key, session and notification IDs. The webhook updates the ledger's
+`deliveryStatus` and a capped `statusHistory`, monotonically (`submitted` <
+`delivered` < `read`; `rejected`/`undeliverable` are terminal and never override
+`delivered`/`read`). It mirrors a cook-readable document
+`sessions/{sessionId}/notifications/{notificationId}` =
+`{kind, status, errorTitle, errorCode, reason, simulated, updatedAt}` via the Admin
+SDK. Rules let only the session owner read it; all client writes are denied.
+
+When `DINNER_STATUS_WEBHOOK_URL` is set, each send includes `webhook_url` and
+`webhook_version: "v1"`, which override the dashboard status URL for that message.
+
+Recovery: a known failure (`failed`, `rejected`, `undeliverable`) frees the
+meal/recipient/kind slot for a **new** notification ID only after the cook edits
+and confirms again. Pending or unknown attempts still block new IDs, and nothing
+is retried automatically.
+
+### Failure simulation (demo)
+
+With `ALLOW_DELIVERY_SIMULATION=true`, a request with `"simulateFailure": true`
+never contacts Vonage. It claims the ledger (rate limit and ownership included),
+records a synthetic `sim-<uuid>` message ID, and then runs the **same** status
+function as the webhook with `status: rejected`, error `Illegal Sender Address`
+(code 1120, the rejection this account really recorded). The mirror is marked
+`simulated: true` and the app labels it "Simulated failure (demo)". With the
+parameter unset or `false`, the request returns 403 `simulation-disabled`. It
+works while `ENABLE_DINNER_MESSAGES=false`.
+
+### Rate limit
+
+`_dinnerSendLimits/{sha256(uid)}` allows 5 new claims per user per rolling hour
+window inside the claim transaction. Repeating an existing notification ID
+(status read) does not count.
 
 Configuration:
 
@@ -93,6 +169,11 @@ Configuration:
   dashboard trial example has a separate, limited path described below.
 - `ENABLE_DINNER_MESSAGES=false` by default. Only the exact value `true` enables
   a provider request. Deploying code does not itself opt into sending messages.
+- Secret Manager `VONAGE_SIGNATURE_SECRET` (bound only to `vonageStatus`).
+- `DINNER_STATUS_WEBHOOK_URL` (string param, default empty): set by the workflow
+  to `https://devfest-flutter-a59e8.web.app/api/vonage-status` when
+  `DINNER_STATUS_READY=true`.
+- `ALLOW_DELIVERY_SIMULATION=false` by default (demo failure simulation).
 - Allowed origins reuse `LIVE_ALLOWED_ORIGINS`.
 
 The [Vonage Sandbox guide](https://developer.vonage.com/en/messages/concepts/messages-api-sandbox)
@@ -106,11 +187,13 @@ The service checks session ownership inside the Firestore claim transaction.
 It creates `_dinnerNotifications/{hashedUidAndNotificationId}` before calling the
 provider, and `_dinnerMealClaims/{hashedUidSessionRecipient}` prevents a fresh ID
 from bypassing an existing meal announcement. Keep both collections denied to
-client SDKs. Only hashes, IDs, channel, status and timestamps are stored; message
-content and recipient numbers are not written to the ledger.
+client SDKs, as well as `_dinnerProviderMessages` and `_dinnerSendLimits`. Only
+hashes, IDs, kind, channel, status, sanitised error titles/codes and timestamps
+are stored; message content and recipient numbers are not written.
 
 Retain the notification ID across network retries. Changed content with the same
-ID returns 409. A second ID for the same meal/recipient also returns 409. Pending
+ID returns 409. A second ID for the same meal/recipient/kind also returns 409 unless the prior
+attempt is a known failure. Pending
 or unknown attempts never resend, even after a worker crash; inspect the Vonage
 dashboard before taking any manual action. Dry-run attempts are terminal too:
 start a fresh cooking session for the real-send rehearsal after enabling messages.
@@ -204,3 +287,36 @@ Sources: [AuthToken reference](https://ai.google.dev/api/live#AuthToken) and
 A direct server-side diagnostic accepted this corrected request on November 7,
 2026. That verifies token minting only; a deployed backend and actual Live WebSocket
 session still need their own checks. The token was not persisted or logged.
+
+
+## Human setup for delivery status (not done by automation)
+
+1. Vonage Dashboard > **Settings** (https://dashboard.nexmo.com/settings): copy the
+   account **Signature secret** for the same API key used by `VONAGE_API_KEY`.
+   Messages API webhooks are always signed with SHA-256 (HS256 JWT); the
+   "signature method" dropdown only affects the legacy SMS API.
+2. Store it interactively (never in chat, args, GitHub or Dart defines):
+   `firebase functions:secrets:set VONAGE_SIGNATURE_SECRET --project devfest-flutter-a59e8`
+3. Optional fallback for messages without `webhook_url`: Dashboard > Settings >
+   Messages API (or the Vonage application's Messages capability, if one is used)
+   set **Status URL** to `https://devfest-flutter-a59e8.web.app/api/vonage-status`,
+   method POST, webhook version v1. Per-message `webhook_url` already covers
+   SousSight sends.
+4. WhatsApp Sandbox: the sandbox page (https://dashboard.nexmo.com/messages/sandbox)
+   has its own webhook fields. Whether the sandbox honours per-message
+   `webhook_url` is not documented; set its Status URL to the same address.
+5. GitHub `production` variables: `DINNER_STATUS_READY=true` (only after step 2;
+   requires `DINNER_SERVICE_READY=true`) and, for the demo,
+   `ALLOW_DELIVERY_SIMULATION=true`. Then re-run the deploy workflow.
+
+Deploy gating mirrors `DINNER_SERVICE_READY`: with `DINNER_STATUS_READY=false` the
+workflow packages `src/live-dinner-index.js` (no `vonageStatus`, no signature
+secret parameter) and removes the `/api/vonage-status` rewrite, so a missing
+secret cannot break deployment. With it `true`, it packages `src/index.js`, adds
+`functions:vonageStatus` and writes `DINNER_STATUS_WEBHOOK_URL`.
+
+Verification status: unit tests cover JWT verification (valid, bad signature,
+`alg` swap, stale/future `iat`, hash mismatch), status mapping and monotonicity,
+unknown UUIDs, simulation, templates, rate limit and pre-claim configuration
+checks with an in-memory Firestore and injected transport. No real Vonage
+callback, SMS, deployment or live Firestore write has been exercised.

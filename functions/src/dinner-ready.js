@@ -1,8 +1,24 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { TokenRequestError as HttpError } from './live-token.js';
+import { notificationPath, providerIndexId } from './vonage-status.js';
 
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 const publicStatuses = new Set(['submitted', 'skipped', 'failed', 'unknown']);
+const DELIVERY_FAILURES = new Set(['rejected', 'undeliverable']);
+export const DINNER_KINDS = ['started', 'ready'];
+export const SEND_LIMIT_PER_HOUR = 5;
+const HOUR_MS = 60 * 60_000;
+const REQUEST_KEYS = ['sessionId', 'notificationId', 'recipient', 'kind', 'recipeTitle',
+  'minutes', 'cookName', 'simulateFailure'];
+
+// Simulated Vonage outcome for the demo. Error 1120 is the rejection this
+// account actually recorded for a non-numeric sender (see README).
+export const SIMULATED_FAILURE = Object.freeze({
+  status: 'rejected',
+  errorTitle: 'Illegal Sender Address',
+  errorCode: '1120',
+  detail: 'Simulated: Vonage error 1120',
+});
 
 export function normalizeRecipient(value) {
   if (typeof value !== 'string' || !/^\+?[1-9][0-9]{7,14}$/.test(value)) {
@@ -11,23 +27,71 @@ export function normalizeRecipient(value) {
   return value.replace(/^\+/, '');
 }
 
+/** Keeps letters, numbers, spaces and a little punctuation. No links, markup,
+ * control characters or free-form sentences can reach the household. */
+export function cleanTemplateText(value, maxLength) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[^\p{L}\p{N} '&,()!-]/gu, ' ').replace(/\s+/g, ' ').trim()
+    .slice(0, maxLength).trim();
+}
+
+/** Server-owned templates. The client supplies only the slots. */
+export function composeDinnerMessage({ kind, recipeTitle, minutes, cookName }) {
+  if (kind === 'started') {
+    return `SousSight: ${cookName || 'Your cook'} started ${recipeTitle}. Dinner in about ${minutes} min.`;
+  }
+  return `SousSight: Dinner is ready! ${recipeTitle} is on the table.`;
+}
+
+function invalid() {
+  return new HttpError('invalid-request', 400,
+    'Provide the session, notification ID, recipient, message kind, and recipe title.');
+}
+
 export function validateDinnerRequest(body, allowedRecipients) {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
-      Object.keys(body).some((key) => !['sessionId', 'notificationId', 'recipient', 'message'].includes(key)) ||
+      Object.keys(body).some((key) => !REQUEST_KEYS.includes(key)) ||
       typeof body.sessionId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(body.sessionId) ||
       typeof body.notificationId !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(body.notificationId) ||
-      typeof body.message !== 'string' || body.message.trim().length === 0 ||
-      body.message.length > 320 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(body.message)) {
-    throw new HttpError('invalid-request', 400, 'Provide the session, notification ID, recipient, and a message of up to 320 characters.');
+      !DINNER_KINDS.includes(body.kind) ||
+      typeof body.recipeTitle !== 'string' || body.recipeTitle.length > 200 ||
+      (body.cookName !== undefined && body.cookName !== null &&
+        (typeof body.cookName !== 'string' || body.cookName.length > 80)) ||
+      (body.simulateFailure !== undefined && typeof body.simulateFailure !== 'boolean')) {
+    throw invalid();
   }
+  const recipeTitle = cleanTemplateText(body.recipeTitle, 60);
+  if (!recipeTitle) throw invalid();
+  let minutes = null;
+  if (body.kind === 'started') {
+    if (!Number.isInteger(body.minutes) || body.minutes < 1 || body.minutes > 120) throw invalid();
+    minutes = body.minutes;
+  } else if (body.minutes !== undefined && body.minutes !== null) {
+    throw invalid();
+  }
+  const cookName = body.kind === 'started' ? cleanTemplateText(body.cookName ?? '', 30) || null : null;
   const recipient = normalizeRecipient(body.recipient);
   const allowed = new Set(allowedRecipients.map(normalizeRecipient));
   if (!allowed.has(recipient)) {
     throw new HttpError('recipient-not-allowed', 403, 'This recipient has not been enabled for the demo.');
   }
-  return { sessionId: body.sessionId, notificationId: body.notificationId,
-    recipient, message: body.message };
+  const slots = { kind: body.kind, recipeTitle, minutes, cookName };
+  return { sessionId: body.sessionId, notificationId: body.notificationId, recipient,
+    ...slots, simulateFailure: body.simulateFailure === true, message: composeDinnerMessage(slots) };
 }
+
+export function nextSendLimit(previous, nowMs, limit = SEND_LIMIT_PER_HOUR) {
+  const valid = previous && Number.isFinite(previous.windowStartedAt) && Number.isInteger(previous.count);
+  const inWindow = valid && nowMs >= previous.windowStartedAt && nowMs - previous.windowStartedAt < HOUR_MS;
+  if (inWindow && previous.count >= limit) {
+    throw new HttpError('rate-limited', 429, 'Too many household messages this hour.',
+      Math.max(1, Math.ceil((HOUR_MS - (nowMs - previous.windowStartedAt)) / 1000)));
+  }
+  return { windowStartedAt: inWindow ? previous.windowStartedAt : nowMs, count: inWindow ? previous.count + 1 : 1 };
+}
+
+const isKnownFailure = (record) =>
+  record?.status === 'failed' || DELIVERY_FAILURES.has(record?.deliveryStatus);
 
 /** Firestore owns the claim. Once pending, an attempt can never be retried
  * automatically, including after a worker crash or an ambiguous provider reply. */
@@ -38,13 +102,16 @@ export function createDinnerLedger(db) {
       const fingerprint = sha256(JSON.stringify({ ...request, channel }));
       const ref = db.collection('_dinnerNotifications').doc(key);
       const sessionRef = db.collection('sessions').doc(request.sessionId);
-      // One dinner announcement per session/recipient prevents a fresh ID from
-      // accidentally bypassing an uncertain attempt. A new meal uses a new session.
+      // One message of each kind per session/recipient prevents a fresh ID from
+      // bypassing an uncertain attempt. Only a KNOWN failure frees the slot, and
+      // only for a new, cook-confirmed notification ID.
       const mealRef = db.collection('_dinnerMealClaims').doc(
-        sha256(`${uid}\n${request.sessionId}\n${request.recipient}`));
+        sha256(`${uid}\n${request.sessionId}\n${request.recipient}\n${request.kind}`));
+      const limitRef = db.collection('_dinnerSendLimits').doc(sha256(uid));
+      const mirrorRef = db.doc(notificationPath(request.sessionId, request.notificationId));
       return db.runTransaction(async (transaction) => {
-        const [session, existing, meal] = await Promise.all([
-          transaction.get(sessionRef), transaction.get(ref), transaction.get(mealRef),
+        const [session, existing, meal, limit] = await Promise.all([
+          transaction.get(sessionRef), transaction.get(ref), transaction.get(mealRef), transaction.get(limitRef),
         ]);
         if (!session.exists || session.data().learnerId !== uid) {
           throw new HttpError('session-not-owned', 403, 'This cooking session does not belong to you.');
@@ -57,13 +124,22 @@ export function createDinnerLedger(db) {
           return { key, claimed: false, record };
         }
         if (meal.exists) {
-          throw new HttpError('meal-already-notified', 409,
-            'A dinner notification already exists for this meal. Check its status instead of sending again.');
+          const priorKey = meal.data().ledgerKey ?? sha256(`${uid}\n${meal.data().notificationId}`);
+          const prior = await transaction.get(db.collection('_dinnerNotifications').doc(priorKey));
+          if (!prior.exists || !isKnownFailure(prior.data())) {
+            throw new HttpError('meal-already-notified', 409,
+              'A message of this kind already exists for this meal. Check its status instead of sending again.');
+          }
         }
-        const record = { fingerprint, status: 'pending', channel,
-          notificationId: request.notificationId, createdAt: nowMs, updatedAt: nowMs };
+        const nextLimit = nextSendLimit(limit.exists ? limit.data() : null, nowMs);
+        const record = { fingerprint, status: 'pending', channel, kind: request.kind,
+          sessionId: request.sessionId, notificationId: request.notificationId,
+          simulated: request.simulateFailure, createdAt: nowMs, updatedAt: nowMs };
         transaction.create(ref, record);
-        transaction.create(mealRef, { notificationId: request.notificationId, createdAt: nowMs });
+        transaction.set(mealRef, { notificationId: request.notificationId, ledgerKey: key, createdAt: nowMs });
+        transaction.set(limitRef, nextLimit);
+        transaction.set(mirrorRef, { kind: request.kind, status: 'pending', errorTitle: null,
+          errorCode: null, reason: null, simulated: request.simulateFailure, updatedAt: nowMs });
         return { key, claimed: true, record };
       });
     },
@@ -72,26 +148,52 @@ export function createDinnerLedger(db) {
       await db.runTransaction(async (transaction) => {
         const snapshot = await transaction.get(ref);
         if (!snapshot.exists || snapshot.data().status !== 'pending') return;
-        transaction.update(ref, { ...result, updatedAt: nowMs });
+        const record = snapshot.data();
+        const { providerMessageId, ...stored } = result;
+        transaction.update(ref, { ...stored, updatedAt: nowMs,
+          ...(providerMessageId ? { providerMessageHash: providerIndexId(providerMessageId) } : {}) });
+        if (providerMessageId) {
+          // Status webhooks carry only message_uuid; this index maps it back.
+          transaction.set(db.collection('_dinnerProviderMessages').doc(providerIndexId(providerMessageId)), {
+            ledgerKey: key, sessionId: record.sessionId, notificationId: record.notificationId,
+            simulated: record.simulated === true, createdAt: nowMs,
+          });
+        }
+        if (record.sessionId) {
+          transaction.set(db.doc(notificationPath(record.sessionId, record.notificationId)), {
+            kind: record.kind ?? 'ready', status: result.status, reason: result.reason ?? null,
+            simulated: record.simulated === true, updatedAt: nowMs,
+          }, { merge: true });
+        }
       });
     },
   };
 }
 
-export async function sendVonageDinner({ request, channel, credentials, fetchImpl = fetch }) {
+/** Returns a reason code when the provider cannot be used, else null. */
+export function providerConfigProblem(credentials) {
+  if (!credentials?.apiKey || !credentials?.apiSecret || !credentials?.from) return 'not-configured';
+  try { normalizeRecipient(credentials.from); }
+  catch { return 'invalid-sender'; }
+  return null;
+}
+
+export async function sendVonageDinner({ request, channel, credentials, webhookUrl = '', fetchImpl = fetch }) {
   if (!['whatsapp', 'sms'].includes(channel)) {
     return { status: 'failed', reason: 'unsupported-channel' };
   }
-  if (!credentials.apiKey || !credentials.apiSecret || !credentials.from) {
-    return { status: 'failed', reason: 'not-configured' };
-  }
-  let from;
+  const problem = providerConfigProblem(credentials);
+  if (problem) return { status: 'failed', reason: problem };
   // Use the numeric sender verified for this account; dashboard labels are not sender approval.
-  try { from = normalizeRecipient(credentials.from); }
-  catch { return { status: 'failed', reason: 'invalid-sender' }; }
+  const from = normalizeRecipient(credentials.from);
   const endpoint = channel === 'whatsapp'
     ? 'https://messages-sandbox.nexmo.com/v1/messages'
     : 'https://api.nexmo.com/v1/messages';
+  const payload = { channel, message_type: 'text', to: request.recipient,
+    from, text: request.message, client_ref: request.notificationId };
+  // Per-message status URL overrides dashboard settings:
+  // https://developer.vonage.com/en/api/messages (webhook_url, webhook_version)
+  if (webhookUrl) Object.assign(payload, { webhook_url: webhookUrl, webhook_version: 'v1' });
   try {
     const response = await fetchImpl(endpoint, {
       method: 'POST',
@@ -99,16 +201,15 @@ export async function sendVonageDinner({ request, channel, credentials, fetchImp
         Authorization: `Basic ${Buffer.from(`${credentials.apiKey}:${credentials.apiSecret}`).toString('base64')}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ channel, message_type: 'text', to: request.recipient,
-        from, text: request.message, client_ref: request.notificationId }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(12_000), redirect: 'error',
     });
     if (response.status === 202) {
       const data = await response.json();
       if (typeof data.message_uuid === 'string' &&
           /^[A-Za-z0-9-]{1,100}$/.test(data.message_uuid)) {
-        // API acceptance is not delivery. Only verified status callbacks could
-        // promote this state; this demo does not implement that promotion.
+        // API acceptance is not delivery. Only verified status callbacks
+        // (vonageStatus) promote this to delivered/read/rejected.
         return { status: 'submitted', providerMessageId: data.message_uuid };
       }
       return { status: 'unknown', reason: 'accepted-without-message-id' };
@@ -123,21 +224,35 @@ export async function sendVonageDinner({ request, channel, credentials, fetchImp
   }
 }
 
-export function createDinnerService({ ledger, sendMessage, settings, now = Date.now }) {
+export function createDinnerService({ ledger, sendMessage, applyStatus, settings, now = Date.now }) {
   return async (uid, body) => {
     const request = validateDinnerRequest(body, settings.allowedRecipients);
     if (!['whatsapp', 'sms'].includes(settings.channel)) {
       throw new HttpError('not-configured', 503, 'Dinner messaging is not configured yet.');
     }
+    if (request.simulateFailure && settings.allowSimulation !== true) {
+      throw new HttpError('simulation-disabled', 403, 'Delivery failure simulation is disabled.');
+    }
+    // Reject known configuration problems BEFORE claiming, so fixing them does
+    // not leave the meal slot locked by an attempt that never reached Vonage.
+    if (!request.simulateFailure && settings.enabled && settings.checkProvider?.()) {
+      throw new HttpError('not-configured', 503, 'Dinner messaging is not configured yet.');
+    }
     const claim = await ledger.claim({ uid, request, channel: settings.channel, nowMs: now() });
+    const base = { notificationId: request.notificationId, kind: request.kind, message: request.message,
+      simulated: request.simulateFailure };
     if (!claim.claimed) {
-      return { notificationId: request.notificationId,
-        status: publicStatuses.has(claim.record.status) ? claim.record.status : 'unknown',
+      return { ...base, status: publicStatuses.has(claim.record.status) ? claim.record.status : 'unknown',
         channel: claim.record.channel, duplicate: true,
+        deliveryStatus: claim.record.deliveryStatus ?? null,
         reason: claim.record.reason ?? (claim.record.status === 'pending' ? 'attempt-in-progress-or-unconfirmed' : null) };
     }
     let result;
-    if (!settings.enabled) result = { status: 'skipped', reason: 'dry-run' };
+    if (request.simulateFailure) {
+      // Demo path: Vonage is never contacted. A synthetic message UUID flows
+      // through the same ledger, index and status function as a real callback.
+      result = { status: 'submitted', providerMessageId: `sim-${randomUUID()}` };
+    } else if (!settings.enabled) result = { status: 'skipped', reason: 'dry-run' };
     else {
       try { result = await sendMessage({ request, channel: settings.channel }); }
       catch { result = { status: 'unknown', reason: 'provider-response-unavailable' }; }
@@ -148,11 +263,20 @@ export function createDinnerService({ ledger, sendMessage, settings, now = Date.
     try { await ledger.settle(claim.key, result, now()); }
     catch {
       // The pending claim remains durable. Repeating it will NOT resend.
-      return { notificationId: request.notificationId, status: 'unknown',
-        channel: settings.channel, duplicate: false, reason: 'status-not-persisted' };
+      return { ...base, status: 'unknown', channel: settings.channel, duplicate: false,
+        deliveryStatus: null, reason: 'status-not-persisted' };
     }
-    return { notificationId: request.notificationId, status: result.status,
-      channel: settings.channel, duplicate: false, reason: result.reason ?? null };
+    let deliveryStatus = null;
+    if (request.simulateFailure) {
+      try {
+        const applied = await applyStatus({ messageUuid: result.providerMessageId,
+          status: SIMULATED_FAILURE.status, errorTitle: SIMULATED_FAILURE.errorTitle,
+          errorCode: SIMULATED_FAILURE.errorCode }, now());
+        deliveryStatus = applied?.status ?? null;
+      } catch { /* Mirror stays at submitted; the UI shows that honestly. */ }
+    }
+    return { ...base, status: result.status, channel: settings.channel, duplicate: false,
+      deliveryStatus, reason: result.reason ?? null };
   };
 }
 
@@ -188,6 +312,7 @@ export function createDinnerReadyHandler({ verifyAuth, verifyAppCheck, service, 
     try { return res.status(200).json(await service(uid, req.body)); }
     catch (error) {
       const known = error instanceof HttpError;
+      if (known && error.retryAfterSeconds) res.set('Retry-After', String(error.retryAfterSeconds));
       return res.status(known ? error.status : 503).json({ error: {
         code: known ? error.code : 'temporarily-unavailable',
         message: known ? error.message : 'Could not verify notification status. Retry with the same notification ID.',

@@ -33,11 +33,22 @@ test('Live-only packaged entrypoint discovers no dinner exports or secret parame
   assert.ok(stack.params.some(p => p.name === 'GEMINI_API_KEY'));
 });
 
-test('full packaged entrypoint preserves both functions and dinner secret bindings', () => {
-  const stack = discover('src/index.js');
+test('live+dinner entrypoint omits the status webhook and its signature secret', () => {
+  const stack = discover('src/live-dinner-index.js');
   assert.deepEqual(Object.keys(stack.endpoints).sort(), ['dinnerReady', 'liveToken']);
+  assert.equal(stack.params.some(p => p.name === 'VONAGE_SIGNATURE_SECRET'), false);
+  assert.equal(stack.params.find(p => p.name === 'ALLOW_DELIVERY_SIMULATION').default, 'false');
+  assert.equal(stack.params.find(p => p.name === 'DINNER_STATUS_WEBHOOK_URL').default, '');
+});
+
+test('full packaged entrypoint preserves all functions and secret bindings', () => {
+  const stack = discover('src/index.js');
+  assert.deepEqual(Object.keys(stack.endpoints).sort(), ['dinnerReady', 'liveToken', 'vonageStatus']);
   assert.deepEqual(stack.endpoints.dinnerReady.secretEnvironmentVariables.map(s => s.key).sort(),
     ['VONAGE_ALLOWED_TO', 'VONAGE_API_KEY', 'VONAGE_API_SECRET', 'VONAGE_FROM']);
+  assert.deepEqual(stack.endpoints.vonageStatus.secretEnvironmentVariables.map(s => s.key),
+    ['VONAGE_SIGNATURE_SECRET']);
+  assert.equal(stack.endpoints.vonageStatus.region[0], 'us-central1');
   assert.equal(stack.params.find(p => p.name === 'ENABLE_DINNER_MESSAGES').default, 'false');
   assert.equal(stack.params.filter(p => p.name === 'LIVE_ALLOWED_ORIGINS').length, 1);
 });
