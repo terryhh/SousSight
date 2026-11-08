@@ -14,7 +14,7 @@ Jenna owns `lib/research/**`, `test/research/**`, `lib/main_research_demo.dart`,
 
 ## Complete board map
 
-The 28 linked cards contain acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
+The 30 linked cards contain acceptance criteria and dated evidence; `docs/backlog.json` is the publisher manifest. The dependency column records completion gates, not a prohibition on preparing independent fixtures or checklists. Terry's existing underway integration assignments remain his. Done means only the finite scope described on that card, never inferred live MVP acceptance.
 
 | Card | Owner | State | Completion dependencies |
 | --- | --- | --- | --- |
@@ -38,14 +38,16 @@ The 28 linked cards contain acceptance criteria and dated evidence; `docs/backlo
 | [SS-018: Preserve explicit GitHub card assignees in backlog publishing](https://github.com/terryhh/SousSight/issues/32) | @terryhh | Done | None |
 | [SS-019: Make the cooking workspace responsive in mobile Chrome](https://github.com/terryhh/SousSight/issues/34) | @terryhh | InProgress | None |
 | [SS-020: Isolate Live deployment from unconfigured Vonage secrets](https://github.com/terryhh/SousSight/issues/36) | @terryhh | Done | None |
-| [SS-021: Set up Vonage account and delivery configuration](https://github.com/terryhh/SousSight/issues/39) | @jennajh | Backlog | None |
-| [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | InProgress | None |
+| [SS-021: Set up Vonage account and delivery configuration](https://github.com/terryhh/SousSight/issues/39) | @jennajh | InProgress | None |
+| [SS-022: Prepare real cooking reference photos and evaluation fixtures](https://github.com/terryhh/SousSight/issues/40) | @jennajh | Done | None |
 | [SS-023: Run physical cook acceptance and report reproducible failures](https://github.com/terryhh/SousSight/issues/41) | @jennajh | InProgress | SS-016, SS-002, SS-003, SS-004, SS-005, SS-006 |
 | [SS-024: Prepare a repeatable cooking demo story and recording checklist](https://github.com/terryhh/SousSight/issues/42) | @jennajh | Backlog | None |
 | [SS-025: Critical reconnect, media lifecycle and reviewed-send regressions](https://github.com/terryhh/SousSight/issues/46) | @terryhh | Done | None |
-| [SS-026: Integrate Jenna research panel with the live learner workspace](https://github.com/terryhh/SousSight/issues/58) | @terryhh | InProgress | SS-005, SS-004 |
+| [SS-026: Integrate Jenna research panel with the live learner workspace](https://github.com/terryhh/SousSight/issues/58) | @terryhh | Done | SS-005, SS-004 |
 | [SS-027: Add optional Google account sign-in and saved cooking sessions](https://github.com/terryhh/SousSight/issues/59) | @terryhh | Backlog | SS-001, SS-009 |
-| [SS-028: Keep input and stop controls stable during generated workspace updates](https://github.com/terryhh/SousSight/issues/63) | @terryhh | InProgress | None |
+| [SS-028: Keep input and stop controls stable during generated workspace updates](https://github.com/terryhh/SousSight/issues/63) | @terryhh | Done | None |
+| [SS-029: Guard repository history and browser builds against secrets](https://github.com/terryhh/SousSight/issues/65) | @terryhh | Done | None |
+| [SS-030: Allow correction of known dinner pre-send validation failures](https://github.com/terryhh/SousSight/issues/72) | @terryhh | Done | SS-007 |
 
 ## Integration and release gates
 
@@ -66,3 +68,13 @@ PRs #50/#53/#54/#55 are merged. PR #56 stale-workspace guard stays under SS-003,
 Remaining practical MVP gates are distinct microphone recognition and hosted transcript behavior; real generated panels and confirmed facts; Jenna panel/shared-adapter integration; real timer/watch lifecycle; Vonage setup and an explicitly authorized reviewed send; physical Android acceptance, real reference-photo evaluation and final demonstration. Optional Google login is outside the immediate MVP verification priority. User-confirmed audible coach playback is already verified and does not establish microphone recognition.
 
 The latest hosted check rendered real Gemini panels and a visibly advancing timer without manual tool injection. Input displacement prevented verified question submission; SS-028 is underway to stabilize shared input/stop controls, including mobile keyboard focus. SS-003 remains open for explicit clarification and deployed stale-step guard checks; distinct microphone recognition is still unverified.
+
+Latest read-back supersedes the earlier snapshot: **29 cards — 12 Done, 14 In progress, 0 In review, 3 Backlog**, all assigned. SS-026 finite adapter is Done after merged integration and the hosted nine-source panel. Explicit fact confirmation remains unverified under SS-003. Jenna’s Vonage setup is In progress; her photo/physical-acceptance PRs #67/#68 await review. SS-029 secret protection has green PR #66 CI but remains In progress until completion.
+
+Final confirmation update: the hosted panel accepted the exact fork/chunky-mixture test fact through an explicit Confirm click and showed it under cook-confirmed facts. Post-reload fact persistence was not inspected; SS-003 remains open for its remaining acceptance. This reused prior research, with media off and no new research call. Secret guard PR #66 merged and main scan passed, completing SS-029. Board after that finite completion: 13 Done, 13 In progress, 3 Backlog; Jenna’s SS-021 remains In progress.
+
+Final hosted interaction verified a real Chunky/Smooth cook question, explicit Smooth choice, updated acknowledgement panel, stable pinned composer and Stop releasing camera/microphone. SS-028 is Done; physical Android acceptance remains SS-019/SS-023. SS-003 retains only its remaining unverified acceptance rather than re-testing the now-proven question/choice path. Board after SS-028 completion: 14 Done, 12 In progress, 3 Backlog, all assigned.
+
+Terry subsequently confirmed that his spoken input was understood; combined with earlier audible-coach confirmation this verifies the desktop two-way exchange. Physical Android and remaining failure paths remain separate. SS-030/#72 tracks the active focused dinner-validation correction; the current board now has 30 cards: 14 Done, 13 In progress, 3 Backlog. Runtime access to the four Vonage secrets is verified, but sending remains disabled and delivery is unverified.
+
+Final board/manifest reconciliation: **30 cards, 16 Done, 11 In progress, 3 Backlog, all assigned**. SS-022 photo fixtures completed through PR #67; SS-030 correction completed through PR #73. Keeping these manifest stages aligned prevents the publisher from reverting completed project cards. Runtime photo evaluation and hosted notification correction remain their separate integration criteria.

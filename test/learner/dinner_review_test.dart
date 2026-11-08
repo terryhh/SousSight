@@ -162,6 +162,42 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets(
+    'pre-send rejection permits correction only after another review tap',
+    (tester) async {
+      await openDraft(tester);
+      await fillReview(tester);
+      await tester.tap(getConfirm());
+      await tester.pump();
+      response.completeError(
+        const DinnerValidationException(
+          'Choose your configured household contact. No message was sent.',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No message was sent.'), findsOneWidget);
+      expect(tester.widget<TextField>(field('Recipient')).enabled, isTrue);
+      expect(tester.widget<FilledButton>(getConfirm()).onPressed, isNotNull);
+      expect(submissions, hasLength(1));
+      response = Completer<DinnerMessageResult>();
+      await tester.enterText(field('Recipient'), '+14075550124');
+      await tester.pump();
+      expect(submissions, hasLength(1));
+      await tester.tap(getConfirm());
+      await tester.pump();
+      expect(submissions, hasLength(2));
+      expect(submissions.last['recipient'], '+14075550124');
+      expect(
+        submissions.last['notificationId'],
+        submissions.first['notificationId'],
+      );
+      response.complete(const DinnerMessageResult('submitted', 'sms'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(getConfirm()).onPressed, isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   for (final timeout in [false, true]) {
     testWidgets(
       '${timeout ? 'timeout' : 'unknown result'} never retries automatically',

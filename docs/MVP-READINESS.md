@@ -81,3 +81,25 @@ Jenna’s SS-005 independent panel/demo is Done, with eight widget tests, analys
 ## Hosted generated workspace verified
 
 2026-11-07: After a cache-disabled reload, hosted Chrome showed workspace before conversation. A brief real camera/microphone connection showed COACH SPEAKING; Gemini generated stepCue "Quick-pickle the onion", a real "Pickle onions" timer counting 4:57 → 4:44 → 4:34, then updated the workspace to comparison "Mash texture check" without manual model-tool injection. This proves real-model panel rendering. Input moved as the panel height changed before a pasted question could be submitted; submission, explicit question/answer and distinct microphone recognition were not verified. Reload stopped capture and CAMERA OFF was confirmed. Usage and dollar cost were not captured. SS-003 stays open for explicit cook clarification and deployed stale-step rejection. Stable input/stop controls are tracked separately in SS-028; research integration PR #61 has 129 passing Flutter tests with CI pending.
+
+## Subsequent timer, cache and simulated control checks
+
+2026-11-07: In hosted Chrome after the earlier reload, the persisted timer advanced 0:36 → 0:22 → 0:00 and showed TIME TO CHECK. Dismiss removed it; after another reload and scrolling the same workspace, it did not reappear. Camera/microphone stayed OFF and no AI calls were made. This verifies that timer persistence/expiry/dismiss path; real opt-in watch acceptance remains open.
+
+2026-11-07: Cache rollout 42425937906 succeeded. A production main.dart.js response independently returned Cache-Control: no-cache at 23:46. This verifies the header configuration, not every browser cache transition.
+
+2026-11-07: A simulated 360px mobile viewport exercised the stable control dock, scrolling and Stop. No human media was used. PR #64 has 131 passing local tests; hosted controls and physical mobile keyboard/focus acceptance remain pending.
+
+## Hosted research handoff and current board
+
+2026-11-07: Actual hosted research panel opened from the stable dock with camera/microphone OFF and displayed nine sources, the Google logo and provider suggestion chips. Explicit fact confirmation has not yet been exercised. PRs #57/#61 are merged; the finite shared adapter card SS-026 is closed/Done on the board, while cook-confirmation acceptance remains open under SS-003. Current read-back: 29 cards, 12 Done, 14 In progress, 3 Backlog; all assigned. Jenna’s photos PR #67 and physical acceptance PR #68 remain open. Secret guard PR #66 has green CI and awaits merge. Manual run 42427944291 passed validation but failed deployment; its Hosting check was skipped.
+
+## Hosted explicit fact confirmation
+
+2026-11-07: Hosted research answer visibly recommended a manual fork/masher to preserve chickpea chunkiness and displayed nine sources plus Google suggestion chips. The cook entered "Acceptance test: use a fork to keep the chickpea mixture chunky." in the Fact field and clicked Confirm; the accessibility tree showed Cook-confirmed kitchen facts and Confirmed with the exact entered prefix. Camera/microphone stayed OFF. Reload returned the app with camera OFF, but the panel was not mounted and fact persistence after reload was not verified. This reused the prior research result; no new research call occurred in this sprint. Secret guard PR #66 is merged and the main secret scan passed.
+
+## Real cook-question choice and stable Stop verified
+
+2026-11-07 (00:14–00:16 UTC November 8): During a brief authorized hosted camera/microphone session followed by mute, a typed request produced the real Gemini "Chickpea Texture" cookQuestion with Chunky/Smooth choices. Clicking Smooth replaced the panel with "Got it: Smooth chickpeas" and "We will aim for a smoother texture for the chickpea filling." The coach caption acknowledged Smooth. The pinned composer stayed stable through recomposition. Clicking pinned Stop showed camera and microphone off and cleared Chrome’s recording indicator. No raw capture or screenshots were committed. Real-call usage units and dollar cost were not captured. SS-028 is Done for the finite stable-controls implementation. SS-003 now has real generated question/explicit choice/updated-panel evidence; post-reload confirmed-fact persistence and real stale-step rejection have not been verified in this sequence. Physical Android keyboard/focus acceptance remains separate.
+
+2026-11-07: Terry explicitly confirmed "I spoke and it understood me" in the latest live session; combined with his earlier confirmed audible coach playback, desktop spoken-input recognition and audible output are now user-verified. Physical Android and remaining failure/reconnect paths remain separate acceptance. Runtime access to the four Vonage secrets was explicitly approved and verified; sending stays disabled and deployment/send acceptance remain pending. DEF001 pre-send correction is tracked separately in SS-030.
