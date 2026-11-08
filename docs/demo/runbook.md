@@ -62,15 +62,15 @@ These apply only to a **real** SMS. The simulated delivered and failed outcomes 
 
 The script with spoken lines is in [script-and-shots.md](script-and-shots.md). In short:
 
-1. **Scan the haul.** Confirm only the items the scan got right. Pick **Peanut Butter Sandwich**.
-2. **Find food help nearby** for Orlando. Show the Maps links.
+1. **Scan the haul.** Confirm only the items the scan got right. Don't pick a meal yet.
+2. While still on the pantry screen, tap **Find food help nearby**, type **Orlando, FL**, and tap **Search**. Show the Maps links, close the sheet, then pick **Peanut Butter Sandwich**. The nearby action is only on the pantry screen.
 3. Press **Start**. Answer the coach's allergy check.
 4. Answer one targeted question, for example "smooth, no jam". Check that the answer shows as confirmed.
 5. Ask "Can I use sunflower seed butter instead?" Show the sources.
 6. Spread on camera and ask "Am I doing this right?" Optionally: "Watch until it's spread to the edges."
 7. Optionally, have one exchange in Spanish.
-8. **Text household: started cooking**, then **Simulate delivery (demo)**.
-9. **Dinner is ready**, review, then **Simulate failed delivery (demo)**. Show the recovery options.
+8. **Text household: started cooking**. A fresh cook starts with a blank recipient, and the dialog validates it even for simulations. Enter the team's allowlisted test recipient **off camera** (or blur it in the recording; never show or commit the number). Then tap **Simulate delivery (demo)**. Simulation never sends an SMS, and the screen says "Simulated — no SMS sent." Do not tap the real send.
+9. **Dinner is ready**: check that the recipient is still filled in (enter it off camera again if not), review, then tap **Simulate failed delivery (demo)**. Show the recovery options. Again, no real send.
 10. Finish the last step to show the meal-complete screen. Press **Stop** and check that the camera and mic are off.
 11. **Timer segment, separate take:** open `?recipe=black_bean_corn_salsa_v1` and reach the meld step. Start the real timer, show it counting down, and reload to show that it persists.
 
