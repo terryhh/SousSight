@@ -32,11 +32,12 @@ Updated November 8 for the pantry-first build. Each beat names the Google or Von
 | # | Beat (about 30 s each) | What the judges see | Capability |
 |---|---|---|---|
 | 1 | "I just got this from the UCF pantry." Scan the haul (bread, peanut butter, canned beans, corn, tomato), or say it, or type it. | Candidate items to confirm; ranked meals with matched/missing items; one clarifying question | Gemini Flash multimodal + structured output (Firebase AI Logic), GenUI |
+| 1b | Tap **Find food help nearby** (Orlando). | Nearby pantries and stores with Google Maps links | Grounding with Google Maps |
 | 2 | Pick **Peanut Butter Sandwich** and press **Start**. | Live coach greets the cook; generated step panel | Gemini Live voice + vision, GenUI/A2UI |
-| 3 | "Is anyone eating this allergic to peanuts?" Answer, then ask "Can I use sunflower seed butter instead?" | Cook-question panel; grounded answer with source links and Google suggestions | `ask_cook` human-in-the-loop, Grounding with Google Search |
+| 3 | The coach opens with its allergy check (peanut, wheat). Answer, then ask "Can I use sunflower seed butter instead?" | Cook-question panel; grounded answer with source links and Google suggestions | `ask_cook` human-in-the-loop, Grounding with Google Search |
 | 4 | Spread on camera: "Am I doing this right?" Optionally "Watch until it's spread to the edges." | Comparison panel describing visible coverage; watch status | Live vision, opt-in watch |
 | 5 | Optional: speak Spanish for one exchange. | Coach answers in Spanish | Live native multilingual audio |
-| 6 | **Text household: started cooking**, review, confirm. | "Sent to Vonage → Delivered ✓" | Vonage Messages API + signed status webhook |
+| 6 | **Text household: started cooking**, then **Simulate delivery (demo)**. A real send happens only with fresh approval. | "Sent to Vonage → Delivered ✓ (simulated)" | Vonage Messages API + signed status webhook |
 | 7 | **Dinner is ready**, review. Then **Simulate failed delivery (demo)**. | "Simulated failure: Illegal Sender Address (1120)", plus recovery options | Vonage failure handling (challenge requirement) |
 | 8 | Close on the architecture slide (README diagram): routing and storage choices. | One slide | Devs-track requirement |
 
