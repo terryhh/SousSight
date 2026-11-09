@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 
 import '../app/services_scope.dart';
 import '../firebase_options.dart';
+import 'firebase_analytics_sink.dart';
 import 'firestore_repositories.dart';
 
 const kAppCheckDebugToken = String.fromEnvironment('APPCHECK_DEBUG_TOKEN');
@@ -31,10 +32,12 @@ Future<AppServices> firebaseServices() async {
   await initFirebase();
   final db = FirebaseFirestore.instance;
   final recipe = await loadBundledRecipe();
+  final analytics = FirebaseAnalyticsSink()..start();
   return AppServices(
     auth: FirebaseAuthService(FirebaseAuth.instance),
     recipes: FirestoreRecipeRepository(db, recipe),
     sessions: FirestoreSessionRepository(db),
     bundledRecipe: recipe,
+    analytics: analytics,
   );
 }

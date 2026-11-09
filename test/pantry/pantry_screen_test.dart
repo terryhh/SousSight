@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:genui/genui.dart';
 import 'package:image/image.dart' as img;
 import 'package:soussight/app/services_scope.dart';
+import 'package:soussight/core/analytics.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/live/live_types.dart';
@@ -14,6 +15,7 @@ import 'package:soussight/pantry/pantry_flow.dart';
 import 'package:soussight/pantry/pantry_models.dart';
 import 'package:soussight/pantry/pantry_screen.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
+import 'package:soussight/pantry/recipe_draft_client.dart';
 
 class _RecordingClient implements PantryClient {
   PantryInput? input;
@@ -173,6 +175,46 @@ void main() {
       () => services.sessions.createOrResume(uid, recipes[1]),
     ))!;
     expect(session.confirmedFacts, isEmpty);
+  });
+
+  testWidgets('choosing a recipe logs recipe_chosen; rehearsal logs nothing', (
+    tester,
+  ) async {
+    await setUp360(tester);
+    final analytics = RecordingAnalytics();
+    final base = services;
+    services = AppServices(
+      auth: base.auth,
+      recipes: base.recipes,
+      sessions: base.sessions,
+      bundledRecipe: base.bundledRecipe,
+      analytics: analytics,
+    );
+    Widget flow({required bool isDemo}) => MaterialApp(
+      theme: cookingTheme,
+      home: PantryFlow(
+        key: ValueKey(isDemo),
+        services: services,
+        isDemo: isDemo,
+        client: const FakePantryClient(),
+        draftClient: FakeRecipeDraftClient(),
+        mediaFactory: _FakeMedia.new,
+        loadRecipes: () => SynchronousFuture(recipes),
+        cookingBuilder: (recipe, back) => Text('Cooking ${recipe.id}'),
+      ),
+    );
+    await tester.pumpWidget(flow(isDemo: true));
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.byKey(const ValueKey('skip-chickpea_wrap_v1')));
+    expect(analytics.events, isEmpty);
+
+    await tester.pumpWidget(const SizedBox()); // drop the pushed cooking route
+    await tester.pumpWidget(flow(isDemo: false));
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.byKey(const ValueKey('skip-chickpea_wrap_v1')));
+    expect(find.text('Cooking chickpea_wrap_v1'), findsOneWidget);
+    expect(analytics.names, [AnalyticsEvents.recipeChosen]);
+    expect(analytics.events.single.parameters, {'recipe_id': 'chickpea_wrap_v1'});
   });
 
   testWidgets('deep link skips the pantry and can return to it', (

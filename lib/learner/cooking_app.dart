@@ -15,6 +15,7 @@ import '../genui/cooking_ui.dart';
 import '../live/browser_live_media.dart';
 import '../live/ephemeral_live_transport.dart';
 import '../live/live_controller.dart';
+import '../core/analytics.dart';
 import '../core/models.dart';
 import '../pantry/pantry_flow.dart';
 import '../app/how_it_works.dart';
@@ -84,6 +85,21 @@ class CookingApp extends StatelessWidget {
           )
         : CookingScreen(services: services, isDemo: isDemo),
   );
+}
+
+/// Logs `household_message_sent` only when Vonage accepted the message
+/// (`submitted`); failed, skipped and unknown results are not sends.
+@visibleForTesting
+void trackHouseholdSend(
+  Analytics analytics,
+  DinnerMessageRequest request,
+  DinnerMessageResult result,
+) {
+  if (result.status != 'submitted') return;
+  analytics.log(AnalyticsEvents.householdMessageSent, {
+    'kind': request.kind.name,
+    'simulated': result.simulated ? 1 : 0,
+  });
 }
 
 class CookingScreen extends StatefulWidget {
@@ -248,9 +264,19 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   final _message = TextEditingController();
   final _dinnerAttempts = DinnerAttemptMemory();
   final _fakeDinner = FakeDinnerBackend();
-  late final DinnerMessageSender _sendDinner =
+  late final DinnerMessageSender _deliverDinner =
       widget.sendDinner ??
       (widget.isDemo ? _fakeDinner.send : sendDinnerMessage);
+
+  /// Counts only sends Vonage accepted (`submitted`). Failed, skipped and
+  /// unknown results return normally and are not counted; errors rethrow.
+  Future<DinnerMessageResult> _sendDinner(DinnerMessageRequest request) async {
+    final result = await _deliverDinner(request);
+    if (!widget.isDemo) {
+      trackHouseholdSend(widget.services.analytics, request, result);
+    }
+    return result;
+  }
   late final DinnerStatusSource _dinnerStatus =
       widget.dinnerStatus ??
       (widget.isDemo ? _fakeDinner : FirestoreDinnerStatusSource());

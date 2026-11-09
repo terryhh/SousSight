@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/material.dart';
 import 'package:soussight/research/cooking_research_panel.dart';
 import 'package:soussight/app/services_scope.dart';
+import 'package:soussight/core/analytics.dart';
 import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/core/fakes.dart';
 import 'package:soussight/core/models.dart';
@@ -152,14 +153,16 @@ class _Research implements CookingResearchClient {
 }
 
 class _Fixture {
-  _Fixture() {
+  _Fixture({bool isDemo = false}) {
     cook = CookingCoordinator(
+      isDemo: isDemo,
       services: AppServices(
         auth: FakeAuthService(),
         recipes: FakeRecipeRepository(_recipe),
         sessions: sessions,
         bundledRecipe: _recipe,
         clock: () => now,
+        analytics: analytics,
       ),
       research: research,
       transportFactory: () => transport,
@@ -170,6 +173,7 @@ class _Fixture {
   final transport = _Transport();
   final media = _Media();
   final research = _Research();
+  final analytics = RecordingAnalytics();
   DateTime now = DateTime.utc(2026, 11, 7, 21);
   late final CookingCoordinator cook;
   bool _disposed = false;
@@ -1140,5 +1144,112 @@ void main() {
       const CookingResearchResult(answer: 'A sourced answer.'),
     );
     await pending;
+  });
+
+  group('analytics', () {
+    test('a full cook logs session, live, timer, watch, steps and meal without free text', () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      await _flush();
+      await fixture.cook.advanceStep(); // prep -> mash
+      await fixture.cook.startStepTimer();
+      fixture.cook.startWatch();
+      await fixture.cook.advanceStep(); // mash -> mix
+      await fixture.cook.advanceStep(); // finish mix
+      await _flush();
+
+      final events = fixture.analytics.events;
+      expect(fixture.analytics.names, [
+        AnalyticsEvents.cookSessionStarted,
+        AnalyticsEvents.liveCoachConnected,
+        AnalyticsEvents.stepCompleted,
+        AnalyticsEvents.timerStarted,
+        AnalyticsEvents.watchStarted,
+        AnalyticsEvents.stepCompleted,
+        AnalyticsEvents.stepCompleted,
+        AnalyticsEvents.mealCompleted,
+      ]);
+      expect(events.first.parameters, {'recipe_id': 'test-wrap', 'new_cook': 0});
+      expect(
+        [
+          for (final e in events)
+            if (e.name == AnalyticsEvents.stepCompleted) e.parameters['step_number'],
+        ],
+        [1, 2, 3],
+      );
+      expect(events[3].parameters, {'seconds': 60});
+      for (final e in events) {
+        for (final value in e.parameters.values) {
+          expect(value is num || (value as String).length <= 40, isTrue,
+              reason: '$e should only carry short labels');
+        }
+      }
+    });
+
+    test('research is counted by source and never includes the question', () async {
+      await fixture.initialize();
+      unawaited(fixture.cook.researchQuestionNow('Can I use yogurt?'));
+      final event = fixture.analytics.events.last;
+      expect(fixture.analytics.names, hasLength(2));
+      expect(event.name, AnalyticsEvents.researchAsked);
+      expect(event.parameters, {'recipe_id': 'test-wrap', 'source': 'cook'});
+      fixture.research.pending.single
+          .complete(const CookingResearchResult(answer: 'Yes.'));
+      await _flush();
+    });
+
+    test('connecting an already active coach is not counted twice', () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      await fixture.cook.connect();
+      expect(
+        fixture.analytics.names.where(
+          (n) => n == AnalyticsEvents.liveCoachConnected,
+        ),
+        hasLength(1),
+      );
+    });
+
+    test('pressing the step timer again does not count a second timer', () async {
+      await fixture.initialize();
+      await fixture.cook.advanceStep(); // mash has a 60 s timer
+      await fixture.cook.startStepTimer();
+      await fixture.cook.startStepTimer();
+      expect(fixture.cook.ui.timers, hasLength(1));
+      expect(
+        fixture.analytics.names.where((n) => n == AnalyticsEvents.timerStarted),
+        hasLength(1),
+      );
+    });
+
+    test('a watch the coach starts by voice is counted with source coach', () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      fixture.transport.source.add(
+        const LiveToolCall(
+          id: 'watch-voice',
+          name: 'watch_cooking',
+          arguments: {'goal': 'Chickpeas look mashed'},
+        ),
+      );
+      await _flush();
+      expect(fixture.cook.live.watchId, isNotNull);
+      final watches = [
+        for (final e in fixture.analytics.events)
+          if (e.name == AnalyticsEvents.watchStarted) e.parameters,
+      ];
+      expect(watches, [
+        {'recipe_id': 'test-wrap', 'source': 'coach'},
+      ]);
+    });
+
+    test('rehearsal (demo) builds log nothing', () async {
+      await fixture.dispose();
+      fixture = _Fixture(isDemo: true);
+      await fixture.initialize();
+      await fixture.cook.advanceStep();
+      await fixture.cook.startStepTimer();
+      expect(fixture.analytics.events, isEmpty);
+    });
   });
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app/services_scope.dart';
+import '../core/analytics.dart';
 import '../core/models.dart';
 import '../learner/cooking_app.dart';
 import '../live/browser_live_media.dart';
@@ -84,6 +85,11 @@ class _PantryFlowState extends State<PantryFlow> {
   Future<void> _open(Recipe recipe, PantryHandoff handoff) async {
     if (_opening) return;
     _opening = true;
+    if (!widget.isDemo) {
+      widget.services.analytics.log(AnalyticsEvents.recipeChosen, {
+        'recipe_id': isDraftRecipe(recipe) ? 'ai_draft' : recipe.id,
+      });
+    }
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
