@@ -15,6 +15,7 @@ import '../genui/cooking_ui.dart';
 import '../live/browser_live_media.dart';
 import '../live/ephemeral_live_transport.dart';
 import '../live/live_controller.dart';
+import '../core/analytics.dart';
 import '../core/models.dart';
 import '../pantry/pantry_flow.dart';
 import '../app/how_it_works.dart';
@@ -248,9 +249,22 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   final _message = TextEditingController();
   final _dinnerAttempts = DinnerAttemptMemory();
   final _fakeDinner = FakeDinnerBackend();
-  late final DinnerMessageSender _sendDinner =
+  late final DinnerMessageSender _deliverDinner =
       widget.sendDinner ??
       (widget.isDemo ? _fakeDinner.send : sendDinnerMessage);
+
+  /// Counts sends the server accepted; validation or network errors rethrow
+  /// before anything is logged.
+  Future<DinnerMessageResult> _sendDinner(DinnerMessageRequest request) async {
+    final result = await _deliverDinner(request);
+    if (!widget.isDemo) {
+      widget.services.analytics.log(AnalyticsEvents.householdMessageSent, {
+        'kind': request.kind.name,
+        'simulated': result.simulated ? 1 : 0,
+      });
+    }
+    return result;
+  }
   late final DinnerStatusSource _dinnerStatus =
       widget.dinnerStatus ??
       (widget.isDemo ? _fakeDinner : FirestoreDinnerStatusSource());

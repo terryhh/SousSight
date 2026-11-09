@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../app/services_scope.dart';
+import '../core/analytics.dart';
 import '../core/cooking_research.dart';
 import '../core/models.dart';
 import '../genui/cooking_ui.dart';
@@ -145,6 +146,10 @@ $cookingUiInstructions
       }
       showIngredients();
       loading = false;
+      _track(AnalyticsEvents.cookSessionStarted, {
+        'recipe_id': _recipeLabel,
+        'new_cook': startNew ? 1 : 0,
+      });
       _notify();
     } catch (_) {
       error = 'Could not open your cooking session. Check the connection and try again.';
@@ -197,7 +202,12 @@ $cookingUiInstructions
     'actionLabel': 'Am I doing this right?',
   };
 
-  Future<void> connect() => live.start(cookingContext: cookingContext);
+  Future<void> connect() async {
+    await live.start(cookingContext: cookingContext);
+    if (live.isActive) {
+      _track(AnalyticsEvents.liveCoachConnected, {'recipe_id': _recipeLabel});
+    }
+  }
 
   Future<void> say(String text) async {
     if (text.trim().isEmpty) return;
@@ -278,6 +288,7 @@ $cookingUiInstructions
   Future<void> advanceStep() async {
     if (session == null || advancing || complete) return;
     advancing = true;
+    final completedStepNumber = stepIndex + 1;
     _notify();
     try {
       await _save((current) {
@@ -309,6 +320,13 @@ $cookingUiInstructions
         ],
       });
       final finished = complete;
+      _track(AnalyticsEvents.stepCompleted, {
+        'recipe_id': _recipeLabel,
+        'step_number': completedStepNumber,
+      });
+      if (finished) {
+        _track(AnalyticsEvents.mealCompleted, {'recipe_id': _recipeLabel});
+      }
       if (live.isActive && !finished) {
         await live.sendText(
           'The cook confirmed the previous step is finished. '
@@ -351,6 +369,7 @@ $cookingUiInstructions
 
   Future<void> startTimer(String id, String label, int seconds) async {
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
+    _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
     try {
       await _save(
         (current) => current.copyWith(
@@ -374,6 +393,7 @@ $cookingUiInstructions
       return;
     }
     live.startWatch(step.cue);
+    _track(AnalyticsEvents.watchStarted, {'recipe_id': _recipeLabel});
     _watchPanel(
       'watching',
       'Watching ${step.title.toLowerCase()}',
@@ -416,6 +436,11 @@ $cookingUiInstructions
     String question, {
     bool requestWorkspace = true,
   }) {
+    _track(AnalyticsEvents.researchAsked, {
+      'recipe_id': _recipeLabel,
+      // The cook typed it, or the live coach called research_cooking.
+      'source': requestWorkspace ? 'cook' : 'coach',
+    });
     final query = CookingResearchQuery(
       question: question,
       currentStep:
@@ -718,6 +743,14 @@ $cookingUiInstructions
     );
     if (!_disposed) session = next;
     _notify();
+  }
+
+  /// AI drafts get unique hashed ids; report them as one bucket.
+  String get _recipeLabel => isDraftRecipe(recipe) ? 'ai_draft' : recipe.id;
+
+  void _track(String name, Map<String, Object> parameters) {
+    if (isDemo) return; // Rehearsal builds are not real usage.
+    services.analytics.log(name, parameters);
   }
 
   void clearAlert() {

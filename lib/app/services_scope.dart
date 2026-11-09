@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/widgets.dart';
 
+import '../core/analytics.dart';
 import '../core/fakes.dart';
 import '../core/models.dart';
 import '../core/services.dart';
@@ -25,6 +26,7 @@ class AppServices {
     required this.sessions,
     required this.bundledRecipe,
     this.clock = DateTime.now,
+    this.analytics = const NoopAnalytics(),
   });
 
   final AuthService auth;
@@ -34,6 +36,9 @@ class AppServices {
   /// The recipe as shipped in assets (used for target images and offline).
   final Recipe bundledRecipe;
   final DateTime Function() clock;
+
+  /// Usage counts (GA4 in production builds; no-op in fakes and tests).
+  final Analytics analytics;
 }
 
 Future<Recipe> loadBundledRecipe([String id = kRecipeId]) async {

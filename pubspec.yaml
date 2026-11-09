@@ -49,6 +49,7 @@ dependencies:
   http: ^1.6.0
   web: ^1.1.1
   url_launcher: ^6.3.3
+  firebase_analytics: ^13.0.1
 
 dev_dependencies:
   flutter_test:

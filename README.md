@@ -115,6 +115,10 @@ The demo runs on a $10 Gemini budget and a $1.99 Vonage trial balance:
 - **Vonage:** real sends go only to allowlisted numbers. Simulated delivered and failed outcomes, clearly labelled and running through the real status handler, make repeat demos cost nothing.
 - **Rehearsal mode** uses no paid services.
 
+## Analytics
+
+Production builds report usage to Google Analytics 4 through Firebase (free, measurement ID in `lib/firebase_options.dart`). GA records page views, sessions, countries and devices on its own; the app adds a few counts: `recipe_chosen`, `cook_session_started`, `live_coach_connected`, `step_completed`, `meal_completed`, `timer_started`, `watch_started`, `research_asked` and `household_message_sent`. Events carry only short labels such as recipe id, step number or message kind, never questions, pantry contents, names or phone numbers. AI-drafted recipes are reported as `ai_draft`. Rehearsal builds and tests log nothing (`lib/core/analytics.dart`). See the reports in the Firebase console under Analytics; ad blockers mean the counts run low.
+
 ## Safety boundaries
 
 - **The cook is the human in the loop.** The coach asks when it doesn't know something, and the cook confirms ingredients, substitutions, progress and messages.
