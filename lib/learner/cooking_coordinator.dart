@@ -203,8 +203,10 @@ $cookingUiInstructions
   };
 
   Future<void> connect() async {
+    // A repeat tap on an active coach is not a new connection.
+    final wasActive = live.isActive;
     await live.start(cookingContext: cookingContext);
-    if (live.isActive) {
+    if (!wasActive && live.isActive) {
       _track(AnalyticsEvents.liveCoachConnected, {'recipe_id': _recipeLabel});
     }
   }

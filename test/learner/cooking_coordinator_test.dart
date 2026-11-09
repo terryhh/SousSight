@@ -1198,6 +1198,18 @@ void main() {
       await _flush();
     });
 
+    test('connecting an already active coach is not counted twice', () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      await fixture.cook.connect();
+      expect(
+        fixture.analytics.names.where(
+          (n) => n == AnalyticsEvents.liveCoachConnected,
+        ),
+        hasLength(1),
+      );
+    });
+
     test('rehearsal (demo) builds log nothing', () async {
       await fixture.dispose();
       fixture = _Fixture(isDemo: true);
