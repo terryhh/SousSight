@@ -370,8 +370,10 @@ $cookingUiInstructions
   }
 
   Future<void> startTimer(String id, String label, int seconds) async {
+    // ui.startTimer returns an existing timer unchanged for a reused ID.
+    final isNew = !ui.timers.any((t) => t.id == id);
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
-    _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
+    if (isNew) _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
     try {
       await _save(
         (current) => current.copyWith(
@@ -394,8 +396,12 @@ $cookingUiInstructions
       _notify();
       return;
     }
-    live.startWatch(step.cue);
-    _track(AnalyticsEvents.watchStarted, {'recipe_id': _recipeLabel});
+    if (live.startWatch(step.cue) != null) {
+      _track(AnalyticsEvents.watchStarted, {
+        'recipe_id': _recipeLabel,
+        'source': 'button',
+      });
+    }
     _watchPanel(
       'watching',
       'Watching ${step.title.toLowerCase()}',
@@ -599,6 +605,13 @@ $cookingUiInstructions
         );
       case 'watch_cooking':
         _watchPanel('watching', 'Watching your food', a['goal'] as String);
+        // LiveCookingController started the watch before dispatching here.
+        if (live.watchId != null) {
+          _track(AnalyticsEvents.watchStarted, {
+            'recipe_id': _recipeLabel,
+            'source': 'coach',
+          });
+        }
       case 'report_readiness':
         final ready = a['state'] == 'ready';
         _watchPanel(

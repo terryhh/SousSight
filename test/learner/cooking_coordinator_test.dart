@@ -1210,6 +1210,39 @@ void main() {
       );
     });
 
+    test('pressing the step timer again does not count a second timer', () async {
+      await fixture.initialize();
+      await fixture.cook.advanceStep(); // mash has a 60 s timer
+      await fixture.cook.startStepTimer();
+      await fixture.cook.startStepTimer();
+      expect(fixture.cook.ui.timers, hasLength(1));
+      expect(
+        fixture.analytics.names.where((n) => n == AnalyticsEvents.timerStarted),
+        hasLength(1),
+      );
+    });
+
+    test('a watch the coach starts by voice is counted with source coach', () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      fixture.transport.source.add(
+        const LiveToolCall(
+          id: 'watch-voice',
+          name: 'watch_cooking',
+          arguments: {'goal': 'Chickpeas look mashed'},
+        ),
+      );
+      await _flush();
+      expect(fixture.cook.live.watchId, isNotNull);
+      final watches = [
+        for (final e in fixture.analytics.events)
+          if (e.name == AnalyticsEvents.watchStarted) e.parameters,
+      ];
+      expect(watches, [
+        {'recipe_id': 'test-wrap', 'source': 'coach'},
+      ]);
+    });
+
     test('rehearsal (demo) builds log nothing', () async {
       await fixture.dispose();
       fixture = _Fixture(isDemo: true);

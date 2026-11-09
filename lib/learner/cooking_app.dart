@@ -87,6 +87,21 @@ class CookingApp extends StatelessWidget {
   );
 }
 
+/// Logs `household_message_sent` only when Vonage accepted the message
+/// (`submitted`); failed, skipped and unknown results are not sends.
+@visibleForTesting
+void trackHouseholdSend(
+  Analytics analytics,
+  DinnerMessageRequest request,
+  DinnerMessageResult result,
+) {
+  if (result.status != 'submitted') return;
+  analytics.log(AnalyticsEvents.householdMessageSent, {
+    'kind': request.kind.name,
+    'simulated': result.simulated ? 1 : 0,
+  });
+}
+
 class CookingScreen extends StatefulWidget {
   const CookingScreen({
     super.key,
@@ -253,15 +268,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       widget.sendDinner ??
       (widget.isDemo ? _fakeDinner.send : sendDinnerMessage);
 
-  /// Counts sends the server accepted; validation or network errors rethrow
-  /// before anything is logged.
+  /// Counts only sends Vonage accepted (`submitted`). Failed, skipped and
+  /// unknown results return normally and are not counted; errors rethrow.
   Future<DinnerMessageResult> _sendDinner(DinnerMessageRequest request) async {
     final result = await _deliverDinner(request);
     if (!widget.isDemo) {
-      widget.services.analytics.log(AnalyticsEvents.householdMessageSent, {
-        'kind': request.kind.name,
-        'simulated': result.simulated ? 1 : 0,
-      });
+      trackHouseholdSend(widget.services.analytics, request, result);
     }
     return result;
   }
