@@ -4,7 +4,7 @@ Draft narrative for the video voice-over and the submission text. Every sentence
 
 ## Short version (about 30 seconds of voice-over)
 
-> Food pantries across Central Florida, including UCF's campus pantry and its garden-to-pantry work, help people take home groceries. Groceries alone don't make you confident at the stove, though. Canned beans, a loaf of bread and a tomato only turn into a meal if you know what to do with them. SousSight is a cooking coach that looks at what you have, talks with you while you cook, and asks you instead of guessing. It needs no account, works in the phone browser you already have, and can speak Spanish.
+> Food pantries across Central Florida, including UCF's campus pantry and its garden-to-pantry work, help people take home groceries. Groceries alone don't make you confident at the stove, though. Canned beans, a loaf of bread and a tomato only turn into a meal if you know what to do with them. SousSight is a cooking coach that looks at what you have, talks with you while you cook, and asks you instead of guessing. It needs no account, works in the phone browser you already have, and replies in the cook's language.
 
 ## Longer version (submission text)
 
@@ -18,7 +18,7 @@ Draft narrative for the video voice-over and the submission text. Every sentence
 - **Find food help nearby** lists pantries and stores near Orlando, with Google Maps links and grounded results only.
 - **Allergy check first.** The coach asks about the recipe's allergens before it gives guidance. It is clear that the camera cannot confirm an allergen is absent.
 - **The cook decides.** Substitutions, progress and household texts all need the cook's confirmation. Nothing is sent automatically.
-- **Spanish voice.** Gemini Live answers in the language the cook speaks. This helps households who are more comfortable cooking in Spanish.
+- **Replies in the cook's language.** Gemini Live is built to answer in the language the cook speaks, which could help households who are more comfortable cooking in Spanish. A Spanish exchange has not been verified on the hosted app yet ([SS-046 #111](https://github.com/terryhh/SousSight/issues/111)).
 - **Low cost to run.** Sessions are capped, idle sessions stop, and the delivery-outcome demo runs without sending paid SMS.
 
 ## What we are not claiming
