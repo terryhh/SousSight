@@ -161,6 +161,18 @@ npm --prefix test/rules ci && npm --prefix test/rules test   # Firestore emulato
 
 CI runs all of these on every pull request and deploys `main` to Firebase. Passing builds and fake-backend tests do not prove real camera, Gemini or SMS behavior; that is recorded separately on the project cards.
 
+## Self-hosting
+
+You can run your own SousSight with your own keys. You pay for your own Gemini API usage, Firebase/Google Cloud project and Vonage account; this project doesn't pay for or meter them. Start with **Run it** above, then follow [Backend and messaging setup](functions/README.md). Rehearsal mode needs no credentials.
+
+The live app linked above is a demo deployment with the cost caps described in **Cost guardrails**. It is not a paid or supported service.
+
+## License
+
+SousSight is open source under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`). You can use, change and share it. If you run a modified version as a service for other people, you must offer those users your modified source under the same license.
+
+The SousSight™ name, logo and icon aren't covered by the code license. See [TRADEMARKS.md](TRADEMARKS.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md); commits need a DCO sign-off.
+
 ## More
 
 - In the app, **How it works**, then **Under the hood**: the flow, the Google stack, privacy and safety, and protocol details
