@@ -1,19 +1,20 @@
 # SousSight: 3-minute DevFest pitch
 
 Card: [SS-052 #130](https://github.com/terryhh/SousSight/issues/130). Owner: Jenna (`jennajh`).
-Built on the DevFest Florida "3-Minute Hackathon Pitch Skeleton". It follows Terry's on-stage run sheet in [CONFERENCE-PEANUT-BUTTER.md](../handoffs/CONFERENCE-PEANUT-BUTTER.md#on-stage-run-sheet-300-pm-showcase). Facts come from the Devpost draft (PR #125, `docs/devpost/SUBMISSION.md`) and the evidence table in [README.md](README.md#evidence-status-by-segment).
+Built on the DevFest Florida "3-Minute Hackathon Pitch Skeleton". It follows Terry's on-stage run sheet in [CONFERENCE-PEANUT-BUTTER.md](../handoffs/CONFERENCE-PEANUT-BUTTER.md#on-stage-run-sheet-300-pm-showcase). Facts come from the [Devpost submission](../devpost/SUBMISSION.md) and the evidence table in [README.md](README.md#evidence-status-by-segment).
 
 Live app: https://devfest-flutter-a59e8.web.app · Code: https://github.com/terryhh/SousSight
 
-## Evidence snapshot (2026-11-08, from the cards)
+## Evidence snapshot (November 8 records, refreshed November 10)
 
 Re-read these cards right before going on stage. Say "live" only for a row marked hosted pass.
 
 | Beat | Status | Card |
 |---|---|---|
 | Pantry scan, **typed** | Hosted pass, desktop Chrome (after fix #124) | [#109](https://github.com/terryhh/SousSight/issues/109) |
-| Pantry scan, **photo or voice** | Not yet checked on Android | [#109](https://github.com/terryhh/SousSight/issues/109) |
-| Find food help nearby (Maps grounding), typed city | Hosted pass, desktop Chrome. Location-permission path unchecked | [#110](https://github.com/terryhh/SousSight/issues/110) |
+| Pantry scan, **photo or voice** | Terry confirmed Android Chrome photo scan and six-second voice input, confirmed-item handoff, Back cleanup and pending-permission cancellation | [#109](https://github.com/terryhh/SousSight/issues/109) |
+| AI-drafted recipe | Terry reported a successful new pizza recipe; device/build and individual heating safety checks were not restated | [#134](https://github.com/terryhh/SousSight/issues/134) |
+| Find food help nearby (Maps grounding) | Desktop typed-city/missing-ingredient searches and phone Chrome location search passed. Deny-location-then-type-city remains unrecorded | [#110](https://github.com/terryhh/SousSight/issues/110) |
 | Live voice and vision coach | Hosted pass | [#6](https://github.com/terryhh/SousSight/issues/6) |
 | Generated GenUI panels and cook questions | Hosted pass | [#13](https://github.com/terryhh/SousSight/issues/13) |
 | Sunflower seed butter research with sources | Hosted pass, typed (six sources) | [#111](https://github.com/terryhh/SousSight/issues/111) |
@@ -21,7 +22,7 @@ Re-read these cards right before going on stage. Say "live" only for a row marke
 | Coach replies in the cook's language (Spanish) | Not checked | [#111](https://github.com/terryhh/SousSight/issues/111) |
 | Real timer surviving reload (salsa) | Hosted pass | [#16](https://github.com/terryhh/SousSight/issues/16) |
 | Vonage simulated delivered / failed | Simulated by design (no credit spent) | [#112](https://github.com/terryhh/SousSight/issues/112) |
-| Vonage real SMS | One hosted send on Nov 8, handset receipt confirmed by Terry | [#112](https://github.com/terryhh/SousSight/issues/112). [#39](https://github.com/terryhh/SousSight/issues/39) stays open for provider setup |
+| Vonage real SMS and signed status callback | Hosted send received on Terry's handset; Delivered status confirmed the signed callback on main `646bd63` | [#112](https://github.com/terryhh/SousSight/issues/112), [#39](https://github.com/terryhh/SousSight/issues/39). Webhook deployment and rejection probes passed in [#126](https://github.com/terryhh/SousSight/issues/126) |
 
 On stage we use the **simulated** Vonage buttons and say so. A real send needs fresh approval of the exact recipient and text.
 
@@ -51,8 +52,9 @@ Speaker names are a suggestion. Swap them to suit the team.
 
 Bullet beats, not a script. Roughly 15 seconds each. Say the label in brackets out loud whenever a beat isn't live.
 
-1. **Pantry → meals (0:30).** Type or say the haul and tap **Scan**. Tap to confirm only the right items. *"Gemini Flash suggests what it sees, but nothing counts until I confirm it."* Show the ranked meals, with matched and missing items.
-   - Typed input is the checked path. If the photo or voice scan hasn't passed #109, type it.
+1. **Pantry → meals (0:30).** Type or say the haul and tap **Find my meal**. Tap to confirm only the right items. *"Gemini Flash suggests what it sees, but nothing counts until I confirm it."* Show the ranked meals, with matched and missing items.
+   - Typed, photo and voice input have recorded Chrome acceptance (#109). Use the input rehearsed on the presentation device.
+   - Alternate recipe beat, as in the run sheet: confirm a different ingredient mix, then **Make a meal from these ingredients** → review the AI draft's **not reviewed** label → **Cook this draft**. A pizza draft worked in Terry's rehearsal (#134). Replace another beat to keep three minutes; do not start heating just to demonstrate a timer, and never equate timer expiry with doneness.
 2. **Food help nearby (0:45).** **Find food help nearby** → `Orlando, FL` → **Search**. *"Grounded with Google Maps: real pantries and stores, with Maps links. Location is opt-in, or I just type a city."* Close the sheet.
 3. **Start cooking (1:00).** Pick **Peanut Butter Sandwich** → **Start**. *"Help me make a peanut butter sandwich."* The coach greets me and a generated step panel appears. *"That panel isn't hard-coded. Gemini composed it from a vetted Flutter widget catalog."*
 4. **Allergy check and research (1:15).** Point at the peanut and wheat chip. Ask: *"Can I use sunflower seed butter instead?"* *"That's a separate grounded search, with sources I can tap. The swap changes nothing until I confirm it."*
@@ -62,7 +64,7 @@ Bullet beats, not a script. Roughly 15 seconds each. Say the label in brackets o
 6. **Vonage: started, ready, failed (1:45).**
    - **Text household: started cooking** → recipient entered off camera → review → **Simulate delivery (demo)**. Say: *"Simulated delivery, no SMS spent. I reviewed the recipient and the exact text first."*
    - **Dinner is ready** → review → **Simulate failed delivery (demo)**. Say: *"This is the real error we hit in setup, Illegal Sender Address, replayed as a simulation. The app shows the reason and offers a fresh, reviewed retry. It never resends on its own."*
-   - Optional, only if true: *"We did send a real one in testing this morning, and it arrived."*
+   - *"We sent a real one in testing on November 8. It arrived, and the signed delivery callback updated the app."*
    - Finish the last step: **"You made Peanut Butter Sandwich!"** The coach pauses to save cost.
 
 ### 2:00–2:30 · How it works (Terry, architecture slide)
@@ -81,7 +83,7 @@ Stop talking.
 |---|---|---|
 | **Impact** | Hook and close | UCF garden-to-pantry and FreshU as *inspiration*, Central Florida households, no account and no install |
 | **Innovation** | Beats 1, 3, 4 | Pantry scan → live coach, Gemini-composed GenUI panels, Maps-grounded food help |
-| **Technical execution** | 2:00 block | Two-model split, ephemeral Live tokens behind App Check, server-side Vonage with allowlist and idempotency, cost caps. The signed status webhook is built but `/api/vonage-status` wasn't deployed at the Nov 8 smoke, so don't call it live |
+| **Technical execution** | 2:00 block | Two-model split, ephemeral Live tokens behind App Check, server-side Vonage with allowlist and idempotency, cost caps. The signed status webhook was deployed and real delivery confirmed on November 8 (#126, #39); the on-stage simulation remains labelled |
 | **Presentation** | Whole flow | 3-minute timing, one human-in-the-loop story from pantry bag to plate |
 
 ## Words we never say
@@ -99,7 +101,7 @@ Stop talking.
 | Question | Answer |
 |---|---|
 | "Is that live or faked?" | "The coach, panels, research and Maps are live on the hosted app. The Vonage outcomes are simulated on stage so we don't spend SMS credit. They're labelled, and they run through the same status handler." |
-| "Did a real text ever go out?" | "Yes. One hosted send this morning, which arrived on Terry's phone. On stage we simulate." |
+| "Did a real text ever go out?" | "Yes. A hosted send on November 8 arrived on Terry's phone, and its signed delivery callback updated the app. On stage we simulate." |
 | "How do you stop it hallucinating a UI?" | "Gemini can only pick from our widget catalog, and every panel is schema-checked before it renders." |
 | "What about food safety?" | "Vision covers visible technique only. It never certifies temperature, freshness or allergens. That's why it asks the cook." |
 | "Where are your keys?" | "Not in the browser. App Check guards a Cloud Function that mints short-lived Live tokens. Vonage credentials stay in Secret Manager." |
@@ -112,7 +114,7 @@ If the live app stalls, switch in under five seconds. Say:
 
 > "And here is the same flow on video."
 
-Then cut to the backup recording ([SS-048 #113](https://github.com/terryhh/SousSight/issues/113)). If there's no video yet, use the labelled rehearsal build (`FAKE_BACKEND=true`) and say "Rehearsal build, simulated."
+Then cut to the backup recording ([SS-048 #113](https://github.com/terryhh/SousSight/issues/113)). The card was closed after Terry confirmed demo preparation complete, but has no recording link: locate and play the file before presenting. If it is unavailable, use the labelled rehearsal build (`FAKE_BACKEND=true`) and say "Rehearsal build, simulated."
 
 Fallbacks from the run sheet:
 - `?recipe=black_bean_corn_salsa_v1` skips the scan. It has a real 5-minute meld timer.
