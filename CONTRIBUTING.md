@@ -16,6 +16,8 @@ git commit -s -m "Describe the change"
 
 This adds `Signed-off-by: Your Name <you@example.com>` using your Git identity.
 
+A DCO sign-off licenses your contribution under the AGPL only. It does not give the maintainers permission to relicense your work under other terms, such as a commercial license. If that's ever needed, the maintainers will ask you for separate, explicit permission.
+
 ## Pull requests
 
 - Use a branch per change and stack dependent pull requests.
