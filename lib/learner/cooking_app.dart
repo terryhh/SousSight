@@ -22,6 +22,7 @@ import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
+import '../nearby/nearby_client.dart' show nearbyClientFor;
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
 import '../trust/inference_source_badge.dart';
@@ -1075,6 +1076,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         MealCompletePanel(
           cook: cook,
           isDemo: widget.isDemo,
+          nearbyClient: nearbyClientFor(
+            isDemo: widget.isDemo,
+            hybrid: widget.hybrid,
+          ),
           onTextHousehold: _reviewDinner,
           onCookSomethingElse: switch (widget.onBackToPantry) {
             final back? => () {

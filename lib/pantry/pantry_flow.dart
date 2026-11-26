@@ -10,6 +10,7 @@ import '../core/models.dart';
 import '../learner/cooking_app.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_types.dart';
+import '../nearby/nearby_client.dart' show NearbyClient, nearbyClientFor;
 import 'pantry_client.dart';
 import 'pantry_handoff.dart';
 import 'pantry_screen.dart';
@@ -80,6 +81,11 @@ class _PantryFlowState extends State<PantryFlow> {
         ),
         (false, null) => GeminiRecipeDraftClient(),
       };
+  // Gated by CloudRoute.nearby and the cook's switch; null hides nearby.
+  late final NearbyClient? _nearbyClient = nearbyClientFor(
+    isDemo: widget.isDemo,
+    hybrid: widget.hybrid,
+  );
   bool _opening = false;
 
   Widget _cooking(Recipe recipe, VoidCallback onBack) =>
@@ -98,6 +104,7 @@ class _PantryFlowState extends State<PantryFlow> {
     client: _client,
     draftClient: _draftClient,
     isDemo: widget.isDemo,
+    nearbyClient: _nearbyClient,
     mediaFactory: widget.isDemo
         ? null
         : (widget.mediaFactory ?? createLiveMedia),
