@@ -117,6 +117,10 @@ class _RecipeSwapSheetState extends State<RecipeSwapSheet> {
   String? _error;
   bool _busy = false;
 
+  /// Set the moment the sheet starts to close (the route accepted the pop),
+  /// before the dismissal animation; nothing is asked or shown after it.
+  bool _closing = false;
+
   @override
   void initState() {
     super.initState();
@@ -143,14 +147,14 @@ class _RecipeSwapSheetState extends State<RecipeSwapSheet> {
         epoch: 0,
       );
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || _closing) return;
       setState(() {
         _busy = false;
         _error = 'Coach Lite could not answer. Try again in a moment.';
       });
       return;
     }
-    if (!mounted) return;
+    if (!mounted || _closing) return;
     // A newer question or a changed session drops the answer.
     if (coach.sessionId() != sessionId ||
         !lite.isCurrent(
@@ -171,10 +175,18 @@ class _RecipeSwapSheetState extends State<RecipeSwapSheet> {
     });
   }
 
+  /// Stops the question as soon as the sheet starts closing, so neither a
+  /// late answer nor a dispatcher retry runs during the dismissal animation.
+  void _close() {
+    if (_closing) return;
+    _closing = true;
+    if (_busy) widget.coach?.coachLite.cancel();
+  }
+
   @override
   void dispose() {
-    // Closing the sheet stops the question; a late answer is not shown.
-    if (_busy) widget.coach?.coachLite.cancel();
+    // Fallback for removal without a pop (e.g. the whole route stack goes).
+    _close();
     super.dispose();
   }
 
@@ -182,50 +194,61 @@ class _RecipeSwapSheetState extends State<RecipeSwapSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final answer = _answer;
-    return SafeArea(
-      child: SingleChildScrollView(
-        key: const ValueKey('swap-sheet'),
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.swap_horiz_rounded, color: Color(0xFF285B43)),
-                const SizedBox(width: 8),
-                Text(
-                  'Find a swap',
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            if (widget.coach == null) ...[
-              const Text(kSwapCoachUnavailable, key: ValueKey('swap-offline')),
-              const SizedBox(height: 10),
-            ],
-            _QuestionBubble(widget.question),
-            const SizedBox(height: 14),
-            if (_busy)
-              const Row(
-                key: ValueKey('swap-busy'),
+    return PopScope<Object?>(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _close();
+      },
+      child: SafeArea(
+        child: SingleChildScrollView(
+          key: const ValueKey('swap-sheet'),
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
                 children: [
-                  SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 3),
+                  const Icon(
+                    Icons.swap_horiz_rounded,
+                    color: Color(0xFF285B43),
                   ),
-                  SizedBox(width: 10),
-                  Expanded(child: Text('Coach Lite is thinking…')),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Find a swap',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
-            if (_error case final error?)
-              Text(error, key: const ValueKey('swap-error')),
-            if (answer != null) ..._answerBody(answer),
-            const SizedBox(height: 14),
-            _Caution(kSwapAllergenCaution),
-          ],
+              const SizedBox(height: 14),
+              if (widget.coach == null) ...[
+                const Text(
+                  kSwapCoachUnavailable,
+                  key: ValueKey('swap-offline'),
+                ),
+                const SizedBox(height: 10),
+              ],
+              _QuestionBubble(widget.question),
+              const SizedBox(height: 14),
+              if (_busy)
+                const Row(
+                  key: ValueKey('swap-busy'),
+                  children: [
+                    SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(child: Text('Coach Lite is thinking…')),
+                  ],
+                ),
+              if (_error case final error?)
+                Text(error, key: const ValueKey('swap-error')),
+              if (answer != null) ..._answerBody(answer),
+              const SizedBox(height: 14),
+              _Caution(kSwapAllergenCaution),
+            ],
+          ),
         ),
       ),
     );

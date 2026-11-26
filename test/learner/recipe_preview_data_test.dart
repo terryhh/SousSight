@@ -120,6 +120,26 @@ void main() {
       ]);
     });
 
+    test('a qualifier that names the food is kept', () {
+      const coconutMilk = Ingredient(id: 'm', name: 'Milk (coconut)', qty: '');
+      expect(previewItemMatches('milk', coconutMilk), isFalse);
+      expect(previewItemMatches('coconut milk', coconutMilk), isTrue);
+      expect(previewItemMatches('Milk (coconut)', coconutMilk), isTrue);
+      const oats = Ingredient(
+        id: 'o',
+        name: 'Oats, rolled (about 1 cup, if needed)',
+        qty: '',
+      );
+      expect(previewItemMatches('rolled oats', oats), isTrue);
+      expect(previewItemMatches('oats', oats), isFalse);
+      const note = Ingredient(
+        id: 'n',
+        name: 'Jam, only if the cook chooses it',
+        qty: '',
+      );
+      expect(previewItemMatches('jam', note), isTrue);
+    });
+
     test('plurals reduce to one food word', () {
       expect(previewFoodWords('Berries'), {'berry'});
       expect(previewFoodWords('peaches and radishes'), {'peach', 'radish'});
@@ -127,13 +147,23 @@ void main() {
       expect(previewFoodWords('glass'), {'glass'});
     });
 
-    test('every bundled ingredient matches its own display name', () {
+    test('every bundled ingredient matches its verbatim display name', () {
       for (final recipe in byId.values) {
         for (final i in recipe.ingredients) {
-          final head = i.name.split(RegExp(r'[,(]')).first;
-          expect(previewItemMatches(head, i), isTrue, reason: i.name);
+          expect(previewItemMatches(i.name, i), isTrue, reason: i.name);
         }
       }
+      // Size, serving and preparation qualifiers do not change the food.
+      final wrapTortillas = ingredient('chickpea_wrap_v1', 'tortillas');
+      expect(wrapTortillas.name, 'Flour tortillas (10 inch)');
+      expect(previewItemMatches('flour tortillas', wrapTortillas), isTrue);
+      expect(
+        previewItemMatches('Flour tortillas (10 inch)', wrapTortillas),
+        isTrue,
+      );
+      final onion = ingredient('chickpea_wrap_v1', 'red_onion');
+      expect(previewItemMatches('red onion', onion), isTrue);
+      expect(previewItemMatches('red onions', onion), isTrue);
       expect(
         previewItemMatches('  ', ingredient('chickpea_wrap_v1', 'mayo')),
         isFalse,

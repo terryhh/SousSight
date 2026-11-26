@@ -1,16 +1,26 @@
+import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../app/services_scope.dart';
 import '../core/models.dart';
+import '../learner/recipe_preview_data.dart' show previewItemMatches;
 
 /// What the cook confirmed on the pantry screen, carried into cooking.
 class PantryHandoff {
-  const PantryHandoff({this.confirmedItems = const [], this.answer})
-    : skipped = false;
+  const PantryHandoff({
+    this.confirmedItems = const [],
+    this.answer,
+    this.draftLegs = const [],
+  }) : skipped = false;
 
   /// The cook chose "Skip — pick a recipe" without a pantry check.
   const PantryHandoff.skipped()
     : confirmedItems = const [],
       answer = null,
+      draftLegs = const [],
       skipped = true;
+
+  /// Every inference attempt behind an AI-drafted recipe, for its source
+  /// badge on the recipe preview. Empty for reviewed recipes.
+  final List<InferenceLeg> draftLegs;
 
   final List<String> confirmedItems;
 
@@ -87,13 +97,21 @@ Future<void> applyPantryHandoff(
   Recipe recipe,
   PantryHandoff handoff,
 ) async {
-  if (handoff.isEmpty) return;
+  // Only an explicit skip keeps the earlier session. A completed check, even
+  // with nothing confirmed, starts fresh so old "have" marks are cleared.
+  if (handoff.skipped) return;
   final uid = await services.auth.signInLearner();
   // A pantry scan is a new meal: start a fresh session (earlier sessions are
   // preserved) that the coordinator then resumes as the newest one.
   final session = await services.sessions.createNew(uid, recipe);
+  // The same identity rule as the recipe preview (SS-099), so the coach is
+  // told exactly what the cook saw ticked.
   final matched = {
-    for (final item in handoff.confirmedItems) ?matchIngredientId(item, recipe),
+    for (final ingredient in recipe.ingredients)
+      if (handoff.confirmedItems.any(
+        (item) => previewItemMatches(item, ingredient),
+      ))
+        ingredient.id,
   };
   final facts = [
     if (handoff.confirmedItems.isNotEmpty)

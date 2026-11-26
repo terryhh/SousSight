@@ -8,8 +8,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../core/models.dart';
 import '../label/household_allergens.dart';
+import '../trust/inference_source_badge.dart';
 import 'draft_recipe_chip.dart';
 import 'recipe_preview_data.dart';
 import 'recipe_preview_swap.dart';
@@ -30,6 +32,7 @@ Future<bool> showRecipePreview(
   required Recipe recipe,
   List<String> confirmedItems = const [],
   bool pantryChecked = true,
+  List<InferenceLeg> draftLegs = const [],
   HouseholdAllergens? household,
   RecipeSwapCoach? swapCoach,
 }) async {
@@ -39,6 +42,7 @@ Future<bool> showRecipePreview(
         recipe: recipe,
         confirmedItems: confirmedItems,
         pantryChecked: pantryChecked,
+        draftLegs: draftLegs,
         household: household,
         swapCoach: swapCoach,
       ),
@@ -53,9 +57,14 @@ class RecipePreviewScreen extends StatelessWidget {
     required this.recipe,
     this.confirmedItems = const [],
     this.pantryChecked = true,
+    this.draftLegs = const [],
     this.household,
     this.swapCoach,
   });
+
+  /// Where an AI draft was generated (every attempt, in order). Shown as
+  /// source badges beside the draft label; empty for reviewed recipes.
+  final List<InferenceLeg> draftLegs;
 
   final Recipe recipe;
   final List<String> confirmedItems;
@@ -113,7 +122,7 @@ class RecipePreviewScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Hero(data: data),
+              _Hero(data: data, draftLegs: draftLegs),
               const SizedBox(height: 14),
               _Stats(data: data),
               const SizedBox(height: 14),
@@ -193,8 +202,9 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _Hero extends StatelessWidget {
-  const _Hero({required this.data});
+  const _Hero({required this.data, this.draftLegs = const []});
   final RecipePreviewData data;
+  final List<InferenceLeg> draftLegs;
 
   @override
   Widget build(BuildContext context) {
@@ -250,9 +260,22 @@ class _Hero extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 14),
-          data.isDraft
-              ? DraftRecipeChip(recipe: recipe)
-              : const _ReviewedChip(),
+          if (!data.isDraft)
+            const _ReviewedChip()
+          else
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                DraftRecipeChip(recipe: recipe),
+                if (draftLegs.isNotEmpty)
+                  InferenceSourceBadge(
+                    key: const ValueKey('preview-draft-source'),
+                    legs: draftLegs,
+                  ),
+              ],
+            ),
         ],
       ),
     );

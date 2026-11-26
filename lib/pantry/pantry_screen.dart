@@ -381,6 +381,7 @@ class _PantryScreenState extends State<PantryScreen> {
               answer: question != null && answer.isNotEmpty
                   ? (question: question, answer: answer)
                   : null,
+              draftLegs: identical(recipe, _drafted) ? _draftLegs : const [],
             ),
     );
   }

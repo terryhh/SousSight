@@ -32,6 +32,26 @@ class _NoCloud implements CloudFallbackSender {
   Future<void> cancel(String requestId) async {}
 }
 
+class _StarchClient implements PantryClient {
+  const _StarchClient();
+  @override
+  Future<PantryResult> identify(
+    PantryInput input,
+    List<Recipe> recipes,
+  ) async => const PantryResult(
+    items: [PantryItem(name: 'corn starch', confidence: PantryConfidence.high)],
+    meals: [
+      PantryMeal(
+        recipeId: 'black_bean_corn_salsa_v1',
+        why: 'Test.',
+        matched: [],
+        missing: ['corn'],
+      ),
+    ],
+    simulated: true,
+  );
+}
+
 class _NoMealsClient implements PantryClient {
   const _NoMealsClient();
   @override
@@ -201,6 +221,36 @@ void main() {
     expect(find.byKey(const ValueKey('find-swap-corn')), findsNothing);
   });
 
+  testWidgets('"corn starch" is not corn on the preview or in the saved '
+      'session', (tester) async {
+    await setUp360(tester);
+    await tester.pumpWidget(flow(isDemo: true, client: const _StarchClient()));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'x');
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    await tapVisible(tester, find.bySemanticsLabel(RegExp('^corn starch, ')));
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('cook-black_bean_corn_salsa_v1')),
+    );
+    expect(find.byKey(const ValueKey('preview-missing-corn')), findsOneWidget);
+    expect(find.text('You have 0 of 7 ingredients'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('preview-start-cooking')));
+    await tester.pumpAndSettle();
+    expect(find.text('Cooking black_bean_corn_salsa_v1'), findsOneWidget);
+
+    final salsa = recipes.firstWhere((r) => r.id == 'black_bean_corn_salsa_v1');
+    final session = (await tester.runAsync(() async {
+      final uid = await services.auth.signInLearner();
+      return services.sessions.createOrResume(uid, salsa);
+    }))!;
+    expect(session.ingredients, isEmpty);
+    expect(
+      session.confirmedFacts.first,
+      'Pantry has (confirmed by the cook): corn starch.',
+    );
+  });
+
   testWidgets('without the flag, choosing opens cooking directly', (
     tester,
   ) async {
@@ -228,6 +278,13 @@ void main() {
     expect(find.byKey(const ValueKey('recipe-preview')), findsOneWidget);
     expect(find.text(kDraftRecipeLabel), findsOneWidget);
     expect(find.byKey(const ValueKey('reviewed-recipe-chip')), findsNothing);
+    // The draft's legs ride along: its source is on the preview itself.
+    final source = find.byKey(const ValueKey('preview-draft-source'));
+    expect(source, findsOneWidget);
+    expect(
+      find.descendant(of: source, matching: find.textContaining('imulat')),
+      findsWidgets,
+    );
     expect(find.text('You have 1 of 3 ingredients'), findsOneWidget);
     expect(find.byKey(const ValueKey('preview-have-bread')), findsOneWidget);
     expect(

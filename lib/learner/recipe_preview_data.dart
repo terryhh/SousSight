@@ -61,6 +61,10 @@ class PreviewIngredients {
 /// Packaging, preparation and filler words that do not change the food.
 const _previewIgnoredWords = {
   'a',
+  'or',
+  'bottled',
+  'store',
+  'bought',
   'an',
   'and',
   'the',
@@ -131,14 +135,68 @@ Set<String> previewFoodWords(String phrase) => {
       _previewStem(word),
 };
 
-/// The foods an ingredient's display name stands for: its head (text before
-/// the first comma or bracket), each " or " alternative, and their aliases.
+/// Words that only describe size, amount or serving inside a qualifier,
+/// e.g. "(10 inch)" or ", for serving". A qualifier made only of these (and
+/// [_previewIgnoredWords]) leaves the food unchanged.
+const _previewQualifierOnlyWords = {
+  'inch',
+  'cm',
+  'oz',
+  'ounce',
+  'lb',
+  'pound',
+  'g',
+  'gram',
+  'kg',
+  'ml',
+  'l',
+  'cup',
+  'tbsp',
+  'tsp',
+  'tablespoon',
+  'teaspoon',
+  'small',
+  'medium',
+  'large',
+  'serving',
+  'optional',
+  'to',
+  'taste',
+  'about',
+  'approx',
+  'extra',
+  'more',
+  'plus',
+  'if',
+  'needed',
+  'each',
+};
+
+/// A qualifier with at most this many food words names the food itself
+/// ("Milk (coconut)"); a longer one is a cook-facing note ("only if the cook
+/// likes it", "flour tortillas contain wheat; check labels") and is ignored.
+const _previewMaxIdentityQualifierWords = 2;
+
+/// The foods an ingredient's display name stands for. The head (text before
+/// the first comma or bracket) and each of its " or " alternatives, plus
+/// any short qualifier that changes the food ("coconut" in "Milk
+/// (coconut)"), plus explicit aliases. Size, serving and preparation
+/// qualifiers ("(10 inch)", ", diced") are dropped. The verbatim full name
+/// always matches too.
 List<Set<String>> previewIngredientIdentities(Ingredient ingredient) {
-  final head = ingredient.name
-      .split(RegExp(r'[,(]'))
-      .first
-      .trim()
-      .toLowerCase();
+  final name = ingredient.name.trim().toLowerCase();
+  final parts = name.split(RegExp(r'[,()]'));
+  final head = parts.first.trim();
+  final identityQualifiers = <String>{};
+  for (final part in parts.skip(1)) {
+    final words = {
+      for (final w in previewFoodWords(part))
+        if (!_previewQualifierOnlyWords.contains(w)) w,
+    };
+    if (words.isNotEmpty && words.length <= _previewMaxIdentityQualifierWords) {
+      identityQualifiers.addAll(words);
+    }
+  }
   final phrases = <String>{
     head,
     ...head.split(RegExp(r'\s+or\s+')).map((p) => p.trim()),
@@ -153,7 +211,8 @@ List<Set<String>> previewIngredientIdentities(Ingredient ingredient) {
   return [
     for (final phrase in phrases)
       if (previewFoodWords(phrase) case final words when words.isNotEmpty)
-        words,
+        {...words, ...identityQualifiers},
+    if (previewFoodWords(name) case final words when words.isNotEmpty) words,
   ];
 }
 

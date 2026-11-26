@@ -532,6 +532,91 @@ void main() {
       expect(find.text('Try sunflower seed butter'), findsNothing);
     });
 
+    testWidgets('dismissal cancels at once, even if the answer would land '
+        'during the closing animation', (tester) async {
+      await phone(tester);
+      dispatcher
+        ..delay = const Duration(milliseconds: 480)
+        ..enqueue(_answerJson());
+      await tester.pumpWidget(screen(swap: coach()));
+      await tester.pumpAndSettle();
+      final swap = find.byKey(const ValueKey('find-swap-peanut_butter'));
+      await tester.ensureVisible(swap);
+      await tester.pumpAndSettle();
+      await tester.tap(swap);
+      await tester.pump(); // sheet route pushed; question asked
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(dispatcher.tasks, hasLength(1));
+      expect(dispatcher.cancelledOperations, isEmpty);
+
+      await tester.tapAt(const Offset(180, 20)); // the barrier
+      await tester.pump(); // the route accepted the pop
+      // Cancelled before the dismissal animation runs, not on disposal.
+      expect(dispatcher.cancelledOperations, ['op-1']);
+      expect(find.byKey(const ValueKey('swap-sheet')), findsOneWidget);
+
+      // The fake answer's time passes while the sheet is still animating.
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(find.text('Try sunflower seed butter'), findsNothing);
+      expect(find.text(kSwapStale), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('swap-sheet')), findsNothing);
+      expect(dispatcher.tasks, hasLength(1)); // no retry after dismissal
+    });
+
+    testWidgets('a draft shows where it was generated beside its label', (
+      tester,
+    ) async {
+      await phone(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: cookingTheme,
+          home: RecipePreviewScreen(
+            recipe: _draft,
+            confirmedItems: const ['bread'],
+            draftLegs: const [
+              InferenceLeg(
+                requestId: 'local',
+                feature: kRecipeDraftFeature,
+                mode: HybridMode.preferOnDevice,
+                kinds: {DataKind.text},
+                transferPermitted: false,
+                provenance: Provenance.sdkOnDevice,
+                error: HybridErrorCode.failed,
+              ),
+              InferenceLeg(
+                requestId: 'cloud',
+                feature: kRecipeDraftFeature,
+                mode: HybridMode.preferOnDevice,
+                kinds: {DataKind.text},
+                transferPermitted: true,
+                provenance: Provenance.sdkCloud,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final badge = find.byKey(const ValueKey('preview-draft-source'));
+      expect(badge, findsOneWidget);
+      expect(
+        find.descendant(
+          of: badge,
+          matching: find.byKey(const ValueKey('inference-leg-1')),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(kDraftRecipeLabel), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a reviewed recipe shows no draft source', (tester) async {
+      await phone(tester);
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('preview-draft-source')), findsNothing);
+    });
+
     testWidgets('a session change while asking drops the answer', (
       tester,
     ) async {
