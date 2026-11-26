@@ -72,6 +72,9 @@ Scored in Stage Two (1–5 each, equally weighted). None of these is pass/fail.
 Every `VERIFY` marker in `SUBMISSION.md` (22), `JUDGES.md` (11) and `DEMO-SCRIPT.md` (10), counted
 by `grep -c` (header comments included), plus unmarked claims found while reading. "Action if
 still unproven at the freeze" is what the release owner does with the text.
+Line numbers are from `73b411d`. #219 (merged after this matrix was compiled) has since reworded
+many of these claims and moved lines; re-count the markers before the freeze rather than trusting
+these line numbers.
 
 ### SUBMISSION.md
 
