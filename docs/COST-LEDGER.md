@@ -237,3 +237,50 @@ not against live billing):
 These limits bound session count and length; they are not a dollar ceiling.
 Per-session cost has not been measured. Reconcile provider usage and billed
 amounts after the showcase.
+
+## November 26 AI illustrations (SS-098)
+
+Model and price, verified November 26, 2026 against primary sources:
+
+- API: Firebase AI Logic, Gemini Developer API backend, `generateContent` with
+  `responseModalities: [IMAGE]` and `imageConfig` (4:3, 1K), as exposed by the
+  installed `firebase_ai` 5.1.0. Imagen was shut down and removed from the SDK
+  in 4.0.0 ([models](https://firebase.google.com/docs/ai-logic/models),
+  [image generation](https://firebase.google.com/docs/ai-logic/generate-images-gemini)).
+- Model: `gemini-nano-banana-2.1` (Stable; requires the Blaze plan). The
+  model is the `ILLUSTRATION_MODEL` dart-define.
+- Price ([pricing](https://ai.google.dev/gemini-api/docs/pricing), standard
+  paid tier): image output $30.00 per 1M tokens, **$0.0336 per 1K image**
+  (1,120 tokens); input $1.50 per 1M tokens; text/thinking output $7.50 per
+  1M tokens. **No free tier for image output.** Under the $0.10/image stop
+  threshold Terry set.
+
+Real calls, all from local headless Chrome with the existing App Check debug
+token (never printed, committed or deployed; the token-bearing builds lived
+outside the repository and were deleted after the run). Every request
+returned HTTP 200; no quota, spend-cap or 429 error occurred, and nothing was
+retried.
+
+| Date (UTC) | Action | Calls | Estimated image-output charge (excludes input/thinking tokens) | Verified billed amount |
+|---|---|---|---|---|
+| 2026-11-26 05:53 | Trial image (`chickpea_wrap_v1/step_mash`), later replaced after the prompt was narrowed to the step's own ingredients | 1 | ~$0.034 | Not inspected |
+| 2026-11-26 ~06:00 | Pre-made set: 15 images for the 3 reviewed recipes (`assets/illustrations/manifest.json` holds each prompt, model and date) | 15 | ~$0.50 | Not inspected |
+| 2026-11-26 ~06:06 | On-demand gate: one image for a synthetic AI-drafted recipe through the production controller, consent dialog ("Allow once" clicked), ledger and widget; one ledger leg `step_illustration`, text, cloudAdapter, `gemini-nano-banana-2.1 (text→image)` | 1 | ~$0.034 | Not inspected |
+| 2026-11-26 ~10:20 | Regenerated the 7 pre-made images whose reviewed-recipe wording changed in PR #215 (chickpea wrap: pickle onion, mash, mix, roll, plate; peanut butter: prep, optional jam), using the current wording and safety rules. No image was skipped: none is forbidden by the rules. Orchestrator cap: 8 calls | 7 | ~$0.24 | Not inspected |
+| 2026-11-26 10:25 | Redid peanut butter prep once with a recorded, hand-tightened prompt (two plain, unspread slices; closed jars), because the regenerated image showed the slices already spread. The result shows plain bread. The orchestrator's 8-call cap for the regeneration is now used | 1 | ~$0.034 | Not inspected |
+| **Total** | | **25** | Image output only: 25 × $0.0336 ≈ $0.84 (estimate). Input and thinking tokens were not measured, so the **total is unknown**. | Not inspected |
+
+These are estimates from the published per-image price. Token usage was not
+read from the responses, so input and thinking-token charges are unmeasured
+and no total is claimed. Reconcile against billing.
+
+**Authorization for on-demand images in the judged build.** Terry approved
+the scope on November 26, 2026 (relayed by the orchestrator and recorded on
+SS-098 / #226): "AI-drafted recipes get on-demand generation behind a new
+'images' cloud route, capped per session." The existing $15/month Gemini
+Developer API cap and the $20 project alerts back it. The route stays off
+until `CLOUD_ROUTES` includes `images`.
+
+Exposure per cook: `ILLUSTRATION_SESSION_CAP` (default 4) on-demand images
+per cooking session. The image-output estimate is about $0.13 per session at
+the cap. Input and thinking tokens are additional and unmeasured.

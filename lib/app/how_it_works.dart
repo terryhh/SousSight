@@ -317,6 +317,17 @@ hybridRoutingColumns({
   } else {
     off.add('Grounded research');
   }
+  // SS-098: on-demand step pictures for AI-drafted recipes.
+  if (cloudRoutes.allows(CloudRoute.images)) {
+    cloud.add((
+      feature: 'Step illustrations',
+      note:
+          'AI-drafted recipes only. Step text goes to Google to draw a '
+          'picture, after you allow it.',
+    ));
+  } else {
+    off.add('Step illustrations');
+  }
   cloud.add((
     feature: 'Nearby stores',
     note: 'Google Maps, only when you ask. Sends approximate location.',
@@ -574,6 +585,14 @@ List<RoutingRow> hybridRoutingRows({
           ? 'Google cloud with Google Search grounding, only when you or the '
                 'coach ask a factual question.'
           : 'Off in this build.',
+    ),
+    (
+      feature: 'Step illustrations',
+      where: cloudRoutes.allows(CloudRoute.images)
+          ? 'Google cloud (an image model through Firebase AI Logic), only '
+                'for AI-drafted recipes and only after you allow each picture. '
+                "It sends the step's visible cue and its ingredients."
+          : 'Off in this build. Reviewed recipes show pictures made ahead.',
     ),
     (
       feature: 'Nearby stores',

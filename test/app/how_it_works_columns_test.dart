@@ -28,6 +28,7 @@ void main() {
         'Watch: one photo you choose',
         'Live coach',
         'Grounded research',
+        'Step illustrations',
       ]);
       for (final e in c.onDevice) {
         expect(e.note, 'Always here.');
@@ -49,7 +50,7 @@ void main() {
         expect(names(c.cloud), containsAll(['Pantry scan', 'Coach Lite']));
         expect(names(c.cloud), contains('Live coach'));
         expect(names(c.cloud), contains('Grounded research'));
-        expect(c.off, isEmpty);
+        expect(c.off, ['Step illustrations']); // `images` not in this build
         final coach = c.cloud.firstWhere((e) => e.feature == 'Coach Lite');
         expect(coach.note, contains('fails its checks'));
       },
@@ -109,5 +110,21 @@ void main() {
     // Ephemeral Live needs no route; it is listed in the cloud column.
     expect(find.text('Live coach'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  test('the images route is listed on and off in both views (SS-098)', () {
+    final on = hybridRoutingColumns(
+      cloudRoutes: CloudRoutes.parse('images'),
+      liveBackend: LiveBackend.none,
+    );
+    expect(names(on.cloud), contains('Step illustrations'));
+    expect(on.off, isNot(contains('Step illustrations')));
+    String row(String routes) => hybridRoutingRows(
+      cloudRoutes: CloudRoutes.parse(routes),
+      liveBackend: LiveBackend.none,
+    ).firstWhere((r) => r.feature == 'Step illustrations').where;
+    expect(row('images'), contains('Google cloud'));
+    expect(row('images'), contains('after you allow'));
+    expect(row(''), startsWith('Off in this build'));
   });
 }

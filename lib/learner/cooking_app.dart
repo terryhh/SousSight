@@ -22,6 +22,9 @@ import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../data/offline_ops_banner.dart';
 import '../genui/cooking_ui.dart';
+import '../illustrations/illustration_controller.dart';
+import '../illustrations/illustration_panel.dart';
+import '../illustrations/illustration_wiring.dart';
 import '../kitchen/kitchen_mode.dart';
 import '../kitchen/kitchen_text.dart';
 import '../live/live_media_factory.dart';
@@ -429,6 +432,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         isDemo: widget.isDemo,
         fake: _fakeDinner,
       );
+  // SS-098: one illustration controller per cooking session, above the
+  // layout breakpoint, so its cache and cap survive a resize.
+  late final IllustrationController? _illustrations = switch (widget.hybrid) {
+    final hybrid? => illustrationControllerFor(hybrid),
+    null => null,
+  };
   String _prediction = 'Not sure';
   String? _announcedAlert;
   bool _messagePending = false;
@@ -469,6 +478,15 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       stepId: cook.step.id,
     );
     if (cook.session?.id case final id?) _label?.setSession(id);
+    // SS-098: invalidate illustration work the moment the step changes,
+    // not on the next frame.
+    if (cook.session?.id case final id?) {
+      _illustrations?.bind(
+        sessionId: id,
+        recipe: cook.recipe,
+        stepId: cook.step.id,
+      );
+    }
     if (cook.alert == null) _announcedAlert = null;
     if (cook.alert != null && cook.alert != _announcedAlert) {
       _announcedAlert = cook.alert;
@@ -517,6 +535,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _illustrations?.dispose();
     _dinnerTimers.detach();
     _kitchen.dispose();
     _speaker?.dispose();
@@ -1201,6 +1220,16 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       CookingSurface(controller: cook.ui),
+      // SS-098: "what it should look like" for this step and the plate.
+      StepIllustrations(
+        key: const ValueKey('step-illustrations'),
+        recipe: cook.recipe,
+        step: cook.step,
+        sessionId: cook.session?.id,
+        showPlate:
+            cook.complete || cook.stepIndex == cook.recipe.steps.length - 1,
+        controller: _illustrations,
+      ),
       if (cook.coachLiteAnswer != null)
         if (_speaker case final speaker?)
           Padding(

@@ -106,11 +106,11 @@ test('config: unknown DINNER_MODE fails even outside the judged build', () => {
 });
 
 test('config: CLOUD_ROUTES accepts only the G1 route names', () => {
-  for (const value of ['', 'hybridFallback', 'hybridFallback,research,nearby,live', ' research , live', 'live,live']) {
+  for (const value of ['', 'hybridFallback', 'hybridFallback,research,nearby,live', ' research , live', 'live,live', 'images', 'hybridFallback,research,images']) {
     const r = checkConfig({ ...judgedDefaults, CLOUD_ROUTES: value });
     assert.equal(r.code, 0, `${JSON.stringify(value)}: ${r.out}`);
   }
-  for (const value of ['Research', 'hybrid', 'research,labels', 'research;live', 'research live']) {
+  for (const value of ['Research', 'hybrid', 'research,labels', 'research;live', 'research live', 'Images', 'image']) {
     const r = checkConfig({ ...judgedDefaults, CLOUD_ROUTES: value });
     assert.equal(r.code, 1, `${JSON.stringify(value)}: ${r.out}`);
     assert.match(r.out, /CLOUD_ROUTES contains unknown route/);

@@ -10,7 +10,7 @@
 #                         `ephemeral` and any other value fail.
 #   DINNER_MODE           missing, `real` or `simulated`; anything else fails.
 #   CLOUD_ROUTES          empty, or a comma list drawn only from
-#                         hybridFallback, research, nearby, live.
+#                         hybridFallback, research, nearby, live, images.
 #   APPCHECK_DEBUG_TOKEN  absent or empty, in the file AND in the environment.
 # --judged (the deployed #BuildHybridAI entry) additionally requires
 #   DINNER_MODE=simulated and FAKE_BACKEND not `true`.
@@ -152,9 +152,9 @@ if [[ -n "${cloud_routes//[[:space:]]/}" ]]; then
     route="${route#"${route%%[![:space:]]*}"}"
     route="${route%"${route##*[![:space:]]}"}"
     case "$route" in
-      hybridFallback | research | nearby | live) ;;
+      hybridFallback | research | nearby | live | images) ;;
       '') fail "CLOUD_ROUTES has an empty entry: '$cloud_routes'" ;;
-      *) fail "CLOUD_ROUTES contains unknown route '$route' (allowed: hybridFallback, research, nearby, live)" ;;
+      *) fail "CLOUD_ROUTES contains unknown route '$route' (allowed: hybridFallback, research, nearby, live, images)" ;;
     esac
   done
 fi
