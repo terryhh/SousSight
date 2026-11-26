@@ -237,6 +237,9 @@ void main() {
           final shown = jsonEncode(cook.ui.components);
           expect(shown, isNot(contains(claim)));
           expect(shown, contains('Look for: Golden on both sides.'));
+          // The watch continues, so the panel says so (not paused).
+          expect(shown, contains('Still watching'));
+          expect(shown, isNot(contains('"paused"')));
           // Not marked ready: the watch keeps checking.
           expect(cook.live.watchId, watchId);
         },

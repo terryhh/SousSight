@@ -983,9 +983,10 @@ $cookingUiInstructions
         if (touchesFoodSafety(a['observation'] as String)) {
           // Drop the claim, downgrade to uncertain and show the recipe's own
           // visible cue. Not ok, so the watch is not marked ready.
+          // The watch keeps going, so the panel says so.
           _watchPanel(
-            'paused',
-            'Check it yourself',
+            'watching',
+            'Still watching',
             [
               if (step.cue.trim().isNotEmpty) 'Look for: ${step.cue.trim()}',
               cookSafetyFallbackNote,

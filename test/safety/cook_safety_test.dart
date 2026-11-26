@@ -35,6 +35,21 @@ const _blocked = [
   "It doesn't contain soy.",
   'Keep it at 74 Celsius.',
   'Kosher and halal.',
+  // Fourth round: typographic variants, negations and appearance.
+  'Nut\u2011free',
+  'Sesame\u2013free',
+  'Dairy\u00ADfree snack',
+  'There isn\u2019t any peanut in it.',
+  'There is not any milk here.',
+  'None of the usual allergens.',
+  'No trace of nuts.',
+  'It contains none.',
+  'Pink in the middle means more time.',
+  'White inside, then serve.',
+  'Cook until opaque.',
+  'Serve once it is white.',
+  'Golden brown through.',
+  'Keep\u00A0it\u00A0at\u00A0165\u00A0F.',
 ];
 
 /// Visual-only coaching stays allowed.
@@ -58,6 +73,13 @@ const _overBlocked = [
 ];
 
 void main() {
+  test('normalizeCookText folds dashes, apostrophes and spaces', () {
+    expect(
+      normalizeCookText('nut\u2011free \u2014 isn\u2019t\u00A0 any'),
+      "nut-free - isn't any",
+    );
+  });
+
   group('blocked', () {
     for (final t in _blocked) {
       test(t, () {

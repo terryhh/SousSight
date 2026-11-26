@@ -79,7 +79,15 @@ final _vocabulary = _words([
   // Any absence claim, whatever follows: "no almonds", "without milk",
   // "doesn't contain soy". Over-blocks "no liquid pools" on purpose.
   r"(?:no|zero|without|not\s+any|free\s+(?:of|from)|"
-      r"does(?:n['\u2019]t|\s+not)\s+contain|contains?\s+no)\s+\p{L}+",
+      r"does(?:n't|\s+not)\s+contain|contains?\s+(?:no|none\s+of)|"
+      r"(?:is|are|was|were)(?:n't|\s+not)\s+any|no\s+trace\s+of)\s+\p{L}+",
+  r'none',
+  r'contains?\s+none',
+  // Appearance offered as a doneness test, wherever it is placed.
+  r'(?:white|pink|opaque|clear|brown|golden)(?![\p{L}])[^.;!?]{0,40}'
+      r'(?<![\p{L}])(?:in\s+the\s+(?:middle|center|centre)|inside|through)',
+  r'(?:once|when|until|till)\s+(?:it\s+is\s+|it\x27s\s+|they\s+are\s+)?'
+      r'(?:white|opaque|no\s+longer\s+pink)',
   // Any dietary label or suitability claim.
   r'vegan',
   r'vegetarian',
@@ -108,10 +116,20 @@ final _bareTemperature = RegExp(
 /// True when [text] touches doneness, temperature, freshness, safety or
 /// allergen status. Deliberately broad: it decides that model text is not
 /// shown, never that something is safe.
-bool touchesFoodSafety(String text) =>
-    _symbols.hasMatch(text) ||
-    _bareTemperature.hasMatch(text) ||
-    _vocabulary.hasMatch(text);
+bool touchesFoodSafety(String text) {
+  final t = normalizeCookText(text);
+  return _symbols.hasMatch(t) ||
+      _bareTemperature.hasMatch(t) ||
+      _vocabulary.hasMatch(t);
+}
+
+/// Unicode hyphens, dashes and soft hyphens become "-", curly apostrophes
+/// become "'", and every kind of whitespace collapses to one space, so a
+/// typographic variant cannot slip past the gate.
+String normalizeCookText(String text) => text
+    .replaceAll(RegExp('[\u2010-\u2015\u00AD\u2212]'), '-')
+    .replaceAll(RegExp('[\u2018\u2019\u02BC\u2032]'), "'")
+    .replaceAll(RegExp(r'[\s\u00A0\u2007\u202F\u2060]+'), ' ');
 
 /// The cook-facing strings in a model JSON payload: every string value
 /// except structural keys (ids, component names, children, actions).
