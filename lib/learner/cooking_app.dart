@@ -13,7 +13,7 @@ import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
 import '../app/services_scope.dart';
 import '../coach_lite/coach_lite.dart';
-import '../coach_lite/timer_suggestion_card.dart';
+import '../coach_lite/coach_lite_answer_card.dart';
 import '../coach_lite/tts.dart';
 import '../coach_lite/tts_toggle.dart';
 import '../data/dinner_messages.dart';
@@ -29,6 +29,7 @@ import '../label/label_check_sheet.dart';
 import '../trust/inference_source_badge.dart';
 import '../watch/capture_owner.dart';
 import '../watch/local_watch_controller.dart';
+import '../watch/local_watch_overlay.dart';
 import '../watch/watch_service.dart';
 import '../core/analytics.dart';
 import '../core/models.dart';
@@ -727,6 +728,35 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     }
   }
 
+  /// Which ledger legs belong to the local watch running now.
+  final _watchLegs = WatchLegScope();
+
+  /// The privacy chip, viewfinder and status over the camera preview while
+  /// a local watch shows it. Null when Live owns the preview or no local
+  /// watch is running. Upload wording comes from this watch's ledger legs.
+  Widget? _localWatchOverlay() {
+    if (cook.live.isActive) return null;
+    final local = cook.watchService?.local;
+    if (local == null) return null;
+    final ledger = widget.hybrid?.ledgerSource;
+    // Snapshot the ledger as soon as a watch is seen, before its first frame.
+    if (ledger != null) {
+      _watchLegs.begin(local.isActive ? local.watchId : null, ledger.legs);
+    }
+    // A local watch only exists with the hybrid runtime, so its ledger.
+    if (local.previewFrame == null || ledger == null) return null;
+    return ListenableBuilder(
+      listenable: ledger,
+      builder: (context, _) =>
+          LocalWatchOverlay.of(
+            local,
+            ledgerLegs: ledger.legs,
+            scope: _watchLegs,
+          ) ??
+          const SizedBox.shrink(),
+    );
+  }
+
   Widget _cameraColumn({bool includeConversation = true}) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -809,6 +839,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                   ),
                 ),
               ),
+            if (_localWatchOverlay() case final overlay?)
+              Positioned.fill(child: overlay),
             Positioned(
               top: 16,
               left: 16,
@@ -869,7 +901,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       if (cook.watchService?.statusText case final status?)
         Semantics(
           liveRegion: true,
-          child: _inlineNotice(status, Icons.visibility_outlined),
+          child:
+              watchStatusNotice(cook.watchService!) ??
+              _inlineNotice(status, Icons.visibility_outlined),
         ),
       if (cook.watchService?.local.verdict?.legs case final legs?
           when legs.isNotEmpty)
@@ -1138,32 +1172,18 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       CookingSurface(controller: cook.ui),
-      if (cook.coachLiteAnswer case final answer?) ...[
+      if (cook.coachLiteAnswer != null)
         if (_speaker case final speaker?)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: CoachLiteSpeakerToggle(speaker: speaker),
           ),
-        if (answer.legs.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: InferenceSourceBadge(
-              key: const ValueKey('coach-lite-source'),
-              legs: answer.legs,
-              reason: answer.blocked,
-            ),
-          ),
-        if (answer.timerSuggestion case final suggestion?)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: TimerSuggestionCard(
-              key: ValueKey(answer.stamp),
-              suggestion: suggestion,
-              onStart: (label, seconds) =>
-                  unawaited(cook.startSuggestedTimer(label, seconds)),
-            ),
-          ),
-      ],
+      if (cook.coachLiteAnswer case final answer?)
+        CoachLiteAnswerFooter(
+          answer: answer,
+          onStartTimer: (label, seconds) =>
+              unawaited(cook.startSuggestedTimer(label, seconds)),
+        ),
       const SizedBox(height: 16),
       const Text(
         'How does your food look?',
