@@ -8,11 +8,21 @@ import 'tts.dart';
 
 /// The caption, given where the voice runs and whether the cook's
 /// local-only setting applies to Coach Lite.
+/// In [practice] mode read-aloud is always local-only and says so.
 String readAloudCaption(
   VoiceLocality locality, {
   bool localOnly = false,
   bool silencedForLocalOnly = false,
+  bool practice = false,
 }) {
+  if (practice) {
+    return silencedForLocalOnly ||
+            locality == VoiceLocality.browserMayUseNetwork
+        ? "Practice mode: this browser reports no voice on this device, so "
+              "answers aren't read aloud. Nothing is sent to an online voice."
+        : 'Practice mode: only a voice on this device is used, never an '
+              'online one.';
+  }
   if (localOnly &&
       (silencedForLocalOnly ||
           locality == VoiceLocality.browserMayUseNetwork)) {
@@ -32,9 +42,16 @@ String _localityCaption(VoiceLocality locality) => switch (locality) {
 };
 
 class CoachLiteSpeakerToggle extends StatelessWidget {
-  const CoachLiteSpeakerToggle({super.key, required this.speaker});
+  const CoachLiteSpeakerToggle({
+    super.key,
+    required this.speaker,
+    this.practice = false,
+  });
 
   final CoachLiteSpeaker speaker;
+
+  /// Practice mode: the caption says read-aloud is local-only.
+  final bool practice;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -56,7 +73,7 @@ class CoachLiteSpeakerToggle extends StatelessWidget {
           Expanded(
             child: Text(
               '${on ? 'Reading answers aloud.' : 'Read answers aloud: off.'} '
-              '${readAloudCaption(speaker.locality, localOnly: speaker.localOnly, silencedForLocalOnly: speaker.silencedForLocalOnly)}',
+              '${readAloudCaption(speaker.locality, localOnly: speaker.localOnly, silencedForLocalOnly: speaker.silencedForLocalOnly, practice: practice)}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

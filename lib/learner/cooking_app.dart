@@ -463,6 +463,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   /// Coach Lite read-aloud; only where Coach Lite exists (SS-077).
   CoachLiteSpeaker? _speaker;
 
+  /// Rehearsal / practice mode: nothing may leave the browser, voice
+  /// included.
+  bool get _practice => widget.isDemo || isPracticeRuntime(widget.hybrid);
+
   @override
   void initState() {
     super.initState();
@@ -472,9 +476,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       final privacy = widget.hybrid?.privacy;
       _speaker = CoachLiteSpeaker(
         (widget.textToSpeech ?? deviceTextToSpeech)(),
-        // Read at every speak: local-only allows only a local voice.
+        // Read at every speak: local-only allows only a local voice. Practice
+        // mode is always local-only: a pretend answer and the echoed typed
+        // question never go to an online voice service (Codex #221).
         localOnly: () =>
-            privacy != null && localOnlyFor(privacy, coachLiteFeature),
+            _practice ||
+            (privacy != null && localOnlyFor(privacy, coachLiteFeature)),
       );
       unawaited(_speaker!.init());
     }
@@ -1377,7 +1384,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         if (_speaker case final speaker?)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: CoachLiteSpeakerToggle(speaker: speaker),
+            child: CoachLiteSpeakerToggle(
+              speaker: speaker,
+              practice: _practice,
+            ),
           ),
       const SizedBox(height: 16),
       const Text(
