@@ -217,6 +217,53 @@ void main() {
   });
 
   group('runtime', () {
+    test(
+      'a cancel during the configure wait stops the later forward',
+      () async {
+        final inner = _SlowConfigure();
+        final wrapper = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          mayForward: (_) => true,
+        );
+        final request = HybridRequest(
+          requestId: 'r1',
+          mode: HybridMode.preferOnDevice,
+          task: HybridTask(
+            feature: 'pantry_scan',
+            parts: const [HybridText('eggs')],
+            maxOutputTokens: 16,
+            timeout: const Duration(seconds: 5),
+          ),
+        );
+        final pending = wrapper.generate(request);
+        await wrapper.cancel('r1');
+        inner.release.complete();
+        await expectLater(
+          pending,
+          throwsA(
+            isA<HybridException>().having(
+              (e) => e.code,
+              'code',
+              HybridErrorCode.cancelled,
+            ),
+          ),
+        );
+        expect(inner.requests, isEmpty, reason: 'nothing was forwarded');
+        expect(inner.cancelled, ['r1']);
+        // A later request with another id still goes through.
+        inner.enqueueText('ok');
+        final ok = await wrapper.generate(
+          HybridRequest(
+            requestId: 'r2',
+            mode: request.mode,
+            task: request.task,
+          ),
+        );
+        expect(ok.text, 'ok');
+      },
+    );
+
     test('configures the backend once, before any generate', () async {
       final inference = FakeHybridInference();
       final hybrid = _runtime(inference);
@@ -551,4 +598,14 @@ void main() {
       expect(hybrid.privacy.localOnly('coach_lite'), isTrue);
     });
   });
+}
+
+/// Configure completes only when [release] does.
+class _SlowConfigure extends FakeHybridInference {
+  final release = Completer<void>();
+  @override
+  Future<void> configure(HybridConfig config) async {
+    await release.future;
+    await super.configure(config);
+  }
 }

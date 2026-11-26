@@ -132,6 +132,13 @@ internal class ProtocolTest {
             generateArgs("requestId" to null),
             generateArgs("timeoutMs" to 0),
             generateArgs("maxOutputTokens" to null),
+            // Range-checked before narrowing: 2^32 + 1 would otherwise become 1.
+            generateArgs("maxOutputTokens" to 4_294_967_297L),
+            generateArgs("maxOutputTokens" to Int.MAX_VALUE.toLong() + 1),
+            generateArgs("maxOutputTokens" to 0L),
+            generateArgs("maxOutputTokens" to -5),
+            generateArgs("maxOutputTokens" to 64.0),
+            generateArgs("maxOutputTokens" to "64"),
             generateArgs("parts" to "hello"),
             generateArgs("jsonSchema" to "object"),
         )) {
@@ -140,6 +147,15 @@ internal class ProtocolTest {
         assertEquals(
             HybridErrorCode.FAILED,
             assertFailsWith<HybridError> { Protocol.parseGenerate(null) }.code,
+        )
+    }
+
+    @Test
+    fun maxOutputTokensAcceptsIntsAndInRangeLongs() {
+        assertEquals(64, Protocol.parseGenerate(generateArgs("maxOutputTokens" to 64L)).maxOutputTokens)
+        assertEquals(
+            Int.MAX_VALUE,
+            Protocol.parseGenerate(generateArgs("maxOutputTokens" to Int.MAX_VALUE.toLong())).maxOutputTokens,
         )
     }
 

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
@@ -99,6 +100,28 @@ HybridTask _photo(String feature, [int seed = 1]) => HybridTask(
   parts: [
     const HybridText('What is in the photo?'),
     HybridInlineData(Uint8List.fromList([seed, 2, 3]), 'image/jpeg'),
+  ],
+  maxOutputTokens: 256,
+  timeout: const Duration(seconds: 10),
+);
+
+/// A real, readable image (the adapter fallback needs one).
+HybridTask _png(
+  String feature, {
+  int width = 2,
+  int height = 2,
+  int count = 1,
+}) => HybridTask(
+  feature: feature,
+  parts: [
+    const HybridText('What is in the photo?'),
+    for (var i = 0; i < count; i++)
+      HybridInlineData(
+        Uint8List.fromList(
+          img.encodePng(img.Image(width: width, height: height)),
+        ),
+        'image/png',
+      ),
   ],
   maxOutputTokens: 256,
   timeout: const Duration(seconds: 10),
@@ -830,7 +853,7 @@ void main() {
             'no attachment',
           ),
         );
-        final r = await h.run(_photo('pantry_scan'));
+        final r = await h.run(_png('pantry_scan'));
         expect(r.text, 'adapter answer');
         expect(h.consent.asks, hasLength(1));
         expect(r.legs, [
@@ -847,6 +870,42 @@ void main() {
       },
     );
 
+    test(
+      'an unreadable image the bridge rejects never goes to the adapter',
+      () async {
+        final h = _Harness(caps: fakeIosCapabilities);
+        h.bridge.script.add(
+          const HybridException(HybridErrorCode.unsupportedInput, 'bad image'),
+        );
+        final r = await h.run(
+          _photo('pantry_scan'),
+        ); // 3 bytes: no image header
+        expect(r.text, isNull);
+        expect(h.adapter!.requests, isEmpty);
+      },
+    );
+
+    test('shared attachment limits are checked before any send', () async {
+      for (final task in [
+        _png('pantry_scan', count: 2), // too many images
+        _png('pantry_scan', width: 769, height: 1), // too wide
+        HybridTask(
+          feature: 'pantry_scan',
+          parts: [HybridInlineData(Uint8List(1024 * 1024 + 1), 'image/jpeg')],
+          maxOutputTokens: 64,
+          timeout: const Duration(seconds: 10),
+        ), // too many bytes
+      ]) {
+        final h = _Harness(caps: fakeIosCapabilities);
+        final r = await h.run(task);
+        expect(r.text, isNull);
+        expect(r.legs, isEmpty);
+        expect(h.bridge.requests, isEmpty);
+        expect(h.adapter!.requests, isEmpty);
+        expect(h.consent.asks, isEmpty);
+      }
+    });
+
     test('the adapter fallback re-checks localOnly', () async {
       final h = _Harness(caps: fakeIosCapabilities);
       h.bridge.script.add((HybridRequest _) {
@@ -856,7 +915,7 @@ void main() {
           'no attachment',
         );
       });
-      final r = await h.run(_photo('pantry_scan'));
+      final r = await h.run(_png('pantry_scan'));
       expect(r.blocked, RouteReason.localOnlySetting);
       expect(h.adapter!.requests, isEmpty);
     });

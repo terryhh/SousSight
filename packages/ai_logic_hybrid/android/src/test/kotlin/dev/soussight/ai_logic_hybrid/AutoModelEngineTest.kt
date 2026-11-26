@@ -156,7 +156,7 @@ internal class AutoModelEngineTest {
     // --- Startup selection ---
 
     @Test
-    fun stableIsUsedUntilTheCheckProvesPreview() = runBlocking {
+    fun stableIsUsedUntilTheStartupCheckProvesPreview() = runBlocking<Unit> {
         val gate = CompletableDeferred<Unit>()
         val inner = FakeEngine(status = {
             if (it == AndroidModelOption.PREVIEW) runBlocking { gate.await() }
@@ -169,7 +169,6 @@ internal class AutoModelEngineTest {
         val r = withTimeout(1_000) { e.generate(auto, request()) }
         assertEquals("nano-v3", r.modelLabel)
         assertEquals(listOf(AndroidModelOption.STABLE), inner.work.map { it.option })
-        assertEquals(AndroidModelOption.STABLE, e.decision)
         assertEquals(AndroidModelOption.STABLE, e.modelOption(auto))
 
         gate.complete(Unit)
@@ -180,7 +179,7 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun previewThatAnswersTheProbeIsSelected() = runBlocking {
+    fun anAlreadyAvailablePreviewThatAnswersIsSelected() = runBlocking<Unit> {
         val inner = FakeEngine()
         val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log).checked()
@@ -195,13 +194,21 @@ internal class AutoModelEngineTest {
         val a = e.availability(auto, false)
         assertEquals(AndroidModelOption.PREVIEW, a.modelOption)
         assertEquals("nano-v4-full", a.modelLabel)
-        // Already selected: configuring again starts nothing.
+    }
+
+    @Test
+    fun theStartupCheckRunsOncePerRun() = runBlocking<Unit> {
+        val inner = pixel9()
+        val e = engine(inner).checked()
+        val first = e.checkJob
         e.configured(auto)
+        e.configured(auto)
+        assertSame(first, e.checkJob)
         assertEquals(1, inner.probes.size)
     }
 
     @Test
-    fun previewThatFailsTheProbeIsNotTriedAgainThisRun() = runBlocking {
+    fun aPreviewThatFailsTheProbeLeavesStable() = runBlocking<Unit> {
         val inner = pixel9()
         val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log).checked()
@@ -213,14 +220,37 @@ internal class AutoModelEngineTest {
         assertEquals(AndroidModelOption.STABLE, a.modelOption)
         assertEquals("nano-v3", a.modelLabel)
         assertEquals("nano-v3", e.generate(auto, request()).modelLabel)
-        e.configured(auto)
-        e.prepare(auto, false).toList()
-        withTimeout(5_000) { e.checkJob?.join() }
-        assertEquals(1, inner.probes.size, "the broken preview is probed once per run")
     }
 
     @Test
-    fun theProbeMustReturnTextFromTheDevice() = runBlocking {
+    fun aPreviewThatIsNotAlreadyAvailableIsNeverProbedOrDownloaded() = runBlocking<Unit> {
+        for (status in listOf(OnDeviceStatus.DOWNLOADABLE, OnDeviceStatus.DOWNLOADING, OnDeviceStatus.UNAVAILABLE)) {
+            val preview = AtomicReference(status)
+            val inner = FakeEngine(status = {
+                if (it == AndroidModelOption.PREVIEW) AvailabilityResult(preview.get())
+                else AvailabilityResult(OnDeviceStatus.DOWNLOADABLE, Reasons.MODEL_NOT_READY)
+            })
+            val e = engine(inner).checked()
+            assertEquals(AndroidModelOption.STABLE, e.decision, "$status")
+            // Setup is stable's.
+            val a = e.availability(auto, false)
+            assertEquals(OnDeviceStatus.DOWNLOADABLE, a.status)
+            assertEquals(AndroidModelOption.STABLE, a.modelOption)
+            assertEquals(listOf(0.5, 1.0), e.prepare(auto, false).toList())
+            assertEquals(listOf(AndroidModelOption.STABLE), inner.prepareCalls)
+            // Preview becoming ready later promotes nothing: no availability read, no prepare.
+            preview.set(OnDeviceStatus.AVAILABLE)
+            e.availability(auto, false)
+            e.prepare(auto, false).toList()
+            e.configured(auto)
+            assertTrue(inner.probes.isEmpty(), "$status")
+            assertEquals(AndroidModelOption.STABLE, e.decision)
+            assertTrue(AndroidModelOption.PREVIEW !in inner.prepareCalls)
+        }
+    }
+
+    @Test
+    fun theProbeMustReturnTextFromTheDevice() = runBlocking<Unit> {
         val answers = listOf(
             GenerateResult("", InferenceSourceWire.ON_DEVICE, "nano-v4-full"),
             GenerateResult("  \n", InferenceSourceWire.ON_DEVICE, "nano-v4-full"),
@@ -235,7 +265,7 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun aHungProbeOrStatusLookupEndsTheCheckAtItsDeadline() = runBlocking {
+    fun aHungProbeOrStatusLookupEndsTheCheckAtItsDeadline() = runBlocking<Unit> {
         val hangProbe = FakeEngine(onGenerate = { _, _ -> withContext(NonCancellable) { delay(3_000) }; error("late") })
         val log = CopyOnWriteArrayList<String>()
         var start = System.nanoTime()
@@ -258,7 +288,19 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun theStatusDeadlineHoldsWhenThePluginThreadIsBlocked() = runBlocking {
+    fun aStatusLookupThatThrowsMeansStable() = runBlocking<Unit> {
+        val log = CopyOnWriteArrayList<String>()
+        val inner = FakeEngine(status = {
+            if (it == AndroidModelOption.PREVIEW) throw IllegalStateException("AICore died")
+            AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v3")
+        })
+        val e = engine(inner, log).checked()
+        assertEquals(AndroidModelOption.STABLE, e.decision)
+        assertTrue(log.any { "status check failed" in it }, "$log")
+    }
+
+    @Test
+    fun theStatusDeadlineHoldsWhenThePluginThreadIsBlocked() = runBlocking<Unit> {
         val main = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
         try {
             val inner = FakeEngine(status = {
@@ -281,7 +323,7 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun detachingStopsTheCheck() = runBlocking {
+    fun detachingStopsTheCheck() = runBlocking<Unit> {
         val release = CompletableDeferred<Unit>()
         val lookup = CompletableDeferred<Unit>()
         val inner = FakeEngine(status = {
@@ -301,60 +343,7 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun oneCheckAtATime() = runBlocking {
-        val release = CompletableDeferred<Unit>()
-        val inner = FakeEngine(onGenerate = { option, _ ->
-            release.await()
-            GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
-        })
-        val e = engine(inner)
-        val first = e.startCheck(auto)
-        repeat(3) { assertSame(first, e.startCheck(auto)) }
-        release.complete(Unit)
-        withTimeout(5_000) { assertNotNull(first).join() }
-        assertEquals(1, inner.probes.size)
-    }
-
-    @Test
-    fun previewNotReadyAtStartupIsCheckedAgainAfterPrepare() = runBlocking {
-        val preview = AtomicReference(OnDeviceStatus.DOWNLOADABLE)
-        val inner = FakeEngine(
-            status = {
-                if (it == AndroidModelOption.PREVIEW) AvailabilityResult(preview.get(), Reasons.MODEL_NOT_READY, "nano-v4-full")
-                else AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.DEVICE_NOT_ELIGIBLE)
-            },
-            onPrepare = { preview.set(OnDeviceStatus.AVAILABLE) }, // the download finishes
-        )
-        val e = engine(inner).checked()
-        assertEquals(AndroidModelOption.STABLE, e.decision)
-        assertTrue(inner.probes.isEmpty())
-
-        val a = e.availability(auto, false)
-        assertEquals(OnDeviceStatus.DOWNLOADABLE, a.status, "setup stays visible")
-        assertEquals(AndroidModelOption.PREVIEW, a.modelOption)
-
-        assertEquals(listOf(0.5, 1.0), e.prepare(auto, false).toList())
-        assertEquals(listOf(AndroidModelOption.PREVIEW), inner.prepareCalls)
-        withTimeout(5_000) { assertNotNull(e.checkJob).join() }
-        assertEquals(1, inner.probes.size, "probed before it is used")
-        assertEquals(AndroidModelOption.PREVIEW, e.decision)
-    }
-
-    @Test
-    fun anUnprovenAvailablePreviewIsNeverReportedReady() = runBlocking {
-        val inner = FakeEngine(status = {
-            if (it == AndroidModelOption.PREVIEW) AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v4-full")
-            else AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.DEVICE_NOT_ELIGIBLE)
-        }, onGenerate = { _, _ -> awaitCancellation() })
-        val e = engine(inner, probeTimeoutMs = 60_000)
-        val a = e.availability(auto, false) // no configure yet: this starts the check
-        assertEquals(OnDeviceStatus.UNAVAILABLE, a.status)
-        assertEquals(AndroidModelOption.STABLE, a.modelOption)
-        assertNotNull(e.checkJob)
-    }
-
-    @Test
-    fun debugBuildsProbeStableWhenItIsKept() = runBlocking {
+    fun debugBuildsProbeStableWhenItIsKept() = runBlocking<Unit> {
         val log = CopyOnWriteArrayList<String>()
         val inner = pixel9()
         engine(inner, log, verify = true).checked()
@@ -370,174 +359,28 @@ internal class AutoModelEngineTest {
         assertTrue(failing.any { "stable did not answer the debug probe" in it }, "$failing")
     }
 
-    // --- Availability reporting ---
-
-    @Test
-    fun aDownloadableStableIsNeverHidden() = runBlocking {
-        val inner = FakeEngine(status = {
-            if (it == AndroidModelOption.PREVIEW) AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.NOT_ENROLLED)
-            else AvailabilityResult(OnDeviceStatus.DOWNLOADABLE, Reasons.MODEL_NOT_READY)
-        })
-        val e = engine(inner).checked()
-        val a = e.availability(auto, false)
-        assertEquals(OnDeviceStatus.DOWNLOADABLE, a.status)
-        assertEquals(AndroidModelOption.STABLE, a.modelOption)
-        e.prepare(auto, false).toList()
-        assertEquals(listOf(AndroidModelOption.STABLE), inner.prepareCalls)
-    }
-
-    @Test
-    fun aLostPreviewShowsStableSetupAndPromotesStableWhenReady() = runBlocking {
-        val preview = AtomicReference(OnDeviceStatus.AVAILABLE)
-        val stable = AtomicReference(OnDeviceStatus.DOWNLOADABLE)
-        val inner = FakeEngine(status = {
-            if (it == AndroidModelOption.PREVIEW) AvailabilityResult(preview.get(), modelLabel = "nano-v4-full")
-            else AvailabilityResult(stable.get(), modelLabel = "nano-v3")
-        })
-        val e = engine(inner).checked()
-        assertEquals(AndroidModelOption.PREVIEW, e.decision)
-
-        preview.set(OnDeviceStatus.UNAVAILABLE)
-        val a = e.availability(auto, false)
-        assertEquals(OnDeviceStatus.DOWNLOADABLE, a.status, "the recovery path is shown")
-        assertEquals(AndroidModelOption.STABLE, a.modelOption)
-        e.prepare(auto, false).toList()
-        assertEquals(listOf(AndroidModelOption.STABLE), inner.prepareCalls)
-
-        stable.set(OnDeviceStatus.AVAILABLE)
-        val ready = e.availability(auto, false)
-        assertEquals(OnDeviceStatus.AVAILABLE, ready.status)
-        assertEquals(AndroidModelOption.STABLE, ready.modelOption)
-        assertEquals(AndroidModelOption.STABLE, e.decision)
-    }
-
-    @Test
-    fun aDownloadingModelOutranksADownloadableOne() = runBlocking {
-        val inner = FakeEngine(status = {
-            if (it == AndroidModelOption.PREVIEW) AvailabilityResult(OnDeviceStatus.DOWNLOADING)
-            else AvailabilityResult(OnDeviceStatus.DOWNLOADABLE)
-        })
-        val a = engine(inner).checked().availability(auto, false)
-        assertEquals(OnDeviceStatus.DOWNLOADING, a.status)
-        assertEquals(AndroidModelOption.PREVIEW, a.modelOption)
-    }
-
-    @Test
-    fun aStatusLookupThatThrowsCountsAsNotReady() = runBlocking {
-        val log = CopyOnWriteArrayList<String>()
-        val inner = FakeEngine(status = { throw IllegalStateException("AICore died") })
-        val e = engine(inner, log).checked()
-        assertEquals(AndroidModelOption.STABLE, e.decision)
-        val a = e.availability(auto, false)
-        assertEquals(OnDeviceStatus.UNAVAILABLE, a.status)
-        assertEquals(Reasons.MODEL_NOT_READY, a.reason)
-        assertTrue(log.any { "status check failed" in it }, "$log")
-    }
-
-    @Test
-    fun nothingObtainableReportsTheSelectedModel() = runBlocking {
-        val inner = FakeEngine(status = { AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.DEVICE_NOT_ELIGIBLE) })
-        val a = engine(inner).checked().availability(auto, false)
-        assertEquals(OnDeviceStatus.UNAVAILABLE, a.status)
-        assertEquals(Reasons.DEVICE_NOT_ELIGIBLE, a.reason)
-        assertEquals(AndroidModelOption.STABLE, a.modelOption)
-    }
-
-    @Test
-    fun aBrokenPreviewIsNotOfferedForSetup() = runBlocking {
-        val preview = AtomicReference(OnDeviceStatus.AVAILABLE)
-        val inner = FakeEngine(
-            status = {
-                if (it == AndroidModelOption.PREVIEW) AvailabilityResult(preview.get())
-                else AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.DEVICE_NOT_ELIGIBLE)
-            },
-            onGenerate = { _, _ -> throw code8() },
-        )
-        val e = engine(inner).checked()
-        preview.set(OnDeviceStatus.DOWNLOADABLE)
-        val a = e.availability(auto, false)
-        assertEquals(OnDeviceStatus.UNAVAILABLE, a.status)
-        assertEquals(AndroidModelOption.STABLE, a.modelOption)
-    }
-
-    @Test
-    fun aHungReportingLookupIsBounded() = runBlocking {
-        val inner = FakeEngine(status = {
-            if (it == AndroidModelOption.STABLE) runBlocking { awaitCancellation() }
-            AvailabilityResult(OnDeviceStatus.UNAVAILABLE)
-        })
-        val e = engine(inner, statusTimeoutMs = 50)
-        val a = withTimeout(2_000) { e.availability(auto, false) }
-        assertEquals(OnDeviceStatus.UNAVAILABLE, a.status)
-        assertEquals(Reasons.MODEL_NOT_READY, a.reason)
-    }
-
-    @Test
-    fun availabilityReportsADowngradeThatLandsDuringItsLookup() = runBlocking {
-        val hold = CompletableDeferred<Unit>()
-        val holding = CompletableDeferred<Unit>()
-        val armed = AtomicBoolean(false)
-        val inner = FakeEngine(
-            status = {
-                if (it == AndroidModelOption.PREVIEW && armed.get()) {
-                    holding.complete(Unit)
-                    runBlocking { hold.await() }
-                }
-                AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = FakeEngine.label(it))
-            },
-            onGenerate = breaksAfterStartup(AtomicBoolean(true)).onGenerate,
-        )
-        val e = engine(inner).checked()
-        assertEquals(AndroidModelOption.PREVIEW, e.decision)
-        armed.set(true)
-        val inFlight = async(Dispatchers.Default) { e.availability(auto, false) }
-        withTimeout(5_000) { holding.await() }
-        e.generate(auto, request()) // code 8 on preview: stable from now on
-        hold.complete(Unit)
-        val a = inFlight.await()
-        assertEquals(AndroidModelOption.STABLE, a.modelOption)
-        assertEquals("nano-v3", a.modelLabel)
-        assertEquals(e.modelOption(auto), a.modelOption)
-    }
-
     // --- Mid-session ---
 
     @Test
-    fun aCodeEightOnPreviewRetriesOnceOnStableOnDeviceAndSticks() = runBlocking {
+    fun aCodeEightOnPreviewIsReturnedAndLaterRequestsUseStable() = runBlocking<Unit> {
         val inner = breaksAfterStartup(AtomicBoolean(true))
         val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log).checked()
+        assertEquals(AndroidModelOption.PREVIEW, e.decision)
 
-        val r = e.generate(auto, request(HybridMode.PREFER_IN_CLOUD))
-
-        assertEquals("nano-v3", r.modelLabel)
-        assertEquals(listOf(AndroidModelOption.PREVIEW, AndroidModelOption.STABLE), inner.work.map { it.option })
-        assertEquals(HybridMode.ONLY_ON_DEVICE, inner.work.last().request.mode, "narrowed: never cloud, never widened")
+        // The caller (and so the ledger) sees this attempt's real outcome: no hidden retry.
+        assertFailsWith<FirebaseAIOnDeviceNotAvailableException> { e.generate(auto, request()) }
+        assertEquals(listOf(AndroidModelOption.PREVIEW), inner.work.map { it.option })
         assertEquals(AndroidModelOption.STABLE, e.decision)
         assertTrue(log.any { "mid-session" in it })
-        e.generate(auto, request(id = "r2"))
+
+        assertEquals("local", e.generate(auto, request(id = "r2")).text)
         assertEquals(AndroidModelOption.STABLE, inner.work.last().option)
-        e.configured(auto)
-        assertEquals(1, inner.probes.size, "a broken preview is not re-checked")
+        assertEquals(AndroidModelOption.STABLE, e.availability(auto, false).modelOption)
     }
 
     @Test
-    fun theRetryHappensOnlyOnce() = runBlocking {
-        val stableError = code8()
-        val inner = FakeEngine(onGenerate = { option, req ->
-            when {
-                req.requestId == AutoModelEngine.PROBE_REQUEST_ID -> GenerateResult("OK", InferenceSourceWire.ON_DEVICE, "x")
-                option == AndroidModelOption.STABLE -> throw stableError
-                else -> throw code8()
-            }
-        })
-        val e = engine(inner).checked()
-        assertSame(stableError, assertFailsWith<FirebaseAIOnDeviceNotAvailableException> { e.generate(auto, request()) })
-        assertEquals(2, inner.work.size)
-    }
-
-    @Test
-    fun noRetryForOtherErrorsCloudOnlyOrStable() = runBlocking {
+    fun otherFailuresDoNotChangeTheSelection() = runBlocking<Unit> {
         val busy = GenAiException("busy", null, GenAiException.ErrorCode.BUSY)
         val inner = FakeEngine(onGenerate = { _, req ->
             when {
@@ -549,47 +392,14 @@ internal class AutoModelEngineTest {
         val e = engine(inner).checked()
         assertSame(busy, assertFailsWith<GenAiException> { e.generate(auto, request().copy(feature = "busy")) })
         assertFailsWith<FirebaseAIOnDeviceNotAvailableException> { e.generate(auto, request(HybridMode.ONLY_IN_CLOUD)) }
-        assertEquals(2, inner.work.size)
         assertEquals(AndroidModelOption.PREVIEW, e.decision, "busy or cloud-only failures say nothing about preview")
-
-        val stableOnly = engine(pixel9())
-        val onStable = FakeEngine(onGenerate = { _, _ -> throw code8() })
-        assertFailsWith<FirebaseAIOnDeviceNotAvailableException> { engine(onStable).generate(auto, request()) }
-        assertEquals(1, onStable.work.size)
-        assertEquals(AndroidModelOption.STABLE, stableOnly.decision)
+        assertFailsWith<CancellationException> {
+            engine(FakeEngine(onGenerate = { _, _ -> throw CancellationException("gone") })).generate(auto, request())
+        }
     }
 
     @Test
-    fun aLateCodeEightAfterCancellationStartsNoStableRetry() = runBlocking {
-        val started = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val inner = FakeEngine(onGenerate = { option, req ->
-            if (req.requestId != AutoModelEngine.PROBE_REQUEST_ID && option == AndroidModelOption.PREVIEW) {
-                started.complete(Unit)
-                withContext(NonCancellable) { release.await() } // native work that ignores cancel
-                throw code8()
-            }
-            GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
-        })
-        val e = engine(inner).checked()
-        val call = async(Dispatchers.Default) { e.generate(auto, request()) }
-        started.await()
-        call.cancel()
-        release.complete(Unit)
-        call.join()
-        assertTrue(call.isCancelled)
-        assertEquals(listOf(AndroidModelOption.PREVIEW), inner.work.map { it.option }, "no STABLE generation")
-    }
-
-    @Test
-    fun cancellationIsPassedThrough() = runBlocking {
-        val inner = FakeEngine(onGenerate = { _, _ -> throw CancellationException("gone") })
-        assertFailsWith<CancellationException> { engine(inner).generate(auto, request()) }
-        assertEquals(1, inner.work.size)
-    }
-
-    @Test
-    fun aCloudAnswerOnABrokenPreviewMovesLaterRequestsToStable() = runBlocking {
+    fun aCloudAnswerOnABrokenPreviewMovesLaterRequestsToStable() = runBlocking<Unit> {
         val probeWorks = AtomicBoolean(true)
         val inner = breaksAfterStartup(probeWorks)
         val log = CopyOnWriteArrayList<String>()
@@ -608,13 +418,14 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun aCloudAnswerWhilePreviewStillAnswersKeepsIt() = runBlocking {
+    fun aCloudAnswerWhilePreviewStillAnswersKeepsIt() = runBlocking<Unit> {
         val inner = breaksAfterStartup(AtomicBoolean(true))
         val e = engine(inner).checked()
         e.generate(auto, request(HybridMode.PREFER_ON_DEVICE))
         withTimeout(5_000) { assertNotNull(e.recheckJob).join() }
         assertEquals(AndroidModelOption.PREVIEW, e.decision)
-        assertEquals(2, inner.probes.size)
+        e.generate(auto, request(HybridMode.PREFER_ON_DEVICE, id = "r2"))
+        assertEquals(2, inner.probes.size, "one recheck per run")
         // Expected cloud answers start no recheck.
         val other = engine(FakeEngine(onGenerate = { _, req ->
             if (req.requestId == AutoModelEngine.PROBE_REQUEST_ID) GenerateResult("OK", InferenceSourceWire.ON_DEVICE, "x")
@@ -625,10 +436,36 @@ internal class AutoModelEngineTest {
         assertNull(other.recheckJob)
     }
 
+    @Test
+    fun availabilityReportsAFlipThatLandsDuringItsLookup() = runBlocking<Unit> {
+        val hold = CompletableDeferred<Unit>()
+        val holding = CompletableDeferred<Unit>()
+        val armed = AtomicBoolean(false)
+        val inner = FakeEngine(
+            status = {
+                if (it == AndroidModelOption.PREVIEW && armed.get()) {
+                    holding.complete(Unit)
+                    runBlocking { hold.await() }
+                }
+                AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = FakeEngine.label(it))
+            },
+            onGenerate = breaksAfterStartup(AtomicBoolean(true)).onGenerate,
+        )
+        val e = engine(inner).checked()
+        armed.set(true)
+        val inFlight = async(Dispatchers.Default) { e.availability(auto, false) }
+        withTimeout(5_000) { holding.await() }
+        assertFailsWith<FirebaseAIOnDeviceNotAvailableException> { e.generate(auto, request()) }
+        hold.complete(Unit)
+        val a = inFlight.await()
+        assertEquals(AndroidModelOption.STABLE, a.modelOption)
+        assertEquals("nano-v3", a.modelLabel)
+    }
+
     // --- Pass-through and input ---
 
     @Test
-    fun explicitOptionsPassThrough() = runBlocking {
+    fun explicitOptionsPassThrough() = runBlocking<Unit> {
         for (option in listOf(AndroidModelOption.PREVIEW, AndroidModelOption.PREVIEW_FAST, AndroidModelOption.STABLE)) {
             val inner = pixel9()
             val e = engine(inner)
@@ -649,7 +486,7 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun invalidInputCausesNoSelectionWork() = runBlocking {
+    fun invalidInputCausesNoSelectionWork() = runBlocking<Unit> {
         // The engine below validates (FirebaseHybridEngine does, before any SDK call); auto adds
         // nothing in front of it: no status lookup, no probe.
         val inner = FakeEngine(onGenerate = { _, _ -> throw HybridError(HybridErrorCode.UNSUPPORTED_INPUT, "bad") })

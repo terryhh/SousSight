@@ -105,7 +105,7 @@ internal class PluginTest {
     }
 
     @Test
-    fun detachStopsAnAutoCheckInProgress() = runBlocking {
+    fun detachStopsAnAutoCheckInProgress() = runBlocking<Unit> {
         val lookup = CompletableDeferred<Unit>()
         val generated = CopyOnWriteArrayList<AndroidModelOption>()
         val inner = object : HybridEngine {

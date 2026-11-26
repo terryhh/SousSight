@@ -154,9 +154,13 @@ object Protocol {
             (it as? Map<*, *>)?.takeIf { s -> s.keys.all { k -> k is String } }
                 as Map<String, Any?>? ?: bad("generate: jsonSchema must be a map")
         }
-        val maxOutputTokens = (m["maxOutputTokens"] as? Number)?.toInt()
-            ?: bad("generate: maxOutputTokens is required")
-        if (maxOutputTokens <= 0) bad("generate: maxOutputTokens must be positive")
+        // Range-checked before narrowing: a Long such as 2^32 + 1 must not become 1.
+        val maxOutputTokens = when (val raw = m["maxOutputTokens"]) {
+            null -> bad("generate: maxOutputTokens is required")
+            is Int, is Long -> (raw as Number).toLong().takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
+                ?: bad("generate: maxOutputTokens must be between 1 and ${Int.MAX_VALUE}")
+            else -> bad("generate: maxOutputTokens must be an integer")
+        }
         val timeoutMs = (m["timeoutMs"] as? Number)?.toLong()
             ?: bad("generate: timeoutMs is required")
         if (timeoutMs <= 0) bad("generate: timeoutMs must be positive")

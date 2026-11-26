@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 
+import 'attachment_limits.dart';
 import 'hybrid_types.dart';
 import 'inference_ledger.dart';
 import 'inference_policy.dart';
@@ -95,6 +96,8 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       const HybridCapabilities.none(),
     );
     if (op.cancelled) return run.cancelled();
+    // Shared attachment limits, before any route or send (bridge or adapter).
+    if (attachmentProblem(task, caps) != null) return run.result();
     // Settings are read when called, so the input used for the decision is
     // built after the availability wait, never from a snapshot taken before.
     RouteInput input(OnDeviceStatus status) => RouteInput(
@@ -257,9 +260,11 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   bool _adapterApplies(_Failed failed, HybridMode mode, _Run run) {
     if (_adapter == null || mode == HybridMode.onlyOnDevice) return false;
     if (failed.code == HybridErrorCode.unavailable) return true;
+    // A valid image the bridge cannot carry, never an unreadable one.
     return failed.code == HybridErrorCode.unsupportedInput &&
         mode == HybridMode.onlyInCloud &&
-        run.task.parts.any((p) => p is HybridInlineData);
+        run.task.parts.any((p) => p is HybridInlineData) &&
+        imagesReadable(run.task);
   }
 
   /// Gate, ledger, send, record.

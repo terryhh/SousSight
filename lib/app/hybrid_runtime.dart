@@ -92,7 +92,21 @@ class ConfiguredHybridInference implements HybridInference {
 
   @override
   Future<HybridResult> generate(HybridRequest request) async {
-    await _configured;
+    final id = request.requestId;
+    _waiting.add(id);
+    try {
+      await _configured;
+    } finally {
+      _waiting.remove(id);
+    }
+    // A cancel that arrived during the wait reached the backend before it
+    // knew this request; it is honoured here, so nothing is forwarded.
+    if (_cancelledWhileWaiting.remove(id)) {
+      throw const HybridException(
+        HybridErrorCode.cancelled,
+        'Cancelled before it was sent.',
+      );
+    }
     final check = mayForward;
     if (request.mode != HybridMode.onlyOnDevice &&
         check != null &&
@@ -105,8 +119,14 @@ class ConfiguredHybridInference implements HybridInference {
     return inner.generate(request);
   }
 
+  final Set<String> _waiting = {};
+  final Set<String> _cancelledWhileWaiting = {};
+
   @override
-  Future<void> cancel(String requestId) => inner.cancel(requestId);
+  Future<void> cancel(String requestId) {
+    if (_waiting.contains(requestId)) _cancelledWhileWaiting.add(requestId);
+    return inner.cancel(requestId);
+  }
 }
 
 /// Lets the trust UI read the dispatcher's [InferenceLedger].
