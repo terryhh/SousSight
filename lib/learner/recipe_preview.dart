@@ -110,11 +110,6 @@ class RecipePreviewScreen extends StatelessWidget {
               const SizedBox(height: 14),
               _Stats(data: data),
               const SizedBox(height: 14),
-              _AllergenCard(
-                allergens: data.allergens,
-                householdAvailable: this.household != null,
-              ),
-              const SizedBox(height: 14),
               _IngredientsCard(
                 data: data,
                 onSwap: (ingredient) => unawaited(
@@ -126,6 +121,11 @@ class RecipePreviewScreen extends StatelessWidget {
                     confirmedItems: confirmedItems,
                   ),
                 ),
+              ),
+              const SizedBox(height: 14),
+              _AllergenCard(
+                allergens: data.allergens,
+                householdAvailable: this.household != null,
               ),
               if (data.equipment.isNotEmpty) ...[
                 const SizedBox(height: 14),
