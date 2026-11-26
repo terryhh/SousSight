@@ -4,9 +4,80 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
+import '../core/models.dart';
 import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
+import '../genui/cooking_ui_controller.dart' show CookingTimerState;
+
+/// Which household message fits where the cook is (SS-100), and a suggested
+/// "minutes to go" for it. The cook still reviews and edits it; nothing here
+/// sends anything.
+class DinnerDraft {
+  const DinnerDraft(this.kind, {this.minutes});
+  final DinnerKind kind;
+
+  /// Null when the remaining time is unknown: the message leaves it out.
+  final int? minutes;
+}
+
+/// The longest estimate the message template accepts (server: 1-120).
+const kMaxDinnerMinutes = 120;
+
+/// Picks the message from the cook's step: before the final step it is
+/// "Dinner's started" with an estimate; on the final step, or once the
+/// recipe is complete, it is "Dinner is ready!".
+///
+/// The estimate is the time left on the current step plus the timer
+/// durations of the steps after it. The current step's time is its running
+/// step timer's remaining time (zero once it has finished; its own timer
+/// duration if it has not started), and never less than the longest running
+/// timer. Steps with no
+/// duration add nothing; if nothing is known at all, or the total is beyond
+/// [kMaxDinnerMinutes], [DinnerDraft.minutes] is null rather than a guess.
+/// An unknown [currentStepId] is treated as "started", never as "ready".
+DinnerDraft dinnerDraftFor({
+  required List<RecipeStep> steps,
+  required String? currentStepId,
+  required bool complete,
+  required DateTime now,
+  Iterable<CookingTimerState> timers = const [],
+}) {
+  if (complete || steps.isEmpty) return const DinnerDraft(DinnerKind.ready);
+  final index = steps.indexWhere((s) => s.id == currentStepId);
+  if (index == steps.length - 1) return const DinnerDraft(DinnerKind.ready);
+  if (index < 0) return const DinnerDraft(DinnerKind.started);
+
+  final current = steps[index];
+  final stepPrefix = 'step-${current.id}';
+  Duration? stepTimer;
+  var longestRunning = Duration.zero;
+  for (final timer in timers) {
+    final left = timer.remaining(now);
+    // A finished step timer still counts: that step has no time left.
+    if (timer.id == stepPrefix || timer.id.startsWith('$stepPrefix-')) {
+      if (stepTimer == null || left > stepTimer) stepTimer = left;
+    }
+    if (left > longestRunning) longestRunning = left;
+  }
+  // Every known duration is positive, so a known total is at least 1 s.
+  final currentSeconds =
+      stepTimer?.inSeconds ?? _positive(current.timerSeconds) ?? 0;
+  var seconds = currentSeconds > longestRunning.inSeconds
+      ? currentSeconds
+      : longestRunning.inSeconds;
+  for (final step in steps.skip(index + 1)) {
+    seconds += _positive(step.timerSeconds) ?? 0;
+  }
+  if (seconds <= 0) return const DinnerDraft(DinnerKind.started);
+  final minutes = (seconds / 60).ceil();
+  return DinnerDraft(
+    DinnerKind.started,
+    minutes: minutes > kMaxDinnerMinutes ? null : minutes,
+  );
+}
+
+int? _positive(int? seconds) => seconds != null && seconds > 0 ? seconds : null;
 
 /// The latest cook-confirmed attempt of each kind. Reopening the review shows
 /// that attempt's live status instead of minting a stale or duplicate send.
@@ -42,6 +113,7 @@ Future<void> showDinnerReview(
   required DinnerAttemptMemory memory,
   required bool isDemo,
   DinnerMode mode = DinnerMode.real,
+  int? initialMinutes,
 }) => showDialog<void>(
   context: context,
   builder: (_) => DinnerReviewDialog(
@@ -53,6 +125,7 @@ Future<void> showDinnerReview(
     memory: memory,
     isDemo: isDemo,
     mode: mode,
+    initialMinutes: initialMinutes,
   ),
 );
 
@@ -67,6 +140,7 @@ class DinnerReviewDialog extends StatefulWidget {
     required this.memory,
     required this.isDemo,
     this.mode = DinnerMode.real,
+    this.initialMinutes,
   });
   final DinnerKind kind;
   final String sessionId;
@@ -81,6 +155,11 @@ class DinnerReviewDialog extends StatefulWidget {
   /// with a sender and status source from `dinnerSenderFor`/`dinnerStatusFor`.
   final DinnerMode mode;
 
+  /// The suggested "minutes to go" for a started message (see
+  /// [dinnerDraftFor]); the cook can change or clear it. Null starts blank,
+  /// and a blank field leaves the time out of the message.
+  final int? initialMinutes;
+
   @override
   State<DinnerReviewDialog> createState() => _DinnerReviewDialogState();
 }
@@ -92,7 +171,9 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
         ? _attempt.recipient
         : widget.memory.lastRecipient,
   );
-  final _minutes = TextEditingController(text: '30');
+  late final _minutes = TextEditingController(
+    text: widget.initialMinutes?.toString() ?? '',
+  );
   final _cookName = TextEditingController();
   StreamSubscription<DinnerDeliveryStatus?>? _subscription;
   DinnerDeliveryStatus? _status;
@@ -136,6 +217,17 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     super.dispose();
   }
 
+  /// Blank means "unknown": the message leaves the time out.
+  int? get _minutesValue => int.tryParse(_minutes.text.trim());
+
+  bool get _badMinutes {
+    if (!_started) return false;
+    final text = _minutes.text.trim();
+    if (text.isEmpty) return false;
+    final minutes = int.tryParse(text);
+    return minutes == null || minutes < 1 || minutes > kMaxDinnerMinutes;
+  }
+
   DinnerMessageRequest _request({DinnerSimulation? simulate}) =>
       DinnerMessageRequest(
         sessionId: widget.sessionId,
@@ -145,7 +237,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
             : _recipient.text.trim(),
         kind: widget.kind,
         recipeTitle: widget.recipeTitle,
-        minutes: _started ? int.tryParse(_minutes.text.trim()) : null,
+        minutes: _started ? _minutesValue : null,
         cookName: _started ? _cookName.text : null,
         simulate: simulate,
       );
@@ -153,11 +245,11 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
   Future<void> _submit({DinnerSimulation? simulate}) async {
     // Guard the callback too: two taps can arrive before a rebuild.
     if (_locked) return;
-    final minutes = int.tryParse(_minutes.text.trim());
-    final badMinutes =
-        _started && (minutes == null || minutes < 1 || minutes > 120);
+    final badMinutes = _badMinutes;
     if (_simulated && badMinutes) {
-      setState(() => _validationError = 'Enter 1–120 minutes.');
+      setState(
+        () => _validationError = 'Enter 1–120 minutes, or leave it blank.',
+      );
       return;
     }
     if (!_simulated &&
@@ -165,7 +257,8 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
             badMinutes)) {
       setState(
         () => _validationError = _started
-            ? 'Enter a full international phone number and 1–120 minutes.'
+            ? 'Enter a full international phone number, and 1–120 minutes '
+                  'or leave minutes blank.'
             : 'Enter a full international phone number.',
       );
       return;
@@ -291,6 +384,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: 'Minutes until dinner',
+                  helperText: "Leave blank if you're not sure.",
                 ),
               ),
               const SizedBox(height: 12),

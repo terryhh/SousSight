@@ -116,7 +116,15 @@ void main() {
         recipeTitle: 'Chickpea wraps',
         minutes: 25,
       ),
-      'SousSight: Your cook started Chickpea wraps. Dinner in about 25 min.',
+      "SousSight: Dinner's started — about 25 minutes to go. "
+      'Your cook is making Chickpea wraps.',
+    );
+    expect(
+      composeDinnerMessage(
+        kind: DinnerKind.started,
+        recipeTitle: 'Chickpea wraps',
+      ),
+      "SousSight: Dinner's started. Your cook is making Chickpea wraps.",
     );
     expect(
       cleanTemplateText(' <b>Pad\u0007 Thai</b> http://x.co/y ', 60),
@@ -125,6 +133,21 @@ void main() {
     expect(
       cleanTemplateText('Mac & cheese!\nvisit evil.example', 60),
       'Mac & cheese! visit evil example',
+    );
+  });
+
+  test('a started request without an estimate leaves minutes out', () {
+    const request = DinnerMessageRequest(
+      sessionId: 's',
+      notificationId: 'notice-123',
+      recipient: '+14075550100',
+      kind: DinnerKind.started,
+      recipeTitle: 'Soup',
+    );
+    expect(request.toJson().containsKey('minutes'), isFalse);
+    expect(
+      request.preview,
+      "SousSight: Dinner's started. Your cook is making Soup.",
     );
   });
 

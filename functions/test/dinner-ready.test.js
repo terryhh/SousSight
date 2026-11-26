@@ -35,9 +35,15 @@ const mirror = (db, id = 'notice-123') => db.docs.get(`sessions/meal-1/notificat
 test('server templates compose started and ready messages from validated slots only', () => {
   assert.equal(validateDinnerRequest(input(), settings.allowedRecipients).message, READY_TEXT);
   assert.equal(validateDinnerRequest(started(), settings.allowedRecipients).message,
-    'SousSight: Your cook started Chickpea wraps. Dinner in about 25 min.');
+    "SousSight: Dinner's started — about 25 minutes to go. Your cook is making Chickpea wraps.");
   assert.equal(validateDinnerRequest(started({ cookName: 'Terry' }), settings.allowedRecipients).message,
-    'SousSight: Terry started Chickpea wraps. Dinner in about 25 min.');
+    "SousSight: Dinner's started — about 25 minutes to go. Terry is making Chickpea wraps.");
+  // Unknown time: left out, never guessed.
+  for (const minutes of [undefined, null]) {
+    const request = validateDinnerRequest(started({ minutes }), settings.allowedRecipients);
+    assert.equal(request.minutes, null);
+    assert.equal(request.message, "SousSight: Dinner's started. Your cook is making Chickpea wraps.");
+  }
   assert.equal(composeDinnerMessage({ kind: 'ready', recipeTitle: 'Soup' }),
     'SousSight: Dinner is ready! Soup is on the table.');
   // Links, markup and control characters cannot pass through the slots.
@@ -60,7 +66,7 @@ test('rejects free-form messages, bad kinds, minutes and recipients', () => {
   ]) {
     assert.throws(() => validateDinnerRequest(input(change), settings.allowedRecipients), { code: 'invalid-request' }, JSON.stringify(change));
   }
-  for (const minutes of [undefined, 0, 121, 2.5, '20']) {
+  for (const minutes of [0, 121, 2.5, '20', -5]) {
     assert.throws(() => validateDinnerRequest(started({ minutes }), settings.allowedRecipients), { code: 'invalid-request' });
   }
   assert.throws(() => validateDinnerRequest(input({ recipient: '4075550100 ext123' }), settings.allowedRecipients),

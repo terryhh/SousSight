@@ -29,8 +29,10 @@ String composeDinnerMessage({
   final title = cleanTemplateText(recipeTitle, 60);
   if (kind == DinnerKind.started) {
     final name = cleanTemplateText(cookName ?? '', 30);
-    return 'SousSight: ${name.isEmpty ? 'Your cook' : name} started $title. '
-        'Dinner in about $minutes min.';
+    // No estimate (null): the time is left out rather than guessed.
+    final time = minutes == null ? '' : ' — about $minutes minutes to go';
+    return "SousSight: Dinner's started$time. "
+        '${name.isEmpty ? 'Your cook' : name} is making $title.';
   }
   return 'SousSight: Dinner is ready! $title is on the table.';
 }
@@ -74,7 +76,7 @@ class DinnerMessageRequest {
     'recipient': recipient,
     'kind': kind.name,
     'recipeTitle': recipeTitle,
-    if (kind == DinnerKind.started) 'minutes': minutes,
+    if (kind == DinnerKind.started && minutes != null) 'minutes': minutes,
     if (kind == DinnerKind.started && (cookName?.trim().isNotEmpty ?? false))
       'cookName': cookName!.trim(),
     if (simulate != null) 'simulateOutcome': simulate!.name,

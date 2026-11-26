@@ -414,7 +414,8 @@ void main() {
       await tester.pump();
       expect(
         find.text(
-          'SousSight: Terry started ${cook.recipe.title}. Dinner in about 25 min.',
+          "SousSight: Dinner's started — about 25 minutes to go. "
+          'Terry is making ${cook.recipe.title}.',
         ),
         findsOneWidget,
       );

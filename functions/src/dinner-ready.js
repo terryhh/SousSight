@@ -49,7 +49,9 @@ export function cleanTemplateText(value, maxLength) {
 /** Server-owned templates. The client supplies only the slots. */
 export function composeDinnerMessage({ kind, recipeTitle, minutes, cookName }) {
   if (kind === 'started') {
-    return `SousSight: ${cookName || 'Your cook'} started ${recipeTitle}. Dinner in about ${minutes} min.`;
+    // No estimate (null): the time is left out rather than guessed.
+    const time = minutes == null ? '' : ` — about ${minutes} minutes to go`;
+    return `SousSight: Dinner's started${time}. ${cookName || 'Your cook'} is making ${recipeTitle}.`;
   }
   return `SousSight: Dinner is ready! ${recipeTitle} is on the table.`;
 }
@@ -80,8 +82,11 @@ export function validateDinnerRequest(body, allowedRecipients) {
   if (!recipeTitle) throw invalid();
   let minutes = null;
   if (body.kind === 'started') {
-    if (!Number.isInteger(body.minutes) || body.minutes < 1 || body.minutes > 120) throw invalid();
-    minutes = body.minutes;
+    // Optional: the client leaves it out when the remaining time is unknown.
+    if (body.minutes !== undefined && body.minutes !== null) {
+      if (!Number.isInteger(body.minutes) || body.minutes < 1 || body.minutes > 120) throw invalid();
+      minutes = body.minutes;
+    }
   } else if (body.minutes !== undefined && body.minutes !== null) {
     throw invalid();
   }
