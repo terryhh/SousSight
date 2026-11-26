@@ -151,9 +151,29 @@ keys anywhere else are still caught. If a key is rotated, update `.gitleaks.toml
 **Confirm in the console (Terry or the integration owner; nothing here was checked):**
 
 1. **API restrictions on both keys.** The allowlist must include the Firebase AI Logic API
-   (`firebasevertexai.googleapis.com`) and otherwise only the Firebase services the app uses.
-   - Those services are Identity Toolkit (Auth), Firestore, Firebase Installations, App Check,
-     Analytics, and Remote Config if SS-076 lands.
+   (`firebasevertexai.googleapis.com`) and otherwise only APIs from Firebase's
+   [required-APIs table](https://firebase.google.com/docs/projects/api-keys#faq-required-apis-for-restricted-firebase-api-key)
+   for the products this app uses. From that table (read 2026-11-25):
+   - **All products:** `firebase.googleapis.com` (Firebase Management API) and
+     `logging.googleapis.com` (Cloud Logging API).
+   - **Authentication:** `identitytoolkit.googleapis.com` (Identity Toolkit API) **and**
+     `securetoken.googleapis.com` (Token Service API). Without the Token Service API, the first
+     anonymous sign-in can work and then ID-token refresh fails about an hour later.
+   - **App Check:** `firebaseappcheck.googleapis.com` (Firebase App Check API).
+   - **Cloud Firestore:** `firestore.googleapis.com` (Google Cloud Firestore API) and
+     `datastore.googleapis.com` (Cloud Datastore API). `firebaserules.googleapis.com` is needed
+     only for third-party tools or direct REST access.
+   - **Remote Config, if SS-076 lands:** `firebaseremoteconfig.googleapis.com`,
+     `firebaseremoteconfigrealtime.googleapis.com` and `firebaseinstallations.googleapis.com`.
+   - **Firebase AI Logic:** `firebasevertexai.googleapis.com`.
+   - **Analytics** has no row in the table. Check in the console that GA4 events still arrive
+     after the restriction is applied.
+   - The table lists candidates, and Firebase says most of them don't need to be on the
+     allowlist. If unsure, include every row for a product the app uses.
+   - **Before enforcing the restriction,** apply it and check, on the hosted build and in a
+     fresh browser profile, that the cook signs in and a request still succeeds after the ID
+     token has refreshed (more than an hour later, or after `getIdToken(true)`). Then check one
+     AI Logic call, one Firestore write and one App Check token fetch.
    - The allowlist must not include the Generative Language API: "never include the Gemini
      Developer API in the allowlist for a publicly accessible API key"
      ([Firebase API keys](https://firebase.google.com/docs/projects/api-keys);
@@ -173,10 +193,22 @@ keys anywhere else are still caught. If a key is rotated, update `.gitleaks.toml
    it in the console rather than assuming.
    - Cloud Functions check App Check in code (`functions/src/live-token.js`, `dinner-ready.js`).
    - Consider replay protection and authenticated-users mode, which the checklist recommends.
-4. **Native App Check provider.** `lib/data/firebase_services.dart:22-28` activates App Check
-   only with `providerWeb`. Android (and iOS, when added) have no provider, so under enforcement
-   every native AI Logic and Firestore call will fail until SS-073 adds Play Integrity and
-   App Attest / DeviceCheck.
+4. **Native App Check activation.** In `firebase_app_check` 0.5.1 (the version in
+   `pubspec.lock`), `activate()` defaults `providerAndroid` to `AndroidPlayIntegrityProvider()`
+   and `providerApple` to `AppleDeviceCheckProvider()`, and forwards both even when only
+   `providerWeb` is passed (`firebase_app_check-0.5.1/lib/src/firebase_app_check.dart:88-100`).
+   So passing only a web provider is not the problem.
+   - **The defect:** `initFirebase()` (`lib/data/firebase_services.dart:17-29`) calls
+     `activate()` only when the web-only defines `APPCHECK_DEBUG_TOKEN` or `RECAPTCHA_SITE_KEY`
+     are set. A native build without them never activates App Check, so under enforcement its
+     AI Logic and Firestore calls would be rejected. A native build with
+     `APPCHECK_DEBUG_TOKEN` set gets the default Play Integrity / DeviceCheck provider, not a
+     debug provider.
+   - **For SS-073:** call `activate()` on native regardless of those web defines, with
+     explicit native providers. Add native debug providers for development builds only.
+   - **Still unverified:** registering the Android app (Play Integrity, signing SHA-256) and the
+     iOS app (DeviceCheck / App Attest) for App Check in the console, and attestation on a real
+     device. Gate G4 / G5 covers this.
 5. **App Check debug tokens.** None are in the repository: `APPCHECK_DEBUG_TOKEN` is read from
    an ignored `dart_defines.local.json`, and no UUID-shaped token appears in `lib/` or `web/`.
    Before judging, revoke any debug tokens registered in the console, and confirm the deployed
