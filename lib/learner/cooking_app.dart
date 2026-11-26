@@ -22,6 +22,8 @@ import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../data/offline_ops_banner.dart';
 import '../genui/cooking_ui.dart';
+import '../kitchen/kitchen_mode.dart';
+import '../kitchen/kitchen_text.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
 import '../live/live_controller.dart';
@@ -430,11 +432,17 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   /// Coach Lite read-aloud; only where Coach Lite exists (SS-077).
   CoachLiteSpeaker? _speaker;
 
+  late final KitchenMode _kitchen;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     cook = widget.cook;
+    // Screen stays on while this session is cooking; Big text (SS-107).
+    _kitchen = KitchenModeScope.createFor(context)
+      ..followSession(cook, () => cook.session != null && !cook.complete);
+    unawaited(_kitchen.load());
     if (cook.coachLite != null) {
       final privacy = widget.hybrid?.privacy;
       _speaker = CoachLiteSpeaker(
@@ -506,6 +514,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _kitchen.dispose();
     _speaker?.dispose();
     _message.dispose();
     unawaited(_fakeDinner.dispose());
@@ -570,7 +579,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                               final left = _cameraColumn(
                                 includeConversation: !narrow,
                               );
-                              final right = _workspace();
+                              final right = KitchenBigText(
+                                mode: _kitchen,
+                                child: _workspace(),
+                              );
                               if (narrow) {
                                 return Column(
                                   children: [
@@ -1130,6 +1142,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 21),
             ),
           ),
+          KitchenBigTextToggle(mode: _kitchen),
+          const SizedBox(width: 12),
           Text(
             '${cook.stepIndex + 1} / ${cook.recipe.steps.length}',
             style: const TextStyle(fontWeight: FontWeight.w600),
