@@ -218,6 +218,295 @@ class HowItWorksSheet extends StatelessWidget {
   }
 }
 
+/// The dispatcher features the "Where the AI runs" section lists, with a
+/// long label (feature-by-feature rows) and a short one (the two columns).
+const _routedFeatures = [
+  ('pantry_scan', 'Pantry scan (typed list, photo)', 'Pantry scan'),
+  ('pantry_voice', 'Pantry voice note', 'Pantry voice note'),
+  ('recipe_draft', 'Recipe draft', 'Recipe draft'),
+  ('local_watch', 'Watch my food', 'Watch my food'),
+  (
+    'local_watch_cloud_check',
+    'Watch: "Ask the cloud about this photo"',
+    'Watch: one photo you choose',
+  ),
+  ('coach_lite', 'Coach Lite (typed questions)', 'Coach Lite'),
+  ('label_check', 'Label check', 'Label check'),
+];
+
+/// One entry in a column of the two-column view.
+typedef RoutingEntry = ({String feature, String note});
+
+/// The two-column view of "Where the AI runs": what can run on this device,
+/// what can go to Google cloud, and what is off in this build. Generated
+/// from the same routing table as [hybridRoutingRows]; a feature appears in
+/// the cloud column only if this build's routes let it reach the cloud.
+({List<RoutingEntry> onDevice, List<RoutingEntry> cloud, List<String> off})
+hybridRoutingColumns({
+  required CloudRoutes cloudRoutes,
+  required LiveBackend liveBackend,
+}) {
+  final cloudOk = cloudRoutes.allows(CloudRoute.hybridFallback);
+  final onDevice = <RoutingEntry>[];
+  final cloud = <RoutingEntry>[];
+  final off = <String>[];
+  for (final (feature, _, label) in _routedFeatures) {
+    final route = featureRouteFor(feature);
+    final ask = switch (route.consent) {
+      UploadConsent.always => ' You allow each one.',
+      UploadConsent.media => ' Photos only after you allow them.',
+      UploadConsent.none => ' Labelled before you send.',
+    };
+    switch (route.defaultMode) {
+      case HybridMode.onlyInCloud || HybridMode.preferInCloud:
+        if (cloudOk) {
+          cloud.add((feature: label, note: 'Always in the cloud.$ask'));
+        } else {
+          off.add(label);
+        }
+      case HybridMode.onlyOnDevice when !route.cloudWhenLocalCannot:
+        onDevice.add((feature: label, note: 'Always here.'));
+        if (route.semanticRetry && cloudOk) {
+          cloud.add((
+            feature: label,
+            note: 'Once, only if the on-device answer fails its checks.',
+          ));
+        }
+      case HybridMode.onlyOnDevice:
+        onDevice.add((
+          feature: label,
+          note: cloudOk ? 'First choice.' : 'Always here.',
+        ));
+        if (cloudOk) {
+          cloud.add((
+            feature: label,
+            note: "Only if this device can't run it.$ask",
+          ));
+        }
+      case HybridMode.preferOnDevice:
+        onDevice.add((
+          feature: label,
+          note: cloudOk ? 'When the model is ready.' : 'Always here.',
+        ));
+        if (cloudOk) {
+          cloud.add((
+            feature: label,
+            note: "When the on-device model isn't ready.$ask",
+          ));
+        }
+    }
+  }
+  final liveOn = switch (liveBackend) {
+    LiveBackend.aiLogic => cloudRoutes.allows(CloudRoute.live),
+    LiveBackend.ephemeral => true,
+    LiveBackend.none => false,
+  };
+  if (liveOn) {
+    cloud.add((
+      feature: 'Live coach',
+      note: 'Camera and microphone stream only while it is on.',
+    ));
+  } else {
+    off.add('Live coach');
+  }
+  if (cloudRoutes.allows(CloudRoute.research)) {
+    cloud.add((
+      feature: 'Grounded research',
+      note: 'Google Search, for factual questions.',
+    ));
+  } else {
+    off.add('Grounded research');
+  }
+  cloud.add((
+    feature: 'Nearby stores',
+    note: 'Google Maps, only when you ask. Sends approximate location.',
+  ));
+  return (onDevice: onDevice, cloud: cloud, off: off);
+}
+
+/// On-device and cloud side by side, generated from the routing table.
+class HybridRoutingColumns extends StatelessWidget {
+  const HybridRoutingColumns({
+    super.key,
+    required this.cloudRoutes,
+    required this.liveBackend,
+  });
+
+  final CloudRoutes cloudRoutes;
+  final LiveBackend liveBackend;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final columns = hybridRoutingColumns(
+      cloudRoutes: cloudRoutes,
+      liveBackend: liveBackend,
+    );
+    final local = _RoutingColumn(
+      key: const ValueKey('routing-column-device'),
+      icon: Icons.memory,
+      title: 'On this device',
+      subtitle: 'Nothing leaves while it runs here',
+      background: const Color(0xffe4ebdf),
+      accent: const Color(0xff285b43),
+      foreground: const Color(0xff1c4231),
+      entries: columns.onDevice,
+    );
+    final remote = _RoutingColumn(
+      key: const ValueKey('routing-column-cloud'),
+      icon: Icons.cloud,
+      title: 'Google cloud',
+      subtitle: 'Each cloud answer is labelled',
+      background: const Color(0xffe3ecf5),
+      accent: const Color(0xff3c6a92),
+      foreground: const Color(0xff1f3d57),
+      entries: columns.cloud,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth >= 330
+              ? IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: local),
+                      const SizedBox(width: 10),
+                      Expanded(child: remote),
+                    ],
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [local, const SizedBox(height: 10), remote],
+                ),
+        ),
+        if (columns.off.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Row(
+            key: const ValueKey('routing-off'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.block,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Off in this build: ${columns.off.join(', ')}.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RoutingColumn extends StatelessWidget {
+  const _RoutingColumn({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.background,
+    required this.accent,
+    required this.foreground,
+    required this.entries,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color background;
+  final Color accent;
+  final Color foreground;
+  final List<RoutingEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                ExcludeSemantics(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Icon(icon, size: 16, color: Colors.white),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: foreground,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(color: foreground),
+            ),
+            const SizedBox(height: 8),
+            for (final entry in entries)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.feature,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: foreground,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      entry.note,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: foreground,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// One row of the "Where the AI runs" section.
 typedef RoutingRow = ({String feature, String where});
 
@@ -264,17 +553,8 @@ List<RoutingRow> hybridRoutingRows({
     }
   }
 
-  const shown = [
-    ('pantry_scan', 'Pantry scan (typed list, photo)'),
-    ('pantry_voice', 'Pantry voice note'),
-    ('recipe_draft', 'Recipe draft'),
-    ('local_watch', 'Watch my food'),
-    ('local_watch_cloud_check', 'Watch: "Ask the cloud about this photo"'),
-    ('coach_lite', 'Coach Lite (typed questions)'),
-    ('label_check', 'Label check'),
-  ];
   return [
-    for (final (feature, label) in shown)
+    for (final (feature, label, _) in _routedFeatures)
       (feature: label, where: describe(featureRouteFor(feature))),
     (
       feature: 'Live coach (voice and camera)',
@@ -336,7 +616,22 @@ class HybridRoutingSection extends StatelessWidget {
                     'request in this session. Your "keep on this device" '
                     'switches in On-device AI override everything below.',
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
+        HybridRoutingColumns(
+          cloudRoutes: cloudRoutes,
+          liveBackend: liveBackend,
+        ),
+        const SizedBox(height: 18),
+        Semantics(
+          header: true,
+          child: Text(
+            'Feature by feature',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         for (final row in rows)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
