@@ -271,6 +271,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       if (!_routes.allows(CloudRoute.hybridFallback)) {
         return RouteReason.cloudNotApproved;
       }
+      // Connectivity too: the device may have gone offline while the consent
+      // prompt was open. An offline refusal sends nothing.
+      if (!_isOnline()) return RouteReason.offline;
       return null;
     }
 
@@ -420,7 +423,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       kinds: run.kinds,
       transferPermitted: false,
       provenance: Provenance.unknown,
-      error: HybridErrorCode.blocked,
+      error: reason == RouteReason.offline
+          ? HybridErrorCode.network
+          : HybridErrorCode.blocked,
     );
     _ledger.record(leg);
     run.legs.add(leg);

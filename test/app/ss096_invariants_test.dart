@@ -396,6 +396,40 @@ void main() {
       });
     });
 
+    // Pre-existing (Codex): cancelling while startup is still running used
+    // to reach a backend with no such request, and generate still ran.
+    test('a request cancelled while waiting for configure is never '
+        'forwarded', () async {
+      final inner = _SlowStart();
+      final configured = ConfiguredHybridInference(
+        inner,
+        const HybridConfig(cloudModel: 'm'),
+      );
+      final pending = configured.generate(_request(const Duration(seconds: 5)));
+      await configured.cancel('r1');
+      inner.release();
+      await expectLater(
+        pending,
+        throwsA(
+          isA<HybridException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.cancelled,
+          ),
+        ),
+      );
+      expect(inner.requests, isEmpty);
+      // The cancellation was spent: a later request is not affected.
+      inner.enqueueText('ok');
+      final later = HybridRequest(
+        requestId: 'r2',
+        mode: HybridMode.onlyOnDevice,
+        task: _request(const Duration(seconds: 5)).task,
+      );
+      expect((await configured.generate(later)).text, 'ok');
+      expect(inner.requests.single.requestId, 'r2');
+    });
+
     // Codex's repro: a 100ms task, configure finishing at 90ms and a backend
     // that needs 90ms. Before the fix the backend was handed the full 100ms
     // and the call could succeed at 180ms.

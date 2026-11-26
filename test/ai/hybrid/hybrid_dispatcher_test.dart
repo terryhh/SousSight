@@ -76,6 +76,7 @@ class _Harness {
       ledger: ledger,
       cloudFallback: adapter,
       remoteRouting: () => remote,
+      isOnline: () => online,
       newId: () => 'id-${++seq}',
     );
   }
@@ -84,6 +85,7 @@ class _Harness {
   final _Adapter? adapter;
   final privacy = _Privacy();
   final consent = _Consent();
+  var online = true;
   final ledger = InferenceLedger(
     sessionId: 's1',
     clock: () => DateTime.utc(2026, 11, 25),
@@ -478,6 +480,41 @@ void main() {
     expect((await result).blocked, RouteReason.localOnlySetting);
     expect(h.bridge.requests, isEmpty);
   });
+
+  // Pre-existing (Codex): the post-consent check now rereads connectivity.
+  test('going offline during the consent prompt blocks the send', () async {
+    final h = _Harness();
+    final prompt = Completer<ConsentGrant?>();
+    h.consent.answer = (_) => prompt.future;
+    final result = h.run(_photo('local_watch_cloud_check'));
+    await pumpEventQueue();
+    h.online = false;
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
+    final r = await result;
+    expect(r.blocked, RouteReason.offline);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.ledger.legs.where((l) => l.transferPermitted), isEmpty);
+  });
+
+  test(
+    'an adapter retry refused offline is recorded unsent (network)',
+    () async {
+      final h = _Harness();
+      // The bridge leg fails "unavailable"; the device goes offline before the
+      // adapter retry, which is then refused and recorded as not sent.
+      h.bridge.script.add((HybridRequest r) {
+        h.online = false;
+        return const HybridException(HybridErrorCode.unavailable, 'no bridge');
+      });
+      final r = await h.run(_photo('local_watch_cloud_check'));
+      expect(r.ok, isFalse);
+      expect(h.adapter!.requests, isEmpty);
+      final refused = h.ledger.legs.last;
+      expect(refused.transferPermitted, isFalse);
+      expect(refused.error, HybridErrorCode.network);
+    },
+  );
 
   test('remote routing cannot widen local_watch to preferOnDevice', () async {
     final h = _Harness(

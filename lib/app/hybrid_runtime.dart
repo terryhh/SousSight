@@ -132,9 +132,23 @@ class ConfiguredHybridInference implements HybridInference {
     final clock = _stopwatch()..start();
     var expired = false;
     var sent = false;
+    final id = request.requestId;
+    _waiting.add(id);
 
     Future<HybridResult> run() async {
-      await _configured;
+      try {
+        await _configured;
+      } finally {
+        _waiting.remove(id);
+      }
+      // Cancelled while waiting for configure: the backend never had this
+      // request, so it is never forwarded.
+      if (_cancelledWhileWaiting.remove(id)) {
+        throw const HybridException(
+          HybridErrorCode.cancelled,
+          'Cancelled before it was sent.',
+        );
+      }
       // The deadline may have passed while configure was running; a request
       // that timed out during startup is never forwarded.
       if (expired) throw _expired;
@@ -169,6 +183,8 @@ class ConfiguredHybridInference implements HybridInference {
       budget,
       onTimeout: () {
         expired = true;
+        _waiting.remove(id);
+        _cancelledWhileWaiting.remove(id);
         // A backend that overruns is stopped; its late answer or error is
         // dropped by the abandoned future.
         if (sent) {
@@ -201,8 +217,16 @@ class ConfiguredHybridInference implements HybridInference {
     'Hybrid inference ran past the request deadline.',
   );
 
+  /// Requests waiting for the startup configure, and those of them that were
+  /// cancelled meanwhile.
+  final Set<String> _waiting = {};
+  final Set<String> _cancelledWhileWaiting = {};
+
   @override
-  Future<void> cancel(String requestId) => inner.cancel(requestId);
+  Future<void> cancel(String requestId) {
+    if (_waiting.contains(requestId)) _cancelledWhileWaiting.add(requestId);
+    return inner.cancel(requestId);
+  }
 }
 
 /// Lets the trust UI read the dispatcher's [InferenceLedger].

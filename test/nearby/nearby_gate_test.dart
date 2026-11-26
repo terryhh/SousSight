@@ -11,6 +11,7 @@ import 'package:firebase_ai/firebase_ai.dart';
 // SDK 5.1 exports the getters but not this constructor; fixtures only.
 // ignore: implementation_imports
 import 'package:firebase_ai/src/api.dart' show GroundingMetadata;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
@@ -219,6 +220,38 @@ void main() {
     expect(entry.leg.error, HybridErrorCode.blocked);
     expect(entry.reportedSent, isFalse);
     expect(entry.uploadUnknown, isFalse);
+  });
+
+  test(
+    'a failed send logs a category only, never the provider message',
+    () async {
+      final h = _Harness()
+        ..reply = () => Future.error(
+          const FormatException('echo: 32801 black beans AIzaSecretSecret'),
+        );
+      final logs = <String>[];
+      final previous = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) => logs.add('$message');
+      addTearDown(() => debugPrint = previous);
+      await expectLater(
+        h.client.find(_area),
+        _fails(NearbyFailure.unavailable),
+      );
+      debugPrint = previous;
+      expect(logs.single, contains('malformed-response'));
+      expect(logs.single, isNot(contains('32801')));
+      expect(logs.single, isNot(contains('black beans')));
+      expect(logs.single, isNot(contains('AIza')));
+    },
+  );
+
+  test('nearbyErrorCategory maps errors to fixed labels', () {
+    expect(nearbyErrorCategory(StateError('x 32801')), 'other');
+    expect(nearbyErrorCategory(TimeoutException('t')), 'timeout');
+    expect(
+      nearbyErrorCategory(const FormatException('f')),
+      'malformed-response',
+    );
   });
 
   test('an invalid query is refused locally and recorded unsent', () async {

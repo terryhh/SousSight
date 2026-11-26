@@ -476,17 +476,12 @@ class GeminiNearbyClient implements GatedNearbyClient {
       );
     } catch (error) {
       send.failed(HybridErrorCode.network);
-      // Console-only diagnostics; keys/tokens redacted, never shown to cooks.
-      final detail = '$error'
-          .replaceAll(RegExp(r'AIza[0-9A-Za-z_-]{20,}'), '[key]')
-          .replaceAll(
-            RegExp(r'ey[A-Za-z0-9_-]{20,}\.[A-Za-z0-9._-]+'),
-            '[token]',
-          );
+      // Console-only diagnostics: an error category only. The provider's
+      // message can echo the typed area, the grocery list or a credential,
+      // so it is never logged.
       debugPrint(
-        'Nearby request failed (${error.runtimeType}, '
-        'location=${cleaned.coordinates != null}): '
-        '${detail.length > 400 ? detail.substring(0, 400) : detail}',
+        'Nearby request failed (${nearbyErrorCategory(error)}, '
+        'location=${cleaned.coordinates != null})',
       );
       throw const NearbyException(
         NearbyFailure.unavailable,
@@ -499,6 +494,21 @@ class GeminiNearbyClient implements GatedNearbyClient {
     return parseNearbyResponse(response);
   }
 }
+
+/// A fixed category for a failed nearby request, safe to log: never the
+/// provider's message, which can echo the cook's area, items or a key.
+String nearbyErrorCategory(Object error) => switch (error) {
+  InvalidApiKey() => 'invalid-api-key',
+  UnsupportedUserLocation() => 'unsupported-location',
+  ServiceApiNotEnabled() => 'service-not-enabled',
+  QuotaExceeded() => 'quota-exceeded',
+  ServerException() => 'server-error',
+  FirebaseAIException() => 'firebase-ai-error',
+  FirebaseAISdkException() => 'sdk-error',
+  TimeoutException() => 'timeout',
+  FormatException() => 'malformed-response',
+  _ => 'other',
+};
 
 /// A query refused before anything was sent.
 class _Invalid implements Exception {
