@@ -145,12 +145,47 @@ class WatchVerdict {
   }
 }
 
+// Words may be separated by spaces or hyphens ("cooked-through").
+const _sp = r'[\s-]+';
+const _middle = '(inside|in${_sp}the$_sp(middle|centre|center)|throughout)';
+
+/// Claims a photo cannot support: internal doneness, temperature, safety,
+/// freshness and allergens. Matching is deliberately broad: a false match
+/// only swaps the sentence for a neutral one, a miss shows the cook a claim
+/// the camera cannot make.
 final _unsupportedClaim = RegExp(
-  r'safe to eat|food[- ]safe|\bunsafe\b|\bsafe\b|temperature|°|\bdegrees\b|'
-  r'cooked through|fully cooked|undercooked|raw (inside|in the middle)|'
-  r'done inside|spoil|gone off|allergen',
+  [
+    // Safety.
+    r'\bsafe(ly)?\b', r'\bunsafe\b', 'food${_sp}safe',
+    '\\b(ready|okay|ok|fine|good|fit)${_sp}to$_sp(eat|serve)\\b',
+    r'\b(salmonella|bacteria|pathogens?|food\s+poisoning)\b',
+    // Temperature, with or without a number or unit.
+    r'temperature', r'\btemps?\b', r'thermometer', r'[°º]',
+    r'\b(degrees?|deg|fahrenheit|celsius)\b', r'\b\d+\s*[fc]\b',
+    // Internal doneness.
+    'cooked$_sp((all${_sp}the${_sp}way|right|fully|thoroughly|completely|'
+        'properly|perfectly)$_sp)?(through|inside)',
+    'cooked$_sp(all${_sp}the${_sp}way|fully|thoroughly|completely|'
+        'properly|perfectly)',
+    '\\b(fully|properly|thoroughly|completely|totally|perfectly)$_sp'
+        '(cooked|done)\\b',
+    '(all${_sp}the${_sp}way|right)${_sp}through',
+    r'\bunder[\s-]*(cooked|done)\b', r'\bdoneness\b',
+    '\\bdone$_sp$_middle',
+    '\\b(is|are|it\'s|looks?|seems?)$_sp((fully|completely|all)$_sp)?'
+        'done\\b',
+    '\\b(raw|pink|bloody|red|cooked|opaque|set)$_sp$_middle',
+    r'no\s+longer\s+pink', r'\binternal(ly)?\b', r'\binterior\b',
+    r'juices?\s+(run|running|are|is)\s+clear', r'medium[\s-]+rare',
+    // Freshness and allergens.
+    r'spoil', r'gone\s+off', r'allergen',
+  ].join('|'),
   caseSensitive: false,
 );
+
+/// True when [text] claims something vision cannot establish.
+bool claimsUnsupported(String text) =>
+    _unsupportedClaim.hasMatch(text.replaceAll('\u2019', "'"));
 
 /// Parses the model's JSON. Anything malformed becomes `unsure` so the cook
 /// is asked for a better view rather than shown a guess. Never throws.
@@ -196,7 +231,7 @@ parseWatchJson(String text) {
       ? parsedDirection
       : WatchDirection.none;
   var redacted = false;
-  if (_unsupportedClaim.hasMatch(seen)) {
+  if (claimsUnsupported(seen)) {
     seen = 'I can describe how it looks, not how it is inside.';
     redacted = true;
   }
