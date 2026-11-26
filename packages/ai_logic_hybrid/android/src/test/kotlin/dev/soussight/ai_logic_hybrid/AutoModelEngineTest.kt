@@ -431,6 +431,17 @@ internal class AutoModelEngineTest {
     }
 
     @Test
+    fun onceStableIsFinalPrepareLooksNothingUp() = runBlocking<Unit> {
+        val inner = FakeEngine(status = { runBlocking { awaitCancellation() } })
+        val e = engine(inner, selectionTimeoutMs = 50).selected()
+        assertEquals(AndroidModelOption.STABLE, e.decision)
+        val lookups = inner.availabilityCalls.size
+        assertEquals(listOf(0.5, 1.0), withTimeout(1_000) { e.prepare(auto, false).toList() })
+        assertEquals(listOf(AndroidModelOption.STABLE), inner.prepareCalls)
+        assertEquals(lookups, inner.availabilityCalls.size, "no status lookup before stable's setup")
+    }
+
+    @Test
     fun aPreviewStatusCheckThatThrowsRatchets() = runBlocking<Unit> {
         val broken = AtomicBoolean(false)
         val inner = FakeEngine(status = {

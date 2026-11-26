@@ -17,7 +17,7 @@ import 'package:image/image.dart' as img;
 
 import 'ai/hybrid/hybrid_types.dart';
 import 'ai/hybrid/payload_digest.dart';
-import 'app/hybrid_runtime.dart' show kAndroidModel, kHybridCloudModel;
+import 'app/hybrid_runtime.dart' show kHybridCloudModel;
 import 'core/models.dart';
 import 'data/firebase_services.dart';
 import 'live/live_media_factory.dart';
@@ -144,12 +144,7 @@ class _GateHarnessState extends State<GateHarness> {
   Future<void> _start() async {
     try {
       await initFirebase(); // the app's own Firebase + App Check setup
-      await _inference.configure(
-        HybridConfig(
-          cloudModel: kHybridCloudModel,
-          androidModel: kAndroidModel,
-        ),
-      );
+      await _inference.configure(HybridConfig(cloudModel: kHybridCloudModel));
       _ready = true;
       _status = 'Ready. App Check: $_appCheckMode.';
     } catch (e) {

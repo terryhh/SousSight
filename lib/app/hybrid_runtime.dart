@@ -92,13 +92,19 @@ class ConfiguredHybridInference implements HybridInference {
 
   @override
   Future<HybridResult> generate(HybridRequest request) async {
+    // The task's timeout covers the configure wait too: the clock starts
+    // here and only what is left is forwarded.
+    final budget = request.task.timeout;
+    final clock = Stopwatch()..start();
     // One marker per call: a cancel during the wait reaches the backend
-    // before it knows this request, so it is honoured here for every call
-    // waiting under that id, and nothing is forwarded.
+    // before it knows this request, so it ends every call waiting under that
+    // id at once, and nothing is forwarded.
     final waiter = _Waiter(request.requestId);
     _waiting.add(waiter);
     try {
-      await _configured;
+      await Future.any([_configured, waiter.done.future]).timeout(budget);
+    } on TimeoutException {
+      throw _timedOut;
     } finally {
       _waiting.remove(waiter);
     }
@@ -106,6 +112,24 @@ class ConfiguredHybridInference implements HybridInference {
       throw const HybridException(
         HybridErrorCode.cancelled,
         'Cancelled before it was sent.',
+      );
+    }
+    final remaining = budget - clock.elapsed;
+    // The bridge carries whole milliseconds; under 1 ms nothing can run.
+    if (remaining.inMilliseconds <= 0) throw _timedOut;
+    if (remaining < budget) {
+      final t = request.task;
+      request = HybridRequest(
+        requestId: request.requestId,
+        mode: request.mode,
+        task: HybridTask(
+          feature: t.feature,
+          systemInstruction: t.systemInstruction,
+          parts: t.parts,
+          jsonSchema: t.jsonSchema,
+          maxOutputTokens: t.maxOutputTokens,
+          timeout: remaining,
+        ),
       );
     }
     final check = mayForward;
@@ -122,10 +146,15 @@ class ConfiguredHybridInference implements HybridInference {
 
   final List<_Waiter> _waiting = [];
 
+  static const _timedOut = HybridException(
+    HybridErrorCode.timeout,
+    'Timed out before it was sent.',
+  );
+
   @override
   Future<void> cancel(String requestId) {
     for (final waiter in _waiting) {
-      if (waiter.requestId == requestId) waiter.cancelled = true;
+      if (waiter.requestId == requestId) waiter.cancel();
     }
     return inner.cancel(requestId);
   }
@@ -135,7 +164,11 @@ class ConfiguredHybridInference implements HybridInference {
 class _Waiter {
   _Waiter(this.requestId);
   final String requestId;
-  bool cancelled = false;
+  final done = Completer<void>();
+  bool get cancelled => done.isCompleted;
+  void cancel() {
+    if (!done.isCompleted) done.complete();
+  }
 }
 
 /// Lets the trust UI read the dispatcher's [InferenceLedger].

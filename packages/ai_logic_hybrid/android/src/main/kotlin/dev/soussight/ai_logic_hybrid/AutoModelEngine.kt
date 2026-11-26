@@ -99,6 +99,9 @@ class AutoModelEngine(
     override fun prepare(config: HybridConfig, withImage: Boolean): Flow<Double?> =
         if (config.androidModel != AndroidModelOption.AUTO) {
             inner.prepare(config, withImage)
+        } else if (selected == AndroidModelOption.STABLE) {
+            // Final: nothing to look up first.
+            inner.prepare(config.copy(androidModel = AndroidModelOption.STABLE), withImage)
         } else {
             flow {
                 // A selected preview is ready or gets demoted here; preview is never downloaded.
