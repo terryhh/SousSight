@@ -252,13 +252,11 @@ void main() {
 
     test('the prompt sets thermometer targets and the dried-bean rule', () {
       for (final text in [
-        // SS-099: the prompt now steers drafts away from denied words and
-        // gives the one allowed thermometer sentence with each target.
-        'Cook until a food thermometer reads 165°F.',
-        'poultry 165°F',
-        'ground meat 160°F',
-        'fish 145°F',
-        'egg dishes 160°F',
+        // SS-099: drafts may not state temperatures at all; the app's own
+        // thermometer notes (tested below) carry the targets.
+        'the app adds its own food-safety and thermometer notes',
+        'Never give a temperature',
+        'Never judge meat, poultry, fish or eggs by colour.',
         'Dried beans: soak, drain, then boil in new water.',
       ]) {
         expect(

@@ -1,6 +1,8 @@
 // SS-099: household allergens survive a reload. Uses shared_preferences'
 // in-memory mock; no device storage is touched.
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:soussight/learner/recipe_preview_household.dart';
@@ -42,17 +44,41 @@ void main() {
     },
   );
 
-  test('a choice made before the saved list loads wins and is saved', () async {
+  test('choices made before the saved list loads merge into it', () async {
     SharedPreferences.setMockInitialValues({
-      DeviceHouseholdAllergens.storageKey: ['milk'],
+      DeviceHouseholdAllergens.storageKey: ['milk', 'egg'],
     });
-    final household = DeviceHouseholdAllergens()..setAllergen('peanut', true);
+    final household = DeviceHouseholdAllergens()
+      ..setAllergen('peanut', true)
+      ..setAllergen('egg', false);
     await household.loaded;
     await Future<void>.delayed(Duration.zero);
-    expect(household.allergens, {'peanut'});
+    expect(household.allergens, {'milk', 'peanut'});
     final again = DeviceHouseholdAllergens();
     await again.loaded;
-    expect(again.allergens, {'peanut'});
+    expect(again.allergens, {'milk', 'peanut'});
+  });
+
+  test('Android excludes app preferences from cloud backup and transfer', () {
+    final manifest = File('android/app/src/main/AndroidManifest.xml')
+        .readAsStringSync();
+    expect(manifest, contains('android:fullBackupContent="@xml/backup_rules"'));
+    expect(
+      manifest,
+      contains('android:dataExtractionRules="@xml/data_extraction_rules"'),
+    );
+    const exclude =
+        '<exclude domain="sharedpref" path="FlutterSharedPreferences.xml"/>';
+    expect(
+      File('android/app/src/main/res/xml/backup_rules.xml').readAsStringSync(),
+      contains(exclude),
+    );
+    final extraction = File(
+      'android/app/src/main/res/xml/data_extraction_rules.xml',
+    ).readAsStringSync();
+    expect(RegExp(RegExp.escape(exclude)).allMatches(extraction), hasLength(2));
+    expect(extraction, contains('<cloud-backup>'));
+    expect(extraction, contains('<device-transfer>'));
   });
 
   test('unavailable storage keeps working in memory', () async {

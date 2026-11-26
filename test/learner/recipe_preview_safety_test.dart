@@ -49,7 +49,7 @@ Recipe _build(Map<String, dynamic> json) => buildDraftRecipe(
 );
 
 void main() {
-  group('draftTextCertifies (allowlist)', () {
+  group('draftTextCertifies (allowlist, no exceptions)', () {
     for (final claim in [
       'The camera can confirm the chicken is fully cooked.',
       'The camera  confirms the chicken has reached 165°F.',
@@ -72,6 +72,15 @@ void main() {
       'Cook until a thermometer confirms the chicken is done, regardless of '
           'whether it looks pink.',
       'Cook until a food thermometer reads 165°F and it looks white.',
+      // No thermometer exception: every temperature is the app's to give.
+      'Cook until a food thermometer reads 165°F.',
+      'Cook until a food thermometer reads 100°F.',
+      'Cook until a thermometer reads 165°F (74°C).',
+      'Heat the oven to 400F (200C).',
+      'The photo shows the chicken is 165F inside.',
+      'Made without peanuts.',
+      'Serve once the chicken turns white.',
+      'Cook the egg until it looks firm.',
       'Use fresh basil.',
       'Cooked chicken',
       'Heat to 180 degrees.',
@@ -80,12 +89,12 @@ void main() {
       test('rejects "$claim"', () => expect(draftTextCertifies(claim), isTrue));
     }
     for (final guidance in [
-      'Cook until a food thermometer reads 165°F.',
-      'Cook until a thermometer reads 165°F (74°C).',
-      'Brown the chicken.  Cook until a food thermometer reads 165 °F.',
       'Toast the bread for about 3 minutes.',
       'Cook until golden brown on both sides.',
-      'Heat the oven to 400F (200C).',
+      'Toast until the bread turns golden.',
+      'Heat the oven until hot.',
+      'Squeeze the lime juice over the beans.',
+      'Lime juice',
       'Check the label for sesame.',
     ]) {
       test(
@@ -141,7 +150,7 @@ void main() {
       );
     });
 
-    test('a safe draft passes unchanged, thermometer sentence included', () {
+    test('a safe draft passes unchanged; any temperature rejects it', () {
       final json = _draftJson(
         bakeInstruction: 'Toast until golden. Do not leave it unattended.',
       );
@@ -152,22 +161,82 @@ void main() {
         'Toast until golden. Do not leave it unattended.',
       );
       expect(recipe.summary, 'Warm toast with a crunchy topping.');
-      final thermo = _build(
-        _draftJson(
-          bakeInstruction:
-              'Toast the bread. Cook until a food thermometer reads 165°F.',
-        ),
-      );
       expect(
-        thermo.steps.first.instruction,
-        'Toast the bread. Cook until a food thermometer reads 165°F.',
+        () => _build(
+          _draftJson(
+            bakeInstruction:
+                'Toast the bread. Cook until a food thermometer reads 100°F.',
+          ),
+        ),
+        throwsFormatException,
       );
     });
 
-    test('the builder-to-preview path: "Contains no peanuts" never shows', () {
+    test('the builder-to-preview path: unsafe summaries never show', () {
+      for (final summary in [
+        'Contains no peanuts.',
+        'The photo shows the chicken is 165F inside. Made without peanuts.',
+        'Serve once the chicken turns white.',
+      ]) {
+        expect(
+          () => _build(_draftJson(summary: summary)),
+          throwsFormatException,
+          reason: summary,
+        );
+      }
+    });
+
+    Map<String, dynamic> beans(String source) => {
+      'title': 'Lime beans',
+      'summary': 'Beans with lime.',
+      'ingredients': [
+        {
+          'name': 'Lime juice',
+          'fromConfirmed': 'lime juice',
+          'qty': '1 tbsp',
+          'optional': false,
+          'allergens': <String>[],
+        },
+        {
+          'name': 'Canned kidney beans',
+          'fromConfirmed': source,
+          'qty': '1 can',
+          'optional': false,
+          'allergens': <String>[],
+        },
+      ],
+      'equipment': ['Bowl'],
+      'steps': [
+        {'title': 'Open', 'instruction': 'Open the can.', 'cue': 'Open.'},
+        {'title': 'Mix', 'instruction': 'Add the lime juice.', 'cue': 'Mixed.'},
+        {'title': 'Serve', 'instruction': 'Spoon out.', 'cue': 'Served.'},
+      ],
+    };
+
+    test('a confirmed juice is a valid ingredient', () {
+      final recipe = buildDraftRecipe(
+        beans('canned kidney beans'),
+        seed: 't',
+        confirmedItems: const ['lime juice', 'canned kidney beans'],
+      );
+      expect(recipe.ingredients.first.name, 'Lime juice');
+    });
+
+    test('a draft source in a different state (dried for canned) is '
+        'rejected', () {
       expect(
-        () => _build(_draftJson(summary: 'Contains no peanuts.')),
-        throwsFormatException,
+        () => buildDraftRecipe(
+          beans('dried kidney beans'),
+          seed: 't',
+          confirmedItems: const ['lime juice', 'dried kidney beans'],
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('same state'),
+          ),
+        ),
       );
     });
   });

@@ -10,9 +10,12 @@ import '../label/household_allergens.dart';
 import '../label/label_check.dart' show kLabelAllergens;
 
 /// [HouseholdAllergens] saved in `shared_preferences`. It starts empty and
-/// fills in when the saved list loads; a choice the cook makes before then
-/// wins and is saved. Storage errors (private browsing, a full disk) leave
-/// the in-memory list working for this run.
+/// fills in when the saved list loads; a choice the cook makes before then is
+/// merged per allergen into the saved list, never replacing it. Storage
+/// errors (private browsing, a full disk) leave the in-memory list working
+/// for this run. On Android, app preferences are excluded from cloud backup
+/// and device transfer (`res/xml/backup_rules.xml`,
+/// `res/xml/data_extraction_rules.xml`).
 class DeviceHouseholdAllergens extends ChangeNotifier
     implements HouseholdAllergens {
   DeviceHouseholdAllergens({Future<SharedPreferences> Function()? open})
@@ -24,7 +27,9 @@ class DeviceHouseholdAllergens extends ChangeNotifier
 
   final Future<SharedPreferences> Function() _open;
   final Set<String> _allergens = {};
-  bool _changedBeforeLoad = false;
+
+  /// Choices made before the saved list loaded: allergen → present.
+  final Map<String, bool> _pending = {};
   bool _loaded = false;
   bool _disposed = false;
 
@@ -34,10 +39,15 @@ class DeviceHouseholdAllergens extends ChangeNotifier
   Future<void> _load() async {
     try {
       final saved = (await _open()).getStringList(storageKey) ?? const [];
-      if (_disposed || _changedBeforeLoad) return;
+      if (_disposed) return;
       _allergens
         ..clear()
         ..addAll(saved.where(kLabelAllergens.contains));
+      for (final MapEntry(key: allergen, value: present) in _pending.entries) {
+        present ? _allergens.add(allergen) : _allergens.remove(allergen);
+      }
+      if (_pending.isNotEmpty) _save();
+      _pending.clear();
       notifyListeners();
     } catch (_) {
       // Unavailable storage: keep the in-memory list.
@@ -52,13 +62,15 @@ class DeviceHouseholdAllergens extends ChangeNotifier
   @override
   void setAllergen(String allergen, bool present) {
     if (!kLabelAllergens.contains(allergen)) return;
+    // Before the saved list loads, every choice is kept, even one that does
+    // not change the (still empty) local set, and merged in on load.
+    if (!_loaded) _pending[allergen] = present;
     final changed = present
         ? _allergens.add(allergen)
         : _allergens.remove(allergen);
     if (!changed) return;
-    if (!_loaded) _changedBeforeLoad = true;
     notifyListeners();
-    _save();
+    if (_loaded) _save();
   }
 
   void _save() {

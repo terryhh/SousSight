@@ -35,11 +35,14 @@ const kSwapStale =
 const kSwapCoachUnavailable =
     'Coach Lite isn’t running in this mode. Start cooking and ask your coach:';
 
-/// Binds each operation to the session it started in. The dispatcher runs
-/// the validator on every answer before deciding on a semantic retry, so
-/// that is where a changed session is caught: the operation is cancelled and
-/// the answer is not retried, so no cloud attempt runs for a session the cook
-/// has left. The caller then drops the stale answer.
+/// Keeps preview swaps on this device and bound to the session they started
+/// in. Coach Lite's route is on-device only; its one cloud path is the
+/// dispatcher's semantic retry, which runs only when the validator rejects
+/// an answer. This wrapper's validator never rejects, so a swap never
+/// reaches the cloud, and Coach Lite re-validates the answer itself (a
+/// malformed one becomes its app-authored fallback). If the session changed
+/// while the answer was pending, the operation is cancelled and the caller
+/// drops the answer.
 class SessionBoundDispatcher implements HybridDispatcher {
   SessionBoundDispatcher(this._inner, {required this.sessionId});
 
@@ -61,12 +64,10 @@ class SessionBoundDispatcher implements HybridDispatcher {
       task,
       sessionId: sessionId,
       grant: grant,
-      validate: (text) {
-        if (this.sessionId() != startedIn) {
-          operation.cancel();
-          return null; // accept as-is: no retry; the caller drops it
-        }
-        return validate?.call(text);
+      // Never a reason: no semantic retry, so nothing is sent to the cloud.
+      validate: (_) {
+        if (this.sessionId() != startedIn) operation.cancel();
+        return null;
       },
     );
     return operation;

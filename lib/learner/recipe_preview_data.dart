@@ -7,7 +7,8 @@ import 'package:flutter/foundation.dart' show setEquals;
 import '../core/models.dart';
 import '../label/label_check.dart' show kLabelAllergens;
 import '../pantry/recipe_draft.dart' show isDraftRecipe;
-import '../pantry/recipe_draft_client.dart' show draftFoodKey;
+import '../pantry/recipe_draft_client.dart'
+    show draftFoodKey, draftStatesContradict;
 import 'recipe_allergens.dart';
 
 /// Hands-on minutes the preview assumes for a step without a recipe timer.
@@ -250,30 +251,11 @@ Set<int> _forms(String phrase) {
   };
 }
 
-const _freshState = -1;
-const _rawState = -2;
-const _cookedState = -3;
-
-/// Stated preparation states: the packaged forms, "fresh", "raw" and
-/// "cooked". Raw and cooked differ for food safety, so they never match.
-Set<int> _states(String phrase) => {
-  ..._forms(phrase),
-  if (RegExp(r'\bfresh\b', caseSensitive: false).hasMatch(phrase)) _freshState,
-  if (RegExp(r'\b(?:raw|uncooked)\b', caseSensitive: false).hasMatch(phrase))
-    _rawState,
-  if (RegExp(
-    r'\b(?:cooked|precooked|pre-cooked|roasted|rotisserie)\b',
-    caseSensitive: false,
-  ).hasMatch(phrase))
-    _cookedState,
-};
-
-/// Whether stated states on both sides exist and share none.
-bool _statesContradict(String item, String name) {
-  final a = _states(item);
-  final b = _states(name);
-  return a.isNotEmpty && b.isNotEmpty && a.intersection(b).isEmpty;
-}
+/// Whether stated preparation states on both sides exist and share none:
+/// fresh, canned, jarred, bottled, dried, frozen, raw, cooked. The same rule
+/// the draft builder applies to `fromConfirmed` (SS-099).
+bool _statesContradict(String item, String name) =>
+    draftStatesContradict(item, name);
 
 /// A leading amount and measuring unit on a confirmed item ("1 cup corn",
 /// "2 tbsp peanut butter", "½ lb of beef"). Containers ("a can of") are kept:
@@ -495,6 +477,7 @@ const kPreviewAllergenNameHints = <String, List<String>>{
     'trout',
   ],
   'shellfish': [
+    'shellfish',
     'shrimp',
     'prawn',
     'prawns',
@@ -553,11 +536,16 @@ const _plantPattern =
     r'(?:peanut|nut|almond|cashew|hazelnut|seed|sunflower|apple|coconut|oat|'
     r'rice|soy|soya|pea|hemp)s?';
 const _plantableDairyPattern = r'(?:milk|butter|cream|yogurt|yoghurt|cheese)';
+// Only an actual dairy replacement counts: plant words right before the
+// dairy word ("coconut milk"), or a bracket holding nothing but plant words
+// ("Milk (coconut)"). "Cow's milk (with coconut flakes)" stays milk.
 final _plantQualifiedDairy = RegExp(
   '\\b(?:$_plantPattern\\s+)+$_plantableDairyPattern\\b|'
-  '\\b$_plantableDairyPattern\\s*\\([^)]*\\b$_plantPattern\\b[^)]*\\)',
+  '\\b$_plantableDairyPattern\\s*\\(\\s*(?:$_plantPattern)'
+  '(?:\\s+$_plantPattern)*\\s*\\)',
   caseSensitive: false,
 );
+final _treeNutName = RegExp(r'\btree\s+nuts?\b', caseSensitive: false);
 
 /// [kLabelAllergens] that [text] (one food's name) suggests, in label order.
 /// Dairy is detected by the dairy word itself, minus terms a plant word
@@ -573,6 +561,7 @@ List<String> previewAllergenHintsFor(String text) {
     final pool = allergen == 'milk' ? dairyWords : words;
     if (hints.any(pool.contains)) found.add(allergen);
   }
+  if (_treeNutName.hasMatch(text)) found.add('tree nut');
   return [
     for (final a in kLabelAllergens)
       if (found.contains(a)) a,

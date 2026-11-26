@@ -698,7 +698,8 @@ class _AllergenCard extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           const Text(
-            'Your household list stays on this device. The camera and the '
+            'Your household list is saved only in this app: it is never sent '
+            'to a model or added to your cooking session. The camera and the '
             'coach can’t confirm allergens.',
             style: TextStyle(fontSize: 12, color: _muted, height: 1.35),
           ),

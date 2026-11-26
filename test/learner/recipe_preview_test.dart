@@ -651,19 +651,19 @@ void main() {
             leg.requestId,
       ];
 
-      testWidgets('control: left open, the malformed local answer starts the '
-          'semantic retry', (tester) async {
+      testWidgets('left open, a malformed local answer is not retried in the '
+          'cloud: swaps are on-device only', (tester) async {
         await openSwap(tester);
         await tester.pump(const Duration(milliseconds: 500));
-        await tester.pump(const Duration(milliseconds: 100));
-        final retried =
-            inference.requests.length > 1 ||
-            cloud.sent.isNotEmpty ||
-            find.byType(AlertDialog).evaluate().isNotEmpty ||
-            hybrid.ledgerSource.legs.length > 1;
-        expect(retried, isTrue);
-        // Let any consent dialog or retry settle before teardown.
         await tester.pumpAndSettle();
+        expect(inference.requests, hasLength(1));
+        expect(inference.requests.single.mode, HybridMode.onlyOnDevice);
+        expect(cloud.sent, isEmpty);
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(cloudLegs(), isEmpty);
+        // Coach Lite re-validates and shows its app-authored fallback.
+        expect(find.byKey(const ValueKey('swap-source')), findsOneWidget);
+        expect(find.text(kSwapAllergenCaution), findsOneWidget);
       });
 
       testWidgets('a session change while the malformed answer is pending: '
@@ -709,8 +709,8 @@ void main() {
       });
     });
 
-    test('a session-bound dispatcher passes the validator through while the '
-        'session holds', () async {
+    test('the swap dispatcher never asks for a retry, and cancels when the '
+        'session changes', () async {
       var session = 'a';
       final inner = _ValidatorDispatcher();
       final bound = SessionBoundDispatcher(inner, sessionId: () => session);
@@ -724,25 +724,12 @@ void main() {
         sessionId: 'a',
         validate: (text) => text == 'ok' ? null : 'bad',
       );
-      expect(inner.validate!('ok'), isNull);
-      expect(inner.validate!('nope'), 'bad');
+      expect(op.operationId, 'op');
+      expect(inner.validate!('nope'), isNull); // no reason: no cloud retry
       expect(inner.cancelled, isFalse);
       session = 'b';
-      expect(inner.validate!('nope'), isNull); // accepted: no retry
+      expect(inner.validate!('ok'), isNull);
       expect(inner.cancelled, isTrue);
-      expect(op.operationId, 'op');
-      // No validator from the caller: still bound to the session.
-      session = 'a';
-      bound.start(
-        const HybridTask(
-          feature: coachLiteFeature,
-          parts: [HybridText('q')],
-          maxOutputTokens: 10,
-          timeout: Duration(seconds: 1),
-        ),
-        sessionId: 'a',
-      );
-      expect(inner.validate!('anything'), isNull);
     });
 
     testWidgets('nested columns render every card in display order', (

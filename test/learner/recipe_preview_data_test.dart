@@ -238,6 +238,13 @@ void main() {
           isFalse,
         );
       }
+      // Dried and canned are different foods too, also for a draft.
+      for (final id in ['draft_chili', 'chili_v1']) {
+        final beans = recipe(id, 'Canned kidney beans');
+        final i = beans.ingredients.single;
+        expect(previewHasIngredient(beans, i, ['dried kidney beans']), isFalse);
+        expect(previewHasIngredient(beans, i, ['canned kidney beans']), isTrue);
+      }
       // Without a stated state on one side, the food still matches.
       final plain = recipe('draft_salad', 'Chicken');
       expect(
@@ -587,6 +594,24 @@ void main() {
       expect(previewAllergenHints(named(["Coconut yogurt with cow's milk"])), [
         'milk',
       ]);
+      // Each allergen word counts on its own; a bracket only cancels dairy
+      // when it holds nothing but plant words.
+      expect(
+        previewAllergenHints(
+          named(['Cow\'s milk (with coconut flakes)', 'Shellfish stock']),
+        ),
+        ['milk', 'shellfish'],
+      );
+      expect(previewAllergenHints(named(['Mixed tree nuts'])), ['tree nut']);
+      expect(
+        PreviewAllergens(
+          named(['Cow\'s milk (with coconut flakes)', 'Shellfish stock']),
+          const {'milk', 'shellfish'},
+        ).householdLine,
+        'An ingredient name suggests milk and shellfish, which are on your '
+        'household list — check the ingredients and labels yourself.',
+      );
+      expect(previewAllergenHints(named(['Fish sauce'])), ['fish']);
       expect(previewAllergenHints(named(['Almond milk and butter'])), [
         'milk',
         'tree nut',
