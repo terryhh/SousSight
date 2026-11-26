@@ -328,6 +328,8 @@ void main() {
       }
     });
 
+    const general = '$kColourNotDoneness $kThermometerDisclaimer';
+
     test('thermometer notes name each protein and never certify', () {
       expect(
         draftThermometerNote('Sear the salmon'),
@@ -345,7 +347,148 @@ void main() {
         draftThermometerNote('pork chops'),
         '$kColourNotDoneness $kThermometerDisclaimer',
       );
-      expect(draftThermometerNote('meatballs'), contains('ground meat'));
+      // Unknown meat: no number, the general line.
+      expect(draftThermometerNote('meatballs'), general);
+      expect(
+        draftThermometerNote('beef meatballs'),
+        contains('ground meat 160°F (71°C)'),
+      );
+    });
+
+    test('poultry keeps its identity over burgers and sausages', () {
+      // Codex P1: ground turkey recipe, "burgers" step -> poultry only.
+      expect(
+        draftThermometerNote('Brown the burgers', recipe: 'Ground turkey Buns'),
+        allOf(contains('poultry 165°F (74°C)'), isNot(contains('160°F'))),
+      );
+      expect(
+        draftThermometerNote('Brown the chicken sausages in a pan'),
+        allOf(contains('poultry 165°F (74°C)'), isNot(contains('160°F'))),
+      );
+      expect(
+        draftThermometerNote('Fry the turkey burgers'),
+        allOf(contains('poultry 165°F (74°C)'), isNot(contains('160°F'))),
+      );
+      expect(
+        draftThermometerNote('Brown the burgers', recipe: 'Ground beef Buns'),
+        allOf(contains('ground meat 160°F (71°C)'), isNot(contains('165'))),
+      );
+      // Both kinds in the recipe and the step does not say which: no number.
+      expect(
+        draftThermometerNote(
+          'Grill the sausages',
+          recipe: 'Chicken thighs Pork sausages',
+        ),
+        general,
+      );
+      // Both named explicitly: each gets its own target.
+      expect(
+        draftThermometerNote('Fry the pork sausages and chicken'),
+        contains('poultry 165°F (74°C), ground meat 160°F (71°C)'),
+      );
+    });
+
+    test(
+      'reheated food is 165°F; warming food of unknown state names none',
+      () {
+        // Codex P1: leftover salmon is not 145°F.
+        for (final text in [
+          'Warm the leftover salmon in a pan',
+          'Reheat the chicken in the microwave',
+          'Heat the cooked salmon in a pan',
+          'Warm the rice and eggs up in a pan',
+          'Fry the rotisserie chicken pieces',
+        ]) {
+          expect(
+            draftThermometerNote(text),
+            allOf(
+              contains('leftovers and reheated food 165°F (74°C)'),
+              isNot(contains('145')),
+              isNot(contains('160')),
+            ),
+            reason: text,
+          );
+        }
+        // Leftover state from the recipe counts too.
+        expect(
+          draftThermometerNote(
+            'Heat it in a pan',
+            step: 'Heat it in a pan',
+            recipe: 'Leftover chicken',
+          ),
+          contains('165°F'),
+        );
+        for (final text in [
+          'Warm the salmon',
+          'Melt the cheese over the tuna',
+          'Toast the egg bread',
+        ]) {
+          expect(draftThermometerNote(text), general, reason: text);
+        }
+        // A real cooking word alongside "warm" still names the target.
+        expect(
+          draftThermometerNote('Warm the pan, then sear the salmon'),
+          contains('fish 145°F (63°C)'),
+        );
+      },
+    );
+
+    test('a ground turkey recipe with a burger step, end to end', () async {
+      final got = await cues(
+        [
+          step('Shape the ground turkey into patties.'),
+          step('Brown the burgers in a hot pan.', 'Both sides are browned.'),
+          step('Serve on the bread.'),
+        ],
+        ingredients: [
+          {
+            'name': 'Ground turkey',
+            'fromConfirmed': 'ground turkey',
+            'qty': '1 lb',
+            'optional': false,
+            'allergens': <String>[],
+          },
+          {
+            'name': 'Bread',
+            'fromConfirmed': 'bread',
+            'qty': '2 slices',
+            'optional': false,
+            'allergens': ['wheat'],
+          },
+        ],
+        items: ['ground turkey', 'bread'],
+      );
+      expect(got[1], contains('poultry 165°F (74°C)'));
+      expect(got[1], isNot(contains('160°F')));
+    });
+
+    test('leftover salmon warmed in a pan, end to end', () async {
+      final got = await cues(
+        [
+          step('Flake the leftover salmon.'),
+          step('Warm the leftover salmon in a pan.', 'Steam rises.'),
+          step('Serve on the bread.'),
+        ],
+        ingredients: [
+          {
+            'name': 'Leftover salmon',
+            'fromConfirmed': 'leftover salmon',
+            'qty': '1 fillet',
+            'optional': false,
+            'allergens': ['fish'],
+          },
+          {
+            'name': 'Bread',
+            'fromConfirmed': 'bread',
+            'qty': '2 slices',
+            'optional': false,
+            'allergens': ['wheat'],
+          },
+        ],
+        items: ['leftover salmon', 'bread'],
+      );
+      expect(got[1], contains('leftovers and reheated food 165°F (74°C)'));
+      expect(got[1], isNot(contains('145')));
     });
 
     test('the recipe proteins set the note when the step names none', () async {

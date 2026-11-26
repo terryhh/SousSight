@@ -718,15 +718,30 @@ final _certainty = RegExp(
   caseSensitive: false,
 );
 
-// Safe minimum internal temperatures (USDA / FoodSafety.gov chart), checked
-// with a thermometer. Ground poultry counts as poultry (165°F).
+// Safe minimum internal temperatures (FoodSafety.gov chart), checked with a
+// thermometer. These are the app's own claims, so a number is named only
+// when the food and its state are clear; otherwise the general line is used.
 final _poultry = RegExp(
   r'\b(poultry|chicken|turkey|duck)\b',
   caseSensitive: false,
 );
-final _groundMeat = RegExp(
+// Ground red meat named as such. "ground meat" counts: it is the chart's own
+// wording for 160°F.
+final _groundRedMeat = RegExp(
   r'\b(ground|minced?)\s+(beef|pork|lamb|veal|meat)\b|'
-  r'\b(hamburgers?|burgers?|meatballs?|meatloaf|sausages?)\b',
+  r'\b(beef|pork|lamb|veal)\s+(burgers?|sausages?|meatballs?|meatloaf)\b|'
+  r'\bhamburgers?\b',
+  caseSensitive: false,
+);
+// Burgers, sausages and meatballs whose meat is not named right before
+// them. Their target depends on what the recipe names elsewhere.
+final _groundUnnamed = RegExp(
+  r'(?<!\b(?:beef|pork|lamb|veal|chicken|turkey|duck|poultry)\s)'
+  r'\b(burgers?|meatballs?|meatloaf|sausages?)\b',
+  caseSensitive: false,
+);
+final _redMeat = RegExp(
+  r'\b(beef|pork|lamb|veal|hamburgers?)\b|\bground\s+meat\b',
   caseSensitive: false,
 );
 final _finFish = RegExp(
@@ -736,18 +751,82 @@ final _finFish = RegExp(
 );
 final _egg = RegExp(r'\beggs?\b', caseSensitive: false);
 
-/// The thermometer note for a heated step with raw animal food. Names the
-/// target temperature for each protein found in [text]; anything else gets
-/// the general thermometer line. It never says the food reached a
-/// temperature, only what to check for.
-String draftThermometerNote(String text) {
-  final targets = [
-    if (_poultry.hasMatch(text)) 'poultry 165°F (74°C)',
-    if (_groundMeat.hasMatch(text)) 'ground meat 160°F (71°C)',
-    if (_finFish.hasMatch(text)) 'fish 145°F (63°C)',
-    if (_egg.hasMatch(text)) 'egg dishes 160°F (71°C)',
-  ];
-  if (targets.isEmpty) return '$kColourNotDoneness $kThermometerDisclaimer';
+/// Food that was cooked before: leftovers and reheated food are 165°F
+/// whatever the protein.
+final _reheated = RegExp(
+  r'\b(leftovers?|reheat\w*|re-heat\w*|rewarm\w*|precooked|pre-cooked|'
+  r'already cooked|cooked earlier|rotisserie)\b|'
+  r'\bwarm\w*\s+(?:\w+\s+){0,4}up\b|'
+  r'\bcooked\s+(poultry|chicken|turkey|duck|meat|beef|pork|lamb|fish|'
+  r'salmon|tuna|eggs?)\b',
+  caseSensitive: false,
+);
+
+/// Heat words that warm or finish food rather than cook it from raw. When a
+/// step's only heat words are these and the food's state is not stated, the
+/// note names no number.
+const _warmOnly = {
+  'warm',
+  'warmed',
+  'warming',
+  'melt',
+  'melted',
+  'melting',
+  'toast',
+  'toasted',
+  'toasting',
+};
+
+const _reheatedTarget = 'leftovers and reheated food 165°F (74°C)';
+
+/// The thermometer note for a heated step with animal food. [proteins] is
+/// the text that names the food (the step, or the recipe's ingredients when
+/// the step names none); [step] is the step's own text and defaults to
+/// [proteins]; [recipe] is the recipe's ingredient names.
+///
+/// Rules, conservative because these numbers are the app's own claims:
+/// reheated or leftover food is 165°F; a step that only warms, melts or
+/// toasts food of unknown state names no number; an unnamed burger, sausage
+/// or meatball takes poultry's 165°F when the recipe names only poultry,
+/// ground meat's 160°F when it names only red meat, and no number when the
+/// recipe names both or neither. It never says the food reached a
+/// temperature.
+String draftThermometerNote(
+  String proteins, {
+  String? step,
+  String recipe = '',
+}) {
+  final stepText = step ?? proteins;
+  final both = '$stepText $proteins $recipe';
+  const general = '$kColourNotDoneness $kThermometerDisclaimer';
+  final List<String> targets;
+  if (_reheated.hasMatch(both)) {
+    targets = const [_reheatedTarget];
+  } else {
+    final heatWords = [
+      for (final m in _heat.allMatches(stepText)) m.group(0)!.toLowerCase(),
+    ];
+    if (heatWords.isNotEmpty && heatWords.every(_warmOnly.contains)) {
+      return general;
+    }
+    var poultry = _poultry.hasMatch(proteins);
+    var groundMeat = _groundRedMeat.hasMatch(proteins);
+    if (_groundUnnamed.hasMatch(proteins)) {
+      final context = '$proteins $recipe';
+      final namesPoultry = _poultry.hasMatch(context);
+      final namesRed = _redMeat.hasMatch(context);
+      if (namesPoultry == namesRed) return general;
+      poultry = poultry || namesPoultry;
+      groundMeat = groundMeat || namesRed;
+    }
+    targets = [
+      if (poultry) 'poultry 165°F (74°C)',
+      if (groundMeat) 'ground meat 160°F (71°C)',
+      if (_finFish.hasMatch(proteins)) 'fish 145°F (63°C)',
+      if (_egg.hasMatch(proteins)) 'egg dishes 160°F (71°C)',
+    ];
+  }
+  if (targets.isEmpty) return general;
   return '$kColourNotDoneness Check with a food thermometer: '
       "${targets.join(', ')}. The camera can't confirm it's safe.";
 }
@@ -765,7 +844,11 @@ String _safeCue(
     // Enforced here whatever the model wrote: a heated meat, poultry, fish
     // or egg step always ends with the thermometer note. Temperatures come
     // from this step's proteins, or the recipe's when the step names none.
-    disclaimer = draftThermometerNote(riskyStep ? stepText : recipeProteins);
+    disclaimer = draftThermometerNote(
+      riskyStep ? stepText : recipeProteins,
+      step: stepText,
+      recipe: recipeProteins,
+    );
   } else if (heated || _certainty.hasMatch(stepText)) {
     disclaimer = kHeatDisclaimer;
   } else {

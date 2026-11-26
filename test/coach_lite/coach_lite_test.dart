@@ -545,6 +545,26 @@ void main() {
       }
     });
 
+    test('topic notes reach real answers through CoachLite.ask', () async {
+      for (final (q, note) in [
+        ('What should I check on the label?', coachLiteAllergenNotice),
+        ('Is the lime still fresh?', coachLiteFreshnessNotice),
+        ('Is the chicken done?', coachLiteSafetyNotice),
+        (
+          'The jam expired, does it contain nuts?',
+          '$coachLiteAllergenNotice $coachLiteFreshnessNotice',
+        ),
+      ]) {
+        dispatcher.enqueue(answerJson());
+        final answer = await ask(coach(), q);
+        expect(answer.kind, CoachLiteQuestionKind.safety, reason: q);
+        final safety = answer.components.firstWhere(
+          (c) => c['id'] == 'app_safety',
+        );
+        expect(safety['body'], note, reason: q);
+      }
+    });
+
     test('an allergen question shows the label note in the answer', () async {
       dispatcher.enqueue(answerJson());
       final answer = await ask(coach(), 'Is this bread allergen free?');
@@ -731,6 +751,16 @@ void main() {
         'How long can leftovers stay in the fridge?',
         CoachLiteQuestionKind.safety,
       ),
+      // Topic-note questions are always safety questions (SS-094).
+      ('What should I check on the label?', CoachLiteQuestionKind.safety),
+      ('Is the lime still fresh?', CoachLiteQuestionKind.safety),
+      ('This bread is stale, is that ok?', CoachLiteQuestionKind.safety),
+      ('Is the chicken done?', CoachLiteQuestionKind.safety),
+      ('Is it still pink inside?', CoachLiteQuestionKind.safety),
+      ('How long will the jam keep?', CoachLiteQuestionKind.safety),
+      // ...without catching ordinary step help.
+      ('How long does it take to simmer?', CoachLiteQuestionKind.stepHelp),
+      ('Should I add fresh herbs now?', CoachLiteQuestionKind.stepHelp),
     ]) {
       expect(classifyCoachLiteQuestion(q), kind, reason: q);
     }
