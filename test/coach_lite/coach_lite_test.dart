@@ -136,6 +136,24 @@ String answerJson({
   'timerSuggestion': ?timer,
 });
 
+/// Its operation's result fails with an error when [fail] is called.
+class _FailingDispatcher implements HybridDispatcher {
+  final pending = <Completer<DispatchResult>>[];
+  @override
+  HybridOperation start(
+    HybridTask task, {
+    required String sessionId,
+    ResultValidator? validate,
+    ConsentGrant? grant,
+  }) {
+    final done = Completer<DispatchResult>();
+    pending.add(done);
+    return HybridOperation('op-${pending.length}', done.future, () {});
+  }
+
+  void fail(int index) => pending[index].completeError(StateError('bridge'));
+}
+
 void main() {
   late FakeHybridDispatcher dispatcher;
   late _Privacy privacy;
@@ -664,5 +682,47 @@ void main() {
             4 +
         coachLiteMaxOutputTokens;
     expect(tokens, lessThanOrEqualTo(coachLiteDefaultMaxTotalTokens));
+  });
+
+  group('SS-089: a send that throws still gives the step, never a reason '
+      'inside it', () {
+    test(
+      'failed: the recipe step, with the reason only in the status line',
+      () async {
+        final failing = _FailingDispatcher();
+        final lite = coach(failing);
+        final pending = ask(lite, 'How often should I stir?');
+        await Future<void>.delayed(Duration.zero);
+        failing.fail(0);
+        final answer = await pending;
+        expect(answer.status, CoachLiteStatus.failed);
+        expect(answer.error, contains('bridge'));
+        expect(validateLiteCookingUi(answer.payload), hasLength(2));
+        final body = answer.components.last['body'] as String;
+        expect(body, contains('simmer the tomato sauce'));
+        expect(body, isNot(contains('could not answer')));
+        expect(
+          coachLiteStatusLine(answer),
+          "I can't answer that right now — try the recipe step text below.",
+        );
+      },
+    );
+
+    test('superseded while failing: cancelled, with no status line', () async {
+      final failing = _FailingDispatcher();
+      final lite = coach(failing);
+      final first = ask(lite, 'How often should I stir?');
+      await Future<void>.delayed(Duration.zero);
+      lite.cancel(); // a newer question or Live took over
+      failing.fail(0);
+      final answer = await first;
+      expect(answer.status, CoachLiteStatus.cancelled);
+      expect(answer.error, isNull);
+      expect(coachLiteStatusLine(answer), isNull);
+      expect(
+        (answer.components.last['body'] as String),
+        contains('simmer the tomato sauce'),
+      );
+    });
   });
 }

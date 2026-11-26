@@ -278,6 +278,43 @@ void main() {
       expect(find.textContaining('Ingredient matching'), findsNothing);
     });
 
+    testWidgets('PantryFlow wires the hybrid runtime\'s reason into a '
+        'failed scan (item 11)', (tester) async {
+      await phone(tester);
+      final hybrid = HybridRuntime.create(
+        inference: FakeHybridInference(
+          textAvailability: _unavailable,
+          imageAvailability: _unavailable,
+        ),
+        cloudRoutes: const CloudRoutes({}),
+        cloudFallback: _NoCloud(),
+        isOnline: () => true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: cookingTheme,
+          navigatorKey: hybrid.navigatorKey,
+          home: PantryFlow(
+            services: services,
+            isDemo: false,
+            hybrid: hybrid,
+            client: _Throwing(StateError('bridge')),
+            loadRecipes: () => SynchronousFuture(recipes),
+            cookingBuilder: (recipe, back) => Text('Cooking ${recipe.id}'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await findMeal(tester, 'bread');
+      expect(
+        find.textContaining(
+          "This device can't do it on its own, and sending online is off in "
+          'this build.',
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('no known reason: the plain message; a reason lookup that '
         'throws is ignored', (tester) async {
       await phone(tester);
