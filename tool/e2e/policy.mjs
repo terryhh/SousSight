@@ -133,3 +133,51 @@ export function refinePolicy(current, mode, provisionallyBlocked) {
     reload: mode === 'real' && provisionallyBlocked.length > 0,
   };
 }
+
+/// Chrome's console line for a request the run itself aborted.
+const BLOCKED_RESOURCE = /^Failed to load resource: net::ERR_BLOCKED_BY_CLIENT(\.Inspector)?$/;
+
+/// Firebase JS SDK modules (served from www.gstatic.com/firebasejs/<ver>/)
+/// and the backend host each one fetches from. A "Failed to fetch" thrown
+/// inside one of these modules is attributable to the provisional policy
+/// only when a request to that module's host was actually blocked.
+const FIREBASE_MODULE_HOSTS = {
+  'firebase-analytics': [/firebaseinstallations\.googleapis\.com/, /firebase\.googleapis\.com\/v1alpha\/projects\/[^/]+\/apps\/[^/]+\/webConfig/],
+  'firebase-installations': [/firebaseinstallations\.googleapis\.com/],
+  'firebase-app-check': [/firebaseappcheck\.googleapis\.com/, /recaptcha/],
+  'firebase-auth': [/identitytoolkit\.googleapis\.com/, /securetoken\.googleapis\.com/],
+  'firebase-firestore': [/firestore\.googleapis\.com/],
+};
+const FETCH_FAILED_IN_FIREBASE =
+  /^TypeError: Failed to fetch\n\s+at https:\/\/www\.gstatic\.com\/firebasejs\/\d+\.\d+\.\d+\/(firebase-[a-z-]+)\.js:\d+:\d+(\n|$)/;
+
+/// Whether one console error is a known consequence of the provisional
+/// policy, matched by exact signature against what was actually blocked.
+/// Anything else (an app error, a fetch failure in app code, an SDK failure
+/// whose host was not blocked) is not.
+export function isProvisionalBlockError(text, blockedUrls) {
+  if (!blockedUrls.length) return false;
+  if (BLOCKED_RESOURCE.test(text)) return true;
+  const match = FETCH_FAILED_IN_FIREBASE.exec(text);
+  if (!match) return false;
+  const hosts = FIREBASE_MODULE_HOSTS[match[1]];
+  return Boolean(hosts) && blockedUrls.some((url) => hosts.some((h) => h.test(url)));
+}
+
+/// Splits first-load console errors before a real build is reloaded:
+/// `setAside` holds only errors caused by the provisional blocking; every
+/// other error stays in `fatal` and still fails the run.
+export function partitionProvisionalErrors(errors, blockedUrls) {
+  const setAside = [];
+  const fatal = [];
+  for (const text of errors) {
+    (isProvisionalBlockError(text, blockedUrls) ? setAside : fatal).push(text);
+  }
+  return { setAside, fatal };
+}
+
+/// The console errors that fail a run: everything except Chrome's line for
+/// a request this run aborted on purpose (analytics, AI in a real build).
+export function fatalConsoleErrors(errors) {
+  return errors.filter((text) => !BLOCKED_RESOURCE.test(text));
+}

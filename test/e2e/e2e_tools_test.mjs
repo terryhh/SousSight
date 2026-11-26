@@ -15,6 +15,9 @@ import { COPY } from '../../tool/e2e/copy.mjs';
 import {
   configProblems,
   decideRequest,
+  fatalConsoleErrors,
+  isProvisionalBlockError,
+  partitionProvisionalErrors,
   initialPolicy,
   looksLikePreview,
   pixelStats,
@@ -172,6 +175,90 @@ describe('refinePolicy', () => {
 
   test('an unknown mode is an error', () => {
     assert.throws(() => refinePolicy('provisional', 'auto', []), /unknown mode/);
+  });
+});
+
+describe('provisional console errors', () => {
+  // Captured verbatim from a real-build auto run (report.json, 2026-11-26).
+  const ANALYTICS_FETCH =
+    'TypeError: Failed to fetch\n    at https://www.gstatic.com/firebasejs/13.1.0/firebase-analytics.js:1:11014\n' +
+    '    at retryIfServerError (https://www.gstatic.com/firebasejs/13.1.0/firebase-analytics.js:1:7824)\n' +
+    '    at createInstallationRequest (https://www.gstatic.com/firebasejs/13.1.0/firebase-analytics.js:1:10990)';
+  const BLOCKED_LINE = 'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector';
+  const UNRELATED = 'Unrelated first-load widget failure';
+  const blocked = [
+    'https://firebase.googleapis.com/v1alpha/projects/-/apps/1:4:web:c/webConfig',
+    'https://firebaseinstallations.googleapis.com/v1/projects/p/installations',
+  ];
+
+  test('an unrelated first-load error still fails the run after the reload', () => {
+    // The regression Codex found: refine -> set aside -> reload left this
+    // error only in the exempt bucket, so the run went green.
+    const firstLoad = [BLOCKED_LINE, ANALYTICS_FETCH, UNRELATED];
+    const { setAside, fatal } = partitionProvisionalErrors(firstLoad, blocked);
+    assert.deepEqual(setAside, [BLOCKED_LINE, ANALYTICS_FETCH]);
+    assert.deepEqual(fatal, [UNRELATED]);
+    // What the spec's final check sees: the first load's leftovers plus the
+    // reloaded page's errors (none here).
+    assert.deepEqual(fatalConsoleErrors([...fatal]), [UNRELATED]);
+  });
+
+  test('the known analytics fetch failure is set aside only when its host was blocked', () => {
+    assert.equal(isProvisionalBlockError(ANALYTICS_FETCH, blocked), true);
+    assert.equal(isProvisionalBlockError(ANALYTICS_FETCH, []), false);
+    assert.equal(
+      isProvisionalBlockError(ANALYTICS_FETCH, ['https://firestore.googleapis.com/x']),
+      false,
+      'a different host being blocked does not explain this failure',
+    );
+  });
+
+  test('each Firebase module is tied to its own hosts', () => {
+    const fetchIn = (module) =>
+      `TypeError: Failed to fetch\n    at https://www.gstatic.com/firebasejs/13.1.0/${module}.js:1:1`;
+    const firestore = ['https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen'];
+    assert.equal(isProvisionalBlockError(fetchIn('firebase-firestore'), firestore), true);
+    assert.equal(isProvisionalBlockError(fetchIn('firebase-auth'), firestore), false);
+    assert.equal(isProvisionalBlockError(fetchIn('firebase-unknown'), firestore), false);
+  });
+
+  test('look-alike errors are not exempt', () => {
+    const lookAlikes = [
+      // fetch failure in app code, not in the Firebase SDK
+      'TypeError: Failed to fetch\n    at http://localhost:8787/main.dart.js:1:2',
+      // SDK module served from somewhere else
+      'TypeError: Failed to fetch\n    at https://evil.example/firebasejs/13.1.0/firebase-analytics.js:1:2',
+      // a different error raised inside the SDK
+      'TypeError: Cannot read properties of undefined\n    at https://www.gstatic.com/firebasejs/13.1.0/firebase-analytics.js:1:2',
+      // Failed to fetch with no stack
+      'TypeError: Failed to fetch',
+      // a different network failure
+      'Failed to load resource: net::ERR_CONNECTION_REFUSED',
+      'Failed to load resource: the server responded with a status of 500 ()',
+      UNRELATED,
+    ];
+    for (const text of lookAlikes) {
+      assert.equal(isProvisionalBlockError(text, blocked), false, text);
+    }
+  });
+
+  test('nothing is set aside when nothing was blocked', () => {
+    assert.deepEqual(partitionProvisionalErrors([BLOCKED_LINE, UNRELATED], []), {
+      setAside: [],
+      fatal: [BLOCKED_LINE, UNRELATED],
+    });
+  });
+
+  test('the final check ignores only Chrome\'s line for requests the run aborted', () => {
+    assert.deepEqual(
+      fatalConsoleErrors([
+        BLOCKED_LINE,
+        'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT',
+        'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector and more',
+        UNRELATED,
+      ]),
+      ['Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector and more', UNRELATED],
+    );
   });
 });
 
