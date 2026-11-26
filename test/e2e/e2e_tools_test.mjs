@@ -213,6 +213,33 @@ describe('provisional console errors', () => {
     );
   });
 
+  test('the remote-config installation failure (trunk added Remote Config) is exempt only when installations was blocked', () => {
+    // Captured verbatim from a real-build auto run at ae9e8be (phone).
+    const REMOTE_CONFIG_FETCH =
+      'TypeError: Failed to fetch\n    at https://www.gstatic.com/firebasejs/13.1.0/firebase-remote-config.js:1:11751\n' +
+      '    at retryIfServerError (https://www.gstatic.com/firebasejs/13.1.0/firebase-remote-config.js:1:8563)\n' +
+      '    at createInstallationRequest (https://www.gstatic.com/firebasejs/13.1.0/firebase-remote-config.js:1:11727)\n' +
+      '    at async registerInstallation (https://www.gstatic.com/firebasejs/13.1.0/firebase-remote-config.js:1:11351)';
+    assert.equal(isProvisionalBlockError(REMOTE_CONFIG_FETCH, blocked), true);
+    assert.equal(
+      isProvisionalBlockError(REMOTE_CONFIG_FETCH, [blocked[0]]),
+      false,
+      'only the webConfig request blocked: not explained',
+    );
+    const { fatal } = partitionProvisionalErrors(
+      [REMOTE_CONFIG_FETCH, ANALYTICS_FETCH, UNRELATED],
+      blocked,
+    );
+    assert.deepEqual(fatal, [UNRELATED]);
+  });
+
+  test('rehearsal forbids Remote Config fetches', () => {
+    assert.equal(
+      decideRequest('https://firebaseremoteconfig.googleapis.com/v1/projects/p/namespaces/firebase:fetch', 'rehearsal').forbidden,
+      true,
+    );
+  });
+
   test('each Firebase module is tied to its own hosts', () => {
     const fetchIn = (module) =>
       `TypeError: Failed to fetch\n    at https://www.gstatic.com/firebasejs/13.1.0/${module}.js:1:1`;

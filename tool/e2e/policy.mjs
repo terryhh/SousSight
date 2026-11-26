@@ -27,6 +27,7 @@ export const FIREBASE_PATTERNS = [
   /firebaseappcheck\.googleapis\.com/,
   /firebaseinstallations\.googleapis\.com/,
   /firebase\.googleapis\.com/,
+  /firebaseremoteconfig\.googleapis\.com/,
   /recaptcha/,
 ];
 
@@ -144,6 +145,7 @@ const BLOCKED_RESOURCE = /^Failed to load resource: net::ERR_BLOCKED_BY_CLIENT(\
 const FIREBASE_MODULE_HOSTS = {
   'firebase-analytics': [/firebaseinstallations\.googleapis\.com/, /firebase\.googleapis\.com\/v1alpha\/projects\/[^/]+\/apps\/[^/]+\/webConfig/],
   'firebase-installations': [/firebaseinstallations\.googleapis\.com/],
+  'firebase-remote-config': [/firebaseinstallations\.googleapis\.com/, /firebaseremoteconfig\.googleapis\.com/],
   'firebase-app-check': [/firebaseappcheck\.googleapis\.com/, /recaptcha/],
   'firebase-auth': [/identitytoolkit\.googleapis\.com/, /securetoken\.googleapis\.com/],
   'firebase-firestore': [/firestore\.googleapis\.com/],
