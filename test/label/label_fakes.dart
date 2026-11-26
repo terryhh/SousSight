@@ -56,23 +56,28 @@ final iosCaps = HybridCapabilities(
 const noneCaps = HybridCapabilities.none();
 
 /// Holds each prompt open until the test answers it.
-class ManualConsentGate implements ConsentGate {
+class ManualConsentGate extends ConsentGate {
   final List<ConsentAsk> asks = [];
   final List<Completer<ConsentGrant?>> _pending = [];
 
   bool get isOpen => _pending.isNotEmpty;
 
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) {
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
+
+  @override
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) {
     asks.add(ask);
     final completer = Completer<ConsentGrant?>();
     _pending.add(completer);
     return completer.future;
   }
 
-  void grant() => _pending.removeAt(0).complete(ConsentGrant(asks.last));
+  /// Grants come only from the base [ConsentGate.request] (which calls
+  /// [confirm]); "for" another ask models a gate answering the wrong ask.
+  void grant() => _pending.removeAt(0).complete(super.request(asks.last));
   void grantFor(ConsentAsk ask) =>
-      _pending.removeAt(0).complete(ConsentGrant(ask));
+      _pending.removeAt(0).complete(super.request(ask));
   void decline() => _pending.removeAt(0).complete(null);
 }
 

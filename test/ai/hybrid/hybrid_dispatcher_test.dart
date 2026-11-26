@@ -16,14 +16,24 @@ class _Privacy implements PrivacySettings {
   bool localOnly(String feature) => localOnlyFeatures.contains(feature);
 }
 
-class _Consent implements ConsentGate {
+class _Consent extends ConsentGate {
   final List<ConsentAsk> asks = [];
+  final List<Uint8List?> previews = [];
   Future<ConsentGrant?> Function(ConsentAsk ask)? answer;
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) {
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
+
+  @override
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) {
     asks.add(ask);
-    return answer?.call(ask) ?? Future.value(ConsentGrant(ask));
+    previews.add(preview);
+    return answer?.call(ask) ?? super.request(ask);
   }
+
+  /// A grant from this gate for any ask, including one the cook never saw
+  /// (tests only). It goes through the base request, the only mint path.
+  Future<ConsentGrant> grantFor(ConsentAsk ask) async =>
+      (await super.request(ask))!;
 }
 
 class _Adapter implements CloudFallbackSender {
@@ -68,6 +78,9 @@ class _Harness {
       ledger: ledger,
       cloudFallback: adapter,
       remoteRouting: () => remote,
+      isOnline: () => online,
+      reachable: () async => reachable,
+      currentSession: () => current,
       newId: () => 'id-${++seq}',
     );
   }
@@ -76,6 +89,9 @@ class _Harness {
   final _Adapter? adapter;
   final privacy = _Privacy();
   final consent = _Consent();
+  var online = true;
+  var reachable = true;
+  var current = 's1';
   final ledger = InferenceLedger(
     sessionId: 's1',
     clock: () => DateTime.utc(2026, 11, 25),
@@ -300,7 +316,7 @@ void main() {
     test('a grant for another payload or session does not count', () async {
       final h = _Harness(caps: fakeIosCapabilities);
       final other = _photo('pantry_scan', 9);
-      h.consent.answer = (ask) async => ConsentGrant(
+      h.consent.answer = (ask) async => h.consent.grantFor(
         ConsentAsk(
           feature: ask.feature,
           kinds: ask.kinds,
@@ -312,7 +328,7 @@ void main() {
         (await h.run(_photo('pantry_scan'))).blocked,
         RouteReason.consentDeclined,
       );
-      h.consent.answer = (ask) async => ConsentGrant(
+      h.consent.answer = (ask) async => h.consent.grantFor(
         ConsentAsk(
           feature: ask.feature,
           kinds: ask.kinds,
@@ -344,7 +360,7 @@ void main() {
       await pumpEventQueue();
       expect(h.consent.asks, hasLength(1));
       h.privacy.localOnlyFeatures.add('pantry_scan');
-      prompt.complete(ConsentGrant(h.consent.asks.single));
+      prompt.complete(h.consent.grantFor(h.consent.asks.single));
       final r = await result;
       expect(r.blocked, RouteReason.localOnlySetting);
       expect(h.bridge.requests, isEmpty);
@@ -354,7 +370,7 @@ void main() {
     test('a grant is used once: the retry needs a fresh one', () async {
       final h = _Harness();
       ConsentGrant? first;
-      h.consent.answer = (ask) async => first ??= ConsentGrant(ask);
+      h.consent.answer = (ask) async => first ??= await h.consent.grantFor(ask);
       h.bridge.enqueueText('bad');
       final r = await h.run(_photo('pantry_scan'), validate: _rejectAll);
       expect(h.consent.asks, hasLength(2));
@@ -401,7 +417,7 @@ void main() {
       (schema['required']! as List).add('meals');
       expect(hybridPayloadDigest(task), isNot(original));
 
-      prompt.complete(ConsentGrant(h.consent.asks.single));
+      prompt.complete(h.consent.grantFor(h.consent.asks.single));
       final r = await result;
       expect(r.text, isNotNull);
       final sent = h.bridge.requests.single.task;
@@ -466,9 +482,317 @@ void main() {
     final result = h.run(_photo('local_watch_cloud_check'));
     await pumpEventQueue();
     h.privacy.localOnlyFeatures.add('local_watch');
-    prompt.complete(ConsentGrant(h.consent.asks.single));
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
     expect((await result).blocked, RouteReason.localOnlySetting);
     expect(h.bridge.requests, isEmpty);
+  });
+
+  // Pre-existing (Codex): the post-consent check now rereads connectivity.
+  test('going offline during the consent prompt blocks the send', () async {
+    final h = _Harness();
+    final prompt = Completer<ConsentGrant?>();
+    h.consent.answer = (_) => prompt.future;
+    final result = h.run(_photo('local_watch_cloud_check'));
+    await pumpEventQueue();
+    h.online = false;
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
+    final r = await result;
+    expect(r.blocked, RouteReason.offline);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.ledger.legs.where((l) => l.transferPermitted), isEmpty);
+  });
+
+  test(
+    'an adapter retry refused offline is recorded unsent (network)',
+    () async {
+      final h = _Harness();
+      // The bridge leg fails "unavailable"; the device goes offline before the
+      // adapter retry, which is then refused and recorded as not sent.
+      h.bridge.script.add((HybridRequest r) {
+        h.online = false;
+        return const HybridException(HybridErrorCode.unavailable, 'no bridge');
+      });
+      final r = await h.run(_photo('local_watch_cloud_check'));
+      expect(r.ok, isFalse);
+      expect(h.adapter!.requests, isEmpty);
+      final refused = h.ledger.legs.last;
+      expect(refused.transferPermitted, isFalse);
+      expect(refused.error, HybridErrorCode.network);
+    },
+  );
+
+  // Pre-existing (Codex): ledger admission notifies listeners synchronously;
+  // a listener switching on local-only must stop the send right there.
+  test('local-only switched on by a ledger listener at admission: nothing '
+      'sent, the leg settled unsent', () async {
+    final h = _Harness();
+    h.ledger.addListener(() {
+      if (h.ledger.entries.any((e) => e.pending)) {
+        h.privacy.localOnlyFeatures.add('local_watch');
+      }
+    });
+    final r = await h.run(_photo('local_watch_cloud_check'));
+    expect(r.blocked, RouteReason.localOnlySetting);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    final entry = h.ledger.entries.single;
+    expect(entry.pending, isFalse);
+    expect(entry.leg.transferPermitted, isFalse);
+    expect(entry.leg.error, HybridErrorCode.blocked);
+    expect(entry.uploadUnknown, isFalse);
+    expect(r.legs.single.transferPermitted, isFalse);
+  });
+
+  test('cancelled by a ledger listener at admission: nothing sent', () async {
+    final h = _Harness();
+    late HybridOperation op;
+    h.ledger.addListener(() {
+      if (h.ledger.entries.any((e) => e.pending)) op.cancel();
+    });
+    op = h.dispatcher.start(_photo('local_watch_cloud_check'), sessionId: 's1');
+    final r = await op.result;
+    expect(r.ok, isFalse);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.ledger.entries.single.leg.error, HybridErrorCode.cancelled);
+    expect(h.ledger.entries.single.leg.transferPermitted, isFalse);
+  });
+
+  // Pre-existing (Codex): a retry must not send the previous meal's payload
+  // under the next meal's ledger.
+  test('a new ledger session ends the run: the adapter fallback does not '
+      'send the old payload', () async {
+    final h = _Harness();
+    h.bridge.script.add((HybridRequest r) {
+      h.ledger.startSession('next-meal');
+      return const HybridException(HybridErrorCode.unavailable, 'no bridge');
+    });
+    final r = await h.run(_photo('local_watch_cloud_check'));
+    expect(r.ok, isFalse);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.ledger.sessionId, 'next-meal');
+    expect(h.ledger.entries, isEmpty, reason: 'nothing written to meal B');
+  });
+
+  test(
+    'a new ledger session during the consent prompt sends nothing',
+    () async {
+      final h = _Harness();
+      final prompt = Completer<ConsentGrant?>();
+      h.consent.answer = (_) => prompt.future;
+      final result = h.run(_photo('local_watch_cloud_check'));
+      await pumpEventQueue();
+      h.ledger.startSession('next-meal');
+      prompt.complete(h.consent.grantFor(h.consent.asks.single));
+      final r = await result;
+      expect(r.ok, isFalse);
+      expect(h.bridge.requests, isEmpty);
+      expect(h.ledger.entries, isEmpty);
+    },
+  );
+
+  // #227 review: `Image/JPEG` is an image for consent and the ledger.
+  test(
+    'a mixed-case, padded image MIME type is classified as an image',
+    () async {
+      final h = _Harness();
+      final task = HybridTask(
+        feature: 'local_watch_cloud_check',
+        parts: [
+          const HybridText('Is it browned?'),
+          HybridInlineData(Uint8List.fromList([1, 2, 3]), ' Image/JPEG '),
+        ],
+        maxOutputTokens: 64,
+        timeout: const Duration(seconds: 10),
+      );
+      expect(taskDataKinds(task), {DataKind.text, DataKind.image});
+      h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+      await h.run(task);
+      expect(h.consent.asks.single.kinds, {DataKind.text, DataKind.image});
+      expect(h.ledger.legs.single.kinds, {DataKind.text, DataKind.image});
+      final sent = h.bridge.requests.single.task.parts.last as HybridInlineData;
+      expect(sent.mimeType, 'image/jpeg');
+      expect(h.bridge.requests.single.task.hasImage, isTrue);
+    },
+  );
+
+  test('normalizeMimeType trims and lower-cases', () {
+    expect(normalizeMimeType(' Image/JPEG '), 'image/jpeg');
+    expect(normalizeMimeType('AUDIO/WAV'), 'audio/wav');
+    expect(
+      taskDataKinds(
+        HybridTask(
+          feature: 'pantry_voice',
+          parts: [HybridInlineData(Uint8List(1), 'Audio/Wav')],
+          maxOutputTokens: 8,
+          timeout: const Duration(seconds: 1),
+        ),
+      ),
+      {DataKind.audio},
+    );
+  });
+
+  // #227 review: approving meal A's photo prompt after meal B started must
+  // not send A's photo under B.
+  test('a prompt approved after the session changed sends nothing', () async {
+    final h = _Harness();
+    final prompt = Completer<ConsentGrant?>();
+    h.consent.answer = (_) => prompt.future;
+    final result = h.run(_photo('local_watch_cloud_check'));
+    await pumpEventQueue();
+    h.current = 'meal-b';
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
+    final r = await result;
+    expect(r.ok, isFalse);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.ledger.entries, isEmpty);
+  });
+
+  test('a request (and its grant) for a session that is no longer current '
+      'is never routed', () async {
+    final h = _Harness();
+    final task = _photo('local_watch_cloud_check');
+    final grant = await h.consent.grantFor(
+      ConsentAsk(
+        feature: 'local_watch_cloud_check',
+        kinds: taskDataKinds(task),
+        payloadDigest: hybridPayloadDigest(task),
+        sessionId: 's1',
+        imageDigests: taskImageDigests(task),
+      ),
+    );
+    h.current = 'meal-b';
+    h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+    final r = await h.dispatcher
+        .start(task, sessionId: 's1', grant: grant)
+        .result;
+    expect(r.ok, isFalse);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.consent.asks, isEmpty);
+    expect(h.ledger.entries, isEmpty);
+  });
+
+  // Codex #224 (71/100) P1: the gate grants a frozen copy of the ask, so
+  // widening `kinds` after approval cannot widen the grant.
+  test('mutating an ask after approval does not widen the grant', () async {
+    final h = _Harness();
+    final task = _photo('local_watch_cloud_check');
+    final kinds = <DataKind>{DataKind.text};
+    final ask = ConsentAsk(
+      feature: 'local_watch_cloud_check',
+      kinds: kinds,
+      payloadDigest: hybridPayloadDigest(task),
+      sessionId: 's1',
+      imageDigests: taskImageDigests(task),
+    );
+    final grant = await h.consent.grantFor(ask);
+    kinds.add(DataKind.image);
+    expect(grant.ask.kinds, {DataKind.text});
+    expect(() => grant.ask.kinds.add(DataKind.audio), throwsUnsupportedError);
+    h.consent.answer = (_) async => null;
+    final r = await h.dispatcher
+        .start(task, sessionId: 's1', grant: grant)
+        .result;
+    expect(r.blocked, RouteReason.consentDeclined);
+    expect(h.bridge.requests, isEmpty);
+  });
+
+  test('the dispatcher tells the prompt which route a yes takes', () async {
+    final h = _Harness();
+    h.consent.answer = (_) async => null;
+    await h.run(_photo('local_watch_cloud_check'));
+    expect(h.consent.asks.single.mode, isNotNull);
+  });
+
+  // Codex #224 pre-existing: native connectivity reaches the dispatcher.
+  test('the native reachability reader blocks cloud sends offline; '
+      'on-device still runs', () async {
+    final h = _Harness()..reachable = false;
+    final r = await h.run(_photo('local_watch_cloud_check'));
+    expect(r.blocked, RouteReason.offline);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.consent.asks, isEmpty);
+
+    h.bridge.enqueueText('{"state":"not_yet"}');
+    final local = await h.run(_photo('local_watch'));
+    expect(local.text, isNotNull);
+    expect(h.bridge.requests.single.mode, HybridMode.onlyOnDevice);
+  });
+
+  // Codex #224 (69/100) P2: native reachability is re-read after consent.
+  test('losing the network (native reader) during the consent prompt '
+      'blocks the send', () async {
+    final h = _Harness();
+    final prompt = Completer<ConsentGrant?>();
+    h.consent.answer = (_) => prompt.future;
+    final result = h.run(_photo('local_watch_cloud_check'));
+    await pumpEventQueue();
+    h.reachable = false;
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
+    expect((await result).blocked, RouteReason.offline);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+  });
+
+  // Codex #224 (69/100) P1: the gate copies the ask itself.
+  test(
+    'a grant keeps the ask as shown, whatever the caller changes later',
+    () async {
+      final h = _Harness();
+      final kinds = <DataKind>{DataKind.text};
+      final grant = await h.consent.grantFor(
+        ConsentAsk(
+          feature: 'coach_lite',
+          kinds: kinds,
+          payloadDigest: 'd',
+          sessionId: 's1',
+        ),
+      );
+      kinds.add(DataKind.image);
+      expect(grant.ask.kinds, {DataKind.text});
+    },
+  );
+
+  test('a grant naming other photos does not fit; the cook is asked with '
+      "the payload's own photo", () async {
+    final h = _Harness();
+    final task = _photo('local_watch_cloud_check');
+    final grant = await h.consent.grantFor(
+      ConsentAsk(
+        feature: 'local_watch_cloud_check',
+        kinds: taskDataKinds(task),
+        payloadDigest: hybridPayloadDigest(task),
+        sessionId: 's1',
+        imageDigests: const {'not-this-photo'},
+      ),
+    );
+    h.consent.answer = (_) async => null;
+    final r = await h.dispatcher
+        .start(task, sessionId: 's1', grant: grant)
+        .result;
+    expect(r.blocked, RouteReason.consentDeclined);
+    expect(h.consent.asks.single.imageDigests, taskImageDigests(task));
+    expect(h.consent.previews.single, [1, 2, 3]);
+    expect(h.bridge.requests, isEmpty);
+  });
+
+  test('a reader that throws counts as unknown (reachable)', () async {
+    final h = _Harness();
+    final d = DefaultHybridDispatcher(
+      inference: h.bridge,
+      privacy: h.privacy,
+      cloudRoutes: CloudRoutes.parse('hybridFallback'),
+      consent: h.consent,
+      ledger: h.ledger,
+      reachable: () => Future.error(StateError('probe')),
+    );
+    h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+    final r = await d
+        .start(_photo('local_watch_cloud_check'), sessionId: 's1')
+        .result;
+    expect(r.text, isNotNull);
   });
 
   test('remote routing cannot widen local_watch to preferOnDevice', () async {
@@ -484,17 +808,64 @@ void main() {
   });
 
   group('a grant supplied by the feature', () {
+    // Pre-existing (Codex): a grant must match the feature and the exact
+    // set of data kinds the cook was shown, not only digest and session.
+    test('a grant for another feature or other kinds is ignored and the cook '
+        'asked', () async {
+      final h = _Harness();
+      final task = _photo('local_watch_cloud_check');
+      h.consent.answer = (_) async => null;
+      final grants = await Future.wait([
+        h.consent.grantFor(
+          ConsentAsk(
+            feature: 'label_check',
+            kinds: taskDataKinds(task),
+            payloadDigest: hybridPayloadDigest(task),
+            sessionId: 's1',
+            imageDigests: taskImageDigests(task),
+          ),
+        ),
+        h.consent.grantFor(
+          ConsentAsk(
+            feature: 'local_watch_cloud_check',
+            kinds: const {DataKind.image},
+            payloadDigest: hybridPayloadDigest(task),
+            sessionId: 's1',
+            imageDigests: taskImageDigests(task),
+          ),
+        ),
+        h.consent.grantFor(
+          ConsentAsk(
+            feature: 'local_watch_cloud_check',
+            kinds: {...taskDataKinds(task), DataKind.audio},
+            payloadDigest: hybridPayloadDigest(task),
+            sessionId: 's1',
+            imageDigests: taskImageDigests(task),
+          ),
+        ),
+      ]);
+      for (final g in grants) {
+        final r = await h.dispatcher
+            .start(task, sessionId: 's1', grant: g)
+            .result;
+        expect(r.blocked, RouteReason.consentDeclined);
+      }
+      expect(h.consent.asks, hasLength(3));
+      expect(h.bridge.requests, isEmpty);
+    });
+
     test(
       'matching digest and session: used without asking the cook again',
       () async {
         final h = _Harness();
         final task = _photo('local_watch_cloud_check');
-        final grant = ConsentGrant(
+        final grant = await h.consent.grantFor(
           ConsentAsk(
-            feature: 'local_watch',
-            kinds: const {DataKind.image},
+            feature: 'local_watch_cloud_check',
+            kinds: taskDataKinds(task),
             payloadDigest: hybridPayloadDigest(task),
             sessionId: 's1',
+            imageDigests: taskImageDigests(task),
           ),
         );
         h.bridge.enqueueText(
@@ -525,32 +896,80 @@ void main() {
         final h = _Harness();
         final task = _photo('local_watch_cloud_check');
         h.consent.answer = (_) async => null;
-        for (final g in [
-          ConsentGrant(
+        for (final g in await Future.wait([
+          h.consent.grantFor(
             ConsentAsk(
-              feature: 'local_watch',
-              kinds: const {DataKind.image},
+              feature: 'local_watch_cloud_check',
+              kinds: taskDataKinds(task),
               payloadDigest: hybridPayloadDigest(
                 _photo('local_watch_cloud_check', 7),
               ),
               sessionId: 's1',
             ),
           ),
-          ConsentGrant(
+          h.consent.grantFor(
             ConsentAsk(
-              feature: 'local_watch',
-              kinds: const {DataKind.image},
+              feature: 'local_watch_cloud_check',
+              kinds: taskDataKinds(task),
               payloadDigest: hybridPayloadDigest(task),
               sessionId: 'other',
+              imageDigests: taskImageDigests(task),
             ),
           ),
-        ]) {
+        ])) {
           final r = await h.dispatcher
               .start(task, sessionId: 's1', grant: g)
               .result;
           expect(r.blocked, RouteReason.consentDeclined);
         }
         expect(h.consent.asks, hasLength(2));
+        expect(h.bridge.requests, isEmpty);
+      },
+    );
+
+    test('a fitting grant from another gate is not the cook\'s answer: the '
+        'dispatcher\'s own gate is asked (Codex P1)', () async {
+      final h = _Harness();
+      final task = _photo('local_watch_cloud_check');
+      final ask = ConsentAsk(
+        feature: 'local_watch_cloud_check',
+        kinds: taskDataKinds(task),
+        payloadDigest: hybridPayloadDigest(task),
+        sessionId: 's1',
+        imageDigests: taskImageDigests(task),
+      );
+      // Right digest, right session, never used, but issued by a gate the
+      // dispatcher does not trust.
+      final foreign = await _Consent().grantFor(ask);
+      expect(h.consent.issued(foreign), isFalse);
+      h.consent.answer = (_) async => null;
+      final declined = await h.dispatcher
+          .start(task, sessionId: 's1', grant: foreign)
+          .result;
+      expect(declined.blocked, RouteReason.consentDeclined);
+      expect(h.consent.asks, hasLength(1), reason: 'the cook was prompted');
+      expect(h.bridge.requests, isEmpty);
+
+      // When the cook allows it, the send goes ahead on the trusted grant.
+      h.consent.answer = null;
+      h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+      final allowed = await h.dispatcher
+          .start(task, sessionId: 's1', grant: foreign)
+          .result;
+      expect(allowed.text, isNotNull);
+      expect(h.consent.asks, hasLength(2));
+      expect(h.bridge.requests, hasLength(1));
+    });
+
+    test(
+      'a gate that answers with another gate\'s grant is a decline',
+      () async {
+        final h = _Harness();
+        final task = _photo('local_watch_cloud_check');
+        final other = _Consent();
+        h.consent.answer = (ask) async => other.grantFor(ask);
+        final r = await h.run(task);
+        expect(r.blocked, RouteReason.consentDeclined);
         expect(h.bridge.requests, isEmpty);
       },
     );
@@ -820,32 +1239,58 @@ void main() {
       },
     );
 
-    test(
-      'unsupportedInput on a cloud-only photo goes to the adapter, one consent',
-      () async {
-        final h = _Harness(caps: fakeIosCapabilities);
-        h.bridge.script.add(
-          const HybridException(
-            HybridErrorCode.unsupportedInput,
-            'no attachment',
-          ),
-        );
-        final r = await h.run(_photo('pantry_scan'));
-        expect(r.text, 'adapter answer');
-        expect(h.consent.asks, hasLength(1));
-        expect(r.legs, [
-          _leg(
-            mode: HybridMode.onlyInCloud,
-            error: HybridErrorCode.unsupportedInput,
-          ),
-          _leg(
-            provenance: Provenance.cloudAdapter,
-            mode: HybridMode.onlyInCloud,
-            error: null,
-          ),
-        ]);
-      },
-    );
+    test('unsupportedInput on a cloud-only photo goes to the adapter; the cook '
+        'is asked again (the grant is not refunded after dispatch)', () async {
+      final h = _Harness(caps: fakeIosCapabilities);
+      h.bridge.script.add(
+        const HybridException(
+          HybridErrorCode.unsupportedInput,
+          'no attachment',
+        ),
+      );
+      final r = await h.run(_photo('pantry_scan'));
+      expect(r.text, 'adapter answer');
+      // Pre-existing (Codex): nothing proves the bridge rejected the photo
+      // before sending it, so the first grant stays spent.
+      expect(h.consent.asks, hasLength(2));
+      expect(r.legs, [
+        _leg(
+          mode: HybridMode.onlyInCloud,
+          error: HybridErrorCode.unsupportedInput,
+        ),
+        _leg(
+          provenance: Provenance.cloudAdapter,
+          mode: HybridMode.onlyInCloud,
+          error: null,
+        ),
+      ]);
+    });
+
+    test('a supplied grant spent on a bridge attempt that reports '
+        'unsupportedInput does not pay for the adapter send', () async {
+      final h = _Harness(caps: fakeIosCapabilities);
+      final task = _photo('pantry_scan');
+      final grant = await h.consent.grantFor(
+        ConsentAsk(
+          feature: 'pantry_scan',
+          kinds: taskDataKinds(task),
+          payloadDigest: hybridPayloadDigest(task),
+          sessionId: 's1',
+          imageDigests: taskImageDigests(task),
+        ),
+      );
+      h.bridge.script.add(
+        const HybridException(HybridErrorCode.unsupportedInput, 'after send?'),
+      );
+      h.consent.answer = (_) async => null; // the cook says no this time
+      final r = await h.dispatcher
+          .start(task, sessionId: 's1', grant: grant)
+          .result;
+      expect(h.bridge.requests, hasLength(1), reason: 'the grant paid for it');
+      expect(h.consent.asks, hasLength(1), reason: 'asked for the fallback');
+      expect(h.adapter!.requests, isEmpty);
+      expect(r.text, isNull);
+    });
 
     test('the adapter fallback re-checks localOnly', () async {
       final h = _Harness(caps: fakeIosCapabilities);

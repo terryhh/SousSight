@@ -3,8 +3,19 @@
 // [HybridDispatcher] and test with [FakeHybridDispatcher].
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
+import 'package:flutter/foundation.dart' show protected;
+
+import 'payload_digest.dart' show sha256Hex;
+
+/// A [HybridException] for a request that was refused before anything was
+/// sent (for example, a check after the startup wait). The dispatcher records
+/// its leg as not sent rather than "may have been sent".
+class NotSentException extends HybridException {
+  const NotSentException(super.code, super.message);
+}
 
 /// Cloud routes G1 approved for this build. Compiled in; default is none.
 enum CloudRoute { hybridFallback, research, nearby, live }
@@ -34,27 +45,87 @@ abstract class PrivacySettings {
 enum DataKind { text, image, audio, location }
 
 /// Consent is for one exact payload in one session, and is used once.
-class ConsentAsk {
+final class ConsentAsk {
   const ConsentAsk({
     required this.feature,
     required this.kinds,
     required this.payloadDigest,
     required this.sessionId,
+    this.mode,
+    this.imageDigests = const {},
   });
   final String feature;
   final Set<DataKind> kinds;
   final String payloadDigest;
   final String sessionId;
+
+  /// The route a yes takes, when the asker knows it (the dispatcher does):
+  /// `onlyInCloud` sends at once; a `prefer…` mode may still finish on the
+  /// device. Null: the feature's default route decides the wording.
+  final HybridMode? mode;
+
+  /// SHA-256 (hex) of each photo in the payload (`taskImageDigests`). A
+  /// preview is shown only if it hashes to one of these, so a prompt can
+  /// never show a different photo than the one the grant covers.
+  final Set<String> imageDigests;
 }
 
-class ConsentGrant {
-  const ConsentGrant(this.ask);
+/// The cook's "allow once" for one [ConsentAsk]. The only way to obtain one
+/// is [ConsentGate.request], which asks the cook through
+/// [ConsentGate.confirm]; feature code cannot make, extend or implement its
+/// own, and there is no other minting call. Each grant remembers the gate
+/// that issued it, and the dispatcher accepts only grants its own gate
+/// issued ([ConsentGate.issued]).
+final class ConsentGrant {
+  const ConsentGrant._(this.ask, this._issuer);
   final ConsentAsk ask;
+  final ConsentGate _issuer;
 }
 
 abstract class ConsentGate {
-  /// Null when the cook declines.
-  Future<ConsentGrant?> request(ConsentAsk ask);
+  const ConsentGate();
+
+  /// Shows the cook [ask] (with [preview], the exact photo, when given) and
+  /// completes true only for "Allow once". It returns no grant, so calling
+  /// it directly authorizes nothing.
+  @protected
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview});
+
+  /// Asks the cook; a grant for exactly [ask], issued by this gate, when
+  /// they allow it, else null. Any error is a decline.
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) async {
+    // The gate owns what the cook sees and what the grant covers: one frozen
+    // snapshot, taken before the prompt, so the caller cannot widen it later.
+    // Copied field by field here (ConsentAsk is final; nothing overridable
+    // is called), with an unmodifiable copy of [ConsentAsk.kinds].
+    final shown = ConsentAsk(
+      feature: ask.feature,
+      kinds: Set.unmodifiable(ask.kinds),
+      payloadDigest: ask.payloadDigest,
+      sessionId: ask.sessionId,
+      mode: ask.mode,
+      imageDigests: Set.unmodifiable(ask.imageDigests),
+    );
+    // The gate's own copy of the preview, taken now: it is hashed and the
+    // same copy is shown, so the caller cannot swap the bytes afterwards.
+    // A preview that is not one of this payload's own photos is never shown.
+    final copy = preview == null ? null : Uint8List.fromList(preview);
+    final shownPreview =
+        copy != null && shown.imageDigests.contains(sha256Hex(copy))
+        ? copy
+        : null;
+    try {
+      return await confirm(shown, preview: shownPreview)
+          ? ConsentGrant._(shown, this)
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// True when [grant] came from this gate's prompt. A gate that shows its
+  /// prompt through another gate overrides this to ask that gate.
+  bool issued(ConsentGrant grant) => identical(grant._issuer, this);
 }
 
 enum Provenance { sdkOnDevice, sdkCloud, cloudAdapter, simulated, unknown }

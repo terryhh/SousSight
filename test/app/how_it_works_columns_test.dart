@@ -22,12 +22,13 @@ void main() {
         'Coach Lite',
         'Label check',
       ]);
-      expect(names(c.cloud), ['Nearby stores']);
+      expect(names(c.cloud), isEmpty);
       expect(c.off, [
         'Pantry voice note',
         'Watch: one photo you choose',
         'Live coach',
         'Grounded research',
+        'Nearby stores',
       ]);
       for (final e in c.onDevice) {
         expect(e.note, 'Always here.');
@@ -49,11 +50,45 @@ void main() {
         expect(names(c.cloud), containsAll(['Pantry scan', 'Coach Lite']));
         expect(names(c.cloud), contains('Live coach'));
         expect(names(c.cloud), contains('Grounded research'));
-        expect(c.off, isEmpty);
+        // Nearby follows its own route, which this build does not approve.
+        expect(c.off, ['Nearby stores']);
         final coach = c.cloud.firstWhere((e) => e.feature == 'Coach Lite');
         expect(coach.note, contains('fails its checks'));
       },
     );
+  });
+
+  group('nearby is derived from CloudRoute.nearby (SS-096)', () {
+    test('approved: in the cloud column and its row says how to stop it', () {
+      final routes = CloudRoutes.parse('nearby');
+      final c = hybridRoutingColumns(
+        cloudRoutes: routes,
+        liveBackend: LiveBackend.none,
+      );
+      expect(names(c.cloud), ['Nearby stores']);
+      expect(c.off, isNot(contains('Nearby stores')));
+      final row = hybridRoutingRows(
+        cloudRoutes: routes,
+        liveBackend: LiveBackend.none,
+      ).firstWhere((r) => r.feature == 'Nearby stores');
+      expect(row.where, contains('Google Maps'));
+      expect(row.where, contains('Keep Find food help on this device'));
+    });
+
+    test('not approved: listed as off, never as a cloud feature', () {
+      final routes = CloudRoutes.parse('hybridFallback,research,live');
+      final c = hybridRoutingColumns(
+        cloudRoutes: routes,
+        liveBackend: LiveBackend.aiLogic,
+      );
+      expect(names(c.cloud), isNot(contains('Nearby stores')));
+      expect(c.off, contains('Nearby stores'));
+      final row = hybridRoutingRows(
+        cloudRoutes: routes,
+        liveBackend: LiveBackend.aiLogic,
+      ).firstWhere((r) => r.feature == 'Nearby stores');
+      expect(row.where, 'Off in this build.');
+    });
   });
 
   testWidgets('two columns side by side at phone width', (tester) async {

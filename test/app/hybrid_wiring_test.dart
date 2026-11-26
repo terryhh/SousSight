@@ -349,18 +349,14 @@ void main() {
         final gate = DialogConsentGate(navigatorKey: key, cloudModel: 'm');
         ConsentGrant? grant;
         var done = false;
-        unawaited(
-          gate
-              .requestWithPreview(ask, null)
-              .then((g) => (grant, done) = (g, true)),
-        );
+        unawaited(gate.request(ask).then((g) => (grant, done) = (g, true)));
         await tester.pumpAndSettle();
         expect(find.text('Send this once'), findsOneWidget);
         expect(find.text('Keep it on my phone'), findsOneWidget);
         await tester.tap(find.byKey(ValueKey(button)));
         await tester.pumpAndSettle();
         expect(done, isTrue);
-        expect(grant?.ask, granted ? same(ask) : isNull);
+        expect(grant?.ask, granted ? _sameAskAs(ask) : isNull);
       });
     }
   });
@@ -382,7 +378,7 @@ void main() {
               sentInstruction = systemInstruction;
               expect(model, 'm-2');
               expect(content.parts, hasLength(2));
-              return '{"a":1}';
+              return const CloudReply('{"a":1}');
             },
       );
       final result = await sender.send(
@@ -404,9 +400,39 @@ void main() {
       );
       expect(result.source, InferenceSource.cloud);
       expect(result.requestId, 'r1');
-      expect(result.modelLabel, 'm-2');
+      // firebase_ai reports no model version here: the alias is labelled
+      // as requested, never as observed.
+      expect(result.modelLabel, 'requested: m-2');
       expect(sentInstruction, 'sys');
       expect(sentConfig!.toJson()['responseJsonSchema'], {'type': 'object'});
+    });
+
+    test('a model version the SDK reports is recorded as observed', () async {
+      final sender = FirebaseAiCloudSender(
+        model: 'gemini-flash-latest',
+        generate:
+            ({
+              required model,
+              required systemInstruction,
+              required content,
+              required config,
+            }) async =>
+                const CloudReply('ok', modelVersion: 'gemini-2.5-flash-001'),
+      );
+      final result = await sender.send(
+        const HybridRequest(
+          requestId: 'r',
+          mode: HybridMode.onlyInCloud,
+          task: HybridTask(
+            feature: 'label_check',
+            parts: [HybridText('hi')],
+            maxOutputTokens: 8,
+            timeout: Duration(seconds: 1),
+          ),
+        ),
+      );
+      expect(result.modelLabel, 'gemini-2.5-flash-001');
+      expect(cloudModelLabel('  ', requested: 'x'), 'requested: x');
     });
 
     test('an empty reply fails instead of passing as an answer', () async {
@@ -552,3 +578,10 @@ void main() {
     });
   });
 }
+
+/// The gate grants a frozen copy of the ask: equal fields, not the instance.
+Matcher _sameAskAs(ConsentAsk a) => isA<ConsentAsk>()
+    .having((x) => x.feature, 'feature', a.feature)
+    .having((x) => x.kinds, 'kinds', a.kinds)
+    .having((x) => x.payloadDigest, 'payloadDigest', a.payloadDigest)
+    .having((x) => x.sessionId, 'sessionId', a.sessionId);

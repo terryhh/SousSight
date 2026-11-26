@@ -195,6 +195,20 @@ void main() {
     await tester.pump();
     expect(privacy.localOnly('pantry_scan'), isTrue);
     expect(tester.widget<SwitchListTile>(pantry).value, isTrue);
+
+    // SS-096: nearby lookups have their own switch.
+    final nearby = find.byKey(const ValueKey('local-only-nearby'));
+    await tester.scrollUntilVisible(nearby, 200, scrollable: _sheetScroll);
+    expect(
+      find.descendant(
+        of: nearby,
+        matching: find.text('Keep Find food help on this device'),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(nearby);
+    await tester.pump();
+    expect(privacy.localOnly('nearby'), isTrue);
   });
 
   testWidgets('enable steps open for this platform and name the Chrome flag', (

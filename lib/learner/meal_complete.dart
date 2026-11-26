@@ -61,6 +61,10 @@ class MealCompletePanel extends StatefulWidget {
   /// while a new cook is already starting.
   final VoidCallback? onCookSomethingElse;
   final String cookSomethingElseLabel;
+
+  /// Nearby food help. Defaults to the rehearsal client in demo mode; real
+  /// mode needs a gated client (`nearbyClientFor`), and without one, or when
+  /// this build does not approve the nearby route, the button is hidden.
   final NearbyClient? nearbyClient;
   final NearbyLocator? locate;
   final NearbyLinkOpener? openLink;
@@ -70,9 +74,8 @@ class MealCompletePanel extends StatefulWidget {
 }
 
 class _MealCompletePanelState extends State<MealCompletePanel> {
-  late final NearbyClient _nearby =
-      widget.nearbyClient ??
-      (widget.isDemo ? const FakeNearbyClient() : GeminiNearbyClient());
+  late final NearbyClient? _nearby =
+      widget.nearbyClient ?? (widget.isDemo ? const FakeNearbyClient() : null);
 
   @override
   void initState() {
@@ -88,9 +91,9 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
     });
   }
 
-  void _openNearby() => showNearbySheet(
+  void _openNearby(NearbyClient client) => showNearbySheet(
     context,
-    client: _nearby,
+    client: client,
     kind: NearbyKind.foodHelp,
     locate:
         widget.locate ??
@@ -195,13 +198,15 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
               icon: const Icon(Icons.sms_outlined),
               label: const Text('Text the household: dinner is ready'),
             ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              key: const ValueKey('meal-complete-nearby'),
-              onPressed: _openNearby,
-              icon: const Icon(Icons.volunteer_activism_outlined),
-              label: const Text('Find food help nearby for next time'),
-            ),
+            if (_nearby case final nearby? when nearbyOffered(nearby)) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const ValueKey('meal-complete-nearby'),
+                onPressed: () => _openNearby(nearby),
+                icon: const Icon(Icons.volunteer_activism_outlined),
+                label: const Text('Find food help nearby for next time'),
+              ),
+            ],
             const SizedBox(height: 6),
             TextButton.icon(
               key: const ValueKey('meal-complete-cook-again'),

@@ -2,6 +2,7 @@
 // network call is made; these tests do not show a live Remote Config fetch.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:fake_async/fake_async.dart';
@@ -98,9 +99,9 @@ class _Privacy implements PrivacySettings {
   bool localOnly(String feature) => local.contains(feature);
 }
 
-class _AllowConsent implements ConsentGate {
+class _AllowConsent extends ConsentGate {
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) async => ConsentGrant(ask);
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
 }
 
 void main() {
@@ -426,7 +427,8 @@ void main() {
         isOnline: () => true,
         remote: policy,
       );
-      final op = hybrid.dispatcher.start(draft(), sessionId: 's');
+      // The runtime's current session: a run for any other is stale.
+      final op = hybrid.dispatcher.start(draft(), sessionId: hybrid.sessionId);
       await Future<void>.delayed(Duration.zero);
       expect(inference.requests, isEmpty);
       // Remote Config activates late, while the backend is still starting.

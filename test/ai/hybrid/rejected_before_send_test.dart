@@ -17,12 +17,12 @@ class _Privacy implements PrivacySettings {
   bool localOnly(String feature) => false;
 }
 
-class _Consent implements ConsentGate {
+class _Consent extends ConsentGate {
   int asks = 0;
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) async {
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async {
     asks++;
-    return ConsentGrant(ask);
+    return true;
   }
 }
 

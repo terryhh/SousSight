@@ -319,8 +319,13 @@ RouteDecision decideRoute(RouteInput input);    // pure, table-tested
 
 /// Consent is for one exact payload in one session, and is used once.
 class ConsentAsk { final String feature; final Set<DataKind> kinds;
-                   final String payloadDigest; final String sessionId; }
-abstract class ConsentGate { Future<ConsentGrant?> request(ConsentAsk ask); }
+                   final String payloadDigest; final String sessionId;
+                   final HybridMode? mode; }  // the route a yes takes
+abstract class ConsentGate {
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}); // issues
+  @protected Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}); // prompt
+  bool issued(ConsentGrant grant);
+}
 enum DataKind { text, image, audio, location }
 
 enum Provenance { sdkOnDevice, sdkCloud, cloudAdapter, simulated, unknown }
@@ -352,9 +357,13 @@ image where the local model has none, token budget, language, `supportedModes`) 
 
 `HybridDispatcher.start(task, {validate})` returns a `HybridOperation` and is the only sender.
 Before **every** send (first attempt, Dart cloud fallback, semantic retry) it checks, in order:
-the operation is not cancelled; `PrivacySettings.localOnly` as it is **now**; `CloudRoutes`; and,
-when the send may upload and consent is needed, a `ConsentGrant` matching this payload digest
-and session. Then:
+the operation is not cancelled and its session (and ledger generation) is still current;
+`PrivacySettings.localOnly` as it is **now**; `CloudRoutes`; connectivity (on Android and iOS
+also a best-effort native reachability probe); and, when the send may upload and consent is
+needed, a `ConsentGrant` from the dispatcher's own gate matching this feature, the exact data
+kinds, the payload digest and the session. The checks run again after the consent prompt, after
+the ledger admission, and inside `ConfiguredHybridInference` after its startup wait, immediately
+before the send; a refusal at any of these points is recorded as not sent. Then:
 1. Decide. `mode == null` → return `blocked`; nothing is sent.
 2. Write the leg to the ledger (kinds, `transferPermitted`), then call the plugin.
 3. Record the outcome: SDK source → `sdkOnDevice` / `sdkCloud`; an error on a send that was
@@ -367,10 +376,52 @@ and session. Then:
 A result shown to the cook carries its legs. A scan built from a local photo leg and a cloud
 voice leg shows both, never one merged badge.
 
+**What consent binds (SS-096).** A `ConsentGrant` binds `hybridPayloadDigest(task)`: the task
+as the app built it (the exact bytes the cook was shown), for one session, used once. It does not
+bind the bytes an SDK puts on the wire. With `preferOnDevice` on Android, the bridge decodes an
+image to a `Bitmap` for Gemini Nano (`FirebaseHybridEngine.generate`); if the SDK then falls
+back to the cloud, it re-encodes that `Bitmap`, so the bytes sent are the same picture but not
+the digested bytes. `onlyInCloud` sends the original bytes (`inlineData`). Therefore:
+- When the local model is not ready (`downloadable`, `downloading`, `unavailable`) and the payload
+  needs consent, `decideRoute` returns `onlyInCloud`, not `preferOnDevice`: it would reach the
+  cloud either way, and this way the exact allowed bytes go.
+- When the local model is ready, a consented photo still runs `preferOnDevice`, so it is answered
+  on the device whenever it can be. If the SDK falls back, the cloud receives a re-encoding of the
+  allowed picture. The consent prompt and ledger describe the picture and its kinds, which stay
+  true; nothing else is added. The web bridge hands the JS SDK the original bytes; whether the
+  SDK re-encodes them on its own fallback has not been verified.
+- `ConsentGrant` is a `final` class with a private constructor. The only issuance path is
+  `ConsentGate.request`: it freezes the ask (an unmodifiable copy of `kinds`), calls the
+  `@protected` `confirm` callback that shows the cook the prompt and returns a `bool`, and issues
+  a grant for that frozen ask, bound to the issuing gate. There is no other minting call, and a
+  grant from any gate other than the dispatcher's own makes the dispatcher ask the cook. A grant
+  is spent once a request is dispatched and is never refunded.
+
+A sub-step's `parentFeature` local-only setting applies to it (`localOnlyFor`): the watch's
+cloud check follows "Keep Watch my food on this device", and the pantry voice clip follows
+"Keep Pantry scan on this device" (the clip then never uploads and the scan says so).
+
+`ConfiguredHybridInference` bounds the wait for the startup `configure` (on web, an unbounded
+`import()`) in two separate ways:
+- **Generation.** One deadline, `task.timeout`, covers configure plus generation. The backend
+  gets only the remaining budget. A request whose deadline passes during configure is never
+  forwarded, and the outcome is accepted only while the deadline holds (checked against a
+  monotonic clock). Otherwise `generate` throws `HybridException(timeout)` and cancels the
+  request. A request cancelled while it waits for configure is never forwarded.
+- **Discovery.** `capabilities()` and `availability()` are each bounded as a whole by
+  `configureWait` (10 s by default). Past that they **do not throw**: they report what a
+  missing bridge reports, `HybridCapabilities.none()` and `unavailable`
+  (`bridge_unavailable`), so routing falls back and the trust controls still open.
+
 `InferenceLedger` is session-scoped, in memory, and holds legs. Other cloud senders also check
 `CloudRoutes` and write a leg (`cloudAdapter`): Live connect **and each resume**, grounded
-research and its follow-ups, and nearby lookups, which send **location**
-(`lib/nearby/nearby_client.dart:295`). Research lives in Jenna's files
+research and its follow-ups, and nearby lookups, which send **location**. `GeminiNearbyClient`
+reads its `NearbyGate` immediately before every send: `CloudRoute.nearby`, the cook's "Keep Find
+food help on this device" switch (feature `nearby`) and connectivity. A blocked or invalid search
+is a leg that was not allowed to leave; a send is a pending `{location, text}` leg, confirmed when
+Gemini answers and left unknown when it fails. Without an approved route (or, in real mode,
+without a client wired to the runtime) the "Find food help nearby" entry points are hidden, and
+How it works lists nearby as off. Research lives in Jenna's files
 (`lib/learner/research_panel_client.dart` calls into `lib/research/`): add the hook at the call
 site in shared code, not inside her files. The ledger view separates "allowed to leave" from
 "reported as sent", and states what the session saves to Firestore and that the Live coach is

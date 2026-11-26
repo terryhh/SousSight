@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_policy.dart';
+import 'package:soussight/ai/hybrid/payload_digest.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/config/remote_policy.dart';
 import 'package:soussight/core/models.dart';
@@ -42,6 +43,25 @@ class _CountingCloud implements CloudFallbackSender {
 
 void main() {
   group('consent wording', () {
+    // Codex #224 (71/100): the wording follows the route the dispatcher
+    // chose, not only the feature default.
+    test('a pantry photo routed onlyInCloud says it will be sent; a '
+        'preferOnDevice one says "if needed"', () {
+      ConsentAsk ask(HybridMode? mode) => ConsentAsk(
+        feature: 'pantry_scan',
+        kinds: const {DataKind.image, DataKind.text},
+        payloadDigest: 'd',
+        sessionId: 's',
+        mode: mode,
+      );
+      final cloud = consentCopy(ask(HybridMode.onlyInCloud));
+      expect(cloud.title, 'Send this photo to Google?');
+      expect(cloud.body, isNot(contains("can't answer by itself")));
+      final local = consentCopy(ask(HybridMode.preferOnDevice));
+      expect(local.title, 'Send this photo to Google if needed?');
+      expect(consentCopy(ask(null)).title, local.title, reason: 'default');
+    });
+
     for (final (feature, kinds, subject) in [
       ('nearby', {DataKind.text}, 'this question'),
       ('coach_lite', {DataKind.text}, 'your question'),
@@ -314,7 +334,16 @@ void main() {
       ConsentGrant? grant;
       unawaited(
         framed
-            .request(_ask('label_check', {DataKind.image, DataKind.text}))
+            .request(
+              // The preview is shown because it is this payload's photo.
+              ConsentAsk(
+                feature: 'label_check',
+                kinds: const {DataKind.image, DataKind.text},
+                payloadDigest: 'd',
+                sessionId: 's',
+                imageDigests: {sha256Hex(png)},
+              ),
+            )
             .then((g) => grant = g),
       );
       await tester.pumpAndSettle();
@@ -406,7 +435,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('consent-dialog')), findsOneWidget);
-      expect(find.text('Send this photo to Google if needed?'), findsOneWidget);
+      expect(
+        find.text('Send this photo to Google?'),
+        findsOneWidget,
+      ); // routed onlyInCloud
       if (closeInstead) {
         hybrid.navigatorKey.currentState!.pop();
       } else {
@@ -544,7 +576,10 @@ void main() {
             .then((r) => result = r),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Send this photo to Google if needed?'), findsOneWidget);
+      expect(
+        find.text('Send this photo to Google?'),
+        findsOneWidget,
+      ); // routed onlyInCloud
       expect(
         find.textContaining(
           'sends this photo, with anything you typed, any items picked out '

@@ -6,7 +6,25 @@ import 'package:firebase_ai/firebase_ai.dart';
 // ignore: implementation_imports
 import 'package:firebase_ai/src/api.dart' show GroundingMetadata;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soussight/ai/hybrid/hybrid_types.dart';
+import 'package:soussight/ai/hybrid/inference_ledger.dart';
+import 'package:soussight/app/cloud_send_recorder.dart';
 import 'package:soussight/nearby/nearby_client.dart';
+import 'package:soussight/trust/privacy_preferences.dart';
+
+/// The gate a wired app uses, over fakes: every route approved, online,
+/// nothing kept on device, legs written to [ledger].
+NearbyGate _gate({
+  InferenceLedger? ledger,
+  CloudRoutes routes = const CloudRoutes({CloudRoute.nearby}),
+  PrivacyPreferences? privacy,
+  bool Function()? isOnline,
+}) => NearbyGate(
+  cloudRoutes: routes,
+  privacy: privacy ?? InMemoryPrivacyPreferences(),
+  isOnline: isOnline ?? () => true,
+  recorder: LedgerCloudSendRecorder(ledger ?? InferenceLedger(sessionId: 's1')),
+);
 
 GenerateContentResponse _response({
   String answer = 'Two pantries are nearby. Confirm hours before you go.',
@@ -99,6 +117,7 @@ void main() {
     () async {
       final requests = <NearbyGenerationRequest>[];
       final client = GeminiNearbyClient(
+        gate: _gate(),
         generate: (request) async {
           requests.add(request);
           return _response(
@@ -138,6 +157,7 @@ void main() {
 
   test('rejects missing area and maps failures to safe copy', () async {
     final client = GeminiNearbyClient(
+      gate: _gate(),
       generate: (_) => Future.error(Exception('API key leaked: secret')),
     );
     await expectLater(
@@ -161,6 +181,7 @@ void main() {
       ),
     );
     final slow = GeminiNearbyClient(
+      gate: _gate(),
       timeout: const Duration(milliseconds: 10),
       generate: (_) => Completer<GenerateContentResponse>().future,
     );
