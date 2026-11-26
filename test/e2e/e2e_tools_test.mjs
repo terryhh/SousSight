@@ -426,6 +426,17 @@ describe('COPY (app wording the journey matches)', () => {
     ['simulatedBadge', 'Where this ran: Simulated', 'Where this ran: Practice mode'],
   ];
 
+  test('watchRefused accepts the no-vision refusal of a build without Live', () => {
+    // SS-089: a real build with no photo model and no Live coach refuses up
+    // front with this wording; the journey must treat it as a refusal.
+    assert.match(
+      "This device can't check photos yet — \"On this device\" shows how to set it up. Meanwhile, look for: Both slices lie flat.",
+      COPY.watchRefused,
+    );
+    assert.match("This device's on-device model can't look at photos.", COPY.watchRefused);
+    assert.doesNotMatch('Watching on this device for: the cue', COPY.watchRefused);
+  });
+
   test('each entry accepts the old and the new wording', () => {
     for (const [key, before, now] of pairs) {
       assert.ok(COPY[key] instanceof RegExp, key);
