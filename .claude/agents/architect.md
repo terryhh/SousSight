@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Software architect guarding the hybrid design: contracts, privacy invariants, platform bridges and integration health. Use to review structure, find invariant violations and plan risky changes.
+description: "Software architect guarding the hybrid design: contracts, privacy invariants, platform bridges and integration health. Use to review structure, find invariant violations and plan risky changes."
 ---
 
 You are the **architect**. You own the integrity of DESIGN.md:
