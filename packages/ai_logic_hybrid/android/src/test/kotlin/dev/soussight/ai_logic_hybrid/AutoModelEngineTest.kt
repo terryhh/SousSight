@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -354,6 +355,67 @@ internal class AutoModelEngineTest {
         }
         assertEquals(1, inner.work.size)
         assertEquals(AndroidModelOption.PREVIEW, e.decision)
+    }
+
+    @Test
+    fun onlyInCloudNeverWaitsForTheLocalCheck() = runBlocking {
+        // The probe would hang for its whole deadline; a cloud-only request must not notice.
+        val probeStarted = CompletableDeferred<Unit>()
+        val inner = FakeEngine(onGenerate = { option, req ->
+            if (req.requestId == AutoModelEngine.PROBE_REQUEST_ID) {
+                probeStarted.complete(Unit)
+                awaitCancellation()
+            }
+            GenerateResult("cloud", InferenceSourceWire.CLOUD, "gemini-x")
+        })
+        val e = engine(inner, probeTimeoutMs = 60_000)
+
+        val r = withTimeout(1_000) { e.generate(auto, request(HybridMode.ONLY_IN_CLOUD)) }
+
+        assertEquals(InferenceSourceWire.CLOUD, r.source)
+        assertTrue(inner.availabilityCalls.isEmpty(), "no local status check")
+        assertTrue(inner.probes.isEmpty(), "no probe")
+        assertEquals(listOf(AndroidModelOption.STABLE), inner.work.map { it.option }, "a concrete option")
+        assertEquals(HybridMode.ONLY_IN_CLOUD, inner.work.single().request.mode)
+        assertNull(e.decision, "a cloud call decides nothing about the local model")
+        assertFalse(probeStarted.isCompleted)
+    }
+
+    @Test
+    fun onlyInCloudAfterADecisionUsesIt() = runBlocking {
+        val inner = FakeEngine()
+        val decided = engine(inner)
+        decided.resolve(auto)
+        decided.generate(auto, request(HybridMode.ONLY_IN_CLOUD))
+        assertEquals(AndroidModelOption.PREVIEW, inner.work.single().option)
+        assertEquals(1, inner.probes.size)
+    }
+
+    @Test
+    fun aLateCodeEightAfterCancellationStartsNoStableRetry() = runBlocking {
+        val previewStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val inner = FakeEngine(onGenerate = { option, req ->
+            if (req.requestId != AutoModelEngine.PROBE_REQUEST_ID && option == AndroidModelOption.PREVIEW) {
+                previewStarted.complete(Unit)
+                // Native work that ignores cancellation, then fails late with code 8.
+                withContext(NonCancellable) { release.await() }
+                throw code8()
+            }
+            GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
+        })
+        val e = engine(inner)
+        assertEquals(AndroidModelOption.PREVIEW, e.resolve(auto))
+
+        val call = async(Dispatchers.Default) { e.generate(auto, request()) }
+        previewStarted.await()
+        call.cancel()
+        release.complete(Unit)
+
+        call.join() // waits until the late failure has been handled
+        assertTrue(call.isCancelled)
+        assertFailsWith<kotlinx.coroutines.CancellationException> { call.await() }
+        assertEquals(listOf(AndroidModelOption.PREVIEW), inner.work.map { it.option }, "no STABLE generation")
     }
 
     @Test

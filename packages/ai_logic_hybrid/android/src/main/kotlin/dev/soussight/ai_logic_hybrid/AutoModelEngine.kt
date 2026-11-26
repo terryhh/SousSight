@@ -8,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
@@ -29,7 +30,8 @@ import kotlinx.coroutines.withTimeout
  * If a later generate on PREVIEW fails with NOT_AVAILABLE, the decision becomes STABLE and the
  * request is retried once on STABLE with `onlyOnDevice`. That retry never reaches the cloud (the
  * SDK builds no cloud client for ONLY_ON_DEVICE) and never widens the mode: `onlyInCloud` never
- * runs on-device and is never retried. Explicit `preview`, `previewFast` and `stable` pass
+ * runs on-device, never waits for the local check, and is never retried. A caller cancelled before
+ * the late failure arrives gets no retry. Explicit `preview`, `previewFast` and `stable` pass
  * through untouched, with no probe and no retry.
  *
  * The probe and retry carry no cook data. [log] gets the decision (options, status, model name,
@@ -72,18 +74,21 @@ class AutoModelEngine(
 
     override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult {
         if (config.androidModel != AndroidModelOption.AUTO) return inner.generate(config, request)
+        if (request.mode == HybridMode.ONLY_IN_CLOUD) {
+            // Never runs on-device, so it must not wait for the local check or its probe. The SDK
+            // builds only a cloud provider for this mode; the option just has to be concrete.
+            return inner.generate(config.copy(androidModel = chosen ?: AndroidModelOption.STABLE), request)
+        }
         val option = resolve(config)
         try {
             return inner.generate(config.copy(androidModel = option), request)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            if (option != AndroidModelOption.PREVIEW ||
-                request.mode == HybridMode.ONLY_IN_CLOUD ||
-                !ErrorMapping.isModelNotAvailable(e)
-            ) {
-                throw e
-            }
+            if (option != AndroidModelOption.PREVIEW || !ErrorMapping.isModelNotAvailable(e)) throw e
+            // A native call that ignored cancellation may fail late; a caller that was cancelled
+            // or timed out meanwhile must not start another generation.
+            currentCoroutineContext().ensureActive()
             chosen = AndroidModelOption.STABLE
             log("auto: preview failed mid-session (${describe(e)}); using stable for this run, retrying once on-device")
             // Narrowed to onlyOnDevice: the retry may only run on this device.
