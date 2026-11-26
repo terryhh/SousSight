@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
@@ -307,6 +310,71 @@ void main() {
         c.dispose();
       },
     );
+  });
+
+  group('a capture outlived by its check', () {
+    late Completer<Uint8List?> camera;
+    Future<Uint8List?> take() => camera.future;
+    setUp(() => camera = Completer<Uint8List?>());
+
+    test('a capture completes normally and is checked', () async {
+      dispatcher.enqueue(readableWithPeanut);
+      final c = make();
+      final pending = c.captureAndCheck(take);
+      expect(c.phase, LabelCheckPhase.capturing);
+      expect(c.busy, isTrue);
+      camera.complete(fakeJpeg());
+      await pending;
+      expect(dispatcher.tasks, hasLength(1));
+      expect(c.matches, ['peanut']);
+      c.dispose();
+    });
+
+    test('session changed during capture: nothing is dispatched', () async {
+      dispatcher.enqueue(readableWithPeanut);
+      final c = make();
+      final pending = c.captureAndCheck(take);
+      c.setSession('s2');
+      camera.complete(fakeJpeg());
+      await pending;
+      expect(dispatcher.tasks, isEmpty);
+      expect(c.result, isNull);
+      expect(c.phase, LabelCheckPhase.idle);
+      c.dispose();
+    });
+
+    test('sheet closed during capture: nothing is dispatched', () async {
+      final c = make();
+      final pending = c.captureAndCheck(take);
+      c.close();
+      camera.complete(fakeJpeg());
+      await pending;
+      expect(dispatcher.tasks, isEmpty);
+      c.dispose();
+    });
+
+    test('a newer check during capture discards the photo', () async {
+      dispatcher.enqueue(unreadableJson);
+      final c = make();
+      final pending = c.captureAndCheck(take);
+      await c.checkTyped('Contains: soy');
+      camera.complete(fakeJpeg());
+      await pending;
+      expect(dispatcher.tasks, hasLength(1));
+      expect(dispatcher.tasks.single.hasImage, isFalse);
+      expect(c.result!.source, LabelSource.typed);
+      c.dispose();
+    });
+
+    test('a failed or cancelled capture returns to idle', () async {
+      final c = make();
+      final pending = c.captureAndCheck(take);
+      camera.completeError(StateError('camera blocked'));
+      await pending;
+      expect(dispatcher.tasks, isEmpty);
+      expect(c.phase, LabelCheckPhase.idle);
+      c.dispose();
+    });
   });
 
   group('stale results', () {

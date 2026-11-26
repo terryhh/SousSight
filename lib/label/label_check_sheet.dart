@@ -52,7 +52,6 @@ class LabelCheckSheet extends StatefulWidget {
 class _LabelCheckSheetState extends State<LabelCheckSheet> {
   final _typed = TextEditingController();
   bool _typing = false;
-  bool _takingPhoto = false;
 
   LabelCheckController get _c => widget.controller;
 
@@ -64,20 +63,12 @@ class _LabelCheckSheetState extends State<LabelCheckSheet> {
     super.dispose();
   }
 
+  /// The controller owns the capture, so a photo that arrives after the sheet
+  /// closed, the session changed or a newer check started is discarded.
   Future<void> _photo() async {
     final take = widget.takePhoto;
-    if (take == null || _takingPhoto) return;
-    setState(() => _takingPhoto = true);
-    Uint8List? jpeg;
-    try {
-      jpeg = await take();
-    } catch (_) {
-      jpeg = null;
-    } finally {
-      if (mounted) setState(() => _takingPhoto = false);
-    }
-    if (!mounted || jpeg == null) return;
-    await _c.checkPhoto(jpeg);
+    if (take == null) return;
+    await _c.captureAndCheck(take);
   }
 
   void _showTyping() => setState(() => _typing = true);
@@ -88,7 +79,7 @@ class _LabelCheckSheetState extends State<LabelCheckSheet> {
     return ListenableBuilder(
       listenable: _c,
       builder: (context, _) {
-        final busy = _c.busy || _takingPhoto;
+        final busy = _c.busy;
         return ListView(
           key: const ValueKey('label-check-sheet'),
           shrinkWrap: true,
@@ -173,6 +164,7 @@ class _LabelCheckSheetState extends State<LabelCheckSheet> {
         const SizedBox(height: 8),
         Text(switch (c.phase) {
           LabelCheckPhase.awaitingConsent => 'Waiting for your answer…',
+          LabelCheckPhase.capturing => 'Taking the photo…',
           LabelCheckPhase.checking => 'Reading the label…',
           _ => 'Getting ready…',
         }),

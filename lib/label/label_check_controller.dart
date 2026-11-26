@@ -29,6 +29,9 @@ enum LabelCheckPhase {
   /// Nothing running.
   idle,
 
+  /// Waiting for the camera to hand over a photo.
+  capturing,
+
   /// Reading the device's capabilities.
   preparing,
 
@@ -110,6 +113,7 @@ class LabelCheckController extends ChangeNotifier {
   String get sessionId => _sessionId;
   LabelCheckPhase get phase => _phase;
   bool get busy =>
+      _phase == LabelCheckPhase.capturing ||
       _phase == LabelCheckPhase.preparing ||
       _phase == LabelCheckPhase.checking ||
       _phase == LabelCheckPhase.awaitingConsent;
@@ -146,11 +150,37 @@ class LabelCheckController extends ChangeNotifier {
 
   // ---- actions ----------------------------------------------------------------
 
+  /// Takes a photo with [takePhoto] and checks it. The capture belongs to the
+  /// check started here: if the sheet closes, the session changes or another
+  /// check starts while the camera is busy, the photo is discarded unsent.
+  Future<void> captureAndCheck(Future<Uint8List?> Function() takePhoto) async {
+    if (_closed || busy) return;
+    final token = _begin();
+    _phase = LabelCheckPhase.capturing;
+    _notify();
+    Uint8List? jpeg;
+    try {
+      jpeg = await takePhoto();
+    } catch (_) {
+      jpeg = null;
+    }
+    if (!_isCurrent(token)) return;
+    if (jpeg == null) {
+      _finish(token, phase: LabelCheckPhase.idle);
+      return;
+    }
+    await _checkPhoto(token, jpeg);
+  }
+
   /// Checks a photographed label. [jpeg] must be a JPEG of at most 1 MB and
   /// 768 px on its longer side.
   Future<void> checkPhoto(Uint8List jpeg) async {
     if (_closed) return;
     final token = _begin();
+    await _checkPhoto(token, jpeg);
+  }
+
+  Future<void> _checkPhoto(_Token token, Uint8List jpeg) async {
     final problem = labelPhotoProblem(jpeg);
     if (problem != null) {
       _finish(token, notice: problem, phase: LabelCheckPhase.idle);

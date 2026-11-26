@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,7 +34,11 @@ void main() {
     gate = ManualConsentGate();
   });
 
-  Future<void> pump(WidgetTester tester, LabelCheckController c) async {
+  Future<void> pump(
+    WidgetTester tester,
+    LabelCheckController c, {
+    Future<Uint8List?> Function()? takePhoto,
+  }) async {
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -40,7 +47,7 @@ void main() {
         home: Scaffold(
           body: LabelCheckSheet(
             controller: c,
-            takePhoto: () async => fakeJpeg(),
+            takePhoto: takePhoto ?? () async => fakeJpeg(),
           ),
         ),
       ),
@@ -147,5 +154,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(c.result, isNull);
     expect(dispatcher.cancelledOperations, ['op-1']);
+  });
+
+  testWidgets('a photo taken under an old session is never sent', (
+    tester,
+  ) async {
+    final c = make(webCaps);
+    addTearDown(c.dispose);
+    final camera = Completer<Uint8List?>();
+    dispatcher.enqueue(readableWithPeanut);
+    await pump(tester, c, takePhoto: () => camera.future);
+
+    await tester.tap(find.byKey(const ValueKey('label-take-photo')));
+    await tester.pump();
+    expect(find.text('Taking the photo…'), findsOneWidget);
+    c.setSession('s2');
+    camera.complete(fakeJpeg());
+    await tester.pumpAndSettle();
+
+    expect(dispatcher.tasks, isEmpty);
+    expect(find.byKey(const ValueKey('label-mentions')), findsNothing);
   });
 }
