@@ -318,6 +318,14 @@ enum HybridErrorCode {
   timeout,
   cancelled,
   failed,
+
+  /// The bridge refused the request during its own validation, before the
+  /// inference payload was submitted to any model or service, so the
+  /// request's content was not sent. (A bridge may still have checked model
+  /// availability or its configuration first.) Only a bridge that can prove
+  /// this returns it (today: iOS, for media its sessions cannot carry). A
+  /// rejection that may come after a send stays [unsupportedInput].
+  rejectedBeforeSend,
 }
 
 class HybridException implements Exception {
