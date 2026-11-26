@@ -167,6 +167,40 @@ void main() {
     expect(analytics.names, [AnalyticsEvents.recipeChosen]);
   });
 
+  testWidgets('a pantry check with nothing ticked is not a skip: the meal '
+      'preview lists what is missing with Find a swap', (tester) async {
+    await setUp360(tester);
+    await tester.pumpWidget(flow(isDemo: true));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pantry-text')),
+      'beans and corn',
+    );
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    // Choose the suggested meal without ticking any candidate item.
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('cook-black_bean_corn_salsa_v1')),
+    );
+
+    expect(find.byKey(const ValueKey('recipe-preview')), findsOneWidget);
+    expect(find.byKey(const ValueKey('preview-no-pantry')), findsNothing);
+    expect(find.text('You have 0 of 7 ingredients'), findsOneWidget);
+    expect(find.byKey(const ValueKey('find-swap-corn')), findsOneWidget);
+    expect(find.byKey(const ValueKey('find-swap-black_beans')), findsOneWidget);
+    expect(find.byKey(const ValueKey('find-swap-cilantro')), findsNothing);
+
+    // The skip list is still a skip.
+    await tester.tap(find.byKey(const ValueKey('preview-back-to-pantry')));
+    await tester.pumpAndSettle();
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('skip-black_bean_corn_salsa_v1')),
+    );
+    expect(find.byKey(const ValueKey('preview-no-pantry')), findsOneWidget);
+    expect(find.byKey(const ValueKey('find-swap-corn')), findsNothing);
+  });
+
   testWidgets('without the flag, choosing opens cooking directly', (
     tester,
   ) async {

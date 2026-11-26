@@ -133,6 +133,7 @@ class _PantryFlowState extends State<PantryFlow> {
         context,
         recipe: recipe,
         confirmedItems: handoff.confirmedItems,
+        pantryChecked: !handoff.skipped,
         household: widget.hybrid?.household,
         swapCoach: hybrid == null ? null : RecipeSwapCoach.forRuntime(hybrid),
       );

@@ -3,6 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/learner/recipe_preview_data.dart';
+import 'package:soussight/pantry/recipe_catalog.dart';
 
 const _salsa = Recipe(
   id: 'black_bean_corn_salsa_v1',
@@ -66,15 +67,89 @@ Recipe _withAllergens(List<List<String>> tags) => Recipe(
 );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('ingredient identity against the bundled recipes', () {
+    late Map<String, Recipe> byId;
+    setUpAll(() async {
+      byId = {for (final r in await loadRecipeCatalog()) r.id: r};
+    });
+
+    Ingredient ingredient(String recipe, String id) =>
+        byId[recipe]!.ingredients.firstWhere((i) => i.id == id);
+
+    List<String> have(String recipe, List<String> items) => [
+      for (final i in previewIngredients(
+        byId[recipe]!,
+        items,
+        pantryChecked: true,
+      ).have)
+        i.id,
+    ];
+
+    test('a different food never ticks an ingredient', () {
+      expect(have('black_bean_corn_salsa_v1', ['corn starch']), isEmpty);
+      expect(have('black_bean_corn_salsa_v1', ['corn chips']), isEmpty);
+      expect(have('black_bean_corn_salsa_v1', ['onion']), isEmpty);
+      expect(have('black_bean_corn_salsa_v1', ['lime soda']), isEmpty);
+      expect(have('chickpea_wrap_v1', ['tortillas']), isEmpty); // flour
+      expect(have('chickpea_wrap_v1', ['mustard']), isEmpty); // Dijon
+      expect(have('chickpea_wrap_v1', ['salt']), isEmpty);
+      expect(have('peanut_butter_sandwich_v1', ['peanuts']), isEmpty);
+    });
+
+    test('real names, plurals, packaging words and aliases match', () {
+      expect(have('chickpea_wrap_v1', ['Mayonnaise']), ['mayo']);
+      expect(have('chickpea_wrap_v1', ['a jar of mayo']), ['mayo']);
+      expect(have('chickpea_wrap_v1', ['garbanzo beans']), ['chickpeas']);
+      expect(have('chickpea_wrap_v1', ['lemons']), ['lemon']);
+      expect(have('chickpea_wrap_v1', ['salt and pepper']), ['salt_pepper']);
+      expect(have('chickpea_wrap_v1', ['flour tortillas']), ['tortillas']);
+      expect(have('black_bean_corn_salsa_v1', ['canned corn']), ['corn']);
+      expect(have('black_bean_corn_salsa_v1', ['tomatoes']), ['tomato']);
+      expect(have('black_bean_corn_salsa_v1', ['lime']), ['lime']);
+      expect(have('black_bean_corn_salsa_v1', ['tortilla chips']), [
+        'tortillas',
+      ]);
+      expect(have('black_bean_corn_salsa_v1', ['2 cans black beans']), [
+        'black_beans',
+      ]);
+      expect(have('peanut_butter_sandwich_v1', ['PB', 'sliced bread']), [
+        'bread',
+        'peanut_butter',
+      ]);
+    });
+
+    test('plurals reduce to one food word', () {
+      expect(previewFoodWords('Berries'), {'berry'});
+      expect(previewFoodWords('peaches and radishes'), {'peach', 'radish'});
+      expect(previewFoodWords('glasses'), {'glass'});
+      expect(previewFoodWords('glass'), {'glass'});
+    });
+
+    test('every bundled ingredient matches its own display name', () {
+      for (final recipe in byId.values) {
+        for (final i in recipe.ingredients) {
+          final head = i.name.split(RegExp(r'[,(]')).first;
+          expect(previewItemMatches(head, i), isTrue, reason: i.name);
+        }
+      }
+      expect(
+        previewItemMatches('  ', ingredient('chickpea_wrap_v1', 'mayo')),
+        isFalse,
+      );
+    });
+  });
+
   group('previewIngredients', () {
     test('splits have, missing and optional with the hand-off matcher', () {
       final result = previewIngredients(_salsa, [
         'canned black beans',
         'corn',
-        'onion', // "red onion" needs both words, as in the hand-off
+        'onion', // "red onion" is a different food: "red" is kept
         '  ',
-      ]);
-      expect(result.hasPantryList, isTrue);
+      ], pantryChecked: true);
+      expect(result.pantryChecked, isTrue);
       expect([for (final i in result.have) i.id], ['black_beans', 'corn']);
       expect(
         [for (final i in result.missing) i.id],
@@ -87,11 +162,28 @@ void main() {
       expect(result.total, 6);
     });
 
-    test('no confirmed list makes no have claims', () {
-      final result = previewIngredients(_salsa, const ['', ' ']);
-      expect(result.hasPantryList, isFalse);
+    test('a skipped check makes no have claims', () {
+      final result = previewIngredients(_salsa, const [
+        '',
+        ' ',
+      ], pantryChecked: false);
+      expect(result.pantryChecked, isFalse);
       expect(result.have, isEmpty);
       expect(result.missing, hasLength(4));
+    });
+
+    test('a check with nothing confirmed is not a skip', () {
+      final result = previewIngredients(_salsa, const [], pantryChecked: true);
+      expect(result.pantryChecked, isTrue);
+      expect(result.have, isEmpty);
+      expect(result.missing, hasLength(4));
+    });
+
+    test('confirmed items always count as a check', () {
+      final result = previewIngredients(_salsa, const [
+        'corn',
+      ], pantryChecked: false);
+      expect(result.pantryChecked, isTrue);
     });
   });
 

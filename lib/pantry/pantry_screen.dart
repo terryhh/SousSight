@@ -375,7 +375,7 @@ class _PantryScreenState extends State<PantryScreen> {
     widget.onChooseRecipe(
       recipe,
       skipped
-          ? const PantryHandoff()
+          ? const PantryHandoff.skipped()
           : PantryHandoff(
               confirmedItems: _ui.confirmedItems,
               answer: question != null && answer.isNotEmpty

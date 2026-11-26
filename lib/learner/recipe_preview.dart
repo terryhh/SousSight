@@ -29,6 +29,7 @@ Future<bool> showRecipePreview(
   BuildContext context, {
   required Recipe recipe,
   List<String> confirmedItems = const [],
+  bool pantryChecked = true,
   HouseholdAllergens? household,
   RecipeSwapCoach? swapCoach,
 }) async {
@@ -37,6 +38,7 @@ Future<bool> showRecipePreview(
       builder: (_) => RecipePreviewScreen(
         recipe: recipe,
         confirmedItems: confirmedItems,
+        pantryChecked: pantryChecked,
         household: household,
         swapCoach: swapCoach,
       ),
@@ -50,12 +52,16 @@ class RecipePreviewScreen extends StatelessWidget {
     super.key,
     required this.recipe,
     this.confirmedItems = const [],
+    this.pantryChecked = true,
     this.household,
     this.swapCoach,
   });
 
   final Recipe recipe;
   final List<String> confirmedItems;
+
+  /// False when the cook skipped the pantry check (no have/missing claims).
+  final bool pantryChecked;
 
   /// Saved on this device only. Null when this build has none (rehearsal).
   final HouseholdAllergens? household;
@@ -96,6 +102,7 @@ class RecipePreviewScreen extends StatelessWidget {
     final data = RecipePreviewData(
       recipe,
       confirmedItems: confirmedItems,
+      pantryChecked: pantryChecked,
       household: household,
     );
     return Center(
@@ -380,7 +387,7 @@ class _IngredientsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ingredients = data.ingredients;
-    if (!ingredients.hasPantryList) {
+    if (!ingredients.pantryChecked) {
       return _Card(
         key: const ValueKey('preview-ingredients'),
         child: Column(

@@ -2,8 +2,9 @@
 // here is computed on the device from the recipe, the cook's confirmed pantry
 // list and the household allergens saved on this device. No model call.
 
+import 'package:flutter/foundation.dart' show setEquals;
+
 import '../core/models.dart';
-import '../pantry/pantry_handoff.dart' show matchIngredientId;
 import '../pantry/recipe_draft.dart' show isDraftRecipe;
 import 'recipe_allergens.dart';
 
@@ -26,15 +27,17 @@ const kNoHouseholdAllergensSaved =
 /// Ingredients compared with the confirmed pantry list, recipe order.
 class PreviewIngredients {
   const PreviewIngredients({
-    required this.hasPantryList,
+    required this.pantryChecked,
     required this.have,
     required this.missing,
     required this.optionalMissing,
   });
 
-  /// False when the cook skipped the pantry check: the preview then lists
-  /// what the recipe needs without claiming what is in the kitchen.
-  final bool hasPantryList;
+  /// False only when the cook skipped the pantry check: the preview then
+  /// lists what the recipe needs without claiming what is in the kitchen.
+  /// A cook who checked but confirmed nothing has [pantryChecked] true and
+  /// sees every required ingredient as missing, each with "Find a swap".
+  final bool pantryChecked;
   final List<Ingredient> have;
 
   /// Required ingredients not on the confirmed list.
@@ -46,22 +49,137 @@ class PreviewIngredients {
   int get total => have.length + missing.length + optionalMissing.length;
 }
 
-/// Uses the same matcher as the pantry hand-off, so the preview shows exactly
-/// the ingredients the coach will be told the cook has.
+// ---- ingredient identity ----------------------------------------------------
+//
+// A confirmed item ticks an ingredient only when it names the same food as
+// the ingredient's display name (or one of its "or" alternatives, or an
+// explicit alias). Internal IDs are never read. Words that only describe
+// packaging or preparation are dropped; words that tell foods apart ("red"
+// onion, corn "starch", "flour" tortillas) are kept, so the match is exact on
+// what is left and a missing ingredient is never ticked by a different food.
+
+/// Packaging, preparation and filler words that do not change the food.
+const _previewIgnoredWords = {
+  'a',
+  'an',
+  'and',
+  'the',
+  'of',
+  'some',
+  'my',
+  'for',
+  'can',
+  'canned',
+  'jar',
+  'jarred',
+  'bag',
+  'box',
+  'loaf',
+  'bottle',
+  'pack',
+  'package',
+  'fresh',
+  'whole',
+  'sliced',
+  'diced',
+  'chopped',
+  'minced',
+  'shredded',
+  'grated',
+  'drained',
+  'rinsed',
+  'peeled',
+  'finely',
+  'thinly',
+  'roughly',
+  'pre',
+};
+
+/// Canonical food phrase → other phrases a cook may type for it.
+const kPreviewIngredientAliases = <String, List<String>>{
+  'mayonnaise': ['mayo'],
+  'lime juice': ['lime', 'limes'],
+  'lemon juice': ['lemon', 'lemons'],
+  'salt and black pepper': ['salt and pepper'],
+  'peanut butter': ['pb'],
+  'chickpeas': ['garbanzo beans', 'garbanzos'],
+  'cilantro': ['coriander leaves'],
+};
+
+String _previewStem(String word) {
+  if (word.endsWith('oes') && word.length > 4) {
+    return word.substring(0, word.length - 2);
+  }
+  if (word.endsWith('ies') && word.length > 4) {
+    return '${word.substring(0, word.length - 3)}y';
+  }
+  if (word.endsWith('ches') || word.endsWith('shes') || word.endsWith('ses')) {
+    return word.substring(0, word.length - 2);
+  }
+  if (word.endsWith('s') && word.length > 3 && !word.endsWith('ss')) {
+    return word.substring(0, word.length - 1);
+  }
+  return word;
+}
+
+/// The food a phrase names, as a set of stemmed significant words.
+Set<String> previewFoodWords(String phrase) => {
+  for (final word in phrase.toLowerCase().split(RegExp(r'[^a-z]+')))
+    if (word.isNotEmpty &&
+        !_previewIgnoredWords.contains(word) &&
+        !_previewIgnoredWords.contains(_previewStem(word)))
+      _previewStem(word),
+};
+
+/// The foods an ingredient's display name stands for: its head (text before
+/// the first comma or bracket), each " or " alternative, and their aliases.
+List<Set<String>> previewIngredientIdentities(Ingredient ingredient) {
+  final head = ingredient.name
+      .split(RegExp(r'[,(]'))
+      .first
+      .trim()
+      .toLowerCase();
+  final phrases = <String>{
+    head,
+    ...head.split(RegExp(r'\s+or\s+')).map((p) => p.trim()),
+  };
+  for (final phrase in [...phrases]) {
+    for (final entry in kPreviewIngredientAliases.entries) {
+      if (setEquals(previewFoodWords(phrase), previewFoodWords(entry.key))) {
+        phrases.addAll(entry.value);
+      }
+    }
+  }
+  return [
+    for (final phrase in phrases)
+      if (previewFoodWords(phrase) case final words when words.isNotEmpty)
+        words,
+  ];
+}
+
+/// Whether a cook-confirmed pantry item is the same food as [ingredient].
+bool previewItemMatches(String item, Ingredient ingredient) {
+  final words = previewFoodWords(item);
+  if (words.isEmpty) return false;
+  return previewIngredientIdentities(ingredient)
+      .any((identity) => setEquals(identity, words));
+}
+
+/// [pantryChecked] is false only when the cook skipped the pantry check.
 PreviewIngredients previewIngredients(
   Recipe recipe,
-  List<String> confirmedItems,
-) {
+  List<String> confirmedItems, {
+  required bool pantryChecked,
+}) {
   final items = [
     for (final item in confirmedItems)
       if (item.trim().isNotEmpty) item,
   ];
-  final matched = {for (final item in items) ?matchIngredientId(item, recipe)};
   final have = <Ingredient>[];
   final missing = <Ingredient>[];
   final optional = <Ingredient>[];
   for (final ingredient in recipe.ingredients) {
-    if (items.isNotEmpty && matched.contains(ingredient.id)) {
+    if (items.any((item) => previewItemMatches(item, ingredient))) {
       have.add(ingredient);
     } else if (ingredient.optional) {
       optional.add(ingredient);
@@ -70,7 +188,7 @@ PreviewIngredients previewIngredients(
     }
   }
   return PreviewIngredients(
-    hasPantryList: items.isNotEmpty,
+    pantryChecked: pantryChecked || items.isNotEmpty,
     have: have,
     missing: missing,
     optionalMissing: optional,
@@ -168,8 +286,13 @@ class RecipePreviewData {
   RecipePreviewData(
     this.recipe, {
     List<String> confirmedItems = const [],
+    bool pantryChecked = true,
     Set<String> household = const {},
-  }) : ingredients = previewIngredients(recipe, confirmedItems),
+  }) : ingredients = previewIngredients(
+         recipe,
+         confirmedItems,
+         pantryChecked: pantryChecked,
+       ),
        allergens = PreviewAllergens(recipe, household),
        time = previewTime(recipe);
 

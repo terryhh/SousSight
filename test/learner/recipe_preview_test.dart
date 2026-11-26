@@ -165,6 +165,7 @@ void main() {
   Widget screen({
     Recipe recipe = _sandwich,
     List<String> confirmed = const ['bread', 'banana'],
+    bool pantryChecked = true,
     HouseholdAllergens? household,
     RecipeSwapCoach? swap,
   }) => MaterialApp(
@@ -172,6 +173,7 @@ void main() {
     home: RecipePreviewScreen(
       recipe: recipe,
       confirmedItems: confirmed,
+      pantryChecked: pantryChecked,
       household: household,
       swapCoach: swap,
     ),
@@ -243,13 +245,26 @@ void main() {
     tester,
   ) async {
     await phone(tester);
-    await tester.pumpWidget(screen(confirmed: const []));
+    await tester.pumpWidget(screen(confirmed: const [], pantryChecked: false));
     await tester.pumpAndSettle();
     expect(find.text('What you’ll need'), findsOneWidget);
     expect(find.byKey(const ValueKey('preview-no-pantry')), findsOneWidget);
     expect(find.byKey(const ValueKey('preview-have-count')), findsNothing);
     expect(find.textContaining('Find a swap'), findsNothing);
     expect(find.text('Honey'), findsOneWidget);
+  });
+
+  testWidgets('a check with nothing ticked shows every required item as '
+      'missing, each with a swap', (tester) async {
+    await phone(tester);
+    await tester.pumpWidget(screen(confirmed: const []));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('preview-no-pantry')), findsNothing);
+    expect(find.text('You have 0 of 3 ingredients'), findsOneWidget);
+    for (final id in ['bread', 'peanut_butter', 'banana']) {
+      expect(find.byKey(ValueKey('find-swap-$id')), findsOneWidget);
+    }
+    expect(find.byKey(const ValueKey('find-swap-honey')), findsNothing);
   });
 
   testWidgets('allergen wording: a household match, then live updates', (

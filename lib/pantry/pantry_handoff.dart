@@ -3,8 +3,20 @@ import '../core/models.dart';
 
 /// What the cook confirmed on the pantry screen, carried into cooking.
 class PantryHandoff {
-  const PantryHandoff({this.confirmedItems = const [], this.answer});
+  const PantryHandoff({this.confirmedItems = const [], this.answer})
+    : skipped = false;
+
+  /// The cook chose "Skip — pick a recipe" without a pantry check.
+  const PantryHandoff.skipped()
+    : confirmedItems = const [],
+      answer = null,
+      skipped = true;
+
   final List<String> confirmedItems;
+
+  /// True only for [PantryHandoff.skipped]. A check with nothing confirmed
+  /// is not a skip (SS-099).
+  final bool skipped;
 
   /// The pantry question and the cook's answer, if they gave one.
   final ({String question, String answer})? answer;
