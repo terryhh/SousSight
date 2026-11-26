@@ -1,43 +1,23 @@
-// Android and iOS read-aloud through flutter_tts (the OS text-to-speech
-// engine: Android TextToSpeech, iOS AVSpeechSynthesizer).
-
-import 'dart:async';
-
-import 'package:flutter_tts/flutter_tts.dart';
+// Android and iOS: no read-aloud yet, so the speaker toggle stays hidden.
+//
+// flutter_tts was dropped: it has no Swift Package Manager support, and the
+// iOS build is SwiftPM-only. A native voice can be added later behind the
+// same TextToSpeech interface (Android TextToSpeech, iOS
+// AVSpeechSynthesizer) without touching CoachLiteSpeaker or the toggle.
 
 import 'tts.dart';
 
-TextToSpeech createDeviceTextToSpeech() => NativeTextToSpeech();
+TextToSpeech createDeviceTextToSpeech() => const UnavailableTextToSpeech();
 
-class NativeTextToSpeech implements TextToSpeech {
-  FlutterTts? _tts;
-
-  @override
-  Future<TtsSupport> probe() async {
-    try {
-      final tts = _tts ??= FlutterTts();
-      // 1 = the engine has this language; 0 = it does not (or, on Android
-      // 11+, no engine is visible to the app). Either way, hide the toggle.
-      final ok = await tts
-          .setLanguage('en-US')
-          .timeout(const Duration(seconds: 2));
-      return TtsSupport(
-        available: ok == 1,
-        locality: VoiceLocality.deviceEngine,
-      );
-    } catch (_) {
-      // No plugin (tests, unsupported platform) or no engine.
-      return TtsSupport.unavailable;
-    }
-  }
+class UnavailableTextToSpeech implements TextToSpeech {
+  const UnavailableTextToSpeech();
 
   @override
-  Future<void> speak(String text) async {
-    await _tts?.speak(text);
-  }
+  Future<TtsSupport> probe() async => TtsSupport.unavailable;
 
   @override
-  Future<void> stop() async {
-    await _tts?.stop();
-  }
+  Future<void> speak(String text) async {}
+
+  @override
+  Future<void> stop() async {}
 }

@@ -15,7 +15,7 @@ import 'tts_native.dart' if (dart.library.js_interop) 'tts_web.dart';
 
 /// Where the voice runs, as far as the platform tells us.
 enum VoiceLocality {
-  /// Android/iOS text-to-speech engine.
+  /// An Android/iOS text-to-speech engine (none is wired in yet).
   deviceEngine,
 
   /// A browser voice the browser reports as local (`localService`).
@@ -199,6 +199,6 @@ class CoachLiteSpeaker extends ChangeNotifier {
   }
 }
 
-/// The platform's text-to-speech: flutter_tts on Android and iOS, the
-/// browser's Web Speech API on the web.
+/// The platform's text-to-speech: the browser's Web Speech API on the web.
+/// Android and iOS report it unavailable for now, so the toggle is hidden.
 TextToSpeech deviceTextToSpeech() => createDeviceTextToSpeech();

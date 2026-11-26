@@ -37,8 +37,14 @@ class FakeTts implements TextToSpeech {
   @override
   Future<TtsSupport> probe() async => support;
 
+  /// When set, `speak` throws it (a platform error).
+  Object? speakError;
+
   @override
-  Future<void> speak(String text) async => spoken.add(text);
+  Future<void> speak(String text) async {
+    if (speakError case final e?) throw e;
+    spoken.add(text);
+  }
 
   @override
   Future<void> stop() async {
@@ -334,6 +340,19 @@ void main() {
       disposed = true;
     });
 
+    test('a platform speak error is contained', () async {
+      tts.speakError = StateError('engine gone');
+      speaker.setEnabled(true);
+      sync(_answer());
+      await _settle();
+      expect(tts.spoken, isEmpty);
+      // The next answer still gets a chance.
+      tts.speakError = null;
+      sync(_answer(sequence: 2));
+      await _settle();
+      expect(tts.spoken, ['Low and slow 2. Stir often.']);
+    });
+
     test('stays off where the platform cannot speak', () async {
       final none = CoachLiteSpeaker(FakeTts(support: TtsSupport.unavailable));
       await none.init();
@@ -341,6 +360,21 @@ void main() {
       expect(none.enabled, isFalse);
       none.dispose();
     });
+  });
+
+  test('Android and iOS have no voice yet: the toggle stays hidden', () async {
+    // Tests run on the VM, so this is the native implementation.
+    final tts = deviceTextToSpeech();
+    final support = await tts.probe();
+    expect(support.available, isFalse);
+    await tts.speak('Nothing happens.');
+    await tts.stop();
+    final speaker = CoachLiteSpeaker(tts);
+    await speaker.init();
+    speaker.setEnabled(true);
+    expect(speaker.available, isFalse);
+    expect(speaker.enabled, isFalse);
+    speaker.dispose();
   });
 
   group('toggle', () {
@@ -399,6 +433,7 @@ void main() {
         isNot(contains('on this device')),
       );
       expect(readAloudCaption(VoiceLocality.browserLocal), contains('reports'));
+      expect(readAloudCaption(VoiceLocality.deviceEngine), contains('device'));
     });
   });
 
@@ -451,6 +486,33 @@ void main() {
     await tester.pump();
     expect(tts.spoken.single, contains('Keep the heat low.'));
 
+    // Backgrounding stops the voice.
+    final beforeBackground = tts.stops;
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pump();
+    expect(tts.stops, greaterThan(beforeBackground));
+    for (final state in [
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pump();
+    // Nothing restarts by itself; the cook can replay with the toggle.
+    expect(tts.spoken, hasLength(1));
+    await tester.tap(toggle);
+    await tester.pump();
+    await tester.tap(toggle);
+    await tester.pump();
+    expect(tts.spoken, hasLength(2));
+
     // Asking again stops the voice before the new answer arrives.
     final stops = tts.stops;
     await cook.say('And now?');
@@ -470,6 +532,60 @@ void main() {
     expect(tts.stops, greaterThan(beforeLive));
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('cooking screen on Android/iOS: no speaker toggle', (
+    tester,
+  ) async {
+    final (cook, dispatcher) = await _pumpScreen(tester);
+    expect(await cook.say('How hot?'), isTrue);
+    await tester.pump();
+    dispatcher.gates.last.complete(
+      DispatchResult(text: _json('Keep the heat low.'), legs: const []),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Keep the heat low.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('coach-lite-read-aloud')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+}
+
+Future<(CookingCoordinator, _GatedDispatcher)> _pumpScreen(
+  WidgetTester tester, {
+  TextToSpeech Function()? textToSpeech,
+}) async {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = const Size(1280, 1600);
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  final services = (await tester.runAsync(fakeServices))!;
+  final dispatcher = _GatedDispatcher();
+  final transport = _QuietTransport();
+  final cook = CookingCoordinator(
+    services: services,
+    research: FakeCookingResearchClient(),
+    transportFactory: () => transport,
+    media: DemoLiveMedia(),
+    isDemo: true,
+    coachLite: CoachLite(
+      dispatcher: dispatcher,
+      privacy: _NoLocalOnly(),
+      cloudRoutes: const CloudRoutes({}),
+      isOnline: () => true,
+    ),
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: cookingTheme,
+      home: CookingScreen(
+        services: services,
+        isDemo: true,
+        createCoordinator: () => cook,
+        textToSpeech: textToSpeech,
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return (cook, dispatcher);
 }
 
 class _QuietTransport extends DemoLiveTransport {
