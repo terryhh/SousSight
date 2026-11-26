@@ -36,9 +36,9 @@ const kHybridCloudModel = String.fromEnvironment(
   defaultValue: kCookingResearchModel,
 );
 
-/// Android on-device model: `--dart-define=ANDROID_MODEL=stable|preview|
-/// previewFast`. Unset or unknown means stable, the device's supported
-/// Gemini Nano; preview (Nano 4) is an explicit opt-in.
+/// Android on-device model: `--dart-define=ANDROID_MODEL=preview|stable|
+/// previewFast`. Unset or unknown means deviceList: Nano 4 (preview) only
+/// on Google's documented Nano 4 devices where it is ready, else stable.
 final kAndroidModel = AndroidModelOption.fromName(
   const String.fromEnvironment('ANDROID_MODEL'),
 );

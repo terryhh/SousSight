@@ -10,28 +10,36 @@ enum InferenceSource { onDevice, cloud }
 
 enum OnDeviceStatus { available, downloadable, downloading, unavailable }
 
-/// Android local model selection. Names are the wire values. The default is
-/// [stable], the Gemini Nano the device supports (Nano 3 on a Pixel 9);
-/// [preview] (Nano 4) and [previewFast] are explicit opt-ins for devices that
-/// support them.
+/// Android local model selection. Names are the wire values.
 enum AndroidModelOption {
+  /// Default. Decided once at `configure`: a device on Google's documented
+  /// Gemini Nano 4 list whose [preview] model is already available uses
+  /// [preview]; every other device uses [stable], the Gemini Nano it
+  /// supports (Nano 3 on a Pixel 9). No probe and no later switching.
+  deviceList,
+
+  /// Gemini Nano 4, as an explicit opt-in.
   preview,
   previewFast,
+
+  /// The device's supported Gemini Nano, as an explicit choice.
   stable;
 
-  /// Parses a wire or dart-define value. Null, blank or unknown → [stable].
+  /// Parses a wire or dart-define value. Null, blank or unknown →
+  /// [deviceList].
   static AndroidModelOption fromName(String? name) {
     final trimmed = name?.trim();
     for (final option in values) {
       if (option.name == trimmed) return option;
     }
-    return stable;
+    return deviceList;
   }
 
-  /// An option a backend reported, or null (absent or unknown).
+  /// A concrete option a backend reported, or null (absent, unknown or
+  /// [deviceList], which is never a model).
   static AndroidModelOption? _reported(Object? name) {
     for (final option in values) {
-      if (option.name == name) return option;
+      if (option != deviceList && option.name == name) return option;
     }
     return null;
   }
@@ -41,7 +49,7 @@ enum AndroidModelOption {
 class HybridConfig {
   const HybridConfig({
     required this.cloudModel,
-    this.androidModel = AndroidModelOption.stable,
+    this.androidModel = AndroidModelOption.deviceList,
     this.languages = const ['en'],
   });
 
@@ -67,9 +75,14 @@ class LocalModelLimits {
     required this.imageTokenEstimate,
     required this.validatedLanguages,
     this.modelOption,
+    this.modelChoice,
   });
 
   final String modelFamily;
+
+  /// Android: why [modelOption] is in use, for the cook, e.g. "device list:
+  /// Pixel 10 → preview". Null before `configure` and on other platforms.
+  final String? modelChoice;
 
   /// Android: the configured option in use. Null before `configure` and on
   /// other platforms.
@@ -96,11 +109,13 @@ class LocalModelLimits {
       for (final l in (m['validatedLanguages'] as List)) l as String,
     ],
     modelOption: AndroidModelOption._reported(m['modelOption']),
+    modelChoice: m['modelChoice'] as String?,
   );
 
   Map<String, Object?> toMap() => {
     'modelFamily': modelFamily,
     'modelOption': modelOption?.name,
+    'modelChoice': modelChoice,
     'supportsImage': supportsImage,
     'supportsJsonSchema': supportsJsonSchema,
     'maxTotalTokens': maxTotalTokens,
@@ -174,6 +189,7 @@ class HybridAvailability {
     this.reason,
     this.modelLabel,
     this.modelOption,
+    this.modelChoice,
   });
 
   final OnDeviceStatus status;
@@ -188,12 +204,16 @@ class HybridAvailability {
   /// Android: the option this answer is about. Null elsewhere.
   final AndroidModelOption? modelOption;
 
+  /// Android: why [modelOption] is in use, for the cook. Null elsewhere.
+  final String? modelChoice;
+
   factory HybridAvailability.fromMap(Map<Object?, Object?> m) =>
       HybridAvailability(
         status: OnDeviceStatus.values.byName(m['status'] as String),
         reason: m['reason'] as String?,
         modelLabel: m['modelLabel'] as String?,
         modelOption: AndroidModelOption._reported(m['modelOption']),
+        modelChoice: m['modelChoice'] as String?,
       );
 }
 
