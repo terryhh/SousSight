@@ -25,7 +25,6 @@ const howItWorksSteps = [
 
 /// Technologies listed in the "Built with" section.
 const howItWorksTechnologies = [
-  'Firebase AI Logic hybrid inference (on-device Gemini Nano in Chrome, Gemini in the cloud)',
   'Gemini Live API (voice + vision, function calling)',
   'Gemini Flash via Firebase AI Logic (structured output, Grounding with Google Search, Grounding with Google Maps)',
   'Flutter GenUI / A2UI',
@@ -34,6 +33,7 @@ const howItWorksTechnologies = [
   'Cloud Functions on Cloud Run',
   'Secret Manager',
   'Firebase Hosting',
+  'Firebase AI Logic hybrid inference (on-device Gemini Nano in Chrome, Gemini in the cloud)',
   'Vonage Messages API with signed status webhooks',
 ];
 
