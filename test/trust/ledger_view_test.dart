@@ -124,14 +124,17 @@ void main() {
     expect(find.text('What we sent'), findsOneWidget);
     expect(
       find.text(
-        '2 requests this session: 1 answered on this device, '
+        '2 requests since you opened SousSight: 1 answered on this device, '
         '1 sent online.',
       ),
       findsOneWidget,
     );
 
     // The headline counts from legs: the photo stayed, the voice clip went.
-    expect(find.text('photos left your kitchen this session'), findsOneWidget);
+    expect(
+      find.text('photos left your kitchen since you opened SousSight'),
+      findsOneWidget,
+    );
     expect(
       find.text('1 voice clip sent online to Google\'s AI'),
       findsOneWidget,
@@ -227,7 +230,7 @@ void main() {
     // nothing was ever sent.
     expect(
       find.textContaining(
-        'No AI requests or location shares recorded this session.',
+        'No AI requests or location shares recorded since you opened SousSight.',
       ),
       findsOneWidget,
     );
@@ -250,7 +253,7 @@ void main() {
     // Codex #221: an uncertain transfer is counted apart from "sent".
     expect(
       find.text(
-        '1 request this session: 0 answered on this device, 0 sent online, '
+        '1 request since you opened SousSight: 0 answered on this device, 0 sent online, '
         '1 may have been sent.',
       ),
       findsOneWidget,

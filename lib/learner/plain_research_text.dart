@@ -2,6 +2,8 @@
 // Markdown from the model (`**General Guidance**`, `- item`) would appear raw
 // (G2c finding, SS-089). This strips it to readable plain text.
 
+import '../ai/cooking_research_client.dart'
+    show CookingResearchException, CookingResearchFailure;
 import '../core/cooking_research.dart';
 
 final _bold = RegExp(r'(\*\*|__)(.+?)\1');
@@ -38,8 +40,17 @@ class PlainTextResearchClient implements CookingResearchClient {
   @override
   Future<CookingResearchResult> research(CookingResearchQuery query) async {
     final result = await inner.research(query);
+    final answer = plainResearchText(result.answer);
+    // Nothing left once the Markdown is gone is no answer (Codex #221).
+    if (answer.isEmpty) {
+      throw const CookingResearchException(
+        CookingResearchFailure.empty,
+        'The search did not return a usable answer. Try a more specific '
+        'question.',
+      );
+    }
     return CookingResearchResult(
-      answer: plainResearchText(result.answer),
+      answer: answer,
       citations: result.citations,
       clarifyingQuestion: switch (result.clarifyingQuestion) {
         final q? => plainResearchText(q),

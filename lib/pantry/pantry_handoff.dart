@@ -64,13 +64,24 @@ Set<String> _words(String text) => {
 String? matchIngredientId(String item, Recipe recipe) {
   final itemWords = _words(item);
   if (itemWords.isEmpty) return null;
+  bool same(Set<String> words) =>
+      words.isNotEmpty &&
+      itemWords.length == words.length &&
+      itemWords.containsAll(words);
   for (final ingredient in recipe.ingredients) {
-    final idWords = _words(ingredient.id.replaceAll('_', ' '));
-    if (idWords.isNotEmpty &&
-        itemWords.length == idWords.length &&
-        itemWords.containsAll(idWords)) {
-      return ingredient.id;
-    }
+    // The ID, or the canonical name before its first comma (notes in
+    // brackets dropped), or one explicit "X or Y" alternative: "Dijon
+    // mustard" → mustard, "Flour tortillas (10 inch)" → tortillas.
+    final head = ingredient.name
+        .split(',')
+        .first
+        .replaceAll(RegExp(r'\([^)]*\)'), ' ');
+    final names = [
+      ingredient.id.replaceAll('_', ' '),
+      head,
+      ...head.split(RegExp(r'\s+or\s+', caseSensitive: false)),
+    ];
+    if (names.any((name) => same(_words(name)))) return ingredient.id;
   }
   return null;
 }

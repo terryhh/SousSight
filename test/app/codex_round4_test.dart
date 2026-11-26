@@ -270,7 +270,7 @@ void main() {
     await cook.researchQuestionNow(
       'Can I swap the bread?',
       requestWorkspace: false,
-      stillAllowed: () => allowed,
+      sendBlocked: () => allowed ? null : 'Kept on this device.',
     );
     expect(research.calls, 1);
     final panel = cook.researchPanel!;
@@ -281,7 +281,7 @@ void main() {
     allowed = false; // the cook turned on "keep typed questions here"
     expect(await panel.client.followUp(followUp), isNull);
     expect(research.calls, 1, reason: 'nothing was sent');
-    expect(cook.error, contains('keep typed questions on this device'));
+    expect(cook.error, 'Kept on this device.');
     allowed = true;
     expect(await panel.client.followUp(followUp), isNotNull);
     expect(research.calls, 2);

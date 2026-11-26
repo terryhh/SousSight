@@ -80,9 +80,14 @@ class RehearsalHybridInference extends FakeHybridInference {
     script.add((HybridRequest r) => _answer(r));
     final result = super.generate(request);
     // The user-facing runtime keeps no copies of requests (photos, typed
-    // questions, label text) for the app run (Codex #221).
+    // questions, label text) for the app run (Codex #221). A cancellation
+    // record is dropped only once its own request has settled.
     requests.clear();
-    cancelled.clear();
+    unawaited(
+      result
+          .then<void>((_) {}, onError: (Object _) {})
+          .whenComplete(() => cancelled.remove(request.requestId)),
+    );
     return result;
   }
 

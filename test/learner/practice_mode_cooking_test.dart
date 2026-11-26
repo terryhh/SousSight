@@ -526,4 +526,38 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('live-session-toggle')));
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('two identical Live replies are each revealed (Codex #221)', (
+    tester,
+  ) async {
+    await pumpPractice(tester);
+    await tester.tap(find.byKey(const ValueKey('live-session-toggle')));
+    await tester.pumpAndSettle();
+    Future<void> ask() async {
+      await tester.enterText(
+        find.byKey(const ValueKey('cooking-message-input')),
+        'What next?',
+      );
+      await tester.tap(find.byKey(const ValueKey('send-message')));
+      await tester.pumpAndSettle();
+    }
+
+    await ask();
+    final caption = find.byKey(const ValueKey('coach-caption-scroll'));
+    expect(caption, findsOneWidget);
+    // Scroll back to the top, away from the reply.
+    await tester.dragUntilVisible(
+      find.byKey(const ValueKey('cooking-header')),
+      find.byKey(const ValueKey('cooking-scroll')),
+      const Offset(0, 400),
+    );
+    await tester.pumpAndSettle();
+    await ask(); // the scripted reply is the same text
+    final box = tester.getRect(caption);
+    final dock = rectOf(tester, 'cooking-control-dock');
+    expect(box.bottom, greaterThan(0));
+    expect(box.top, lessThan(dock.top));
+    await tester.tap(find.byKey(const ValueKey('live-session-toggle')));
+    await tester.pumpWidget(const SizedBox());
+  });
 }

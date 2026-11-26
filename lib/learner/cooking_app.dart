@@ -630,6 +630,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     if (_messagePending || _message.text.trim().isEmpty) return;
     setState(() => _messagePending = true);
     final text = _message.text;
+    // A new turn: its Live reply is revealed even if it repeats the last one.
+    _shownTranscript = '';
     try {
       final accepted = await cook.say(text);
       if (accepted && mounted) _message.clear();

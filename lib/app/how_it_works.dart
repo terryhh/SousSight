@@ -370,10 +370,15 @@ hybridRoutingColumns({
   } else {
     off.add('Grounded research');
   }
-  cloud.add((
-    feature: 'Nearby stores',
-    note: 'Google Maps, only when you ask. Sends approximate location.',
-  ));
+  // Same rule as the Nearby guard (Codex #221).
+  if (cloudRoutes.allows(CloudRoute.nearby)) {
+    cloud.add((
+      feature: 'Nearby stores',
+      note: 'Google Maps, only when you ask. Sends approximate location.',
+    ));
+  } else {
+    off.add('Nearby stores');
+  }
   return (onDevice: onDevice, cloud: cloud, off: off);
 }
 
@@ -630,9 +635,10 @@ List<RoutingRow> hybridRoutingRows({
     ),
     (
       feature: 'Nearby stores',
-      where:
-          'Google cloud with Google Maps grounding, only when you ask. Sends '
-          'your approximate location once.',
+      where: cloudRoutes.allows(CloudRoute.nearby)
+          ? 'Google cloud with Google Maps grounding, only when you ask. '
+                'Sends your approximate location once.'
+          : 'Off in this build.',
     ),
   ];
 }

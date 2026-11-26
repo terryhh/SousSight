@@ -143,6 +143,14 @@ String? validateLiveTool(LiveToolCall call) {
           return 'Invalid uiJson: it must be an object with a components '
               'array. Fix and call show_cooking_ui again.';
         }
+        // app_* IDs belong to the app's own panels (watch, checklist), so a
+        // model layout can never shadow or orphan them (Codex #221).
+        if ((json['components'] as List).any(
+          (c) => c is Map && '${c['id']}'.startsWith('app_'),
+        )) {
+          return 'Invalid uiJson: IDs starting with app_ are reserved for the '
+              'app. Rename them and call show_cooking_ui again.';
+        }
       } on FormatException catch (e) {
         return 'Invalid uiJson: malformed JSON (${e.message}). '
             'Fix and call show_cooking_ui again.';

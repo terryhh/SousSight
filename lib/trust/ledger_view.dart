@@ -133,7 +133,8 @@ class LedgerSummary {
 }
 
 /// One line of the ledger's headline counter: "0 photos left your kitchen
-/// this session". [count] is shown large; [phrase] follows it.
+/// since you opened SousSight". The ledger spans the app run, across New
+/// cook (Codex #221). [count] is shown large; [phrase] follows it.
 class LedgerCount {
   const LedgerCount(this.count, this.phrase, this.tone);
   final int count;
@@ -231,8 +232,8 @@ class LedgerCounters {
     if (photos > 0) {
       return LedgerCount(
         photos,
-        '${noun(DataKind.image, photos)} sent online to Google\'s AI this '
-        'session',
+        '${noun(DataKind.image, photos)} sent online to Google\'s AI since '
+        'you opened SousSight',
         LegOutcome.cloudSdk,
       );
     }
@@ -240,7 +241,7 @@ class LedgerCounters {
       return LedgerCount(
         liveStreams,
         '${_liveNoun(liveStreams)} streamed your camera and microphone to '
-        'Google\'s AI this session',
+        'Google\'s AI since you opened SousSight',
         LegOutcome.cloudSdk,
       );
     }
@@ -249,15 +250,16 @@ class LedgerCounters {
       return LedgerCount(
         n,
         maybe > 0
-            ? '${noun(DataKind.image, n)} may have left your kitchen this '
-                  'session'
-            : '${_liveNoun(n)} may have streamed your camera this session',
+            ? '${noun(DataKind.image, n)} may have left your kitchen since '
+                  'you opened SousSight'
+            : '${_liveNoun(n)} may have streamed your camera since you '
+                  'opened SousSight',
         LegOutcome.maybeSent,
       );
     }
     return LedgerCount(
       0,
-      'photos left your kitchen this session',
+      'photos left your kitchen since you opened SousSight',
       LegOutcome.onDevice,
     );
   }
@@ -530,11 +532,13 @@ class LedgerView extends StatelessWidget {
           liveRegion: true,
           child: Text(
             summary.total == 0
-                ? 'No AI requests or location shares recorded this session. '
+                ? 'No AI requests or location shares recorded since you '
+                      'opened SousSight. '
                       "A question or scan that couldn't start isn't listed: "
                       'nothing ran and nothing was sent for it.'
                 : '${summary.total} ${summary.total == 1 ? 'request' : 'requests'} '
-                      'this session: $localCount answered on this device, '
+                      'since you opened SousSight: $localCount answered on '
+                      'this device, '
                       '$sentCount sent online'
                       '${maybeCount == 0 ? '' : ', $maybeCount may have been sent'}'
                       '${simulatedCount == 0 ? '' : ', $simulatedCount practice (pretend)'}.',

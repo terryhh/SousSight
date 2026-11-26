@@ -160,13 +160,18 @@ class PantryUiController extends ChangeNotifier {
 /// loose "cheese" guess (Codex #221).
 List<String> pantryTypedEntries(String typed) => [
   for (final raw in typed.split(RegExp(r'[,;\n]+')))
-    if (raw
-            .trim()
-            .replaceFirst(RegExp(r'^(\d+[\d/.]*\s*|a\s+|an\s+|some\s+)+'), '')
-            .trim()
-            .toLowerCase()
-        case final entry when entry.isNotEmpty)
-      entry,
+    // "0 eggs" says the cook has none: never an item (Codex #221).
+    if (!RegExp(
+      r'^\s*(0+(\.0*)?|no|none)\s+',
+      caseSensitive: false,
+    ).hasMatch(raw))
+      if (raw
+              .trim()
+              .replaceFirst(RegExp(r'^(\d+[\d/.]*\s*|a\s+|an\s+|some\s+)+'), '')
+              .trim()
+              .toLowerCase()
+          case final entry when entry.isNotEmpty)
+        entry,
 ];
 
 /// Packaging and amount words dropped before comparing a typed entry with an

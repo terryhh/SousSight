@@ -47,10 +47,10 @@ List<String> pantryUnusedItems(PantryResult result) {
 }
 
 /// Shown beside Record: voice clips can't be understood on this device.
+/// Says only what Record does (Codex #221): no promise about other paths.
 const pantryVoiceDisclosure =
-    "Voice clips are sent online to Google's AI to be understood when you "
-    'tap Find my meal. To keep everything on this device, type your list '
-    'instead.';
+    "A voice clip is sent online to Google's AI to be understood when you "
+    'tap Find my meal. Leaving Say it deletes the clip.';
 
 /// The catch-all when matching failed without a reason of its own.
 const pantryUnavailableMessage =
@@ -259,6 +259,14 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _selectMode(PantryMode mode) async {
     setState(() {
+      // A clip never rides along unseen: leaving Say it deletes it.
+      if (mode != PantryMode.say) {
+        _recordTimer?.cancel();
+        _recording = null;
+        _recordProgress = 0;
+        _audio = null;
+        _simulatedAudio = false;
+      }
       _mode = mode;
       _error = null;
     });
@@ -345,14 +353,17 @@ class _PantryScreenState extends State<PantryScreen> {
     });
     // Release the camera and microphone as soon as the inputs are captured.
     await _stopMedia();
+    // The cook's submitted words, not whatever the field holds when the
+    // answer arrives (Codex #221).
+    final submitted = _text.text;
     try {
       final result = await widget.client.identify(
-        PantryInput(text: _text.text, photoJpeg: _photo, audioWav: _audio),
+        PantryInput(text: submitted, photoJpeg: _photo, audioWav: _audio),
         widget.recipes,
       );
       if (!mounted) return;
       // What the cook typed is their own word: those items start confirmed.
-      _ui.show(result, widget.recipes, typed: _text.text);
+      _ui.show(result, widget.recipes, typed: submitted);
       _reveal(_resultsKey);
       setState(() {
         _result = result;

@@ -22,12 +22,14 @@ void main() {
         'Coach Lite',
         'Label check',
       ]);
-      expect(names(c.cloud), ['Nearby stores']);
+      // Codex #221: Nearby follows CLOUD_ROUTES like the Nearby guard.
+      expect(names(c.cloud), isEmpty);
       expect(c.off, [
         'Pantry voice note',
         'Watch: one photo you choose',
         'Live coach',
         'Grounded research',
+        'Nearby stores',
       ]);
       for (final e in c.onDevice) {
         expect(e.note, 'Always here.');
@@ -38,7 +40,9 @@ void main() {
       'with hybrid fallback, the cloud column follows the routing table',
       () {
         final c = hybridRoutingColumns(
-          cloudRoutes: CloudRoutes.parse('hybridFallback,research,live'),
+          cloudRoutes: CloudRoutes.parse(
+            'hybridFallback,research,live,nearby',
+          ),
           liveBackend: LiveBackend.aiLogic,
         );
         // The watch itself never appears in the cloud column; only the
