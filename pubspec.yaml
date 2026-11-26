@@ -50,6 +50,8 @@ dependencies:
   web: ^1.1.1
   url_launcher: ^6.3.3
   firebase_analytics: ^13.0.1
+  ai_logic_hybrid:
+    path: packages/ai_logic_hybrid
 
 dev_dependencies:
   flutter_test:

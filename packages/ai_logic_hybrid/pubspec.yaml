@@ -1,0 +1,32 @@
+name: ai_logic_hybrid
+description: "Unofficial Flutter bridge to Firebase AI Logic hybrid (on-device + cloud) inference on Web, Android and iOS. Built for SousSight; not a Google or Firebase package."
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.7
+  flutter: '>=3.44.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
+  web: ^1.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: dev.soussight.ai_logic_hybrid
+        pluginClass: AiLogicHybridPlugin
+      ios:
+        pluginClass: AiLogicHybridPlugin
+      web:
+        pluginClass: AiLogicHybridWeb
+        fileName: src/web/ai_logic_hybrid_web.dart
