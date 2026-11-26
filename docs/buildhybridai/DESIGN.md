@@ -117,7 +117,7 @@ Rules that hold everywhere:
 | **Cloud:** `FirebaseAI.firebaseAI(backend: .googleAI()).geminiLanguageModel(name:)` as the model of an Apple `LanguageModelSession`, **iOS 27+**, and only in a build made with Swift ≥ 6.4 | Verified (`FoundationModelsEngine.swift`); compile and type-check only (#189) |
 | Each request runs in a new single-model session. The plugin picks local or cloud before the call (`planRoute`, `HybridCore.swift`), so `source` is the model the session was built with: a fact about the executor, **not an SDK-reported string**. `modelLabel` is omitted (neither SDK reports the answering model) | Verified (source) |
 | Local limits: **text only**, 4,096 tokens, 256-token output reserve, `validatedLanguages: ['en']`. The JSON schema is appended to the prompt on both routes, one surrounding code fence is stripped, and Dart validates the reply | 4,096 is Docs; the rest Verified (`HybridCore.swift`) |
-| **No iOS route carries media.** The local model is text only and the cloud session rejects attachment segments (`GeminiTranscriptTranslator`), so any image or audio part returns `unsupportedInput` after the every-route limits are checked | Verified (SDK source + bridge, #189) |
+| **No iOS route carries media.** The local model is text only and the cloud session rejects attachment segments (`GeminiTranscriptTranslator`), so in every supported mode an image or audio part returns `unsupportedInput` after the every-route limits are checked (`preferInCloud` returns `unsupportedMode` before parts are inspected) | Verified (SDK source + bridge, #189) |
 | Availability: `available`, or `unavailable` with `device_not_eligible`, `apple_intelligence_off` or `model_not_ready`; `os_unsupported` below iOS 26; `withImage: true` always `image_not_supported_locally` | Verified (source) |
 | `supportedModes`: `preferOnDevice` when either model exists, `onlyOnDevice` on iOS 26+, `onlyInCloud` on iOS 27+ with a Swift 6.4 build; never `preferInCloud` | Verified (source) |
 | Foreground only | Docs |
@@ -288,8 +288,10 @@ Mode mapping per platform:
 | `onlyInCloud` | `only_in_cloud` | `ONLY_IN_CLOUD` | `LanguageModelSession` with `geminiLanguageModel(name:)` alone (iOS 27+); `unavailable` when no native cloud model is ready |
 | `preferInCloud` | `prefer_in_cloud` | `PREFER_IN_CLOUD` | `unsupportedMode` (SDK 13.x has no cloud-primary hybrid) |
 
-iOS column: `HybridCore.swift` (`planRoute`) and `FoundationModelsEngine.swift`, #189. Any media
-part is `unsupportedInput` in every iOS mode (§3 iOS).
+iOS column: `HybridCore.swift` (`planRoute`) and `FoundationModelsEngine.swift`, #189. In every
+supported iOS mode (`preferOnDevice`, `onlyOnDevice`, `onlyInCloud`), a media part is
+`unsupportedInput` (§3 iOS). `preferInCloud` is rejected with `unsupportedMode` first, before any
+part is inspected.
 
 Android, pending merge of #227: with `androidModel: auto` (the new default) the plugin checks the
 preview model once per app run. Only if it reports `available` **and** answers a one-off
@@ -664,8 +666,11 @@ Written from #243's description and branch `hybrid/30-images`; issue #226.
   `lib/illustrations/illustration_controller.dart`). It then asks the `ConsentGate` for this
   prompt digest and session, and re-runs every check after consent, before the send. Each send
   writes one cloud ledger leg (text→image).
-- Every picture is labelled "AI illustration — not a photo of your food". Prompts use only the
-  step's visible cue (safety and doneness sentences removed) and its ingredients. Steps with
+- Every picture is labelled "AI illustration — not a photo of your food". Prompts are built in
+  `lib/illustrations/illustration_prompts.dart`. A **step** prompt uses the step's visible cue
+  (safety and doneness sentences removed) and the ingredients that step and earlier steps name,
+  or the whole ingredient list when no step names one. A **plate** prompt uses the recipe title
+  and its full (sanitized) ingredient list. Steps with
   meat, poultry, fish or eggs never get a "done" shot, and those recipes get no plate picture.
 - Until `images` is added to the `CLOUD_ROUTES` repo variable after merge, the button is hidden.
 - Evidence, per #243: fakes for gating, cap, ledger and labels; **live service** for one
