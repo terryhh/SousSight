@@ -282,7 +282,7 @@ class _ReceiptPaper extends StatelessWidget {
                   value: r.unfinished,
                 ),
               const _Perforation(),
-              if (r.practiceCameraChecks > 0)
+              if (r.practiceCameraChecks > 0 || r.practiceOnly)
                 _Line(
                   key: const ValueKey('receipt-practice-camera'),
                   icon: Icons.photo_camera_outlined,
@@ -769,7 +769,7 @@ class _Barcode extends StatelessWidget {
     child: Center(
       child: SizedBox(
         width: 180,
-        height: 30,
+        height: 24,
         child: CustomPaint(painter: _BarcodePainter(seed.hashCode)),
       ),
     ),
@@ -783,7 +783,7 @@ class _BarcodePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final random = math.Random(seed);
-    final paint = Paint()..color = _ink.withValues(alpha: .78);
+    final paint = Paint()..color = _ink.withValues(alpha: .5);
     var x = 0.0;
     while (x < size.width) {
       final w = 1.0 + random.nextInt(3);

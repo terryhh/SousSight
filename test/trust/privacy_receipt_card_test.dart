@@ -147,6 +147,16 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a practice night without photos never shows an on-device '
+      'camera count', (tester) async {
+    await _pump(tester, ListLedgerSource([_leg('a', Provenance.simulated)]));
+    expect(
+      find.byKey(const ValueKey('receipt-practice-camera')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('receipt-camera')), findsNothing);
+  });
+
   testWidgets('zero-cloud night: STAYED HERE and no photo sent', (
     tester,
   ) async {
