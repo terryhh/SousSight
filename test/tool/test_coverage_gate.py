@@ -201,7 +201,7 @@ class CoverageGateTest(unittest.TestCase):
                    baseline={'minimum_line_coverage': {'lib': 0, 'plugin': 0}})
         code, out = self.gate('--bottom', '3')
         self.assertEqual(code, 0, out)
-        bottom = out.split('bottom 3')[1].split('Not loaded')[0]
+        bottom = out.split('bottom 3')[1].split('Without lcov lines')[0]
         listed = [line.split()[-1] for line in bottom.strip().splitlines()[1:]]
         # Equal coverage: more missed lines first.
         self.assertEqual(listed, ['lib/d.dart', 'lib/b.dart', 'lib/c.dart'])
@@ -213,7 +213,7 @@ class CoverageGateTest(unittest.TestCase):
                    baseline={'minimum_line_coverage': {'lib': 0, 'plugin': 0}})
         code, out = self.gate()
         self.assertEqual(code, 0, out)
-        unloaded = out.split('Not loaded by any VM test')[1]
+        unloaded = out.split('Without lcov lines')[1]
         self.assertIn('(2 files', unloaded)
         self.assertIn('lib/never.dart', unloaded)
         self.assertIn('packages/ai_logic_hybrid/lib/src/web/web_only.dart', unloaded)

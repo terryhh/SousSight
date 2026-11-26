@@ -15,8 +15,9 @@ Generated files (lib/firebase_options.dart, *.g.dart, *.freezed.dart,
 *.mocks.dart) are excluded. Coverage is the share of instrumented lines (lcov
 DA records) with a hit count above zero. A Dart file that no VM test loads
 produces no DA records, so it cannot be part of the percentage; such files
-are listed separately as "not loaded by any test" rather than silently
-ignored.
+are listed separately ("Without lcov lines") rather than silently ignored;
+export-only barrel files also land there because they have no executable
+lines.
 
 The gate compares each root's coverage with the integer minimum stored in
 tool/coverage/baseline.json and fails when a root is below it. With
@@ -226,7 +227,8 @@ def build_report(files, all_sources, minimums, bottom) -> tuple[list[str], dict,
     for value, missed, path, hit, found in per_file[:bottom]:
         out.append(f'  {value:5.1f}%  {hit:>5}/{found:<5} {path}')
 
-    out += ['', f'Not loaded by any VM test ({len(unloaded)} files; 0% and outside the percentages above):']
+    out += ['', f'Without lcov lines ({len(unloaded)} files; outside the percentages above). Either no VM '
+            'test loads them, or they have nothing executable (export-only barrels):']
     out += [f'  {path}' for path in unloaded] or ['  (none)']
     return out, {name: tuple(v) for name, v in roots.items()}, failures
 

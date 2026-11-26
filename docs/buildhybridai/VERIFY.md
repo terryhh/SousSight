@@ -81,12 +81,13 @@ input error (exit 2), never a pass.
 The report (`build/verify/coverage.txt`) lists the gated roots, a per-area table
 (`lib/ai`, `lib/trust`, `lib/watch`, `lib/pantry`, `lib/coach_lite`, `lib/label`, `lib/live`,
 `lib/learner`, `lib/data`, `plugin`, then every other `lib/` area), the 15 lowest-covered files,
-and the files no test loads.
+and the files without lcov lines.
 
 **Limitation.** `flutter test --coverage` only instruments libraries a test loads. A Dart file
 that no VM test imports (entry points such as `lib/main.dart`, web-only `*_web.dart` files) has
-no lcov lines, so it cannot be part of the percentage. The report lists those files under "Not
-loaded by any VM test" instead of hiding them. Web-only code is exercised by the Chrome and
+no lcov lines, so it cannot be part of the percentage. The report lists those files under
+"Without lcov lines" instead of hiding them; export-only barrel files (for example
+`lib/genui/cooking_ui.dart`) also appear there because they contain nothing executable. Web-only code is exercised by the Chrome and
 Node steps, which do not produce lcov.
 
 ## CI
