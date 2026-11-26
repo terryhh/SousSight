@@ -66,65 +66,60 @@
       "key": "plate",
       "file": "chickpea_wrap_v1/plate.jpg",
       "subject": "finishedPlate",
-      "prompt": "Show the finished dish, \"Smashed Chickpea Salad Wrap\", served on a plate or in a bowl and ready to eat. Ingredients: Canned chickpeas, drained and rinsed; Mayonnaise; Dijon mustard; Lemon juice; Red onion, thinly sliced; Celery, diced; Red bell pepper, diced; Salt and black pepper; Flour tortillas. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "prompt": "Show the finished dish, \"Smashed Chickpea Salad Wrap\", served on a plate or in a bowl and ready to eat. Ingredients: Canned chickpeas, drained and rinsed; Mayonnaise; Dijon mustard; Lemon juice, fresh or bottled; Red onion, thinly sliced; Celery, diced; Red bell pepper, diced; Salt and black pepper; Flour tortillas. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T06:02:25.155Z",
+      "generatedAt": "2026-11-26T10:21:19.614Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "1b736cf45383614b364dd79c6e94984aa13eab7da2ecf1ad11ccddb64d959375",
-      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
+      "sha256": "2cdebeb2ec2547f0a9f8af3639825cd269ecca50ad1200e045c2a5102d55f8c5"
     },
     {
       "recipe": "chickpea_wrap_v1",
       "key": "step_mash",
       "file": "chickpea_wrap_v1/step_mash.jpg",
       "subject": "stepLook",
-      "prompt": "Show what the food should look like at this point: Mostly broken and chunky, only a few whole chickpeas left, not a smooth paste. Ingredients in this step: Canned chickpeas, drained and rinsed. Prepared in earlier steps, and shown only where the description above includes them: Lemon juice; Red onion, thinly sliced; Salt and black pepper. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "prompt": "Show what the food should look like at this point: Mostly broken and chunky, only a few whole chickpeas left, not a smooth paste. Ingredients in this step: Canned chickpeas, drained and rinsed. Prepared in earlier steps, and shown only where the description above includes them: Lemon juice, fresh or bottled; Red onion, thinly sliced; Salt and black pepper. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T06:01:46.627Z",
+      "generatedAt": "2026-11-26T10:20:42.620Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "f941329398705af9ef569c52f1a3565fd1711e127a0854d7d447d9525513ea02",
-      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
+      "sha256": "2afef2161d4b2d7a0f8eabf451cc7559374f3b6628d4b3d7d980b9d7b9000993"
     },
     {
       "recipe": "chickpea_wrap_v1",
       "key": "step_mix",
       "file": "chickpea_wrap_v1/step_mix.jpg",
       "subject": "stepLook",
-      "prompt": "Show what the food should look like at this point: Red and green pieces spread through the whole bowl, everything lightly coated, no white streaks of dressing. Ingredients in this step: Mayonnaise; Dijon mustard; Lemon juice; Red onion, thinly sliced; Celery, diced; Red bell pepper, diced; Salt and black pepper. Prepared in earlier steps, and shown only where the description above includes them: Canned chickpeas, drained and rinsed. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "prompt": "Show what the food should look like at this point: Vegetable pieces spread through the whole bowl, everything lightly coated, no white streaks of dressing. Ingredients in this step: Mayonnaise; Dijon mustard; Lemon juice, fresh or bottled; Red onion, thinly sliced; Celery, diced; Red bell pepper, diced; Salt and black pepper. Prepared in earlier steps, and shown only where the description above includes them: Canned chickpeas, drained and rinsed. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T06:02:00.087Z",
+      "generatedAt": "2026-11-26T10:20:53.722Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "73f25dcf51c795a749a8cf5ba2b8ba68329a3e52137d07d087b1d0b64a627ee6",
-      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
+      "sha256": "a25645150198d85bb9b091a45c16660c0e38ae71302c17b1b267d5a2b5c2831b"
     },
     {
       "recipe": "chickpea_wrap_v1",
       "key": "step_pickle_onion",
       "file": "chickpea_wrap_v1/step_pickle_onion.jpg",
       "subject": "stepLook",
-      "prompt": "Show what the food should look like at this point: The onion turns brighter pink and softens. It takes about 5 minutes. Ingredients in this step: Lemon juice; Red onion, thinly sliced; Salt and black pepper. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "prompt": "Show what the food should look like at this point: The onion turns brighter pink and softens. It takes about 5 minutes. Ingredients in this step: Lemon juice, fresh or bottled; Red onion, thinly sliced; Salt and black pepper. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T06:01:35.655Z",
+      "generatedAt": "2026-11-26T10:20:28.412Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "385787a5518886a8851b81f824c790bb7b62a6936d754ba627bb57a4561f0db6",
-      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
+      "sha256": "b7c031a4f5cb08143f3e5416fe8e839aafa6ab6cd8f716bc5a2bc24c8fe23b5e"
     },
     {
       "recipe": "chickpea_wrap_v1",
       "key": "step_roll",
       "file": "chickpea_wrap_v1/step_roll.jpg",
       "subject": "stepLook",
-      "prompt": "Show what the food should look like at this point: A spoonful holds its shape. If it slumps or pools, it is too wet to roll. Ingredients in this step: Flour tortillas. Prepared in earlier steps, and shown only where the description above includes them: Canned chickpeas, drained and rinsed; Mayonnaise; Dijon mustard; Lemon juice; Red onion, thinly sliced; Celery, diced; Red bell pepper, diced; Salt and black pepper. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "prompt": "Show what the food should look like at this point: A spoonful holds its shape. If it slumps or pools, it is too wet to roll. Ingredients in this step: Flour tortillas. Prepared in earlier steps, and shown only where the description above includes them: Canned chickpeas, drained and rinsed; Mayonnaise; Dijon mustard; Lemon juice, fresh or bottled; Red onion, thinly sliced; Celery, diced; Red bell pepper, diced; Salt and black pepper. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T06:02:13.340Z",
+      "generatedAt": "2026-11-26T10:21:05.883Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "9ae9a49f9d73355acc2f140ca102f6c2ebd6f7ee9f7e917b808fbdcd363943d2",
-      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
+      "sha256": "afecd9a31728d4aa0ee056268bb712a982e660ecbb69b2db8acb1f02ec5a3fd5"
     },
     {
       "recipe": "peanut_butter_sandwich_v1",
@@ -155,26 +150,24 @@
       "key": "step_optional_jam",
       "file": "peanut_butter_sandwich_v1/step_optional_jam.jpg",
       "subject": "stepLook",
-      "prompt": "Show what the food should look like at this point: With jam, the second slice has a thin spread layer rather than a large mound. Without jam, a plain second slice is the intended result. No waiting is needed. Ingredients in this step: Jam. Prepared in earlier steps, and shown only where the description above includes them: Bread; Peanut butter. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "prompt": "Show what the food should look like at this point: With jam, the second slice has a thin, even layer rather than a large mound. Without jam, the second slice stays plain. Ingredients in this step: Jam. Prepared in earlier steps, and shown only where the description above includes them: Bread; Peanut butter. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T06:00:55.859Z",
+      "generatedAt": "2026-11-26T10:20:15.711Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "b43c01076ea83a373b2bd56dee906b98e482551137fe84fdad6dfbdf6ea6694a",
-      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
+      "sha256": "8bfc4eba6427433626aad99baa7a10655727e661537ed8b7b02a4bc3431474ea"
     },
     {
       "recipe": "peanut_butter_sandwich_v1",
       "key": "step_prep",
       "file": "peanut_butter_sandwich_v1/step_prep.jpg",
       "subject": "stepLook",
-      "prompt": "Show what the food should look like at this point: Both slices lie flat with their upper surfaces visible and room to spread. Jam is a cook choice, not an assumed ingredient. Ingredients in this step: Bread; Peanut butter; Jam. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "prompt": "Show what the food should look like at this point: Both slices lie flat with room to spread. Ingredients in this step: Bread; Peanut butter; Jam. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T06:00:28.717Z",
+      "generatedAt": "2026-11-26T10:20:02.545Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "204d8725d25d92f7ddc3e17ec3323085bb3d12320f70d6d227cbb677060dca2c",
-      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
+      "sha256": "c3c1862e53aa5cae62dc2945e321262b910d1bfd0942f670539a82efd0ee3c6f"
     },
     {
       "recipe": "peanut_butter_sandwich_v1",

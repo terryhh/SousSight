@@ -266,7 +266,8 @@ retried.
 | 2026-11-26 05:53 | Trial image (`chickpea_wrap_v1/step_mash`), later replaced after the prompt was narrowed to the step's own ingredients | 1 | ~$0.034 | Not inspected |
 | 2026-11-26 ~06:00 | Pre-made set: 15 images for the 3 reviewed recipes (`assets/illustrations/manifest.json` holds each prompt, model and date) | 15 | ~$0.50 | Not inspected |
 | 2026-11-26 ~06:06 | On-demand gate: one image for a synthetic AI-drafted recipe through the production controller, consent dialog ("Allow once" clicked), ledger and widget; one ledger leg `step_illustration`, text, cloudAdapter, `gemini-nano-banana-2.1 (text→image)` | 1 | ~$0.034 | Not inspected |
-| **Total** | | **17** | Image output only: 17 × $0.0336 ≈ $0.57 (estimate). Input and thinking tokens were not measured, so the **total is unknown**. | Not inspected |
+| 2026-11-26 ~10:20 | Regenerated the 7 pre-made images whose reviewed-recipe wording changed in PR #215 (chickpea wrap: pickle onion, mash, mix, roll, plate; peanut butter: prep, optional jam), using the current wording and safety rules. No image was skipped: none is forbidden by the rules. Orchestrator cap: 8 calls | 7 | ~$0.24 | Not inspected |
+| **Total** | | **24** | Image output only: 24 × $0.0336 ≈ $0.81 (estimate). Input and thinking tokens were not measured, so the **total is unknown**. | Not inspected |
 
 These are estimates from the published per-image price. Token usage was not
 read from the responses, so input and thinking-token charges are unmeasured
