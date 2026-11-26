@@ -268,6 +268,36 @@ void main() {
     ui.dispose(); // stops the ticker before the test ends
   });
 
+  testWidgets('DinnerTimerMemory forgets a timer cancelled with time left', (
+    tester,
+  ) async {
+    var now = _now;
+    final ui = CookingUiController(clock: () => now);
+    final memory = DinnerTimerMemory()..attach(ui);
+    final timer = ui.startTimer(
+      id: 'step-simmer-1-0',
+      label: 'Simmer',
+      seconds: 20 * 60,
+    );
+    now = now.add(const Duration(minutes: 1));
+    ui.dismissTimer(timer.id); // Cancel: 19 minutes were still left.
+    // Waiting past its old deadline does not make it "finished".
+    now = now.add(const Duration(minutes: 30));
+    ui.startTimer(id: 'lite-2-0', label: 'Oven', seconds: 60);
+    expect(memory.pastTimers, isEmpty);
+    expect(
+      dinnerDraftFor(
+        steps: steps,
+        currentStepId: 'simmer',
+        complete: false,
+        now: now,
+        pastTimers: memory.pastTimers,
+      ).minutes,
+      25,
+    );
+    ui.dispose();
+  });
+
   group('review dialog', () {
     late FakeDinnerBackend fake;
 
@@ -392,6 +422,120 @@ void main() {
       await confirm(tester);
       expect(fake.sent.single.kind, DinnerKind.ready);
       expect(fake.sent.single.minutes, isNull);
+    });
+  });
+
+  group('a confirmed attempt', () {
+    testWidgets('a lost response reopens with the confirmed minutes', (
+      tester,
+    ) async {
+      final memory = DinnerAttemptMemory();
+      final fake = FakeDinnerBackend();
+      addTearDown(fake.dispose);
+      final sent = <DinnerMessageRequest>[];
+      int? estimate = 25;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => showDinnerReview(
+                  context,
+                  kind: DinnerKind.started,
+                  sessionId: 'session-1',
+                  recipeTitle: 'Chickpea wrap',
+                  // The server accepted it, but the response never arrived.
+                  send: (request) async {
+                    sent.add(request);
+                    throw StateError('response lost');
+                  },
+                  statusSource: fake,
+                  memory: memory,
+                  isDemo: true,
+                  initialMinutes: estimate,
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      Finder minutes() => find.byWidgetPredicate(
+        (w) =>
+            w is TextField && w.decoration?.labelText == 'Minutes until dinner',
+      );
+      String preview() =>
+          tester.widget<Text>(find.byKey(const Key('dinner-preview'))).data!;
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'Recipient',
+        ),
+        '+14075550123',
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) =>
+              w is TextField &&
+              w.decoration?.labelText == 'Your name (optional)',
+        ),
+        'Terry',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Rehearse send'));
+      await tester.pumpAndSettle();
+      expect(sent.single.minutes, 25);
+      expect(find.textContaining('could not be confirmed'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+
+      // Five minutes later the estimate is 20, but the attempt shows what the
+      // cook confirmed.
+      estimate = 20;
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(minutes()).controller!.text, '25');
+      expect(preview(), contains('about 25 minutes to go'));
+      expect(preview(), contains('Terry is making Chickpea wrap'));
+      expect(tester.widget<TextField>(minutes()).enabled, isFalse);
+      expect(sent, hasLength(1));
+    });
+
+    testWidgets('a validation rejection unlocks the fields again', (
+      tester,
+    ) async {
+      final memory = DinnerAttemptMemory();
+      final fake = FakeDinnerBackend();
+      addTearDown(fake.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DinnerReviewDialog(
+              kind: DinnerKind.started,
+              sessionId: 'session-1',
+              recipeTitle: 'Chickpea wrap',
+              send: (_) async =>
+                  throw const DinnerValidationException('Fix the minutes.'),
+              statusSource: fake,
+              memory: memory,
+              isDemo: true,
+              initialMinutes: 25,
+            ),
+          ),
+        ),
+      );
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (w) => w is TextField && w.decoration?.labelText == 'Recipient',
+        ),
+        '+14075550123',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Rehearse send'));
+      await tester.pumpAndSettle();
+      expect(find.text('Fix the minutes.'), findsOneWidget);
+      expect(memory.current(DinnerKind.started).confirmed, isNull);
+      expect(memory.current(DinnerKind.started).claimed, isFalse);
     });
   });
 

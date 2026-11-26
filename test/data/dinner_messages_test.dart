@@ -225,6 +225,8 @@ void main() {
       'recipient': '+14075550100',
       'kind': 'ready',
       'recipeTitle': 'Soup',
+      // The wording the client previewed (server template version 2).
+      'templateVersion': 2,
     });
   });
 

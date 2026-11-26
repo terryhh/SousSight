@@ -2,17 +2,20 @@
 //
 // Written for a pantry cook with no tech background: what may be sent, where
 // it goes and what SousSight keeps. The claims are deliberately narrow:
-// - "May": a yes permits one upload of this exact payload; the request can
-//   still finish on the device (preferOnDevice), so the copy never says it
-//   was sent.
+// - "May": for a fallback route a yes permits one upload of this exact
+//   payload, but the request can still finish on the device
+//   (preferOnDevice), so the copy never says it was sent. A cloud-only
+//   feature (an explicit watch cloud check: onlyInCloud, no local attempt)
+//   says plainly that a yes sends it.
 // - Storage (verified): SousSight writes no photo or voice clip to device
 //   storage, Firestore or analytics; the ledger records kinds, never content.
-//   That is stated separately from in-memory retention: the screen that took
-//   the photo or clip may keep it in memory until the cook leaves it.
+//   In-memory retention is stated without a lifetime: previews go through
+//   Flutter's shared ImageCache, which can outlive the screen.
 // - What Google keeps is governed by Google's terms; nothing is promised on
 //   Google's behalf.
 
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart';
 import '../trust/trust_labels.dart';
 
 /// The consent dialog's "yes": one send of this exact payload.
@@ -55,6 +58,11 @@ String consentSubject(ConsentAsk ask) {
   return '${media.sublist(0, media.length - 1).join(', ')} and ${media.last}';
 }
 
+/// Feature names the cook knows from the screen, where the ledger key differs.
+const Map<String, String> _featureNames = {
+  'local_watch_cloud_check': 'Watch my food',
+};
+
 /// What goes with the photo, clip or location, or '' when nothing does.
 String consentCompanion(ConsentAsk ask) {
   final hasMedia = ask.kinds.any((k) => k != DataKind.text);
@@ -71,16 +79,33 @@ String consentCompanion(ConsentAsk ask) {
   final withText = companion.isEmpty ? '' : ', with $companion,';
   final media =
       ask.kinds.contains(DataKind.image) || ask.kinds.contains(DataKind.audio);
+  // A cloud-only route (the explicit watch cloud check) has no local
+  // attempt: a yes sends it, so say so rather than "if needed".
+  final direct = featureRouteFor(ask.feature).cloudOnly;
+  final label = _featureNames[ask.feature] ?? featureLabel(ask.feature);
+  final check = ask.feature == 'local_watch_cloud_check';
+  final request = !direct
+      ? '$label may need help from Google. If you say yes and this device '
+            "can't answer by itself, SousSight sends $subject$withText to "
+            "Google's servers to answer. "
+      : check
+      ? '$label wants a second look from Google. If you say yes, SousSight '
+            "sends $subject$withText to Google's servers to check it. "
+      : '$label needs Google for this. If you say yes, SousSight sends '
+            "$subject$withText to Google's servers to answer. ";
+  final storage = media
+      ? "SousSight doesn't save photos or voice clips on this device or "
+            'online, though the app may still hold them in memory for a '
+            'while. '
+      : '';
   return (
-    title: 'Send $subject to Google if needed?',
+    title: direct
+        ? 'Send $subject to Google?'
+        : 'Send $subject to Google if needed?',
     body:
-        '${featureLabel(ask.feature)} may need help from Google. '
-        "If you say yes and this device can't answer by itself, SousSight "
-        "sends $subject$withText to Google's servers to answer. "
+        '$request'
         'Your yes covers this one request only. '
-        '${media ? "SousSight doesn't save photos or voice clips on this "
-                  'device or online. The app may keep them in memory until '
-                  'you leave this screen. ' : ''}'
+        '$storage'
         "Google's own privacy terms cover what Google does with anything it "
         'receives. '
         'If you choose "$kConsentDeclineLabel", nothing from this request is '

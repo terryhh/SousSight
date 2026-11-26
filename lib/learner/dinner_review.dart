@@ -43,7 +43,8 @@ bool isStepTimerFor(String timerId, String stepId) {
 /// The estimate is the time left on the current step plus the timer
 /// durations of the steps after it. The current step's time is its step
 /// timer's remaining time (zero once it has finished, even if the cook has
-/// since dismissed it: pass dismissed timers in [pastTimers]; its own timer
+/// since dismissed it: pass timers removed after they ran out in
+/// [pastTimers], e.g. [DinnerTimerMemory.pastTimers]; its own timer
 /// duration if it never started), and never less than the longest running
 /// timer. Durations are summed at full precision and rounded up to whole
 /// minutes once. Steps with no duration add nothing; if nothing is known at
@@ -95,18 +96,18 @@ DinnerDraft dinnerDraftFor({
 Duration _duration(int? seconds) =>
     seconds != null && seconds > 0 ? Duration(seconds: seconds) : Duration.zero;
 
-/// Remembers every timer [CookingUiController] has shown, so a step timer the
-/// cook dismissed after it finished still tells [dinnerDraftFor] that the
-/// step's time is used up. Attach it when the cooking screen starts.
+/// Remembers which timers had run out when they were removed, so a step timer
+/// the cook dismissed after it finished still tells [dinnerDraftFor] that the
+/// step's time is used up. A timer cancelled while it still had time left is
+/// forgotten: cancelling is not cooking, so that step's time still counts.
+/// Attach it when the cooking screen starts.
 class DinnerTimerMemory {
-  final Map<String, CookingTimerState> _seen = {};
+  final Map<String, CookingTimerState> _running = {};
+  final Map<String, CookingTimerState> _finished = {};
   CookingUiController? _ui;
 
-  /// Timers seen so far that are no longer running (dismissed).
-  Iterable<CookingTimerState> get pastTimers {
-    final running = {for (final t in _ui?.timers ?? const []) t.id};
-    return _seen.values.where((t) => !running.contains(t.id));
-  }
+  /// Timers removed after they had run out (dismissed when finished).
+  Iterable<CookingTimerState> get pastTimers => _finished.values;
 
   void attach(CookingUiController ui) {
     detach();
@@ -118,12 +119,23 @@ class DinnerTimerMemory {
   void detach() {
     _ui?.removeListener(_observe);
     _ui = null;
+    _running.clear();
   }
 
   void _observe() {
-    for (final timer in _ui?.timers ?? const <CookingTimerState>[]) {
-      _seen[timer.id] = timer;
+    final ui = _ui;
+    if (ui == null) return;
+    // Judged at the moment of removal, not later: a cancelled timer whose
+    // deadline passes afterwards never counts as finished.
+    final now = ui.clock();
+    final current = {for (final timer in ui.timers) timer.id: timer};
+    for (final MapEntry(key: id, value: timer) in _running.entries) {
+      if (current.containsKey(id)) continue;
+      if (!timer.deadline.isAfter(now)) _finished[id] = timer;
     }
+    _running
+      ..clear()
+      ..addAll(current);
   }
 }
 
@@ -134,6 +146,11 @@ class DinnerAttempt {
   final String notificationId;
   String recipient = '';
   bool claimed = false;
+
+  /// The request the cook confirmed, snapshotted before the send is awaited.
+  /// A reopened attempt shows these slots, never a fresh estimate, even when
+  /// the response was lost and [result] is null.
+  DinnerMessageRequest? confirmed;
   DinnerMessageResult? result;
   String? outcome;
 }
@@ -220,9 +237,16 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
         : widget.memory.lastRecipient,
   );
   late final _minutes = TextEditingController(
-    text: widget.initialMinutes?.toString() ?? '',
+    text:
+        (_attempt.confirmed != null
+                ? _attempt.confirmed!.minutes
+                : widget.initialMinutes)
+            ?.toString() ??
+        '',
   );
-  final _cookName = TextEditingController();
+  late final _cookName = TextEditingController(
+    text: _attempt.confirmed?.cookName ?? '',
+  );
   StreamSubscription<DinnerDeliveryStatus?>? _subscription;
   DinnerDeliveryStatus? _status;
   bool _sending = false;
@@ -315,6 +339,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     if (_simulated) simulate ??= DinnerSimulation.delivered;
     final attempt = _attempt;
     final request = _request(simulate: simulate);
+    attempt.confirmed = request;
     setState(() {
       _sending = true;
       _validationError = null;
@@ -329,6 +354,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
       if (mounted && identical(attempt, _attempt)) _watch();
     } on DinnerValidationException catch (error) {
       // Nothing was claimed; the same ID may be confirmed again after edits.
+      attempt.confirmed = null;
       if (mounted) setState(() => _validationError = error.explanation);
     } on DinnerConflictException catch (error) {
       attempt
@@ -383,7 +409,10 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
   @override
   Widget build(BuildContext context) {
     final status = _effectiveStatus;
-    final preview = _attempt.result?.message ?? _request().preview;
+    final preview =
+        _attempt.result?.message ??
+        _attempt.confirmed?.preview ??
+        _request().preview;
     final failed = status?.isFailure ?? false;
     final outcome = _attempt.outcome;
     return AlertDialog(

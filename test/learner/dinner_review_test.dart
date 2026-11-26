@@ -515,6 +515,46 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('a cancelled step timer still counts after its time passes', (
+      tester,
+    ) async {
+      var now = DateTime(2026, 11, 26, 18);
+      await pumpScreen(
+        tester,
+        recipeId: 'chickpea_wrap_v1',
+        adapt: (s) => AppServices(
+          auth: s.auth,
+          recipes: s.recipes,
+          sessions: s.sessions,
+          bundledRecipe: s.bundledRecipe,
+          clock: () => now,
+        ),
+      );
+      final later = cook.recipe.steps
+          .skip(1)
+          .fold<int>(0, (sum, step) => sum + (step.timerSeconds ?? 0));
+      final full = '${5 + (later / 60).ceil()}';
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      // Cancelled at once, before any cooking; then five minutes go by.
+      cook.ui.dismissTimer(cook.ui.timers.single.id);
+      await tester.pumpAndSettle();
+      now = now.add(const Duration(minutes: 6));
+      await tester.pump(const Duration(seconds: 2));
+      await open(tester, 'Review dinner message');
+      expect(
+        tester
+            .widget<TextField>(field('Minutes until dinner'))
+            .controller!
+            .text,
+        full,
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('on the final step it says Dinner is ready!', (tester) async {
       await pumpScreen(tester);
       await toFinalStep(tester);

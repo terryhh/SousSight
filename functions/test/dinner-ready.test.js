@@ -6,11 +6,12 @@ import {
   legacyFingerprints, requestFingerprint, SEND_LIMIT_PER_HOUR, validateDinnerRequest,
 } from '../src/dinner-ready.js';
 import { createDeliveryStatusStore, providerIndexId } from '../src/vonage-status.js';
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { fakeFirestore } from './fake-firestore.js';
 
+// A current client: it previews and sends template version 2.
 const input = (overrides = {}) => ({ sessionId: 'meal-1', notificationId: 'notice-123',
-  recipient: '+14075550100', kind: 'ready', recipeTitle: 'Chickpea wraps', ...overrides });
+  recipient: '+14075550100', kind: 'ready', recipeTitle: 'Chickpea wraps', templateVersion: 2, ...overrides });
 const started = (overrides = {}) => input({ kind: 'started', minutes: 25, notificationId: 'start-123', ...overrides });
 const settings = { enabled: true, channel: 'whatsapp', allowedRecipients: ['14075550100'] };
 const nowMs = Date.parse('2026-11-07T21:00:00Z');
@@ -108,37 +109,101 @@ test('rejects free-form messages, bad kinds, minutes and recipients', () => {
     { code: 'invalid-recipient' });
 });
 
-test('a replay of a request claimed before the template change returns the original outcome', async () => {
-  const legacy = JSON.parse(readFileSync(new URL('./fixtures/legacy-started-claim.json', import.meta.url), 'utf8'));
-  // State written by the pre-change deployment (commit 1e4cb4c) for this request.
+// What a pre-SS-100 deployment (commit 1e4cb4c) wrote when it claimed and
+// sent a started message, rebuilt here from that commit's algorithm rather
+// than stored: its ledger key and fingerprint are computed at test time.
+const LEGACY_BODY = Object.freeze({ sessionId: 'meal-1', notificationId: 'start-123',
+  recipient: '+14075550100', kind: 'started', recipeTitle: 'Chickpea wraps', minutes: 25, cookName: 'Terry' });
+const LEGACY_TEXT = 'SousSight: Terry started Chickpea wraps. Dinner in about 25 min.';
+function seedLegacyClaim(db, { channel = 'whatsapp', status = 'submitted' } = {}) {
+  const hash = (text) => createHash('sha256').update(text).digest('hex');
+  // 1e4cb4c: key = sha256(uid \n id); fingerprint = sha256 of its validated
+  // request (this field order, recipient without '+', the v1 message) + channel.
+  const key = hash(`cook-1\n${LEGACY_BODY.notificationId}`);
+  const fingerprint = hash(JSON.stringify({ sessionId: 'meal-1', notificationId: 'start-123',
+    recipient: '14075550100', kind: 'started', recipeTitle: 'Chickpea wraps', minutes: 25,
+    cookName: 'Terry', simulateOutcome: null, message: LEGACY_TEXT, channel }));
+  db.docs.set(`_dinnerNotifications/${key}`, { fingerprint, status, channel, kind: 'started',
+    sessionId: 'meal-1', notificationId: 'start-123', simulated: false, createdAt: nowMs, updatedAt: nowMs });
+  db.docs.set(`_dinnerMealClaims/${hash('cook-1\nmeal-1\n14075550100\nstarted')}`,
+    { notificationId: 'start-123', ledgerKey: key, createdAt: nowMs });
+  return fingerprint;
+}
+
+test('an older client (no template version) gets the wording it previewed', async () => {
+  const { service, sent } = harness();
+  const result = await service('cook-1', { ...LEGACY_BODY, notificationId: 'old-client-1' });
+  assert.equal(result.message, LEGACY_TEXT);
+  assert.equal(sent[0].request.message, LEGACY_TEXT);
+  assert.equal(sent[0].request.templateVersion, 1);
+  // Version 1 never had a started message without minutes.
+  assert.throws(() => validateDinnerRequest({ ...LEGACY_BODY, minutes: undefined }, settings.allowedRecipients),
+    { code: 'invalid-request' });
+  assert.equal(validateDinnerRequest({ ...LEGACY_BODY, kind: 'ready', minutes: undefined, cookName: undefined },
+    settings.allowedRecipients).message, READY_TEXT);
+});
+
+test('a current client (template version 2) gets the new wording; unknown versions are refused', async () => {
+  const { service, sent } = harness();
+  const result = await service('cook-1', { ...LEGACY_BODY, templateVersion: 2, notificationId: 'new-client-1' });
+  const v2 = "SousSight: Dinner's started, about 25 minutes to go. Terry is making Chickpea wraps.";
+  assert.equal(result.message, v2);
+  assert.equal(sent[0].request.message, v2);
+  for (const templateVersion of [0, 3, '2', 2.5]) {
+    assert.throws(() => validateDinnerRequest({ ...LEGACY_BODY, templateVersion }, settings.allowedRecipients),
+      { code: 'invalid-request' }, String(templateVersion));
+  }
+});
+
+test('a replay of a pre-change claim returns its original outcome and wording', async () => {
   const { service, sent, db } = harness();
-  db.docs.clear();
-  for (const [path, data] of legacy.docs) db.docs.set(path, data);
-  const replay = await service('cook-1', legacy.request);
+  const fingerprint = seedLegacyClaim(db);
+  const request = validateDinnerRequest(LEGACY_BODY, settings.allowedRecipients);
+  assert.deepEqual(legacyFingerprints(request, 'whatsapp'), [fingerprint]);
+  assert.notEqual(requestFingerprint(request, 'whatsapp'), fingerprint);
+  const replay = await service('cook-1', LEGACY_BODY);
   assert.equal(replay.duplicate, true);
-  assert.equal(replay.status, legacy.result.status);
-  assert.equal(replay.channel, legacy.result.channel);
+  assert.equal(replay.status, 'submitted');
+  assert.equal(replay.channel, 'whatsapp');
+  assert.equal(replay.message, LEGACY_TEXT);
   assert.equal(sent.length, 0);
-  // The recognised record is the legacy one, not a fresh v2 claim.
-  const [, record] = legacy.docs.find(([path]) => path.startsWith('_dinnerNotifications/'));
-  const request = validateDinnerRequest(legacy.request, settings.allowedRecipients);
-  assert.ok(legacyFingerprints(request, 'whatsapp').includes(record.fingerprint));
-  assert.notEqual(requestFingerprint(request, 'whatsapp'), record.fingerprint);
-  // Changed content under the same ID is still a conflict.
-  await assert.rejects(service('cook-1', { ...legacy.request, minutes: 30 }),
-    { code: 'idempotency-conflict', status: 409 });
+  // The same ID with other content, or as a version-2 request, conflicts.
+  for (const changed of [{ minutes: 30 }, { templateVersion: 2 }]) {
+    await assert.rejects(service('cook-1', { ...LEGACY_BODY, ...changed }),
+      { code: 'idempotency-conflict', status: 409 }, JSON.stringify(changed));
+  }
   assert.equal(sent.length, 0);
 });
 
-test('fingerprints ignore the rendered message but not the slots', () => {
+test('new claims store their template version; a replay repeats that wording', async () => {
+  const { service, sent, db } = harness();
+  for (const body of [{ ...LEGACY_BODY, notificationId: 'v1-claim-1' },
+    { ...LEGACY_BODY, sessionId: 'meal-2', notificationId: 'v2-claim-1', templateVersion: 2 }]) {
+    db.docs.set(`sessions/${body.sessionId}`, { learnerId: 'cook-1' });
+    const first = await service('cook-1', body);
+    const record = [...db.docs.entries()].find(([path, data]) =>
+      path.startsWith('_dinnerNotifications/') && data.notificationId === body.notificationId)[1];
+    assert.equal(record.templateVersion, body.templateVersion ?? 1);
+    assert.doesNotMatch(JSON.stringify(record), /Chickpea|Terry/);
+    const replay = await service('cook-1', body);
+    assert.equal(replay.duplicate, true);
+    assert.equal(replay.message, first.message);
+  }
+  assert.equal(sent.length, 2);
+});
+
+test('fingerprints ignore the rendered message but not the slots or version', () => {
   const request = validateDinnerRequest(started(), settings.allowedRecipients);
   const fingerprint = requestFingerprint(request, 'sms');
   assert.match(fingerprint, /^v2:[0-9a-f]{64}$/);
   assert.equal(requestFingerprint({ ...request, message: 'any other template' }, 'sms'), fingerprint);
   assert.notEqual(requestFingerprint({ ...request, minutes: 26 }, 'sms'), fingerprint);
+  assert.notEqual(requestFingerprint({ ...request, templateVersion: 1 }, 'sms'), fingerprint);
   assert.notEqual(requestFingerprint(request, 'whatsapp'), fingerprint);
-  // Ready messages had no template change: one legacy form.
-  assert.equal(legacyFingerprints(validateDinnerRequest(input(), settings.allowedRecipients), 'sms').length, 1);
+  // Only an unversioned (version 1) request can match a pre-change record.
+  assert.deepEqual(legacyFingerprints(request, 'sms'), []);
+  assert.equal(legacyFingerprints(validateDinnerRequest({ ...input(), templateVersion: undefined },
+    settings.allowedRecipients), 'sms').length, 1);
 });
 
 test('session ownership is verified in claim transaction before any provider call', async () => {

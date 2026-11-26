@@ -19,7 +19,14 @@ String cleanTemplateText(String value, int maxLength) {
   return text;
 }
 
-/// Mirrors `composeDinnerMessage` in functions/src/dinner-ready.js.
+/// The server template version this client previews (functions/src/
+/// dinner-ready.js). Sent with every request so the household gets exactly
+/// the wording the cook reviewed; the server keeps older wording for older
+/// clients.
+const kDinnerTemplateVersion = 2;
+
+/// Mirrors `composeDinnerMessage` (template version 2) in
+/// functions/src/dinner-ready.js.
 String composeDinnerMessage({
   required DinnerKind kind,
   required String recipeTitle,
@@ -80,6 +87,7 @@ class DinnerMessageRequest {
     if (kind == DinnerKind.started && (cookName?.trim().isNotEmpty ?? false))
       'cookName': cookName!.trim(),
     if (simulate != null) 'simulateOutcome': simulate!.name,
+    'templateVersion': kDinnerTemplateVersion,
   };
 }
 

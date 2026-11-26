@@ -69,7 +69,21 @@ void main() {
         final ask = _ask(feature, kinds);
         expect(consentSubject(ask), subject);
         final copy = consentCopy(ask);
-        expect(copy.title, 'Send $subject to Google if needed?');
+        // Cloud-only features (pantry voice) send on a yes; the rest only
+        // if this device can't answer.
+        final direct = feature == 'pantry_voice';
+        expect(
+          copy.title,
+          direct
+              ? 'Send $subject to Google?'
+              : 'Send $subject to Google if needed?',
+        );
+        if (direct) {
+          expect(
+            copy.body,
+            startsWith('Pantry voice note needs Google for this.'),
+          );
+        }
         expect(copy.body, contains('sends $subject'));
         expect(copy.body, contains("to Google's servers to answer"));
         expect(
@@ -127,6 +141,29 @@ void main() {
       }
     });
 
+    test('the explicit watch cloud check says a yes sends this photo', () {
+      final copy = consentCopy(
+        _ask('local_watch_cloud_check', {DataKind.image, DataKind.text}),
+      );
+      expect(copy.title, 'Send this photo to Google?');
+      expect(
+        copy.body,
+        startsWith(
+          'Watch my food wants a second look from Google. If you say yes, '
+          'SousSight sends this photo, with the recipe step you are on, to '
+          "Google's servers to check it.",
+        ),
+      );
+      expect(copy.body, isNot(contains("can't answer by itself")));
+      expect(copy.body, isNot(contains('if needed')));
+      // The pantry fallback keeps the conditional wording.
+      final pantry = consentCopy(
+        _ask('pantry_scan', {DataKind.image, DataKind.text}),
+      );
+      expect(pantry.title, endsWith('if needed?'));
+      expect(pantry.body, contains("this device can't answer by itself"));
+    });
+
     test('storage: no saved media, stated apart from in-memory retention', () {
       final photo = consentCopy(
         _ask('label_check', {DataKind.image, DataKind.text}),
@@ -135,11 +172,12 @@ void main() {
         photo,
         contains(
           "SousSight doesn't save photos or voice clips on this device or "
-          'online. The app may keep them in memory until you leave this '
-          'screen.',
+          'online, though the app may still hold them in memory for a while.',
         ),
       );
       expect(photo, isNot(contains('only in memory for')));
+      // No lifetime is promised: image previews share Flutter's ImageCache.
+      expect(photo, isNot(contains('leave this screen')));
       expect(photo, isNot(contains('this one time only')));
       // Text alone: no storage claim is made either way.
       final text = consentCopy(_ask('coach_lite', {DataKind.text})).body;
@@ -190,10 +228,7 @@ void main() {
       final ask = _ask('pantry_voice', {DataKind.audio, DataKind.text});
       unawaited(gate.request(ask));
       await tester.pumpAndSettle();
-      expect(
-        find.text('Send this voice clip to Google if needed?'),
-        findsOneWidget,
-      );
+      expect(find.text('Send this voice clip to Google?'), findsOneWidget);
       expect(find.text(consentCopy(ask).body), findsOneWidget);
       expect(find.text('Send this once'), findsOneWidget);
       expect(find.text('Keep it on my phone'), findsOneWidget);
@@ -549,5 +584,55 @@ void main() {
       expect(result!.legs.single.provenance, Provenance.sdkOnDevice);
       expect(cloud.sends, 0);
     });
+  });
+
+  testWidgets('the watch cloud check prompt, then a yes sends that photo', (
+    tester,
+  ) async {
+    final inference = FakeHybridInference(
+      capabilities: const HybridCapabilities.none(),
+    );
+    final cloud = _CountingCloud();
+    final hybrid = HybridRuntime.create(
+      inference: inference,
+      cloudRoutes: CloudRoutes.parse('hybridFallback'),
+      cloudFallback: cloud,
+      isOnline: () => true,
+      cloudModel: 'test-cloud-model',
+    );
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: hybrid.navigatorKey, home: const SizedBox()),
+    );
+    DispatchResult? result;
+    unawaited(
+      hybrid.dispatcher
+          .start(
+            HybridTask(
+              feature: 'local_watch_cloud_check',
+              parts: [
+                const HybridText('Step: simmer until thick.'),
+                HybridInlineData(
+                  Uint8List.fromList(const [9, 9]),
+                  'image/jpeg',
+                ),
+              ],
+              maxOutputTokens: 32,
+              timeout: const Duration(seconds: 5),
+            ),
+            sessionId: hybrid.sessionId,
+          )
+          .result
+          .then((r) => result = r),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Send this photo to Google?'), findsOneWidget);
+    expect(
+      find.textContaining('Watch my food wants a second look from Google.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('consent-allow')));
+    await tester.pumpAndSettle();
+    expect(result?.text, 'cloud answer');
+    expect(cloud.sends, 1);
   });
 }
