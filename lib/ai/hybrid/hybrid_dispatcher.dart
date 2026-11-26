@@ -247,7 +247,8 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   bool _adapterApplies(_Failed failed, HybridMode mode, _Run run) {
     if (_adapter == null || mode == HybridMode.onlyOnDevice) return false;
     if (failed.code == HybridErrorCode.unavailable) return true;
-    return failed.code == HybridErrorCode.unsupportedInput &&
+    return (failed.code == HybridErrorCode.unsupportedInput ||
+            failed.code == HybridErrorCode.rejectedBeforeSend) &&
         mode == HybridMode.onlyInCloud &&
         run.task.parts.any((p) => p is HybridInlineData);
   }
@@ -369,8 +370,11 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       }
       // The contract rejects unsupportedInput before any SDK call, so the
       // grant did not pay for a transfer and may carry to the adapter.
+      // rejectedBeforeSend is a bridge's explicit proof of that (SS-105).
       final refund =
-          e.code == HybridErrorCode.unsupportedInput && grant != null;
+          (e.code == HybridErrorCode.unsupportedInput ||
+              e.code == HybridErrorCode.rejectedBeforeSend) &&
+          grant != null;
       if (refund) _spent.remove(grant);
       return _Failed(e.code, sent: true, unspentGrant: refund ? grant : null);
     } catch (_) {
