@@ -297,7 +297,7 @@ class _LegDetail extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(outcomeExplanation(outcome)),
+                    Text(legExplanation(leg)),
                     if (model != null) Text('Model: $model'),
                     Text('Used: $kinds. $permission'),
                     if (leg.error case final error?)

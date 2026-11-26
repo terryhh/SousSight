@@ -69,11 +69,24 @@ String? legModelName(InferenceLeg leg, {String? localModel}) {
   return name == null || name.isEmpty ? null : name;
 }
 
+/// The explanation for one leg. Any statement about sending comes from the
+/// leg's transfer facts, never from an on-device result alone: a leg that
+/// was allowed to leave may have been sent even if the answer came from the
+/// device (the #265 rule, Codex #221).
+String legExplanation(InferenceLeg leg) {
+  final outcome = legOutcome(leg);
+  final base = outcomeExplanation(outcome);
+  if (outcome != LegOutcome.onDevice) return base;
+  return leg.transferPermitted
+      ? '$base It was allowed to go online, so it may also have been sent.'
+      : '$base It was not allowed to leave this device.';
+}
+
 /// Longer explanation used in the details sheet.
 String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
+  // Makes no transfer claim: see [legExplanation] (Codex #221).
   LegOutcome.onDevice =>
-    "Google's AI tools reported that this ran on your device. It wasn't sent "
-        'online.',
+    "Google's AI tools reported that this ran on your device.",
   LegOutcome.cloudSdk =>
     "Google's AI tools reported that this was sent online to Google's AI.",
   LegOutcome.cloudAdapter => "SousSight sent this online to Google's AI.",

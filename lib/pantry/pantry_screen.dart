@@ -414,6 +414,8 @@ class _PantryScreenState extends State<PantryScreen> {
           _error = pantryVoiceSkipped;
           _matchError = false;
         });
+        // Same cleanup as a send: release capture (Codex #221).
+        await _stopMedia();
         return;
       }
     }
