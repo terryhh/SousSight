@@ -18,6 +18,8 @@ enum class HybridMode(val wire: String) {
 }
 
 enum class AndroidModelOption(val wire: String) {
+    /** Default: decided once at `configure` from the documented Nano 4 device list. Never sent to the SDK. */
+    DEVICE_LIST("deviceList"),
     PREVIEW("preview"),
     PREVIEW_FAST("previewFast"),
     STABLE("stable");
@@ -102,8 +104,10 @@ data class AvailabilityResult(
     val status: OnDeviceStatus,
     val reason: String? = null,
     val modelLabel: String? = null,
-    /** The concrete option this answer is about (what `auto` chose); null if none was checked. */
+    /** The concrete option this answer is about; null if none was checked. */
     val modelOption: AndroidModelOption? = null,
+    /** Why that option is in use, for the cook ("device list: Pixel 10 → preview"). */
+    val modelChoice: String? = null,
 )
 
 data class GenerateResult(
@@ -126,8 +130,8 @@ object Protocol {
         } ?: listOf("en")
         return HybridConfig(
             cloudModel = cloudModel,
-            // Default: the device's supported (stable) Gemini Nano; preview is an explicit opt-in.
-            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: AndroidModelOption.STABLE.wire),
+            // Default: decided from the documented Nano 4 device list; preview and stable override.
+            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: AndroidModelOption.DEVICE_LIST.wire),
             languages = languages,
         )
     }
@@ -191,13 +195,14 @@ object Protocol {
 
     /**
      * DESIGN §4 capabilities for Gemini Nano through AICore. Limits are Docs-level. [modelOption]
-     * is the configured option in use, or null before `configure`.
+     * is the option in use and [modelChoice] why, or null before `configure`.
      */
-    fun capabilities(modelOption: AndroidModelOption? = null): Map<String, Any?> = mapOf(
+    fun capabilities(modelOption: AndroidModelOption? = null, modelChoice: String? = null): Map<String, Any?> = mapOf(
         "platform" to "android",
         "local" to mapOf(
             "modelFamily" to "Gemini Nano",
             "modelOption" to modelOption?.wire,
+            "modelChoice" to modelChoice,
             "supportsImage" to true,
             // The SDK sends a manual schema only to the cloud model; on-device structured output
             // needs a compile-time @Generable class. Local runs get the schema in the prompt and
@@ -219,6 +224,7 @@ object Protocol {
         "reason" to a.reason,
         "modelLabel" to a.modelLabel,
         "modelOption" to a.modelOption?.wire,
+        "modelChoice" to a.modelChoice,
     )
 
     fun resultMap(requestId: String, r: GenerateResult): Map<String, Any?> = mapOf(
