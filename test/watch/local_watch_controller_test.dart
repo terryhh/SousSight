@@ -93,22 +93,19 @@ void main() {
     });
   });
 
-  test(
-    'shows the cook each local frame and clears it when the watch stops',
-    () {
-      fakeAsync((async) {
-        final rig = Rig(async);
-        rig.fake.enqueue(verdictJson('not_yet', direction: 'more'));
-        rig.begin();
-        expect(rig.watch.previewFrame, isNull);
-        rig.frame(bytes: const [9, 8, 7]);
-        expect(rig.watch.previewFrame, [9, 8, 7]);
-        rig.watch.stop();
-        async.flushMicrotasks();
-        expect(rig.watch.previewFrame, isNull);
-      });
-    },
-  );
+  test('shows the cook each local frame and clears it when the watch stops', () {
+    fakeAsync((async) {
+      final rig = Rig(async);
+      rig.fake.enqueue(verdictJson('not_yet', direction: 'more'));
+      rig.begin();
+      expect(rig.watch.previewFrame, isNull);
+      rig.frame(bytes: const [9, 8, 7]);
+      expect(rig.watch.previewFrame, [9, 8, 7]);
+      rig.watch.stop();
+      async.flushMicrotasks();
+      expect(rig.watch.previewFrame, isNull);
+    });
+  });
 
   test('a frame acquired 2 s or more ago is skipped', () {
     fakeAsync((async) {

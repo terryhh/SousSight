@@ -141,13 +141,13 @@ void main() {
       'I want a bowl',
     );
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
-    expect(find.text('Make a real meal from your pantry haul'), findsOneWidget);
-    // Disabled until the cook confirms at least one item.
-    expect(draftButton(tester).onPressed, isNull);
     expect(
-      find.text('Tap the ingredients you have below first'),
+      find.text('Make a real meal from your pantry haul'),
       findsOneWidget,
     );
+    // Disabled until the cook confirms at least one item.
+    expect(draftButton(tester).onPressed, isNull);
+    expect(find.text('Tap the ingredients you have below first'), findsOneWidget);
 
     await tapVisible(tester, find.bySemanticsLabel(RegExp('^rice, ')));
     expect(draftButton(tester).onPressed, isNotNull);
@@ -195,33 +195,32 @@ void main() {
     expect(draftButton(tester).onPressed, isNotNull);
   });
 
-  testWidgets(
-    'meals exist: making a meal from the haul is still the primary action',
-    (tester) async {
-      await setUp360(tester);
-      final drafts = _FakeDraftClient();
-      await tester.pumpWidget(
-        app(const FakePantryClient(delay: Duration.zero), drafts),
-      );
-      await tester.pumpAndSettle();
-      await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
-      // The hero card leads the results even when reviewed recipes fit, and
-      // reviewed recipes are labelled as such.
-      expect(find.byKey(const ValueKey('draft-card')), findsOneWidget);
-      expect(find.text('REVIEWED RECIPE'), findsWidgets);
-      final secondary = find.byKey(const ValueKey('draft-recipe'));
-      await tester.ensureVisible(secondary);
-      await tapVisible(
-        tester,
-        find.bySemanticsLabel(RegExp('^canned black beans, ')),
-      );
-      await tapVisible(tester, secondary);
-      expect(drafts.request!.confirmedItems, ['canned black beans']);
-      expect(find.text('Pantry Bean Bowl'), findsWidgets);
-      expect(find.byKey(const ValueKey('draft-recipe-chip')), findsOneWidget);
-      await tester.pumpWidget(const SizedBox());
-    },
-  );
+  testWidgets('meals exist: making a meal from the haul is still the primary action', (
+    tester,
+  ) async {
+    await setUp360(tester);
+    final drafts = _FakeDraftClient();
+    await tester.pumpWidget(
+      app(const FakePantryClient(delay: Duration.zero), drafts),
+    );
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    // The hero card leads the results even when reviewed recipes fit, and
+    // reviewed recipes are labelled as such.
+    expect(find.byKey(const ValueKey('draft-card')), findsOneWidget);
+    expect(find.text('REVIEWED RECIPE'), findsWidgets);
+    final secondary = find.byKey(const ValueKey('draft-recipe'));
+    await tester.ensureVisible(secondary);
+    await tapVisible(
+      tester,
+      find.bySemanticsLabel(RegExp('^canned black beans, ')),
+    );
+    await tapVisible(tester, secondary);
+    expect(drafts.request!.confirmedItems, ['canned black beans']);
+    expect(find.text('Pantry Bean Bowl'), findsWidgets);
+    expect(find.byKey(const ValueKey('draft-recipe-chip')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
 
   group('coach context', () {
     test(
@@ -247,10 +246,8 @@ void main() {
 
 /// One leg row: what ran, and the trust badge's chip for where it ran.
 void expectLeg(String what, String where) {
-  Finder inLegs(Finder f) => find.descendant(
-    of: find.byKey(const ValueKey('pantry-legs')),
-    matching: f,
-  );
+  Finder inLegs(Finder f) =>
+      find.descendant(of: find.byKey(const ValueKey('pantry-legs')), matching: f);
   expect(inLegs(find.text(what)), findsOneWidget);
   expect(inLegs(find.text(where)), findsWidgets);
 }

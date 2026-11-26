@@ -11,29 +11,26 @@ void main() {
     expect(routes.allows(CloudRoute.live), isFalse);
   });
 
-  test(
-    'FakeHybridDispatcher returns scripted results and honours cancel',
-    () async {
-      const task = HybridTask(
-        feature: 'coach_lite',
-        parts: [HybridText('q')],
-        maxOutputTokens: 64,
-        timeout: Duration(seconds: 5),
-      );
-      final fake = FakeHybridDispatcher()..enqueue('answer');
-      final ok = await fake.start(task, sessionId: 's').result;
-      expect(ok.text, 'answer');
-      expect(ok.finalLeg!.provenance, Provenance.sdkOnDevice);
+  test('FakeHybridDispatcher returns scripted results and honours cancel', () async {
+    const task = HybridTask(
+      feature: 'coach_lite',
+      parts: [HybridText('q')],
+      maxOutputTokens: 64,
+      timeout: Duration(seconds: 5),
+    );
+    final fake = FakeHybridDispatcher()..enqueue('answer');
+    final ok = await fake.start(task, sessionId: 's').result;
+    expect(ok.text, 'answer');
+    expect(ok.finalLeg!.provenance, Provenance.sdkOnDevice);
 
-      fake
-        ..delay = const Duration(milliseconds: 10)
-        ..enqueue('late');
-      final op = fake.start(task, sessionId: 's')..cancel();
-      final cancelled = await op.result;
-      expect(cancelled.blocked, RouteReason.cancelled);
-      expect(fake.cancelledOperations, [op.operationId]);
-    },
-  );
+    fake
+      ..delay = const Duration(milliseconds: 10)
+      ..enqueue('late');
+    final op = fake.start(task, sessionId: 's')..cancel();
+    final cancelled = await op.result;
+    expect(cancelled.blocked, RouteReason.cancelled);
+    expect(fake.cancelledOperations, [op.operationId]);
+  });
 
   test('concurrent fake operations get distinct leg request ids', () async {
     const task = HybridTask(

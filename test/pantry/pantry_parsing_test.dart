@@ -45,16 +45,13 @@ void main() {
     });
 
     test('never shows recipes outside the reviewed catalog', () {
-      final result = parsePantryResult(
-        _response(recipeId: 'invented_lasagna'),
-        _ids,
-      );
+      final result =
+          parsePantryResult(_response(recipeId: 'invented_lasagna'), _ids);
       expect(result.meals, isEmpty);
     });
 
     test('over-long model text is shortened, not rejected', () {
-      final long =
-          'Tortilla chips or tortillas, for serving (flour tortillas '
+      final long = 'Tortilla chips or tortillas, for serving (flour tortillas '
           'contain wheat; check labels) and more words';
       final result = parsePantryResult(
         jsonEncode({

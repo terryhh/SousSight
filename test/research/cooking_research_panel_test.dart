@@ -81,7 +81,8 @@ void main() {
       // 2. Complete with a clarifying question.
       firstCompleter.complete(
         const CookingResearchResult(
-          answer: 'Vinegar can substitute for lemon juice depending on the variety.',
+          answer:
+              'Vinegar can substitute for lemon juice depending on the variety.',
           clarifyingQuestion: 'Which vinegar do you have on hand?',
         ),
       );
@@ -131,9 +132,7 @@ void main() {
           citations: <CookingCitation>[
             CookingCitation(
               title: 'Clemson Extension Acid Swaps',
-              uri: Uri.parse(
-                'https://hgic.clemson.edu/factsheet/substitutions',
-              ),
+              uri: Uri.parse('https://hgic.clemson.edu/factsheet/substitutions'),
             ),
           ],
           searchSuggestionsHtml: '<div>Google Search suggestions</div>',
@@ -156,79 +155,80 @@ void main() {
     },
   );
 
-  testWidgets('rejects stale late response when a newer question is provided', (
-    WidgetTester tester,
-  ) async {
-    await configureViewport(tester);
+  testWidgets(
+    'rejects stale late response when a newer question is provided',
+    (WidgetTester tester) async {
+      await configureViewport(tester);
 
-    final oldCompleter = Completer<CookingResearchResult>();
-    final newCompleter = Completer<CookingResearchResult>();
+      final oldCompleter = Completer<CookingResearchResult>();
+      final newCompleter = Completer<CookingResearchResult>();
 
-    final client = _TestResearchClient((query) {
-      if (query.question.contains('lemon')) {
-        return oldCompleter.future;
-      }
-      return newCompleter.future;
-    });
+      final client = _TestResearchClient((query) {
+        if (query.question.contains('lemon')) {
+          return oldCompleter.future;
+        }
+        return newCompleter.future;
+      });
 
-    const newerQuery = CookingResearchQuery(
-      question: 'How much ground cumin replaces whole cumin seeds?',
-      currentStep: 'Step 3: Toast spices',
-      confirmedIngredients: <String>['Ground cumin'],
-    );
+      const newerQuery = CookingResearchQuery(
+        question: 'How much ground cumin replaces whole cumin seeds?',
+        currentStep: 'Step 3: Toast spices',
+        confirmedIngredients: <String>['Ground cumin'],
+      );
 
-    await tester.pumpWidget(
-      wrapWidget(
-        CookingResearchPanel(
-          client: client,
-          query: initialQuery,
-          onCookConfirmed: (_) {},
+      await tester.pumpWidget(
+        wrapWidget(
+          CookingResearchPanel(
+            client: client,
+            query: initialQuery,
+            onCookConfirmed: (_) {},
+          ),
         ),
-      ),
-    );
+      );
 
-    // Update widget with a newer question before the old question completes.
-    await tester.pumpWidget(
-      wrapWidget(
-        CookingResearchPanel(
-          client: client,
-          query: newerQuery,
-          onCookConfirmed: (_) {},
+      // Update widget with a newer question before the old question completes.
+      await tester.pumpWidget(
+        wrapWidget(
+          CookingResearchPanel(
+            client: client,
+            query: newerQuery,
+            onCookConfirmed: (_) {},
+          ),
         ),
-      ),
-    );
+      );
 
-    // Complete the newer question first.
-    newCompleter.complete(
-      const CookingResearchResult(
-        answer: 'Use 1/2 teaspoon ground cumin per 1 teaspoon whole seeds.',
-      ),
-    );
-    await tester.pumpAndSettle();
+      // Complete the newer question first.
+      newCompleter.complete(
+        const CookingResearchResult(
+          answer: 'Use 1/2 teaspoon ground cumin per 1 teaspoon whole seeds.',
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text('How much ground cumin replaces whole cumin seeds?'),
-      findsOneWidget,
-    );
-    expect(
-      find.text('Use 1/2 teaspoon ground cumin per 1 teaspoon whole seeds.'),
-      findsOneWidget,
-    );
+      expect(
+        find.text('How much ground cumin replaces whole cumin seeds?'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Use 1/2 teaspoon ground cumin per 1 teaspoon whole seeds.'),
+        findsOneWidget,
+      );
 
-    // Now resolve the late response from the old question; it must be ignored.
-    oldCompleter.complete(
-      const CookingResearchResult(
-        answer: 'STALE LEMON ANSWER SHOULD BE IGNORED',
-      ),
-    );
-    await tester.pumpAndSettle();
+      // Now resolve the late response from the old question; it must be ignored.
+      oldCompleter.complete(
+        const CookingResearchResult(
+          answer: 'STALE LEMON ANSWER SHOULD BE IGNORED',
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('STALE LEMON ANSWER SHOULD BE IGNORED'), findsNothing);
-    expect(
-      find.text('Use 1/2 teaspoon ground cumin per 1 teaspoon whole seeds.'),
-      findsOneWidget,
-    );
-  });
+      expect(find.text('STALE LEMON ANSWER SHOULD BE IGNORED'), findsNothing);
+      expect(
+        find.text('Use 1/2 teaspoon ground cumin per 1 teaspoon whole seeds.'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets(
     'clears completed question A answer, citations, and clarification when switching to pending or failed question B',
@@ -392,36 +392,40 @@ void main() {
     },
   );
 
-  testWidgets('distinguishes uncited answers without fabricating sources', (
-    WidgetTester tester,
-  ) async {
-    await configureViewport(tester);
+  testWidgets(
+    'distinguishes uncited answers without fabricating sources',
+    (WidgetTester tester) async {
+      await configureViewport(tester);
 
-    final client = _TestResearchClient((_) async {
-      return const CookingResearchResult(
-        answer: 'Uncited answer text.',
-        citations: <CookingCitation>[],
-      );
-    });
+      final client = _TestResearchClient((_) async {
+        return const CookingResearchResult(
+          answer: 'Uncited answer text.',
+          citations: <CookingCitation>[],
+        );
+      });
 
-    await tester.pumpWidget(
-      wrapWidget(
-        CookingResearchPanel(
-          client: client,
-          query: initialQuery,
-          onCookConfirmed: (_) {},
+      await tester.pumpWidget(
+        wrapWidget(
+          CookingResearchPanel(
+            client: client,
+            query: initialQuery,
+            onCookConfirmed: (_) {},
+          ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('research_badge_uncited')), findsOneWidget);
-    expect(
-      find.byKey(const Key('research_no_citations_notice')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('research_citation_button_0')), findsNothing);
-  });
+      expect(find.byKey(const Key('research_badge_uncited')), findsOneWidget);
+      expect(
+        find.byKey(const Key('research_no_citations_notice')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('research_citation_button_0')),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets(
     'retry preserves the original question and confirmed facts after failure',
@@ -485,7 +489,8 @@ void main() {
 
       final client = _TestResearchClient((_) async {
         return const CookingResearchResult(
-          answer: 'Do not substitute vinegar here; keep the recipe as written or skip the acid.',
+          answer:
+              'Do not substitute vinegar here; keep the recipe as written or skip the acid.',
         );
       });
 
