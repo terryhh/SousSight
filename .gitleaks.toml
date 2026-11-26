@@ -16,6 +16,7 @@ paths = ['''^lib/firebase_options\.dart$''']
 regexes = [
   '''^AIzaSyAmHNYWdxNPq6qgark3xXfDiqVXAEQ1Ff4$''',
   '''^AIzaSyD_pIsMs49Y3cbEHtCHEJds89b8jzdODgk$''',
+  '''^AIzaSyBIvqiXsaU5r1NxL9UcyYdVy3tO9h8Aeic$''',
 ]
 
 [[allowlists]]
@@ -25,4 +26,17 @@ condition = "AND"
 paths = ['''^android/app/google\-services\.json$''']
 regexes = [
   '''^AIzaSyD_pIsMs49Y3cbEHtCHEJds89b8jzdODgk$''',
+]
+
+# Synthetic App Check debug-token fixture from the SS-079 CI script tests,
+# committed as a literal in 3ca5f37 and still in history. It is a made-up
+# UUID that was never registered. Permit only this exact value, only in that
+# file, only for the rule it tripped. The test now builds it at runtime.
+[[allowlists]]
+description = "Synthetic debug-token fixture in CI script tests"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^test/tool/ci_scripts_test\.cjs$''']
+regexes = [
+  '''^0f8e2c1a-3b4d-4e5f-8a6b-7c8d9e0f1a2b$''',
 ]

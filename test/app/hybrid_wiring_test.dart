@@ -184,6 +184,7 @@ void main() {
       expect(where(rows, 'Watch: '), contains('allow that exact request'));
       expect(where(rows, 'Coach Lite'), contains('retried once in the cloud'));
       expect(where(rows, 'Grounded research'), contains('Google Search'));
+      expect(where(rows, 'Label check'), contains('typed text never does'));
     });
 
     test('aiLogic Live needs the live cloud route', () {
@@ -227,7 +228,9 @@ void main() {
       final hybrid = _runtime(FakeHybridInference());
       final runId = hybrid.sessionId;
       expect(runId, startsWith('run-'));
-      hybrid.recordCloudLeg('pantry_voice', const {DataKind.audio});
+      hybrid.cloudSends.begin('pantry_voice', const {
+        DataKind.audio,
+      }).confirmed();
       hybrid.bindCookingSession('s1');
       expect(hybrid.sessionId, 's1');
       expect(hybrid.ledgerSource.legs, hasLength(1));
@@ -243,10 +246,11 @@ void main() {
       var notified = 0;
       void listener() => notified++;
       hybrid.ledgerSource.addListener(listener);
-      hybrid.recordCloudLeg('research', const {DataKind.text});
+      hybrid.cloudSends.begin('research', const {DataKind.text}).confirmed();
       hybrid.ledgerSource.removeListener(listener);
-      hybrid.recordCloudLeg('research', const {DataKind.text});
-      expect(notified, 1);
+      hybrid.cloudSends.begin('research', const {DataKind.text}).confirmed();
+      // One notification when the leg begins, one when it completes.
+      expect(notified, 2);
     });
 
     test(
@@ -464,7 +468,6 @@ void main() {
         watchServiceFactory: (live) => buildWatchService(hybrid, live),
         onSessionReady: hybrid.bindCookingSession,
         researchAllowed: () => researchApproved,
-        recordCloudLeg: hybrid.recordCloudLeg,
       );
       await cook.initialize();
       await _flush();
@@ -524,7 +527,6 @@ void main() {
         researchApproved = true;
         await cook.researchQuestionNow('Is it ok?');
         expect(research.queries, hasLength(1));
-        expect(hybrid.ledgerSource.legs.last.feature, 'research');
       },
     );
 

@@ -367,6 +367,122 @@ void main() {
     });
   });
 
+  group('payload snapshot (Codex P1)', () {
+    test('mutating the caller\'s task while consent is pending changes nothing', () async {
+      final h = _Harness(caps: fakeIosCapabilities);
+      final bytes = Uint8List.fromList([1, 2, 3]);
+      final schema = <String, Object?>{
+        'type': 'object',
+        'required': <Object?>['items'],
+      };
+      final parts = <HybridPart>[
+        const HybridText('What is in the photo?'),
+        HybridInlineData(bytes, 'image/jpeg'),
+      ];
+      final task = HybridTask(
+        feature: 'pantry_scan',
+        parts: parts,
+        jsonSchema: schema,
+        maxOutputTokens: 256,
+        timeout: const Duration(seconds: 10),
+      );
+      final original = hybridPayloadDigest(task);
+      final prompt = Completer<ConsentGrant?>();
+      h.consent.answer = (_) => prompt.future;
+      h.bridge.enqueueText('{}', source: InferenceSource.cloud);
+      final result = h.run(task);
+      await pumpEventQueue();
+      expect(h.consent.asks.single.payloadDigest, original);
+
+      // The caller changes everything while the cook is looking at the prompt.
+      bytes[0] = 99;
+      parts.add(const HybridText('and also this'));
+      schema['type'] = 'array';
+      (schema['required']! as List).add('meals');
+      expect(hybridPayloadDigest(task), isNot(original));
+
+      prompt.complete(ConsentGrant(h.consent.asks.single));
+      final r = await result;
+      expect(r.text, isNotNull);
+      final sent = h.bridge.requests.single.task;
+      expect(
+        hybridPayloadDigest(sent),
+        original,
+        reason: 'what was sent is what the cook approved',
+      );
+      expect((sent.parts[1] as HybridInlineData).bytes, [1, 2, 3]);
+      expect(sent.parts, hasLength(2));
+      expect(sent.jsonSchema, {
+        'type': 'object',
+        'required': ['items'],
+      });
+    });
+
+    test('snapshotTask copies bytes, parts and nested schema', () {
+      final bytes = Uint8List.fromList([5]);
+      final task = HybridTask(
+        feature: 'f',
+        parts: [HybridInlineData(bytes, 'image/png')],
+        jsonSchema: {
+          'properties': {
+            'a': {
+              'enum': ['x'],
+            },
+          },
+        },
+        maxOutputTokens: 1,
+        timeout: const Duration(seconds: 1),
+      );
+      final copy = snapshotTask(task);
+      bytes[0] = 6;
+      expect((copy.parts.single as HybridInlineData).bytes, [5]);
+      expect(
+        () => copy.parts.add(const HybridText('x')),
+        throwsUnsupportedError,
+      );
+      final enumList =
+          ((copy.jsonSchema!['properties'] as Map)['a'] as Map)['enum'] as List;
+      expect(() => enumList.add('y'), throwsUnsupportedError);
+      expect(hybridPayloadDigest(copy), isNot(hybridPayloadDigest(task)));
+    });
+  });
+
+  test(
+    'a watch cloud check honours the parent local_watch local-only setting',
+    () async {
+      final h = _Harness();
+      h.privacy.localOnlyFeatures.add('local_watch');
+      final r = await h.run(_photo('local_watch_cloud_check'));
+      expect(r.blocked, RouteReason.localOnlySetting);
+      expect(h.consent.asks, isEmpty);
+      expect(h.bridge.requests, isEmpty);
+    },
+  );
+
+  test('the parent local-only setting flipped during the consent prompt blocks the send', () async {
+    final h = _Harness();
+    final prompt = Completer<ConsentGrant?>();
+    h.consent.answer = (_) => prompt.future;
+    final result = h.run(_photo('local_watch_cloud_check'));
+    await pumpEventQueue();
+    h.privacy.localOnlyFeatures.add('local_watch');
+    prompt.complete(ConsentGrant(h.consent.asks.single));
+    expect((await result).blocked, RouteReason.localOnlySetting);
+    expect(h.bridge.requests, isEmpty);
+  });
+
+  test('remote routing cannot widen local_watch to preferOnDevice', () async {
+    final h = _Harness(
+      remote: const RemoteRouting(
+        modes: {'local_watch': HybridMode.preferOnDevice},
+      ),
+    );
+    h.bridge.enqueueText('{}');
+    final r = await h.run(_photo('local_watch'));
+    expect(h.bridge.requests.single.mode, HybridMode.onlyOnDevice);
+    expect(r.legs.single.transferPermitted, isFalse);
+  });
+
   group('a grant supplied by the feature', () {
     test(
       'matching digest and session: used without asking the cook again',

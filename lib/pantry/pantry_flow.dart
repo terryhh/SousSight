@@ -8,7 +8,7 @@ import '../app/services_scope.dart';
 import '../core/analytics.dart';
 import '../core/models.dart';
 import '../learner/cooking_app.dart';
-import '../live/browser_live_media.dart';
+import '../live/live_media_factory.dart';
 import '../live/live_types.dart';
 import 'pantry_client.dart';
 import 'pantry_handoff.dart';
@@ -100,7 +100,7 @@ class _PantryFlowState extends State<PantryFlow> {
     isDemo: widget.isDemo,
     mediaFactory: widget.isDemo
         ? null
-        : (widget.mediaFactory ?? createBrowserLiveMedia),
+        : (widget.mediaFactory ?? createLiveMedia),
     onChooseRecipe: _open,
     header: switch ((widget.isDemo, widget.hybrid)) {
       (false, final hybrid?) => HybridReadinessCard(hybrid: hybrid),

@@ -67,7 +67,8 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
 
   CookingResearchQuery _currentQuery = const CookingResearchQuery(
     question: "I don't have lemon—can I use vinegar?",
-    currentStep: 'Step 2: Whisk bright lemon-tahini dressing for spiced chickpeas',
+    currentStep:
+        'Step 2: Whisk bright lemon-tahini dressing for spiced chickpeas',
     confirmedIngredients: <String>[
       '1 can chickpeas (rinsed)',
       '2 tbsp tahini',
@@ -92,8 +93,7 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
         case ResearchDemoScenario.lemonVinegarClarificationFlow:
           _currentQuery = const CookingResearchQuery(
             question: "I don't have lemon—can I use vinegar?",
-            currentStep:
-                'Step 2: Whisk bright lemon-tahini dressing for spiced chickpeas',
+            currentStep: 'Step 2: Whisk bright lemon-tahini dressing for spiced chickpeas',
             confirmedIngredients: <String>[
               '1 can chickpeas (rinsed)',
               '2 tbsp tahini',
@@ -115,13 +115,11 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
         case ResearchDemoScenario.lateResponseStaleRejection:
           _client.pendingStaleRequest = Completer<CookingResearchResult>();
           _currentQuery = const CookingResearchQuery(
-            question:
-                "Old question #1: I don't have lemon—can I use vinegar? (Pending slow request)",
+            question: "Old question #1: I don't have lemon—can I use vinegar? (Pending slow request)",
             currentStep: 'Step 2: Whisk dressing',
             confirmedIngredients: <String>['1 can chickpeas'],
           );
-          _staleStatusNotice =
-              'Old question #1 is waiting in flight. Click "2. Ask Newer Question" below, then "3. Resolve Late Old Response" to verify the stale response is ignored.';
+          _staleStatusNotice = 'Old question #1 is waiting in flight. Click "2. Ask Newer Question" below, then "3. Resolve Late Old Response" to verify the stale response is ignored.';
       }
     });
   }
@@ -129,13 +127,11 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
   void _askNewerQuestionDuringPendingOldRequest() {
     setState(() {
       _currentQuery = const CookingResearchQuery(
-        question:
-            'New question #2: How much ground cumin replaces whole cumin seeds?',
+        question: 'New question #2: How much ground cumin replaces whole cumin seeds?',
         currentStep: 'Step 3: Toast spices for the chickpea filling',
         confirmedIngredients: <String>['Ground cumin', '1 can chickpeas'],
       );
-      _staleStatusNotice =
-          'New question #2 is now active. Now click "3. Resolve Late Old Response" to fire the late response from Question #1 and verify it does NOT overwrite Question #2.';
+      _staleStatusNotice = 'New question #2 is now active. Now click "3. Resolve Late Old Response" to fire the late response from Question #1 and verify it does NOT overwrite Question #2.';
     });
   }
 
@@ -144,14 +140,12 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
     if (pending != null && !pending.isCompleted) {
       pending.complete(
         const CookingResearchResult(
-          answer:
-              'STALE RESULT FROM OLD QUESTION #1 (Should NEVER appear over Question #2!)',
+          answer: 'STALE RESULT FROM OLD QUESTION #1 (Should NEVER appear over Question #2!)',
           citations: <CookingCitation>[],
         ),
       );
       setState(() {
-        _staleStatusNotice =
-            'Late response for Old Question #1 completed in background and was safely rejected! Question #2 remains intact.';
+        _staleStatusNotice = 'Late response for Old Question #1 completed in background and was safely rejected! Question #2 remains intact.';
       });
     }
   }
@@ -274,8 +268,7 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
               key: const Key('scenario_lemon_vinegar_button'),
               scenario: ResearchDemoScenario.lemonVinegarClarificationFlow,
               title: '1. Missing Lemon → Clarification → Cited Answer',
-              subtitle:
-                  'Ask about vinegar, answer clarification, inspect HTTPS sources, and confirm substitution.',
+              subtitle: 'Ask about vinegar, answer clarification, inspect HTTPS sources, and confirm substitution.',
               icon: Icons.question_answer_outlined,
             ),
             const SizedBox(height: 8),
@@ -292,8 +285,7 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
               key: const Key('scenario_timeout_retry_button'),
               scenario: ResearchDemoScenario.timeoutThenRetrySuccess,
               title: '3. Timeout → Retry Preserves Question',
-              subtitle:
-                  'First attempt times out; clicking Retry succeeds while keeping the original question.',
+              subtitle: 'First attempt times out; clicking Retry succeeds while keeping the original question.',
               icon: Icons.refresh_rounded,
             ),
             const SizedBox(height: 8),
@@ -301,8 +293,7 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
               key: const Key('scenario_late_stale_button'),
               scenario: ResearchDemoScenario.lateResponseStaleRejection,
               title: '4. Late Response to Old Question',
-              subtitle:
-                  'Proves an older in-flight response cannot overwrite a newer question.',
+              subtitle: 'Proves an older in-flight response cannot overwrite a newer question.',
               icon: Icons.history_toggle_off_rounded,
             ),
             if (_selectedScenario ==
@@ -409,7 +400,9 @@ class _ResearchDemoHomePageState extends State<ResearchDemoHomePage> {
         decoration: BoxDecoration(
           color: selected
               ? theme.colorScheme.primaryContainer.withValues(alpha: 0.65)
-              : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              : theme.colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.35,
+                ),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: selected

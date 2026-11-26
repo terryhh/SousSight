@@ -8,11 +8,16 @@
 // branch). tool/check_web_bundle.sh (SS-079) checks the built bundle for it.
 
 import '../ai/hybrid/hybrid_types.dart';
+import '../data/live_session.dart';
 import '../data/live_token_provider.dart';
 import '../learner/demo_live.dart';
 import 'ephemeral_live_transport.dart';
 import 'firebase_live_transport.dart';
+import 'live_backend_guard.dart';
+import 'live_tools.dart';
 import 'live_types.dart';
+
+export 'live_backend_guard.dart' show LiveLegRecorder, LiveUnavailable;
 
 enum LiveBackend {
   /// Gemini Live through Firebase AI Logic. Whether it works on web with App
@@ -51,17 +56,54 @@ const LiveBackend configuredLiveBackend = kLiveEphemeral
 ///
 /// Rehearsal always uses the simulated transport. `aiLogic` is a cloud route,
 /// so it also needs `CLOUD_ROUTES` to contain `live`; otherwise no Live.
+///
+/// For `aiLogic`, [recordCloudLeg] receives one leg per connect and per
+/// resume (pass `HybridRuntime.recordCloudLeg`), [privacy] is read before
+/// each, and [reserveSession] defaults to the `liveSession` function.
 LiveTransportFactory? liveTransportFactory({
   required bool isDemo,
   CloudRoutes? cloudRoutes,
+  PrivacySettings? privacy,
+  LiveLegRecorder? recordCloudLeg,
+  LiveSessionReserver? reserveSession,
 }) {
   if (isDemo) return DemoLiveTransport.new;
+  // Each branch is behind a const, so dart2js keeps only the configured one.
   if (kLiveEphemeral) {
     return () => EphemeralGeminiLiveTransport(tokenProvider: fetchLiveToken);
   }
-  if (kLiveAiLogic &&
-      (cloudRoutes ?? CloudRoutes.fromEnvironment()).allows(CloudRoute.live)) {
-    return FirebaseLiveTransport.new;
+  if (kLiveAiLogic) {
+    return aiLogicLiveTransportFactory(
+      cloudRoutes: cloudRoutes ?? CloudRoutes.fromEnvironment(),
+      privacy: privacy,
+      recordCloudLeg: recordCloudLeg,
+      reserveSession: reserveSession ?? reserveLiveSession,
+    );
   }
   return null;
+}
+
+/// The `aiLogic` branch of [liveTransportFactory], callable from tests.
+/// Null when the `live` cloud route is not approved: Live controls are hidden
+/// and Coach Lite is offered. Each transport reserves its session with
+/// [reserveSession] before connecting and is guarded again at connect time.
+LiveTransportFactory? aiLogicLiveTransportFactory({
+  required CloudRoutes cloudRoutes,
+  required LiveSessionReserver reserveSession,
+  PrivacySettings? privacy,
+  LiveLegRecorder? recordCloudLeg,
+  String model = kLiveModel,
+  LiveSessionOpener? openSession,
+}) {
+  if (!cloudRoutes.allows(CloudRoute.live)) return null;
+  return () => FirebaseLiveTransport(
+    model: model,
+    openSession: openSession,
+    guard: LiveCloudGuard(
+      cloudRoutes: cloudRoutes,
+      privacy: privacy,
+      reserve: reserveSession,
+      recordLeg: recordCloudLeg,
+    ),
+  );
 }

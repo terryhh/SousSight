@@ -15,11 +15,13 @@ import '../ai/cooking_research_client.dart';
 import '../ai/hybrid/hybrid_dispatcher.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_ledger.dart';
+import '../core/cloud_send.dart';
 import '../label/household_allergens.dart';
 import '../label/label_check_controller.dart';
 import '../trust/ledger_source.dart';
 import '../trust/privacy_preferences.dart';
 import '../trust/trust_labels.dart';
+import 'cloud_send_recorder.dart';
 import 'online_status.dart';
 
 /// Cloud model for hybrid fallback and the Dart cloud adapter. Defaults to
@@ -370,18 +372,9 @@ class HybridRuntime {
     if (previous != null && previous != id) ledger.startSession(id);
   }
 
-  /// Writes a send made by another cloud sender (Live connect, grounded
-  /// research) that reports its own outcome.
-  void recordCloudLeg(String feature, Set<DataKind> kinds) => ledger.record(
-    InferenceLeg(
-      requestId: '$feature-${DateTime.now().microsecondsSinceEpoch}',
-      feature: feature,
-      mode: HybridMode.onlyInCloud,
-      kinds: kinds,
-      transferPermitted: true,
-      provenance: Provenance.cloudAdapter,
-    ),
-  );
+  /// Ledger hook for cloud senders outside the dispatcher (grounded
+  /// research, the Live coach). They record at their own send boundary.
+  late final CloudSendRecorder cloudSends = LedgerCloudSendRecorder(ledger);
 
   static String _newRunId() =>
       'run-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';

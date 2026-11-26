@@ -20,7 +20,7 @@ import 'ai/hybrid/payload_digest.dart';
 import 'app/hybrid_runtime.dart' show kHybridCloudModel;
 import 'core/models.dart';
 import 'data/firebase_services.dart';
-import 'live/browser_live_media.dart';
+import 'live/live_media_factory.dart';
 import 'live/live_types.dart';
 import 'watch/watch_verdict.dart';
 
@@ -92,6 +92,17 @@ const _enumSchema = <String, Object?>{
 };
 
 const _codeword = 'PAPRIKA7';
+
+/// Probes that can reach the cloud (preferOnDevice, onlyInCloud) run only when
+/// CLOUD_ROUTES approves hybridFallback; otherwise the button says why.
+String gateProbeLabel(String label, {required bool cloudApproved}) =>
+    cloudApproved
+    ? label
+    : ' (disabled: may use the cloud; CLOUD_ROUTES lacks hybridFallback)';
+
+/// Whether a probe in [mode] may run in a build with these routes.
+bool gateProbeAllowed(HybridMode mode, CloudRoutes routes) =>
+    mode == HybridMode.onlyOnDevice || routes.allows(CloudRoute.hybridFallback);
 
 class GateHarness extends StatefulWidget {
   const GateHarness({super.key});
@@ -178,7 +189,7 @@ class _GateHarnessState extends State<GateHarness> {
   }
 
   Future<void> _startCamera() async {
-    final media = _media ??= createBrowserLiveMedia();
+    final media = _media ??= createLiveMedia();
     await _frames?.cancel();
     _frames = media.timedFrames.listen((f) => setState(() => _frame = f.bytes));
     try {
@@ -212,6 +223,8 @@ class _GateHarnessState extends State<GateHarness> {
     String? Function(String text)? check,
   }) async {
     if (_busy) return;
+    // Never send a request that may reach the cloud on an unapproved route.
+    if (!gateProbeAllowed(mode, _routes)) return;
     final caps = _caps ?? await _inference.capabilities();
     final run = ProbeRun(
       probe: probe,
@@ -293,8 +306,15 @@ class _GateHarnessState extends State<GateHarness> {
     final caps = _caps;
     final probes = <(String, VoidCallback?)>[
       (
-        'Text · preferOnDevice',
-        () => _run('text', HybridMode.preferOnDevice, _textTask()),
+        // preferOnDevice may fall back to the cloud inside the SDK, so it is
+        // gated exactly like the explicit cloud probe.
+        gateProbeLabel(
+          'Text · preferOnDevice',
+          cloudApproved: _cloudProbeAllowed,
+        ),
+        _cloudProbeAllowed
+            ? () => _run('text', HybridMode.preferOnDevice, _textTask())
+            : null,
       ),
       (
         'Text · onlyOnDevice',
@@ -350,10 +370,10 @@ class _GateHarnessState extends State<GateHarness> {
         ),
       ),
       (
-        _cloudProbeAllowed
-            ? 'Cloud JSON · onlyInCloud'
-            : 'Cloud JSON · onlyInCloud (disabled: CLOUD_ROUTES lacks '
-                  'hybridFallback)',
+        gateProbeLabel(
+          'Cloud JSON · onlyInCloud',
+          cloudApproved: _cloudProbeAllowed,
+        ),
         _cloudProbeAllowed
             ? () => _run(
                 'cloud json',
