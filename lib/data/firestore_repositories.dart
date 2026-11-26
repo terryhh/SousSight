@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../core/models.dart';
 import '../core/services.dart';
 import 'firestore_codec.dart';
+import 'offline_ops.dart';
 
 class FirebaseAuthService implements AuthService {
   FirebaseAuthService(this._auth);
@@ -53,7 +54,7 @@ class FirestoreRecipeRepository implements RecipeRepository {
       .cast<Recipe>();
 }
 
-class FirestoreSessionRepository implements SessionRepository {
+class FirestoreSessionRepository implements SessionRepository, StepOpStore {
   FirestoreSessionRepository(this._db);
   final FirebaseFirestore _db;
 
@@ -115,8 +116,27 @@ class FirestoreSessionRepository implements SessionRepository {
       final snap = await tx.get(ref);
       final next = mutate(CookingSession.fromMap(snap.id, snap.data()!))
           .copyWith(updatedAt: DateTime.now());
-      tx.set(ref, encodeDoc(next.toMap()));
+      // The model does not carry the step-operation ids; keep them (SS-072).
+      tx.set(ref, encodeDoc(keepAppliedOpIds(snap.data(), next.toMap())));
       return next;
+    });
+  }
+
+  /// Saves one step change and its id in one transaction; a repeated or
+  /// outdated change writes nothing (SS-072).
+  @override
+  Future<StepOpCommit> commitStepOp(String sessionId, StepOp op) {
+    final ref = _sessions.doc(sessionId);
+    return _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final result = stepOpTransaction(
+        snap.id,
+        snap.data()!,
+        op,
+        now: DateTime.now(),
+      );
+      if (result.write case final write?) tx.set(ref, encodeDoc(write));
+      return result.commit;
     });
   }
 
