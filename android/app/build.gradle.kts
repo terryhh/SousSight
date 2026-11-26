@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -6,6 +8,21 @@ plugins {
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Release signing comes from android/key.properties (gitignored, with the
+// keystore outside Git):
+//   storeFile=/absolute/path/to/soussight-release.jks
+//   storePassword=...
+//   keyAlias=...
+//   keyPassword=...
+// Without it, release builds fall back to the debug key and say so loudly.
+// A debug-signed APK is fine on a test phone but cannot ship.
+val releaseKeyProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val hasReleaseKey = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !releaseKeyProperties.getProperty(it).isNullOrBlank() }
 
 android {
     namespace = "dev.soussight.soussight"
@@ -22,7 +39,8 @@ android {
         applicationId = "dev.soussight.soussight"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // 26 is the floor for firebase-ai-ondevice (hybrid inference).
+        minSdk = maxOf(26, flutter.minSdkVersion)
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -32,11 +50,38 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(releaseKeyProperties.getProperty("storeFile"))
+                storePassword = releaseKeyProperties.getProperty("storePassword")
+                keyAlias = releaseKeyProperties.getProperty("keyAlias")
+                keyPassword = releaseKeyProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseKey) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+    }
+}
+
+if (!hasReleaseKey) {
+    gradle.taskGraph.whenReady {
+        if (allTasks.any { it.name.contains("Release") }) {
+            logger.warn(
+                "\n" + "!".repeat(72) + "\n" +
+                    "WARNING: android/key.properties is missing or incomplete.\n" +
+                    "The RELEASE build is signed with the DEBUG key. Do not ship it,\n" +
+                    "and register its SHA-256 (not the release key's) for App Check.\n" +
+                    "!".repeat(72),
+            )
         }
     }
 }

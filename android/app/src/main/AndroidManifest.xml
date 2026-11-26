@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Firebase, AI Logic and Live need the network in release builds too. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Camera frames for the coach and the local watch; asked at first use. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Two-way voice with the coach; asked at first use, never for camera-only. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Echo cancellation for the voice-communication microphone source. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <application
         android:label="soussight"
         android:name="${applicationName}"
