@@ -529,6 +529,9 @@ class HybridPantryClient implements PantryClient {
         PantryException(message, legs: List.unmodifiable(legs));
     var spoken = const <PantryItem>[];
     String? notice;
+    // True when the voice send failed without a result (threw or timed out),
+    // so whether the clip left the device is not known.
+    var voiceOutcomeUnknown = false;
     if (input.audioWav case final audio? when audio.isNotEmpty) {
       try {
         final voice = await _run(
@@ -537,10 +540,13 @@ class HybridPantryClient implements PantryClient {
           validate: (text) => _check(() => parsePantryItems(text)),
         );
         legs.addAll(voice.legs);
+        voiceOutcomeUnknown =
+            voice.text == null && voice.blocked == null && voice.legs.isEmpty;
         spoken = parsePantryItems(voice.text);
       } on FormatException catch (error) {
         debugPrint('Pantry voice leg dropped: ${error.message}');
       } on PantryException catch (error) {
+        voiceOutcomeUnknown = true;
         debugPrint('Pantry voice leg dropped: ${error.message}');
       }
       if (spoken.isEmpty) notice = kPantryVoiceSkippedNotice;
@@ -582,13 +588,7 @@ class HybridPantryClient implements PantryClient {
         _blockedMessage(
           reason,
           hasPhoto: hasPhoto,
-          voiceSent: legs.any(
-            (leg) =>
-                leg.feature == kPantryVoiceFeature &&
-                leg.transferPermitted &&
-                leg.provenance != Provenance.sdkOnDevice &&
-                leg.provenance != Provenance.simulated,
-          ),
+          voice: _voiceUpload(legs, outcomeUnknown: voiceOutcomeUnknown),
         ),
       );
     }
@@ -645,6 +645,34 @@ class HybridPantryClient implements PantryClient {
     }
   }
 
+  /// What the voice legs prove about the clip leaving the device. Only an
+  /// SDK-reported cloud run or the cloud adapter counts as sent; permission to
+  /// transfer alone does not.
+  static _VoiceUpload _voiceUpload(
+    List<InferenceLeg> legs, {
+    required bool outcomeUnknown,
+  }) {
+    final voice = [
+      for (final leg in legs)
+        if (leg.feature == kPantryVoiceFeature) leg,
+    ];
+    if (voice.any(
+      (leg) =>
+          leg.provenance == Provenance.sdkCloud ||
+          leg.provenance == Provenance.cloudAdapter,
+    )) {
+      return _VoiceUpload.sent;
+    }
+    if (outcomeUnknown ||
+        voice.any(
+          (leg) =>
+              leg.provenance == Provenance.unknown && leg.transferPermitted,
+        )) {
+      return _VoiceUpload.maybe;
+    }
+    return _VoiceUpload.none;
+  }
+
   static String? _check(void Function() parse) {
     try {
       parse();
@@ -658,16 +686,21 @@ class HybridPantryClient implements PantryClient {
   static String _blockedMessage(
     RouteReason reason, {
     required bool hasPhoto,
-    required bool voiceSent,
+    required _VoiceUpload voice,
   }) => switch (reason) {
     RouteReason.localOnlySetting || RouteReason.cloudNotApproved =>
       'This needs Google cloud AI, which is off for this feature. Type '
           'your list, or pick a recipe below.',
-    // Only the ranking was declined; an earlier voice upload is real.
-    RouteReason.consentDeclined when voiceSent =>
+    // Only the ranking was declined; report the earlier voice leg as its
+    // legs show it: confirmed sent, possibly sent, or not sent.
+    RouteReason.consentDeclined when voice == _VoiceUpload.sent =>
       'Okay, your ${hasPhoto ? 'photo and list were' : 'list was'} not sent. '
           'Your voice clip was already sent to Google cloud to read the '
           'items. Pick a recipe below, or try again.',
+    RouteReason.consentDeclined when voice == _VoiceUpload.maybe =>
+      'Okay, your ${hasPhoto ? 'photo and list were' : 'list was'} not sent. '
+          'Your voice clip may have been sent to Google cloud before it '
+          'failed. Pick a recipe below, or try again.',
     RouteReason.consentDeclined =>
       'Okay, nothing was sent. Pick a recipe below, or try again.',
     RouteReason.modelDownloading || RouteReason.modelNotReady =>
@@ -681,3 +714,5 @@ class HybridPantryClient implements PantryClient {
           : 'Ingredient matching is unavailable right now. Pick a recipe below.',
   };
 }
+
+enum _VoiceUpload { none, maybe, sent }
