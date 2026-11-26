@@ -218,6 +218,18 @@ void main() {
     expect(flag, findsOneWidget);
     expect(find.text('Chrome on a computer (this device)'), findsOneWidget);
     expect(find.textContaining('22 GB', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Recent desktop Chrome on Windows, macOS, Linux or Chromebook Plus.',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    // No unverified minimum versions.
+    expect(
+      find.textContaining(RegExp(r'Chrome \d|iOS \d'), findRichText: true),
+      findsNothing,
+    );
     // Other platforms start collapsed.
     expect(
       find.textContaining('AICore developer preview', findRichText: true),
@@ -231,8 +243,15 @@ void main() {
     await tester.tap(find.text('iPhone'));
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('Apple Intelligence & Siri', findRichText: true),
+      find.text(
+        'An iPhone with Apple Intelligence turned on '
+        '(Settings → Apple Intelligence & Siri).',
+      ),
       findsOneWidget,
+    );
+    expect(
+      find.textContaining(RegExp(r'iOS \d'), findRichText: true),
+      findsNothing,
     );
   });
 }

@@ -447,16 +447,18 @@ class _PlatformSteps extends StatelessWidget {
   );
 }
 
-/// Per-platform enable steps. Chrome figures are from
-/// developer.chrome.com/docs/ai/prompt-api (read 2026-11-25). The multimodal
-/// flag is from DESIGN.md §3; that page does not mention it.
+/// Per-platform enable steps. No version numbers: Firebase's and Chrome's
+/// docs disagree on the minimum Chrome version, and the iOS version was not
+/// verified. Disk and hardware figures are from
+/// developer.chrome.com/docs/ai/prompt-api; the multimodal flag is from
+/// Firebase's web hybrid get-started page.
 const _platforms = [
   (
     id: 'web',
     title: 'Chrome on a computer',
     steps: [
-      'Use Chrome 148 or later on Windows 10 or 11, macOS 13 or later, Linux, '
-          'or a Chromebook Plus. Chrome on phones and tablets can\'t run it yet.',
+      'Recent desktop Chrome on Windows, macOS, Linux or Chromebook Plus. '
+          "Chrome on phones and tablets can't run it yet.",
       'Keep at least 22 GB free on the drive that holds your Chrome profile. '
           'Chrome removes the model if free space drops under 10 GB.',
       'Your computer needs a graphics card with more than 4 GB of memory, or '
@@ -483,9 +485,8 @@ const _platforms = [
     id: 'ios',
     title: 'iPhone',
     steps: [
-      'Use an iPhone that supports Apple Intelligence, on iOS 26 or later.',
-      'Turn on Apple Intelligence in Settings › Apple Intelligence & Siri, '
-          'and let it finish downloading.',
+      'An iPhone with Apple Intelligence turned on '
+          '(Settings → Apple Intelligence & Siri).',
       "Apple's on-device model reads text only, so photo features need the "
           'cloud on iPhone.',
     ],
