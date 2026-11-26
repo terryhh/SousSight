@@ -97,13 +97,15 @@ const featureRoutes = <String, FeatureRoute>{
     cloudWhenLocalCannot: true,
     semanticRetry: true,
   ),
-  // Audio is never supported on-device.
+  // Audio is never supported on-device. Part of the pantry scan, so "Keep
+  // Pantry scan on this device" keeps the voice clip here too.
   'pantry_voice': FeatureRoute(
     HybridMode.onlyInCloud,
     cloudWhenLocalCannot: true,
     semanticRetry: false,
     consent: UploadConsent.none,
     cloudReason: RouteReason.audioNeedsCloud,
+    parentFeature: 'pantry_scan',
   ),
   // On-device first; one cloud retry on semantic rejection, but not when the
   // SDK already answered from the cloud.
@@ -290,10 +292,20 @@ RouteDecision decideRoute(RouteInput input) {
 
   if (notReady != null) {
     // preferOnDevice is exactly the hybrid SDK's job here: it answers from
-    // the cloud while the local model is missing or downloading.
+    // the cloud while the local model is missing or downloading. A payload
+    // that needs consent goes onlyInCloud instead: it would reach the cloud
+    // either way, and onlyInCloud sends the exact bytes whose digest the cook
+    // allowed (Android's preferOnDevice decodes an image to a Bitmap and the
+    // SDK re-encodes it on fallback; DESIGN.md §5).
     if (wanted == HybridMode.preferOnDevice &&
         input.capabilities.supportedModes.contains(HybridMode.preferOnDevice)) {
-      return _cloud(input, HybridMode.preferOnDevice, notReady);
+      return _cloud(
+        input,
+        consentRequired(input.feature, input.kinds)
+            ? HybridMode.onlyInCloud
+            : HybridMode.preferOnDevice,
+        notReady,
+      );
     }
     if (wanted == HybridMode.onlyInCloud ||
         wanted == HybridMode.preferInCloud) {

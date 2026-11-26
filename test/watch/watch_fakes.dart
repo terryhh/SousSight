@@ -113,7 +113,7 @@ class ManualDispatcher implements HybridDispatcher {
   );
 }
 
-class FakeConsentGate implements ConsentGate {
+class FakeConsentGate extends ConsentGate {
   final asks = <ConsentAsk>[];
   Completer<ConsentGrant?>? reply;
 
@@ -124,8 +124,8 @@ class FakeConsentGate implements ConsentGate {
     return reply!.future;
   }
 
-  void grant() => reply!.complete(ConsentGrant(asks.last));
-  void grantFor(ConsentAsk ask) => reply!.complete(ConsentGrant(ask));
+  void grant() => reply!.complete(issue(asks.last));
+  void grantFor(ConsentAsk ask) => reply!.complete(issue(ask));
   void decline() => reply!.complete(null);
 }
 

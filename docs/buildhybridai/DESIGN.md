@@ -367,10 +367,40 @@ and session. Then:
 A result shown to the cook carries its legs. A scan built from a local photo leg and a cloud
 voice leg shows both, never one merged badge.
 
+**What consent binds (SS-096).** A `ConsentGrant` binds `hybridPayloadDigest(task)`: the task
+as the app built it (the exact bytes the cook was shown), for one session, used once. It does not
+bind the bytes an SDK puts on the wire. With `preferOnDevice` on Android, the bridge decodes an
+image to a `Bitmap` for Gemini Nano (`FirebaseHybridEngine.generate`); if the SDK then falls
+back to the cloud, it re-encodes that `Bitmap`, so the bytes sent are the same picture but not
+the digested bytes. `onlyInCloud` sends the original bytes (`inlineData`). Therefore:
+- When the local model is not ready (`downloadable`, `downloading`, `unavailable`) and the payload
+  needs consent, `decideRoute` returns `onlyInCloud`, not `preferOnDevice`: it would reach the
+  cloud either way, and this way the exact allowed bytes go.
+- When the local model is ready, a consented photo still runs `preferOnDevice`, so it is answered
+  on the device whenever it can be. If the SDK falls back, the cloud receives a re-encoding of the
+  allowed picture. The consent prompt and ledger describe the picture and its kinds, which stay
+  true; nothing else is added. The web bridge hands the JS SDK the original bytes; whether the
+  SDK re-encodes them on its own fallback has not been verified.
+- Only a `ConsentGate` can issue a `ConsentGrant` (`ConsentGate.issue`, `@protected`); feature
+  code cannot construct one.
+
+A sub-step's `parentFeature` local-only setting applies to it (`localOnlyFor`): the watch's
+cloud check follows "Keep Watch my food on this device", and the pantry voice clip follows
+"Keep Pantry scan on this device" (the clip then never uploads and the scan says so).
+
+`ConfiguredHybridInference` waits for the startup `configure` (on web, an unbounded `import()`)
+at most `task.timeout` in `generate` and `configureWait` in `capabilities`, then throws
+`HybridException(timeout)` without forwarding the request.
+
 `InferenceLedger` is session-scoped, in memory, and holds legs. Other cloud senders also check
 `CloudRoutes` and write a leg (`cloudAdapter`): Live connect **and each resume**, grounded
-research and its follow-ups, and nearby lookups, which send **location**
-(`lib/nearby/nearby_client.dart:295`). Research lives in Jenna's files
+research and its follow-ups, and nearby lookups, which send **location**. `GeminiNearbyClient`
+reads its `NearbyGate` immediately before every send: `CloudRoute.nearby`, the cook's "Keep Find
+food help on this device" switch (feature `nearby`) and connectivity. A blocked or invalid search
+is a leg that was not allowed to leave; a send is a pending `{location, text}` leg, confirmed when
+Gemini answers and left unknown when it fails. Without an approved route (or, in real mode,
+without a client wired to the runtime) the "Find food help nearby" entry points are hidden, and
+How it works lists nearby as off. Research lives in Jenna's files
 (`lib/learner/research_panel_client.dart` calls into `lib/research/`): add the hook at the call
 site in shared code, not inside her files. The ledger view separates "allowed to leave" from
 "reported as sent", and states what the session saves to Firestore and that the Live coach is

@@ -88,8 +88,22 @@ class _NearbyPanelState extends State<NearbyPanel> {
     NearbyKind.groceries => 'Where to get the missing items',
   };
 
+  /// Shows why a search cannot be sent now, before asking for location or
+  /// sending anything. The client checks again at send time.
+  bool _blocked() {
+    final client = widget.client;
+    final blocked = client is GatedNearbyClient ? client.precheck() : null;
+    if (blocked == null) return false;
+    _request++;
+    setState(() {
+      _result = null;
+      _error = blocked.message;
+    });
+    return true;
+  }
+
   Future<void> _useLocation() async {
-    if (_busy) return;
+    if (_busy || _blocked()) return;
     final request = ++_request;
     setState(() {
       _busy = true;
@@ -127,6 +141,7 @@ class _NearbyPanelState extends State<NearbyPanel> {
       _areaFocus.requestFocus();
       return;
     }
+    if (_blocked()) return;
     final request = ++_request;
     setState(() {
       _busy = true;

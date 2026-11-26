@@ -290,10 +290,28 @@ void main() {
       false,
     ),
     (
-      'downloadable photo: consent',
+      // Consented media goes onlyInCloud so the exact allowed bytes are sent
+      // (Android's preferOnDevice re-encodes an image on fallback).
+      'downloadable photo: consent, onlyInCloud',
       _in('pantry_scan', image: true, status: OnDeviceStatus.downloadable),
-      _prefer,
+      _cloud,
       RouteReason.modelNotReady,
+      true,
+    ),
+    (
+      'downloading photo: consent, onlyInCloud',
+      _in('recipe_draft', image: true, status: OnDeviceStatus.downloading),
+      _cloud,
+      RouteReason.modelDownloading,
+      true,
+    ),
+    (
+      // A ready model may answer a consented photo locally; the SDK's own
+      // fallback is documented in DESIGN.md §5.
+      'available photo: preferOnDevice, consent',
+      _in('pantry_scan', image: true),
+      _prefer,
+      RouteReason.onDevice,
       true,
     ),
     (
@@ -571,6 +589,44 @@ void main() {
     },
   );
 
+  group('pantry voice inherits pantry scan (SS-096)', () {
+    test('pantry_voice names pantry_scan as its parent', () {
+      expect(featureRouteFor('pantry_voice').parentFeature, 'pantry_scan');
+    });
+
+    test('"Keep Pantry scan on this device" keeps the voice clip local', () {
+      final privacy = _Privacy({'pantry_scan'});
+      expect(localOnlyFor(privacy, 'pantry_voice'), isTrue);
+      final decision = decideRoute(
+        _in(
+          'pantry_voice',
+          audio: true,
+          localOnly: localOnlyFor(privacy, 'pantry_voice'),
+        ),
+      );
+      expect(decision.blocked, isTrue);
+      expect(decision.mayUpload, isFalse);
+      expect(decision.reason, RouteReason.localOnlySetting);
+      expect(
+        decideCloudRetry(
+          feature: 'pantry_voice',
+          kinds: const {DataKind.audio},
+          localOnly: localOnlyFor(privacy, 'pantry_voice'),
+          cloudApproved: true,
+          online: true,
+        ).blocked,
+        isTrue,
+      );
+    });
+
+    test('the voice switch does not reach up to the parent', () {
+      final privacy = _Privacy({'pantry_voice'});
+      expect(localOnlyFor(privacy, 'pantry_voice'), isTrue);
+      expect(localOnlyFor(privacy, 'pantry_scan'), isFalse);
+      expect(localOnlyFor(_Privacy({}), 'pantry_voice'), isFalse);
+    });
+  });
+
   test('label check asks consent for any upload, text included', () {
     expect(consentRequired('label_check', {DataKind.text}), isTrue);
     expect(
@@ -683,3 +739,10 @@ const _onlyLocal = HybridCapabilities(
   ),
   supportedModes: {HybridMode.onlyOnDevice, HybridMode.onlyInCloud},
 );
+
+class _Privacy implements PrivacySettings {
+  _Privacy(this.features);
+  final Set<String> features;
+  @override
+  bool localOnly(String feature) => features.contains(feature);
+}

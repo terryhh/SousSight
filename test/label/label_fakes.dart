@@ -56,7 +56,7 @@ final iosCaps = HybridCapabilities(
 const noneCaps = HybridCapabilities.none();
 
 /// Holds each prompt open until the test answers it.
-class ManualConsentGate implements ConsentGate {
+class ManualConsentGate extends ConsentGate {
   final List<ConsentAsk> asks = [];
   final List<Completer<ConsentGrant?>> _pending = [];
 
@@ -70,9 +70,8 @@ class ManualConsentGate implements ConsentGate {
     return completer.future;
   }
 
-  void grant() => _pending.removeAt(0).complete(ConsentGrant(asks.last));
-  void grantFor(ConsentAsk ask) =>
-      _pending.removeAt(0).complete(ConsentGrant(ask));
+  void grant() => _pending.removeAt(0).complete(issue(asks.last));
+  void grantFor(ConsentAsk ask) => _pending.removeAt(0).complete(issue(ask));
   void decline() => _pending.removeAt(0).complete(null);
 }
 

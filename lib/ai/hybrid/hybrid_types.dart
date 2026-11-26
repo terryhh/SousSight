@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
+import 'package:flutter/foundation.dart' show nonVirtual, protected;
 
 /// Cloud routes G1 approved for this build. Compiled in; default is none.
 enum CloudRoute { hybridFallback, research, nearby, live }
@@ -47,14 +48,24 @@ class ConsentAsk {
   final String sessionId;
 }
 
+/// The cook's "allow once" for one [ConsentAsk]. Only a [ConsentGate] can
+/// issue one (through [ConsentGate.issue]); feature code cannot make its own.
 class ConsentGrant {
-  const ConsentGrant(this.ask);
+  const ConsentGrant._(this.ask);
   final ConsentAsk ask;
 }
 
 abstract class ConsentGate {
+  const ConsentGate();
+
   /// Null when the cook declines.
   Future<ConsentGrant?> request(ConsentAsk ask);
+
+  /// The grant for [ask], for a gate to return once the cook has allowed it.
+  /// Only a [ConsentGate] subclass may call this.
+  @protected
+  @nonVirtual
+  ConsentGrant issue(ConsentAsk ask) => ConsentGrant._(ask);
 }
 
 enum Provenance { sdkOnDevice, sdkCloud, cloudAdapter, simulated, unknown }

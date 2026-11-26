@@ -38,27 +38,49 @@ const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 /// Delegates to [inner], but every call that needs the configuration waits
 /// for the one [HybridInference.configure] call made at startup. A failed
 /// configure is not retried here; `generate` then fails as the bridge says.
+///
+/// The wait is bounded: `generate` waits at most the task's own timeout and
+/// [capabilities] at most [configureWait] (on web, configure includes an
+/// unbounded `import()`). Past that they throw
+/// `HybridException(HybridErrorCode.timeout)`; nothing is forwarded.
 class ConfiguredHybridInference implements HybridInference {
-  ConfiguredHybridInference(this.inner, HybridConfig config)
-    : _configured = inner
-          .configure(config)
-          .then<void>(
-            (_) {},
-            onError: (Object error) =>
-                debugPrint('Hybrid configure failed (${error.runtimeType})'),
-          );
+  ConfiguredHybridInference(
+    this.inner,
+    HybridConfig config, {
+    this.configureWait = const Duration(seconds: 10),
+  }) : _configured = inner
+           .configure(config)
+           .then<void>(
+             (_) {},
+             onError: (Object error) =>
+                 debugPrint('Hybrid configure failed (${error.runtimeType})'),
+           );
 
   final HybridInference inner;
   final Future<void> _configured;
 
+  /// The longest [capabilities] waits for the startup configure.
+  final Duration configureWait;
+
   /// Completes when the startup configure has settled (either way).
   Future<void> get configured => _configured;
+
+  Future<void> _awaitConfigured(Duration limit) => _configured.timeout(
+    limit,
+    onTimeout: () => throw const HybridException(
+      HybridErrorCode.timeout,
+      'Hybrid inference was still starting up.',
+    ),
+  );
 
   @override
   Future<void> configure(HybridConfig config) => inner.configure(config);
 
   @override
-  Future<HybridCapabilities> capabilities() => inner.capabilities();
+  Future<HybridCapabilities> capabilities() async {
+    await _awaitConfigured(configureWait);
+    return inner.capabilities();
+  }
 
   @override
   Future<HybridAvailability> availability({required bool withImage}) =>
@@ -71,7 +93,7 @@ class ConfiguredHybridInference implements HybridInference {
 
   @override
   Future<HybridResult> generate(HybridRequest request) async {
-    await _configured;
+    await _awaitConfigured(request.task.timeout);
     return inner.generate(request);
   }
 
@@ -110,7 +132,7 @@ class InferenceLedgerSource implements LedgerSource {
 /// [ConsentGate] as a modal dialog: says exactly which kinds of data would go
 /// to whom, then "Allow once" or "Don't send". No context, a dismissed
 /// dialog, or anything but "Allow once" is a decline.
-class DialogConsentGate implements ConsentGate {
+class DialogConsentGate extends ConsentGate {
   DialogConsentGate({required this.navigatorKey, required this.cloudModel});
 
   final GlobalKey<NavigatorState> navigatorKey;
@@ -170,12 +192,12 @@ class DialogConsentGate implements ConsentGate {
         ],
       ),
     );
-    return allowed == true ? ConsentGrant(ask) : null;
+    return allowed == true ? issue(ask) : null;
   }
 }
 
 /// Shows [frame] (the exact photo) in the [DialogConsentGate] prompt.
-class FramePreviewConsentGate implements ConsentGate {
+class FramePreviewConsentGate extends ConsentGate {
   FramePreviewConsentGate(this.gate, this.frame);
   final DialogConsentGate gate;
   final Uint8List? Function() frame;

@@ -16,14 +16,17 @@ class _Privacy implements PrivacySettings {
   bool localOnly(String feature) => localOnlyFeatures.contains(feature);
 }
 
-class _Consent implements ConsentGate {
+class _Consent extends ConsentGate {
   final List<ConsentAsk> asks = [];
   Future<ConsentGrant?> Function(ConsentAsk ask)? answer;
   @override
   Future<ConsentGrant?> request(ConsentAsk ask) {
     asks.add(ask);
-    return answer?.call(ask) ?? Future.value(ConsentGrant(ask));
+    return answer?.call(ask) ?? Future.value(issue(ask));
   }
+
+  /// A grant for any ask, including one the cook never saw (tests only).
+  ConsentGrant grantFor(ConsentAsk ask) => issue(ask);
 }
 
 class _Adapter implements CloudFallbackSender {
@@ -300,7 +303,7 @@ void main() {
     test('a grant for another payload or session does not count', () async {
       final h = _Harness(caps: fakeIosCapabilities);
       final other = _photo('pantry_scan', 9);
-      h.consent.answer = (ask) async => ConsentGrant(
+      h.consent.answer = (ask) async => h.consent.grantFor(
         ConsentAsk(
           feature: ask.feature,
           kinds: ask.kinds,
@@ -312,7 +315,7 @@ void main() {
         (await h.run(_photo('pantry_scan'))).blocked,
         RouteReason.consentDeclined,
       );
-      h.consent.answer = (ask) async => ConsentGrant(
+      h.consent.answer = (ask) async => h.consent.grantFor(
         ConsentAsk(
           feature: ask.feature,
           kinds: ask.kinds,
@@ -344,7 +347,7 @@ void main() {
       await pumpEventQueue();
       expect(h.consent.asks, hasLength(1));
       h.privacy.localOnlyFeatures.add('pantry_scan');
-      prompt.complete(ConsentGrant(h.consent.asks.single));
+      prompt.complete(h.consent.grantFor(h.consent.asks.single));
       final r = await result;
       expect(r.blocked, RouteReason.localOnlySetting);
       expect(h.bridge.requests, isEmpty);
@@ -354,7 +357,7 @@ void main() {
     test('a grant is used once: the retry needs a fresh one', () async {
       final h = _Harness();
       ConsentGrant? first;
-      h.consent.answer = (ask) async => first ??= ConsentGrant(ask);
+      h.consent.answer = (ask) async => first ??= h.consent.grantFor(ask);
       h.bridge.enqueueText('bad');
       final r = await h.run(_photo('pantry_scan'), validate: _rejectAll);
       expect(h.consent.asks, hasLength(2));
@@ -401,7 +404,7 @@ void main() {
       (schema['required']! as List).add('meals');
       expect(hybridPayloadDigest(task), isNot(original));
 
-      prompt.complete(ConsentGrant(h.consent.asks.single));
+      prompt.complete(h.consent.grantFor(h.consent.asks.single));
       final r = await result;
       expect(r.text, isNotNull);
       final sent = h.bridge.requests.single.task;
@@ -466,7 +469,7 @@ void main() {
     final result = h.run(_photo('local_watch_cloud_check'));
     await pumpEventQueue();
     h.privacy.localOnlyFeatures.add('local_watch');
-    prompt.complete(ConsentGrant(h.consent.asks.single));
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
     expect((await result).blocked, RouteReason.localOnlySetting);
     expect(h.bridge.requests, isEmpty);
   });
@@ -489,7 +492,7 @@ void main() {
       () async {
         final h = _Harness();
         final task = _photo('local_watch_cloud_check');
-        final grant = ConsentGrant(
+        final grant = h.consent.grantFor(
           ConsentAsk(
             feature: 'local_watch',
             kinds: const {DataKind.image},
@@ -526,7 +529,7 @@ void main() {
         final task = _photo('local_watch_cloud_check');
         h.consent.answer = (_) async => null;
         for (final g in [
-          ConsentGrant(
+          h.consent.grantFor(
             ConsentAsk(
               feature: 'local_watch',
               kinds: const {DataKind.image},
@@ -536,7 +539,7 @@ void main() {
               sessionId: 's1',
             ),
           ),
-          ConsentGrant(
+          h.consent.grantFor(
             ConsentAsk(
               feature: 'local_watch',
               kinds: const {DataKind.image},
