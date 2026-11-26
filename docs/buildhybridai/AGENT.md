@@ -96,9 +96,11 @@ another assignee appeared, back off: unassign yourself, comment "Releasing; <who
 and return to step 2.
 
 **4. Build it in a worktree.**
-- **Base:** code cards branch from `origin/hybrid/integration` (the trunk) and PR to
-  `hybrid/integration`. Docs-only cards branch from `origin/main` and PR to `main`. Use DESIGN §9
-  for the exact branch name and owned files.
+- **Base and target:** DESIGN §9's table is authoritative for each card's branch name, the branch
+  to create it from, its PR target, and its owned files. Some cards stack on another card's
+  branch (for example SS-075 on `hybrid/12-watch`); use exactly what the row says. Where the row
+  says "trunk", that's `hybrid/integration`. Docs-only cards come from `origin/main` and target
+  `main`. If a stacked parent has already merged, use the trunk instead and say so in the PR.
 - **Worktree:** `git worktree add -b hybrid/<NN>-<slug> .worktrees/<slug> origin/<base>`
 - **Ownership:** edit only files your card owns. Shared files (`cooking_app.dart`,
   `cooking_coordinator.dart`, `live_controller.dart`, `live_types.dart`, `pantry_flow.dart`,
@@ -140,14 +142,17 @@ gh api repos/terryhh/SousSight/pulls/<pr>/reviews --jq '.[-1] | "\(.commit_id[0:
 gh api repos/terryhh/SousSight/pulls/<pr>/comments --jq '.[] | "\(.path):\(.line) \(.body)"'
 ```
 - Fix every finding at the current head with a regression test.
-- Merge `origin/hybrid/integration` in first if it moved.
+- If your PR's base moved, merge **that base** in first: the trunk for trunk PRs, the parent
+  branch for stacked PRs, `origin/main` for docs PRs. Never merge the trunk into a docs PR.
 - Push, then reply with `gh pr comment <pr>` summarizing each fix.
 - Repeat until it's approved, then go back to step 1. Terry's session merges approved PRs and marks the card Done.
 
 **8. If you get stuck** on missing access, a design gap or a decision only Terry can make: comment
 on the card with the exact question, leave it In progress with your claim, and move to another
-card. Don't silently abandon a claim. If you stop working a card, unassign yourself and comment
-"Released: <why/where it stands>".
+card. Don't silently abandon a claim. If you stop working a card, release it properly:
+unassign yourself, move it back to **Ready** (or **Backlog** if it's blocked; §3), and comment
+"Released: <why / where it stands / what blocks it>". A card left In progress still counts as
+claimed.
 
 ## 3. Moving a card on the board
 
