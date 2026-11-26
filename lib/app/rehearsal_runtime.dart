@@ -534,7 +534,30 @@ class RehearsalPantryClient implements PantryClient {
       // A pretend photo or voice clip skips the dispatcher, so its legs are
       // written to the session ledger here, once, as simulated (Codex #221).
       final canned = await fallback.identify(input, recipes);
-      final legs = [for (final leg in canned.legs) simulatedLeg(leg)];
+      // The kinds the cook actually "attached" (Codex #221).
+      final kinds = {
+        if (input.simulatedPhoto) DataKind.image,
+        if (input.simulatedAudio) DataKind.audio,
+      };
+      final legs = [
+        for (final leg in canned.legs)
+          simulatedLeg(
+            kinds.isEmpty
+                ? leg
+                : InferenceLeg(
+                    requestId: leg.requestId,
+                    feature: input.simulatedAudio && !input.simulatedPhoto
+                        ? kPantryVoiceFeature
+                        : leg.feature,
+                    mode: leg.mode,
+                    kinds: kinds,
+                    transferPermitted: leg.transferPermitted,
+                    provenance: leg.provenance,
+                    modelLabel: leg.modelLabel,
+                    error: leg.error,
+                  ),
+          ),
+      ];
       for (final leg in legs) {
         hybrid.ledger.record(leg);
       }
@@ -626,7 +649,8 @@ class RehearsalLiveMedia extends DemoLiveMedia {
   }
 }
 
-/// A small drawn kitchen scene (two slices of bread on a board) as a PNG.
+/// A small drawn kitchen scene (two slices of bread on a board) as a JPEG,
+/// like a real camera frame.
 /// [frame] nudges the light so consecutive frames differ.
 Uint8List practiceCameraFrame(int frame, {int width = 160, int height = 120}) {
   final rgb = Uint8List(width * height * 3);

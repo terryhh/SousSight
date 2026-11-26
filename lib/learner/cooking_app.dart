@@ -906,7 +906,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
               icon: const Icon(Icons.restart_alt),
               label: Text(widget.startingNewCook ? 'Starting…' : 'New cook'),
             ),
-            DraftRecipeChip(recipe: cook.recipe),
+            DraftRecipeChip(recipe: cook.recipe, practice: widget.isDemo),
             AllergenChip(recipe: cook.recipe),
             if (hybrid != null)
               HybridHeaderButtons(

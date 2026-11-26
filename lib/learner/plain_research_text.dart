@@ -45,7 +45,12 @@ class PlainTextResearchClient implements CookingResearchClient {
     // (Codex #221).
     if (answer
         .replaceAll(RegExp(r'^\s*\d+[.)]', multiLine: true), '')
-        .replaceAll(RegExp('[\\s\u200B-\u200D\u2060\uFEFF•*_\\-#>`]+'), '')
+        .replaceAll(
+          RegExp(
+            '[\\s\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF•*_\\-#>`]+',
+          ),
+          '',
+        )
         .isEmpty) {
       throw const CookingResearchException(
         CookingResearchFailure.empty,

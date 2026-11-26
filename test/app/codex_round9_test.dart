@@ -94,22 +94,26 @@ void main() {
     expect(find.text(pantryVoiceSkipped), findsWidgets);
   });
 
-  testWidgets('#2 the notice clears when the gate reopens or a new clip is '
-      'recorded', (tester) async {
+  testWidgets('#2 the notice belongs to the submission that dropped a clip', (
+    tester,
+  ) async {
     final p = await pump(tester);
     await record(tester);
     p.setOnline(false);
     await findMeal(tester);
     expect(find.text(pantryVoiceSkipped), findsWidgets);
-    p.setOnline(true); // the gate reopens
-    await tester.ensureVisible(find.byKey(const ValueKey('mode-say')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('mode-say')));
+    // A new recording clears it at once.
+    p.setOnline(true);
+    await record(tester);
     await tester.pumpAndSettle();
     expect(find.text(pantryVoiceSkipped), findsNothing);
-    await record(tester); // and a new clip clears it for good
-    p.setOnline(false);
+    // A later submission without a clip never repeats it.
+    await tester.ensureVisible(find.byKey(const ValueKey('mode-type')));
+    await tester.tap(find.byKey(const ValueKey('mode-type')));
     await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'rice');
+    p.setOnline(false);
+    await findMeal(tester);
     expect(find.text(pantryVoiceSkipped), findsNothing);
   });
 }

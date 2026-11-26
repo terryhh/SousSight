@@ -59,8 +59,9 @@ const pantryVoiceSkipped =
 
 /// The same, in a build where online processing is off.
 const pantryVoiceUnavailable =
-    'Voice lists need online processing, which is off in this build. Type '
-    'your list instead.';
+    'Voice lists need online processing and a connection, which aren\'t '
+    'available right now (off in this build or offline). Type your list '
+    'instead.';
 
 /// The catch-all when matching failed without a reason of its own.
 const pantryUnavailableMessage =
@@ -402,6 +403,8 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _analyze() async {
     if (_thinking) return;
+    // The notice belongs to the submission that dropped a clip (Codex #221).
+    if (_voiceSkipped != null) setState(() => _voiceSkipped = null);
     // Re-read the voice gate at send: a closed gate drops the clip, and the
     // cook is told (Codex #221).
     if (_audio != null && _voiceOff && !widget.isDemo) {
@@ -457,6 +460,8 @@ class _PantryScreenState extends State<PantryScreen> {
       final result = await widget.client.identify(
         PantryInput(
           text: submitted,
+          simulatedPhoto: _simulatedPhoto,
+          simulatedAudio: _simulatedAudio && _mode == PantryMode.say,
           photoJpeg: _photo,
           // Audio is sent only from Say it, where the clip is shown, and only
           // while voice processing is on (re-read at send).
@@ -678,8 +683,7 @@ class _PantryScreenState extends State<PantryScreen> {
                   ],
                 ),
                 // Shown only while the gate is still closed (Codex #221).
-                if (_voiceSkipped case final skipped?
-                    when _error == null && _voiceOff) ...[
+                if (_voiceSkipped case final skipped? when _error == null) ...[
                   const SizedBox(height: 14),
                   _notice(skipped, Icons.mic_off_outlined),
                 ],
@@ -1215,7 +1219,7 @@ class _PantryScreenState extends State<PantryScreen> {
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
-          child: DraftRecipeChip(recipe: drafted),
+          child: DraftRecipeChip(recipe: drafted, practice: widget.isDemo),
         ),
         const SizedBox(height: 8),
         PantryLegList(legs: _draftLegs),

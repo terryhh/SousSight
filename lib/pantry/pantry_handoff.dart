@@ -53,9 +53,14 @@ String _stem(String word) {
   return word;
 }
 
+/// Stems first, then drops packaging words, so "cans" is dropped like "can"
+/// (the same normalization as ranking and confirmation, Codex #221).
 Set<String> _words(String text) => {
   for (final word in text.toLowerCase().split(RegExp(r'[^a-z]+')))
-    if (word.isNotEmpty && !_ignoredWords.contains(word)) _stem(word),
+    if (word.isNotEmpty &&
+        !_ignoredWords.contains(word) &&
+        !_ignoredWords.contains(_stem(word)))
+      _stem(word),
 };
 
 /// Maps a cook-confirmed pantry item to a recipe ingredient ID only when it
