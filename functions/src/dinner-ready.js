@@ -11,7 +11,13 @@ export const DINNER_KINDS = ['started', 'ready'];
 export const SEND_LIMIT_PER_HOUR = 5;
 const HOUR_MS = 60 * 60_000;
 const REQUEST_KEYS = ['sessionId', 'notificationId', 'recipient', 'kind', 'recipeTitle',
-  'minutes', 'cookName', 'simulateFailure', 'simulateOutcome'];
+  'minutes', 'cookName', 'simulateFailure', 'simulateOutcome', 'templateVersion'];
+
+/** Template versions. The client sends the version it previewed, so the
+ * household only ever gets the wording the cook reviewed. An unversioned
+ * request comes from a client older than SS-100 and keeps version 1. */
+export const DINNER_TEMPLATE_VERSIONS = [1, 2];
+export const CURRENT_DINNER_TEMPLATE = 2;
 export const SIMULATED_OUTCOMES = ['delivered', 'rejected'];
 
 // Simulated Vonage outcome for the demo. Error 1120 is the rejection this
@@ -46,12 +52,45 @@ export function cleanTemplateText(value, maxLength) {
     .slice(0, maxLength).trim();
 }
 
-/** Server-owned templates. The client supplies only the slots. */
-export function composeDinnerMessage({ kind, recipeTitle, minutes, cookName }) {
+/** Server-owned templates. The client supplies only the slots and the
+ * template version it previewed. */
+export function composeDinnerMessage({ kind, recipeTitle, minutes, cookName,
+  templateVersion = CURRENT_DINNER_TEMPLATE }) {
+  if (templateVersion === 1) return legacyDinnerMessage({ kind, recipeTitle, minutes, cookName });
+  if (kind === 'started') {
+    // No estimate (null): the time is left out rather than guessed.
+    const time = minutes == null ? '' : `, about ${minutes} minutes to go`;
+    return `SousSight: Dinner's started${time}. ${cookName || 'Your cook'} is making ${recipeTitle}.`;
+  }
+  return `SousSight: Dinner is ready! ${recipeTitle} is on the table.`;
+}
+
+/** Version 1: the templates before SS-100 (started always had minutes). */
+function legacyDinnerMessage({ kind, recipeTitle, minutes, cookName }) {
   if (kind === 'started') {
     return `SousSight: ${cookName || 'Your cook'} started ${recipeTitle}. Dinner in about ${minutes} min.`;
   }
   return `SousSight: Dinner is ready! ${recipeTitle} is on the table.`;
+}
+
+/** Idempotency fingerprint from the stable request fields only, including
+ * the template version. The rendered `message` is left out, so a template
+ * wording change never turns a replay of the same slots into a conflict. */
+export function requestFingerprint(request, channel) {
+  const { message, ...fields } = request;
+  return `v2:${sha256(JSON.stringify({ ...fields, channel }))}`;
+}
+
+/** The fingerprint a pre-SS-100 deployment wrote for this request: a hash of
+ * the whole request as it validated it, in its field order, including the
+ * version-1 message. Only an unversioned (version 1) request can match. */
+export function legacyFingerprints(request, channel) {
+  if (request.templateVersion !== 1) return [];
+  const { sessionId, notificationId, recipient, kind, recipeTitle, minutes, cookName,
+    simulateOutcome } = request;
+  const message = legacyDinnerMessage(request);
+  return [sha256(JSON.stringify({ sessionId, notificationId, recipient, kind, recipeTitle,
+    minutes, cookName, simulateOutcome, message, channel }))];
 }
 
 function invalid() {
@@ -78,10 +117,18 @@ export function validateDinnerRequest(body, allowedRecipients) {
   const simulateOutcome = body.simulateOutcome || (body.simulateFailure === true ? 'rejected' : null);
   const recipeTitle = cleanTemplateText(body.recipeTitle, 60);
   if (!recipeTitle) throw invalid();
+  const templateVersion = body.templateVersion ?? 1;
+  if (!DINNER_TEMPLATE_VERSIONS.includes(templateVersion)) throw invalid();
   let minutes = null;
   if (body.kind === 'started') {
-    if (!Number.isInteger(body.minutes) || body.minutes < 1 || body.minutes > 120) throw invalid();
-    minutes = body.minutes;
+    // Version 2 may leave the time out when it is unknown; version 1's
+    // template always had it.
+    const missing = body.minutes === undefined || body.minutes === null;
+    if (missing && templateVersion === 1) throw invalid();
+    if (!missing) {
+      if (!Number.isInteger(body.minutes) || body.minutes < 1 || body.minutes > 120) throw invalid();
+      minutes = body.minutes;
+    }
   } else if (body.minutes !== undefined && body.minutes !== null) {
     throw invalid();
   }
@@ -93,7 +140,8 @@ export function validateDinnerRequest(body, allowedRecipients) {
   }
   const slots = { kind: body.kind, recipeTitle, minutes, cookName };
   return { sessionId: body.sessionId, notificationId: body.notificationId, recipient,
-    ...slots, simulateOutcome, message: composeDinnerMessage(slots) };
+    ...slots, simulateOutcome, templateVersion,
+    message: composeDinnerMessage({ ...slots, templateVersion }) };
 }
 
 export function nextSendLimit(previous, nowMs, limit = SEND_LIMIT_PER_HOUR) {
@@ -115,7 +163,8 @@ export function createDinnerLedger(db) {
   return {
     async claim({ uid, request, channel, nowMs }) {
       const key = sha256(`${uid}\n${request.notificationId}`);
-      const fingerprint = sha256(JSON.stringify({ ...request, channel }));
+      const fingerprint = requestFingerprint(request, channel);
+      const accepted = new Set([fingerprint, ...legacyFingerprints(request, channel)]);
       const ref = db.collection('_dinnerNotifications').doc(key);
       const sessionRef = db.collection('sessions').doc(request.sessionId);
       // One message of each kind per session/recipient prevents a fresh ID from
@@ -134,7 +183,7 @@ export function createDinnerLedger(db) {
         }
         if (existing.exists) {
           const record = existing.data();
-          if (record.fingerprint !== fingerprint) {
+          if (!accepted.has(record.fingerprint)) {
             throw new HttpError('idempotency-conflict', 409, 'This notification ID already belongs to a different message.');
           }
           return { key, claimed: false, record };
@@ -148,7 +197,8 @@ export function createDinnerLedger(db) {
           }
         }
         const nextLimit = nextSendLimit(limit.exists ? limit.data() : null, nowMs);
-        const record = { fingerprint, status: 'pending', channel, kind: request.kind,
+        const record = { fingerprint, templateVersion: request.templateVersion, status: 'pending',
+          channel, kind: request.kind,
           sessionId: request.sessionId, notificationId: request.notificationId,
           simulated: Boolean(request.simulateOutcome), createdAt: nowMs, updatedAt: nowMs };
         transaction.create(ref, record);
@@ -274,7 +324,11 @@ export function createDinnerService({ ledger, sendMessage, applyStatus, settings
     const base = { notificationId: request.notificationId, kind: request.kind, message: request.message,
       simulated: Boolean(simulation) };
     if (!claim.claimed) {
-      return { ...base, status: publicStatuses.has(claim.record.status) ? claim.record.status : 'unknown',
+      // The wording that was originally sent: the claim's template version (a
+      // pre-SS-100 record has none, and was version 1).
+      const message = composeDinnerMessage({ ...request,
+        templateVersion: claim.record.templateVersion ?? 1 });
+      return { ...base, message, status: publicStatuses.has(claim.record.status) ? claim.record.status : 'unknown',
         channel: claim.record.channel, duplicate: true,
         deliveryStatus: claim.record.deliveryStatus ?? null,
         reason: claim.record.reason ?? (claim.record.status === 'pending' ? 'attempt-in-progress-or-unconfirmed' : null) };
