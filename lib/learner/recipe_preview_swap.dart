@@ -284,32 +284,54 @@ class _RecipeSwapSheetState extends State<RecipeSwapSheet> {
   }
 }
 
-/// Title and body text of a Coach Lite workspace, in the root's order. The
+/// Title and body text of a Coach Lite workspace in display order: from the
+/// root, depth first through nested columns (each component once). The
 /// "Needs a source check" notice is dropped when the answer would be handed
-/// to research, because the preview does not do that hand-off.
+/// to research, because the preview does not do that hand-off. A
+/// comparison is worded neutrally: it is the model's comparison, never a
+/// statement about what the cook has.
 List<({String title, String body})> swapAnswerCards(CoachLiteAnswer answer) {
   final byId = {
     for (final c in answer.components)
       if (c['id'] is String) c['id'] as String: c,
   };
-  final order = switch (byId['root']?['children']) {
+  List<String> childrenOf(Map<String, dynamic>? c) => switch (c?['children']) {
     final List<dynamic> ids => [for (final id in ids) '$id'],
-    _ => [for (final id in byId.keys) id],
+    _ => const [],
   };
+  final order = <String>[];
+  final seen = <String>{};
+  void visit(String id) {
+    final c = byId[id];
+    if (c == null || !seen.add(id)) return;
+    if (c['component'] == 'CookingColumn') {
+      childrenOf(c).forEach(visit);
+    } else {
+      order.add(id);
+    }
+  }
+
+  if (byId.containsKey('root')) {
+    visit('root');
+  } else {
+    byId.keys.forEach(visit);
+  }
   String text(Object? value) => value is String ? value.trim() : '';
   return [
     for (final id in order)
-      if (byId[id] case final c?)
-        if (c['component'] != 'CookingColumn' &&
-            !(id == 'app_sources' && answer.handOffToResearch))
+      if (!(id == 'app_sources' && answer.handOffToResearch))
+        if (byId[id] case final c?)
           (
             title: text(c['title']),
             body: [
               text(c['body']),
-              if (text(c['observed']).isNotEmpty)
-                'What you have: ${text(c['observed'])}',
-              if (text(c['target']).isNotEmpty)
-                'What to aim for: ${text(c['target'])}',
+              if (text(c['observed']).isNotEmpty &&
+                  text(c['target']).isNotEmpty)
+                'Compared: ${text(c['observed'])} · ${text(c['target'])}'
+              else if (text(c['observed']).isNotEmpty)
+                'Compared: ${text(c['observed'])}'
+              else if (text(c['target']).isNotEmpty)
+                'Compared: ${text(c['target'])}',
               if (text(c['cue']).isNotEmpty) 'Look for: ${text(c['cue'])}',
             ].where((s) => s.isNotEmpty).join('\n'),
           ),

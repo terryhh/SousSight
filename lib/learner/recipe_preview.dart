@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../core/models.dart';
 import '../label/household_allergens.dart';
+import '../pantry/recipe_draft_client.dart' show draftTextCertifies;
 import '../trust/inference_source_badge.dart';
 import 'draft_recipe_chip.dart';
 import 'recipe_preview_data.dart';
@@ -246,7 +247,10 @@ class _Hero extends StatelessWidget {
               ),
             ),
           ),
-          if (recipe.summary.trim().isNotEmpty) ...[
+          // A drafted summary is model text: shown only when it passes the
+          // draft safety check, otherwise the title stands alone.
+          if (recipe.summary.trim().isNotEmpty &&
+              !(data.isDraft && draftTextCertifies(recipe.summary))) ...[
             const SizedBox(height: 8),
             Text(
               recipe.summary.trim(),
@@ -439,8 +443,10 @@ class _IngredientsCard extends StatelessWidget {
         ),
       );
     }
-    final have = ingredients.have.length;
-    final needed = have + ingredients.missing.length;
+    // Required ingredients only, on both sides of "X of N".
+    final have = ingredients.requiredHave;
+    final needed = ingredients.requiredTotal;
+    final swaps = ingredients.substituted.length;
     return _Card(
       key: const ValueKey('preview-ingredients'),
       child: Column(
@@ -449,9 +455,10 @@ class _IngredientsCard extends StatelessWidget {
           const _SectionTitle(Icons.kitchen_outlined, 'From your pantry'),
           const SizedBox(height: 10),
           Text(
-            ingredients.missing.isEmpty
+            ingredients.missing.isEmpty && swaps == 0
                 ? 'You have everything you need'
-                : 'You have $have of $needed ingredients',
+                : 'You have $have of $needed ingredients'
+                      '${swaps == 0 ? '' : ', plus ${swaps == 1 ? 'a reviewed swap' : '$swaps reviewed swaps'}'}',
             key: const ValueKey('preview-have-count'),
             style: const TextStyle(
               fontSize: 16,
@@ -492,6 +499,20 @@ class _IngredientsCard extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
+              ),
+          ],
+          if (ingredients.substituted.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const _GroupLabel('You have a reviewed swap', color: _green),
+            for (final s in ingredients.substituted)
+              _IngredientRow(
+                key: ValueKey('preview-substitute-${s.ingredient.id}'),
+                ingredient: s.ingredient,
+                icon: Icons.published_with_changes_rounded,
+                color: _green,
+                detail:
+                    'You have the reviewed swap: '
+                    '${s.substitution.substitute}. ${s.substitution.note}',
               ),
           ],
           if (ingredients.have.isNotEmpty) ...[
@@ -550,12 +571,16 @@ class _IngredientRow extends StatelessWidget {
     required this.color,
     this.iconSize = 22,
     this.trailing,
+    this.detail,
   });
   final Ingredient ingredient;
   final IconData icon;
   final Color color;
   final double iconSize;
   final Widget? trailing;
+
+  /// Replaces the quantity line, e.g. a reviewed swap and its note.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
@@ -566,7 +591,12 @@ class _IngredientRow extends StatelessWidget {
           ingredient.name,
           style: const TextStyle(fontSize: 15, height: 1.3, color: _ink),
         ),
-        if (ingredient.qty.trim().isNotEmpty)
+        if (detail case final detail?)
+          Text(
+            detail,
+            style: const TextStyle(fontSize: 13, color: _green, height: 1.3),
+          )
+        else if (ingredient.qty.trim().isNotEmpty)
           Text(
             ingredient.qty.trim(),
             style: const TextStyle(fontSize: 13, color: _muted),
@@ -605,8 +635,9 @@ class _AllergenCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final match = allergens.householdMatches.isNotEmpty;
+    final match = allergens.householdWarning;
     final householdLine = allergens.householdLine;
+    final hintLine = allergens.hintLine;
     return _Card(
       key: const ValueKey('preview-allergens'),
       color: match ? const Color(0xFFFFF3EC) : Colors.white,
@@ -642,6 +673,15 @@ class _AllergenCard extends StatelessWidget {
             icon: Icons.menu_book_outlined,
             color: _muted,
           ),
+          if (hintLine != null) ...[
+            const SizedBox(height: 8),
+            _AllergenLine(
+              key: const ValueKey('preview-hint-line'),
+              text: hintLine,
+              icon: Icons.manage_search_rounded,
+              color: _terracotta,
+            ),
+          ],
           const SizedBox(height: 10),
           const Text(
             'Your household list stays on this device. The camera and the '

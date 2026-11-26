@@ -7,7 +7,9 @@ import 'dart:convert';
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
+import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/coach_lite/coach_lite.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/label/household_allergens.dart';
@@ -86,6 +88,18 @@ class _Privacy implements PrivacySettings {
   final Set<String> localOnlyFeatures = {};
   @override
   bool localOnly(String feature) => localOnlyFeatures.contains(feature);
+}
+
+class _NoCloud implements CloudFallbackSender {
+  final List<HybridRequest> sent = [];
+  @override
+  Future<HybridResult> send(HybridRequest request) {
+    sent.add(request);
+    throw const HybridException(HybridErrorCode.failed, 'not in tests');
+  }
+
+  @override
+  Future<void> cancel(String requestId) async {}
 }
 
 class _ThrowingLite extends CoachLite {
@@ -298,8 +312,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text(
-        'The recipe doesn’t mention your household allergens (milk) — '
-        'check labels yourself.',
+        'The app found no match for your household allergens (milk) in this '
+        'recipe. That doesn’t rule them out — check the ingredients and '
+        'labels yourself.',
       ),
       findsOneWidget,
     );
@@ -419,7 +434,7 @@ void main() {
       );
 
       const question =
-          'What can I use instead of peanut butter in Peanut Butter Sandwich?';
+          'What can I use instead of "Peanut butter" in Peanut Butter Sandwich?';
       expect(question, swapQuestion(_sandwich.ingredients[1], _sandwich));
       final task = dispatcher.tasks.single;
       expect(task.feature, coachLiteFeature);
@@ -441,7 +456,12 @@ void main() {
 
       expect(find.text(question), findsOneWidget);
       expect(find.text('Try sunflower seed butter'), findsOneWidget);
-      expect(find.textContaining('What you have: Peanut butter'), findsOne);
+      expect(
+        find.textContaining('Compared: Peanut butter · Sunflower seed butter'),
+        findsOne,
+      );
+      // A model comparison is never worded as the cook's inventory.
+      expect(find.textContaining('What you have'), findsNothing);
       expect(find.byKey(const ValueKey('swap-source')), findsOneWidget);
       expect(find.text('On this device'), findsOneWidget);
       expect(find.text(kSwapAllergenCaution), findsOneWidget);
@@ -499,7 +519,7 @@ void main() {
       expect(find.byKey(const ValueKey('swap-offline')), findsOneWidget);
       expect(
         find.text(
-          'What can I use instead of peanut butter in Peanut Butter Sandwich?',
+          'What can I use instead of "Peanut butter" in Peanut Butter Sandwich?',
         ),
         findsOneWidget,
       );
@@ -562,6 +582,138 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('swap-sheet')), findsNothing);
       expect(dispatcher.tasks, hasLength(1)); // no retry after dismissal
+    });
+
+    group('semantic retry and dismissal (real dispatcher, fake inference)', () {
+      late FakeHybridInference inference;
+      late _NoCloud cloud;
+      late HybridRuntime hybrid;
+
+      Future<void> openSwap(WidgetTester tester) async {
+        await phone(tester);
+        inference = FakeHybridInference()
+          ..delay = const Duration(milliseconds: 480)
+          // Malformed: fails Coach Lite validation, so the dispatcher's one
+          // semantic retry would go to the cloud.
+          ..enqueueText('{"components": []}')
+          ..enqueueText(_answerJson(), source: InferenceSource.cloud);
+        cloud = _NoCloud();
+        hybrid = HybridRuntime.create(
+          inference: inference,
+          cloudRoutes: const CloudRoutes({CloudRoute.hybridFallback}),
+          cloudFallback: cloud,
+          isOnline: () => true,
+          cloudModel: 'test-model',
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: cookingTheme,
+            navigatorKey: hybrid.navigatorKey,
+            home: RecipePreviewScreen(
+              recipe: _sandwich,
+              confirmedItems: const ['bread', 'banana'],
+              swapCoach: RecipeSwapCoach.forRuntime(hybrid),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final swap = find.byKey(const ValueKey('find-swap-peanut_butter'));
+        await tester.ensureVisible(swap);
+        await tester.pumpAndSettle();
+        await tester.tap(swap);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      Iterable<String> cloudLegs() => [
+        for (final leg in hybrid.ledgerSource.legs)
+          if (leg.mode != HybridMode.onlyOnDevice || leg.transferPermitted)
+            leg.requestId,
+      ];
+
+      testWidgets('control: left open, the malformed local answer starts the '
+          'semantic retry', (tester) async {
+        await openSwap(tester);
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump(const Duration(milliseconds: 100));
+        final retried =
+            inference.requests.length > 1 ||
+            cloud.sent.isNotEmpty ||
+            find.byType(AlertDialog).evaluate().isNotEmpty ||
+            hybrid.ledgerSource.legs.length > 1;
+        expect(retried, isTrue);
+        // Let any consent dialog or retry settle before teardown.
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('dismissed while the malformed answer is pending: no '
+          'semantic retry and no cloud leg', (tester) async {
+        await openSwap(tester);
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(inference.requests, hasLength(1));
+
+        await tester.tapAt(const Offset(180, 20)); // the barrier
+        await tester.pump(); // the route accepted the pop: cancelled now
+        await tester.pump(const Duration(milliseconds: 200)); // answer lands
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const ValueKey('swap-sheet')), findsNothing);
+        expect(inference.requests, hasLength(1));
+        expect(cloud.sent, isEmpty);
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(cloudLegs(), isEmpty);
+        // One leg: the on-device attempt, cancelled; nothing left the device.
+        final leg = hybrid.ledgerSource.legs.single;
+        expect(leg.mode, HybridMode.onlyOnDevice);
+        expect(leg.error, HybridErrorCode.cancelled);
+        expect(leg.transferPermitted, isFalse);
+      });
+    });
+
+    testWidgets('nested columns render every card in display order', (
+      tester,
+    ) async {
+      await phone(tester);
+      dispatcher.enqueue(
+        jsonEncode({
+          'components': [
+            {
+              'id': 'root',
+              'component': 'CookingColumn',
+              'children': ['inner', 'last'],
+            },
+            {
+              'id': 'inner',
+              'component': 'CookingColumn',
+              'children': ['first'],
+            },
+            {
+              'id': 'first',
+              'component': 'stepCue',
+              'title': 'Nested swap',
+              'body': 'Inside a column.',
+            },
+            {
+              'id': 'last',
+              'component': 'stepCue',
+              'title': 'After it',
+              'body': 'Second.',
+            },
+          ],
+        }),
+      );
+      await tester.pumpWidget(screen(swap: coach()));
+      await tester.pumpAndSettle();
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('find-swap-peanut_butter')),
+      );
+      expect(find.text('Nested swap'), findsOneWidget);
+      expect(find.text('After it'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Nested swap')).dy,
+        lessThan(tester.getTopLeft(find.text('After it')).dy),
+      );
     });
 
     testWidgets('a draft shows where it was generated beside its label', (
@@ -681,6 +833,50 @@ void main() {
     expect(reviewed.first, startsWith('Recipe allergens: wheat, peanut.'));
   });
 
+  test('swap answer cards visit each component once, even in a cycle', () {
+    final cards = swapAnswerCards(
+      CoachLiteAnswer(
+        stamp: const CoachLiteStamp(
+          sessionId: 's',
+          epoch: 0,
+          stepId: 'x',
+          sequence: 1,
+        ),
+        status: CoachLiteStatus.answered,
+        kind: CoachLiteQuestionKind.substitution,
+        components: const [
+          {
+            'id': 'root',
+            'component': 'CookingColumn',
+            'children': ['col', 'a', 'missing'],
+          },
+          {
+            'id': 'col',
+            'component': 'CookingColumn',
+            'children': ['b', 'root', 'a'],
+          },
+          {'id': 'a', 'component': 'stepCue', 'title': 'A', 'body': ''},
+          {
+            'id': 'b',
+            'component': 'comparison',
+            'title': 'B',
+            'target': 'Sunflower seed butter',
+          },
+          {
+            'id': 'c',
+            'component': 'comparison',
+            'title': 'C',
+            'observed': 'Peanut butter',
+          },
+        ],
+      ),
+    );
+    expect(cards, [
+      (title: 'B', body: 'Compared: Sunflower seed butter'),
+      (title: 'A', body: ''),
+    ]);
+  });
+
   test('swap answer cards fall back to component order without a root', () {
     final cards = swapAnswerCards(
       CoachLiteAnswer(
@@ -695,9 +891,14 @@ void main() {
         components: const [
           {'id': 'a', 'component': 'stepCue', 'title': 'A', 'body': 'a'},
           {'id': 'b', 'component': 'stepCue', 'title': 7, 'body': 'b'},
+          {'id': 'c', 'component': 'comparison', 'observed': 'Peanut butter'},
         ],
       ),
     );
-    expect(cards, [(title: 'A', body: 'a'), (title: '', body: 'b')]);
+    expect(cards, [
+      (title: 'A', body: 'a'),
+      (title: '', body: 'b'),
+      (title: '', body: 'Compared: Peanut butter'),
+    ]);
   });
 }

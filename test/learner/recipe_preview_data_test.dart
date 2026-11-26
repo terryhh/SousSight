@@ -98,6 +98,90 @@ void main() {
       expect(have('peanut_butter_sandwich_v1', ['peanuts']), isEmpty);
     });
 
+    test('an optional item never moves the required count', () {
+      final salsa = byId['black_bean_corn_salsa_v1']!;
+      final none = previewIngredients(salsa, const [], pantryChecked: true);
+      final cilantro = previewIngredients(salsa, const [
+        'cilantro',
+      ], pantryChecked: true);
+      expect((none.requiredHave, none.requiredTotal), (0, 7));
+      expect((cilantro.requiredHave, cilantro.requiredTotal), (0, 7));
+      expect([for (final i in cilantro.have) i.id], ['cilantro']);
+    });
+
+    test('a reviewed substitute is its own item, never the fresh '
+        'ingredient', () {
+      final salsa = byId['black_bean_corn_salsa_v1']!;
+      final result = previewIngredients(salsa, const [
+        'Canned diced tomatoes, drained',
+        'bottled lime juice',
+      ], pantryChecked: true);
+      expect(result.have, isEmpty);
+      expect(
+        [for (final s in result.substituted) s.ingredient.id],
+        ['tomato', 'lime'],
+      );
+      expect(
+        result.substituted.first.substitution.note,
+        contains('no dicing needed'),
+      );
+      expect([for (final i in result.missing) i.id], isNot(contains('tomato')));
+      expect((result.requiredHave, result.requiredTotal), (0, 7));
+      // Fresh tomatoes and plain lime juice are the ingredient itself.
+      expect(have('black_bean_corn_salsa_v1', ['fresh tomatoes']), ['tomato']);
+      expect(have('black_bean_corn_salsa_v1', ['lime juice']), ['lime']);
+      // A form the recipe allows still matches ("fresh or bottled").
+      expect(have('chickpea_wrap_v1', ['bottled lemon juice']), ['lemon']);
+    });
+
+    test('a draft keeps its validated fromConfirmed association', () {
+      const draft = Recipe(
+        id: 'draft_soup',
+        version: 1,
+        title: 'Chicken soup',
+        summary: '',
+        ingredients: [
+          Ingredient(id: 'milk_coconut', name: 'Milk (coconut)', qty: ''),
+        ],
+        equipment: [],
+        steps: [],
+        checkpoints: [],
+        reviewedSubstitutions: [],
+        adjustmentLabels: {},
+      );
+      final milk = draft.ingredients.single;
+      expect(previewHasIngredient(draft, milk, ['1 cup coconut milk']), isTrue);
+      expect(previewHasIngredient(draft, milk, ['milk']), isFalse);
+      // A reviewed recipe gets no draft-key match.
+      final reviewed = Recipe(
+        id: 'soup_v1',
+        version: 1,
+        title: draft.title,
+        summary: '',
+        ingredients: draft.ingredients,
+        equipment: const [],
+        steps: const [],
+        checkpoints: const [],
+        reviewedSubstitutions: const [],
+        adjustmentLabels: const {},
+      );
+      expect(
+        previewHasIngredient(reviewed, milk, ['1 cup coconut milk']),
+        isFalse,
+      );
+      expect(previewHasIngredient(reviewed, milk, ['coconut milk']), isTrue);
+    });
+
+    test('bundled names suggest no allergen their tags miss', () {
+      for (final recipe in byId.values) {
+        expect(
+          PreviewAllergens(recipe, const {}).nameHints,
+          isEmpty,
+          reason: recipe.id,
+        );
+      }
+    });
+
     test('real names, plurals, packaging words and aliases match', () {
       expect(have('chickpea_wrap_v1', ['Mayonnaise']), ['mayo']);
       expect(have('chickpea_wrap_v1', ['a jar of mayo']), ['mayo']);
@@ -189,7 +273,9 @@ void main() {
         [for (final i in result.optionalMissing) i.id],
         ['cilantro', 'peanuts'],
       );
-      expect(result.total, 6);
+      // Required only, on both sides: black beans and corn of four.
+      expect(result.requiredHave, 2);
+      expect(result.requiredTotal, 4);
     });
 
     test('a skipped check makes no have claims', () {
@@ -265,14 +351,86 @@ void main() {
       );
     });
 
-    test('no match still says check labels, not "safe"', () {
+    test('no match never reads as absence', () {
       final a = PreviewAllergens(_salsa, const {'milk', 'egg'});
       expect(
         a.householdLine,
-        'The recipe doesn’t mention your household allergens (egg and milk) '
-        '— check labels yourself.',
+        'The app found no match for your household allergens (egg and milk) '
+        'in this recipe. That doesn’t rule them out — check the ingredients '
+        'and labels yourself.',
       );
       expect(a.householdLine, isNot(contains('safe')));
+      expect(a.householdLine, isNot(contains('doesn’t mention')));
+    });
+
+    test('an untagged ingredient name still warns the household', () {
+      const toast = Recipe(
+        id: 'draft_peanut',
+        version: 1,
+        title: 'Peanut toast',
+        summary: '',
+        ingredients: [
+          Ingredient(id: 'peanuts', name: 'Peanuts, chopped', qty: ''),
+          Ingredient(id: 'toast', name: 'Toast', qty: ''),
+        ],
+        equipment: [],
+        steps: [],
+        checkpoints: [],
+        reviewedSubstitutions: [],
+        adjustmentLabels: {},
+      );
+      final a = PreviewAllergens(toast, const {'peanut'});
+      expect(a.mentioned, isEmpty);
+      expect(a.nameHints, ['peanut']);
+      expect(a.householdWarning, isTrue);
+      expect(
+        a.householdLine,
+        'An ingredient name suggests peanut, which is on your household list '
+        '— check the ingredients and labels yourself.',
+      );
+      expect(a.hintLine, contains('Ingredient names suggest peanut'));
+      expect(
+        PreviewAllergens(toast, const {'peanut', 'milk'}).householdLine,
+        contains('suggests peanut, which is'),
+      );
+    });
+
+    test('name hints: plant milks and nut butters are not dairy; tagged '
+        'allergens are not repeated', () {
+      Recipe named(List<String> names, {List<String> tags = const []}) =>
+          Recipe(
+            id: 'r',
+            version: 1,
+            title: 'R',
+            summary: '',
+            ingredients: [
+              for (final n in names)
+                Ingredient(id: n, name: n, qty: '', allergens: tags),
+            ],
+            equipment: const [],
+            steps: const [],
+            checkpoints: const [],
+            reviewedSubstitutions: const [],
+            adjustmentLabels: const {},
+          );
+      expect(previewAllergenHints(named(['Coconut milk', 'Peanut butter'])), [
+        'peanut',
+      ]);
+      expect(previewAllergenHints(named(['Butter', 'Tahini', 'Shrimp'])), [
+        'milk',
+        'shellfish',
+        'sesame',
+      ]);
+      expect(
+        PreviewAllergens(named(['Bread'], tags: ['wheat']), const {
+          'wheat',
+        }).nameHints,
+        isEmpty,
+      );
+      expect(
+        PreviewAllergens(named(['Bread']), const {}).householdLine,
+        isNull,
+      );
     });
 
     test('a recipe with no tags', () {
@@ -296,6 +454,7 @@ void main() {
         'The recipe mentions egg, soy and fish — check labels yourself.',
       );
       expect(a.householdLine, contains('(sesame, shellfish and tree nut)'));
+      expect(a.hintLine, isNull);
     });
   });
 
@@ -307,30 +466,16 @@ void main() {
     expect(data.allergens.householdSaved, isFalse);
   });
 
-  group('swap question', () {
-    test('uses a short, lower-cased ingredient name and the title', () {
-      expect(
-        swapQuestion(_salsa.ingredients.first, _salsa),
-        'What can I use instead of canned black beans in Black Bean & Corn '
-        'Salsa?',
-      );
-      expect(
-        swapQuestion(_salsa.ingredients[4], _salsa),
-        'What can I use instead of tortilla chips in Black Bean & Corn Salsa?',
-      );
-    });
-
-    test('keeps acronyms and falls back to the full name', () {
-      expect(
-        shortIngredientName(
-          const Ingredient(id: 'bbq', name: 'BBQ sauce', qty: ''),
-        ),
-        'BBQ sauce',
-      );
-      expect(
-        shortIngredientName(const Ingredient(id: 'x', name: '(salt)', qty: '')),
-        '(salt)',
-      );
-    });
+  test('the swap question quotes the full display name', () {
+    expect(
+      swapQuestion(_salsa.ingredients.first, _salsa),
+      'What can I use instead of "Canned black beans, drained and rinsed" in '
+      'Black Bean & Corn Salsa?',
+    );
+    const milk = Ingredient(id: 'm', name: 'Milk (coconut)', qty: '');
+    expect(
+      swapQuestion(milk, _salsa),
+      'What can I use instead of "Milk (coconut)" in Black Bean & Corn Salsa?',
+    );
   });
 }

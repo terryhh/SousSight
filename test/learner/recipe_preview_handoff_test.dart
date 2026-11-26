@@ -41,6 +41,45 @@ void main() {
     expect((await saved(salsa)).keys, unorderedEquals(['black_beans', 'lime']));
   });
 
+  test(
+    'a reviewed canned substitute is not saved as the fresh ingredient',
+    () async {
+      final salsa = byId['black_bean_corn_salsa_v1']!;
+      await applyPantryHandoff(
+        services,
+        salsa,
+        const PantryHandoff(confirmedItems: ['Canned diced tomatoes, drained']),
+      );
+      expect(await saved(salsa), isEmpty);
+    },
+  );
+
+  test(
+    'a draft ingredient sourced from a confirmed item is saved as have',
+    () async {
+      const draft = Recipe(
+        id: 'draft_soup',
+        version: 1,
+        title: 'Soup',
+        summary: '',
+        ingredients: [
+          Ingredient(id: 'milk_coconut', name: 'Milk (coconut)', qty: '1 cup'),
+        ],
+        equipment: [],
+        steps: [RecipeStep(id: 's', title: 'S', instruction: 'Stir.', cue: '')],
+        checkpoints: [],
+        reviewedSubstitutions: [],
+        adjustmentLabels: {},
+      );
+      await applyPantryHandoff(
+        services,
+        draft,
+        const PantryHandoff(confirmedItems: ['1 cup coconut milk']),
+      );
+      expect(await saved(draft), {'milk_coconut': IngredientStatus.have});
+    },
+  );
+
   test('"Mayonnaise" persists the mayo ingredient', () async {
     final wrap = byId['chickpea_wrap_v1']!;
     await applyPantryHandoff(

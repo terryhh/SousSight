@@ -5,7 +5,9 @@
 import 'package:flutter/foundation.dart' show setEquals;
 
 import '../core/models.dart';
+import '../label/label_check.dart' show kLabelAllergens;
 import '../pantry/recipe_draft.dart' show isDraftRecipe;
+import '../pantry/recipe_draft_client.dart' show draftFoodKey;
 import 'recipe_allergens.dart';
 
 /// Hands-on minutes the preview assumes for a step without a recipe timer.
@@ -31,6 +33,7 @@ class PreviewIngredients {
     required this.have,
     required this.missing,
     required this.optionalMissing,
+    this.substituted = const [],
   });
 
   /// False only when the cook skipped the pantry check: the preview then
@@ -46,7 +49,17 @@ class PreviewIngredients {
   /// Optional ingredients not on the confirmed list.
   final List<Ingredient> optionalMissing;
 
-  int get total => have.length + missing.length + optionalMissing.length;
+  /// Ingredients the cook does not have, but for which they confirmed the
+  /// recipe's reviewed substitute (e.g. canned diced tomatoes for fresh).
+  /// Shown with the reviewer's note; never counted as the ingredient itself.
+  final List<({Ingredient ingredient, ReviewedSubstitution substitution})>
+  substituted;
+
+  /// Required ingredients the cook has: the "X" of "You have X of N".
+  int get requiredHave => have.where((i) => !i.optional).length;
+
+  /// Every required ingredient: the "N" of "You have X of N".
+  int get requiredTotal => requiredHave + missing.length + substituted.length;
 }
 
 // ---- ingredient identity ----------------------------------------------------
@@ -216,12 +229,85 @@ List<Set<String>> previewIngredientIdentities(Ingredient ingredient) {
   ];
 }
 
-/// Whether a cook-confirmed pantry item is the same food as [ingredient].
+/// Packaging families ("canned", "jarred", "bottled"). Usually packaging is
+/// just packaging, but when a recipe lists a packaged product as a reviewed
+/// substitution ("Canned diced tomatoes, drained" for fresh tomato), an item
+/// naming that form is the substitute, not the ingredient.
+const _previewFormFamilies = [
+  {'can', 'cans', 'canned', 'tin', 'tins', 'tinned'},
+  {'jar', 'jars', 'jarred'},
+  {'bottle', 'bottles', 'bottled'},
+];
+
+Set<int> _forms(String phrase) {
+  final words = phrase.toLowerCase().split(RegExp(r'[^a-z]+')).toSet();
+  return {
+    for (var i = 0; i < _previewFormFamilies.length; i++)
+      if (_previewFormFamilies[i].any(words.contains)) i,
+  };
+}
+
+/// Whether a cook-confirmed pantry item names the same food as [ingredient].
 bool previewItemMatches(String item, Ingredient ingredient) {
   final words = previewFoodWords(item);
   if (words.isEmpty) return false;
   return previewIngredientIdentities(ingredient)
       .any((identity) => setEquals(identity, words));
+}
+
+/// Whether [item] is the reviewed substitute [sub], in the substitute's own
+/// packaged form.
+bool _isSubstitute(String item, ReviewedSubstitution sub) =>
+    _forms(sub.substitute).containsAll(_forms(item)) &&
+    previewItemMatches(
+      item,
+      Ingredient(id: sub.ingredientId, name: sub.substitute, qty: ''),
+    );
+
+/// Whether [item] is [recipe]'s reviewed substitute for [ingredient] rather
+/// than the ingredient: it matches the substitute and names a packaged form
+/// that the ingredient's own name does not allow.
+bool _isSubstituteNotIngredient(
+  Recipe recipe,
+  Ingredient ingredient,
+  String item,
+) =>
+    !_forms(ingredient.name).containsAll(_forms(item)) &&
+    recipe.reviewedSubstitutions.any(
+      (sub) => sub.ingredientId == ingredient.id && _isSubstitute(item, sub),
+    );
+
+/// Whether the cook has [ingredient] of [recipe], from their confirmed items.
+/// For an AI draft, the draft builder accepted each ingredient only when its
+/// food key equals the confirmed item it came from (`fromConfirmed`), so the
+/// same key comparison restores that validated association here ("Milk
+/// (coconut)" from "1 cup coconut milk").
+bool previewHasIngredient(
+  Recipe recipe,
+  Ingredient ingredient,
+  Iterable<String> confirmedItems,
+) {
+  final draftKey = isDraftRecipe(recipe) ? draftFoodKey(ingredient.name) : '';
+  return confirmedItems.any(
+    (item) =>
+        (previewItemMatches(item, ingredient) &&
+            !_isSubstituteNotIngredient(recipe, ingredient, item)) ||
+        (draftKey.isNotEmpty && draftFoodKey(item) == draftKey),
+  );
+}
+
+/// The recipe's reviewed substitution for [ingredient] that the cook
+/// confirmed having, if any.
+ReviewedSubstitution? previewConfirmedSubstitution(
+  Recipe recipe,
+  Ingredient ingredient,
+  Iterable<String> confirmedItems,
+) {
+  for (final sub in recipe.reviewedSubstitutions) {
+    if (sub.ingredientId != ingredient.id) continue;
+    if (confirmedItems.any((item) => _isSubstitute(item, sub))) return sub;
+  }
+  return null;
 }
 
 /// [pantryChecked] is false only when the cook skipped the pantry check.
@@ -237,11 +323,16 @@ PreviewIngredients previewIngredients(
   final have = <Ingredient>[];
   final missing = <Ingredient>[];
   final optional = <Ingredient>[];
+  final substituted =
+      <({Ingredient ingredient, ReviewedSubstitution substitution})>[];
   for (final ingredient in recipe.ingredients) {
-    if (items.any((item) => previewItemMatches(item, ingredient))) {
+    if (previewHasIngredient(recipe, ingredient, items)) {
       have.add(ingredient);
     } else if (ingredient.optional) {
       optional.add(ingredient);
+    } else if (previewConfirmedSubstitution(recipe, ingredient, items)
+        case final sub?) {
+      substituted.add((ingredient: ingredient, substitution: sub));
     } else {
       missing.add(ingredient);
     }
@@ -251,6 +342,7 @@ PreviewIngredients previewIngredients(
     have: have,
     missing: missing,
     optionalMissing: optional,
+    substituted: substituted,
   );
 }
 
@@ -300,9 +392,117 @@ String _list(List<String> names) => switch (names.length) {
   _ => '${names.sublist(0, names.length - 1).join(', ')} and ${names.last}',
 };
 
-/// The recipe's allergen tags set against the household list. Wording only
-/// ever repeats what the recipe data mentions; it never says a dish is free
-/// of an allergen or safe to eat.
+/// Words in an ingredient name that suggest one of [kLabelAllergens]. Used
+/// only to warn: a hint is never treated as proof either way.
+const kPreviewAllergenNameHints = <String, List<String>>{
+  'milk': [
+    'milk',
+    'cheese',
+    'butter',
+    'cream',
+    'yogurt',
+    'yoghurt',
+    'whey',
+    'ghee',
+    'buttermilk',
+    'parmesan',
+    'mozzarella',
+    'cheddar',
+  ],
+  'egg': ['egg', 'eggs', 'mayonnaise', 'mayo', 'aioli'],
+  'fish': [
+    'fish',
+    'salmon',
+    'tuna',
+    'cod',
+    'tilapia',
+    'anchovy',
+    'anchovies',
+    'sardine',
+    'sardines',
+    'trout',
+  ],
+  'shellfish': [
+    'shrimp',
+    'prawn',
+    'prawns',
+    'crab',
+    'lobster',
+    'clam',
+    'clams',
+    'mussel',
+    'mussels',
+    'oyster',
+    'oysters',
+    'scallop',
+    'scallops',
+  ],
+  'tree nut': [
+    'almond',
+    'almonds',
+    'walnut',
+    'walnuts',
+    'cashew',
+    'cashews',
+    'pecan',
+    'pecans',
+    'pistachio',
+    'pistachios',
+    'hazelnut',
+    'hazelnuts',
+    'macadamia',
+    'nutella',
+  ],
+  'peanut': ['peanut', 'peanuts'],
+  'wheat': [
+    'wheat',
+    'flour',
+    'bread',
+    'pasta',
+    'spaghetti',
+    'noodle',
+    'noodles',
+    'couscous',
+    'cracker',
+    'crackers',
+    'breadcrumbs',
+    'pita',
+    'bagel',
+  ],
+  'soy': ['soy', 'soya', 'tofu', 'edamame', 'tempeh', 'miso'],
+  'sesame': ['sesame', 'tahini'],
+};
+
+// Plant "milks" and nut or seed "butters" are not dairy.
+final _notDairy = RegExp(
+  r'\b(?:peanut|nut|almond|cashew|seed|apple|coconut|oat|rice|soy|soya)\s+'
+  r'(?:butter|milk|cream|yogurt|cheese)\b',
+);
+
+/// [kLabelAllergens] that the ingredient names suggest, in label order.
+List<String> previewAllergenHints(Recipe recipe) {
+  Set<String> wordsOf(String text) => text.split(RegExp(r'[^a-z]+')).toSet();
+  final found = <String>{};
+  for (final ingredient in recipe.ingredients) {
+    final name = ingredient.name.toLowerCase();
+    final words = wordsOf(name);
+    final dairyWords = wordsOf(name.replaceAll(_notDairy, ' '));
+    for (final MapEntry(key: allergen, value: hints)
+        in kPreviewAllergenNameHints.entries) {
+      final pool = allergen == 'milk' ? dairyWords : words;
+      if (hints.any(pool.contains)) found.add(allergen);
+    }
+  }
+  return [
+    for (final a in kLabelAllergens)
+      if (found.contains(a)) a,
+  ];
+}
+
+/// The recipe's allergen tags, and allergens its ingredient names suggest,
+/// set against the household list. Wording only ever repeats what the recipe
+/// says or suggests; it never says a dish is free of an allergen or safe to
+/// eat, and when the app finds no match it says that rules nothing out.
 class PreviewAllergens {
   PreviewAllergens(Recipe recipe, Set<String> household)
     : mentioned = recipeAllergens(recipe),
@@ -312,13 +512,32 @@ class PreviewAllergens {
       for (final a in mentioned)
         if (saved.contains(_normalizeAllergen(a.name))) a,
     ];
+    final tagged = {for (final a in mentioned) _normalizeAllergen(a.name)};
+    nameHints = [
+      for (final a in previewAllergenHints(recipe))
+        if (!tagged.contains(_normalizeAllergen(a))) a,
+    ];
+    householdHints = [
+      for (final a in nameHints)
+        if (saved.contains(_normalizeAllergen(a))) a,
+    ];
   }
 
   final List<RecipeAllergen> mentioned;
   final List<String> household;
   late final List<RecipeAllergen> householdMatches;
 
+  /// Allergens the ingredient names suggest that the tags do not list.
+  late final List<String> nameHints;
+
+  /// [nameHints] on the household list.
+  late final List<String> householdHints;
+
   bool get householdSaved => household.isNotEmpty;
+
+  /// True when a household allergen is tagged or suggested by a name.
+  bool get householdWarning =>
+      householdMatches.isNotEmpty || householdHints.isNotEmpty;
 
   /// "The recipe mentions wheat and peanut — check labels yourself."
   String get mentionLine => mentioned.isEmpty
@@ -326,17 +545,31 @@ class PreviewAllergens {
       : 'The recipe mentions ${_list([for (final a in mentioned) a.label])} '
             '— $kCheckLabelsYourself';
 
+  /// Names that suggest an untagged allergen, or null.
+  String? get hintLine => nameHints.isEmpty
+      ? null
+      : 'Ingredient names suggest ${_list(nameHints)}, which the recipe’s '
+            'allergen list doesn’t include — check the ingredients and '
+            'labels yourself.';
+
   /// The household comparison, or null when nothing is saved.
   String? get householdLine {
     if (!householdSaved) return null;
-    if (householdMatches.isEmpty) {
-      return 'The recipe doesn’t mention your household allergens '
-          '(${_list(household)}) — $kCheckLabelsYourself';
+    if (householdMatches.isNotEmpty) {
+      final names = _list([for (final a in householdMatches) a.name]);
+      final verb = householdMatches.length == 1 ? 'is' : 'are';
+      return 'The recipe mentions $names, which $verb on your household list '
+          '— $kCheckLabelsYourself';
     }
-    final names = _list([for (final a in householdMatches) a.name]);
-    final verb = householdMatches.length == 1 ? 'is' : 'are';
-    return 'The recipe mentions $names, which $verb on your household list '
-        '— $kCheckLabelsYourself';
+    if (householdHints.isNotEmpty) {
+      final names = _list(householdHints);
+      final verb = householdHints.length == 1 ? 'is' : 'are';
+      return 'An ingredient name suggests $names, which $verb on your '
+          'household list — check the ingredients and labels yourself.';
+    }
+    return 'The app found no match for your household allergens '
+        '(${_list(household)}) in this recipe. That doesn’t rule them out — '
+        'check the ingredients and labels yourself.';
   }
 }
 
@@ -368,21 +601,9 @@ class RecipePreviewData {
   ];
 }
 
-/// A short, speakable name: "Canned black beans, drained" → "canned black
-/// beans". Text after the first comma or bracket is preparation detail.
-String shortIngredientName(Ingredient ingredient) {
-  final name = ingredient.name.split(RegExp(r'[,(]')).first.trim();
-  final base = name.isEmpty ? ingredient.name.trim() : name;
-  // Lower-case a capitalised first word, but leave acronyms ("BBQ") alone.
-  if (base.length > 1 &&
-      base[0] != base[0].toLowerCase() &&
-      base[1] == base[1].toLowerCase()) {
-    return base[0].toLowerCase() + base.substring(1);
-  }
-  return base;
-}
-
-/// The exact Coach Lite question behind a "Find a swap" tap.
+/// The exact Coach Lite question behind a "Find a swap" tap. It quotes the
+/// ingredient's full display name, so a qualifier that names the food
+/// ("Milk (coconut)") is never lost.
 String swapQuestion(Ingredient ingredient, Recipe recipe) =>
-    'What can I use instead of ${shortIngredientName(ingredient)} in '
+    'What can I use instead of "${ingredient.name.trim()}" in '
     '${recipe.title.trim()}?';

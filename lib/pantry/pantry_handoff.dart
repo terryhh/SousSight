@@ -1,7 +1,7 @@
 import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../app/services_scope.dart';
 import '../core/models.dart';
-import '../learner/recipe_preview_data.dart' show previewItemMatches;
+import '../learner/recipe_preview_data.dart' show previewHasIngredient;
 
 /// What the cook confirmed on the pantry screen, carried into cooking.
 class PantryHandoff {
@@ -108,9 +108,7 @@ Future<void> applyPantryHandoff(
   // told exactly what the cook saw ticked.
   final matched = {
     for (final ingredient in recipe.ingredients)
-      if (handoff.confirmedItems.any(
-        (item) => previewItemMatches(item, ingredient),
-      ))
+      if (previewHasIngredient(recipe, ingredient, handoff.confirmedItems))
         ingredient.id,
   };
   final facts = [

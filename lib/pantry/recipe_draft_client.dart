@@ -593,7 +593,8 @@ Recipe buildDraftRecipe(
 }) {
   final title = _clip(_str(m['title']), 80);
   if (title.isEmpty) throw const FormatException('missing title');
-  final summary = _clip(_str(m['summary']), 400);
+  // Certifying sentences never reach the cook (SS-099).
+  final summary = _clip(stripCertifyingSentences(_str(m['summary'])), 400);
 
   final rawIngredients = m['ingredients'];
   if (rawIngredients is! List) throw const FormatException('no ingredients');
@@ -630,8 +631,15 @@ Recipe buildDraftRecipe(
   for (final raw in rawSteps) {
     if (raw is! Map) continue;
     final capped = _timerCapped(raw['timerSeconds']);
+    final rawInstruction = _str(raw['instruction']);
+    // Displayed instructions pass the same safety gate as cues: certifying
+    // sentences are removed, and a step that is only such a claim is unsafe.
+    final safeInstruction = stripCertifyingSentences(rawInstruction);
+    if (safeInstruction.isEmpty && rawInstruction.trim().isNotEmpty) {
+      throw const FormatException('a step only certifies safety');
+    }
     var instruction = _clip(
-      _str(raw['instruction']),
+      safeInstruction,
       capped ? 400 - kTimerCapNote.length - 1 : 400,
     );
     if (instruction.isEmpty) continue;
@@ -715,9 +723,56 @@ final _heat = RegExp(
 );
 final _certainty = RegExp(
   r'safe to eat|fully cooked|cooked through|done when the camera|'
-  r'camera (?:can|will) (?:confirm|tell)',
+  r'camera (?:can |will )?(?:confirms?|tells?|verif(?:y|ies)|shows?)',
   caseSensitive: false,
 );
+
+// Categorical allergen-absence claims ("sesame-free", "free of nuts", "no
+// allergens"). Only a package label can say that.
+final _allergenAbsence = RegExp(
+  r'\b(?:allergen|allergy|gluten|nut|peanut|dairy|milk|lactose|egg|soy|'
+  r'sesame|wheat|shellfish|fish)s?[- ]free\b|'
+  r'\bfree (?:of|from) (?:all )?(?:allergens?|gluten|nuts?|peanuts?|dairy|'
+  r'milk|eggs?|soy|sesame|wheat|shellfish|fish)\b|'
+  r'\b(?:no|zero) allergens?\b|\bsafe for (?:anyone|everyone|people) with\b',
+  caseSensitive: false,
+);
+
+// Claims that the food is safe, or that the camera can tell.
+final _safeOrCameraClaim = RegExp(
+  r'safe to (?:eat|serve)|done when the camera|'
+  r'camera (?:can |will )?(?:confirms?|tells?|verif(?:y|ies)|shows?)',
+  caseSensitive: false,
+);
+
+// "It is cooked through" is a claim; "cook until it is cooked through" is an
+// instruction, so this only counts outside a condition (until, when, once,
+// if) and when the sentence does not send the cook to a thermometer.
+final _doneClaim = RegExp(
+  r"\b(?:is|are|it's|they're) (?:now |definitely |fully )?"
+  r'(?:fully cooked|cooked through|done|safe)\b',
+  caseSensitive: false,
+);
+final _conditionOrCheck = RegExp(
+  r'\b(?:until|when|once|if|thermometer)\b',
+  caseSensitive: false,
+);
+
+/// True when [text] certifies doneness, temperature or food safety, credits
+/// the camera with confirming it, or claims an allergen is absent. Drafted
+/// text that does is never shown. This is the existing English check; when
+/// the shared certification module lands, switch this one call site.
+bool draftTextCertifies(String text) =>
+    _allergenAbsence.hasMatch(text) ||
+    _safeOrCameraClaim.hasMatch(text) ||
+    (_doneClaim.hasMatch(text) && !_conditionOrCheck.hasMatch(text));
+
+/// [text] without the sentences that [draftTextCertifies].
+String stripCertifyingSentences(String text) => text
+    .split(RegExp(r'(?<=[.!?])\s+'))
+    .where((sentence) => !draftTextCertifies(sentence))
+    .join(' ')
+    .trim();
 
 // Safe minimum internal temperatures (FoodSafety.gov chart), checked with a
 // thermometer. These are the app's own claims, so a number is named only

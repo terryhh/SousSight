@@ -16,6 +16,7 @@ import 'package:soussight/coach_lite/coach_lite.dart';
 import 'package:soussight/core/analytics.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/learner/cooking_app.dart';
+import 'package:soussight/learner/recipe_preview.dart';
 import 'package:soussight/learner/recipe_preview_swap.dart';
 import 'package:soussight/pantry/pantry_client.dart';
 import 'package:soussight/pantry/pantry_flow.dart';
@@ -251,6 +252,51 @@ void main() {
     );
   });
 
+  testWidgets('a reviewed substitute shows as its own row with the reviewer '
+      'note, never as the fresh ingredient', (tester) async {
+    await setUp360(tester);
+    final salsa = recipes.firstWhere((r) => r.id == 'black_bean_corn_salsa_v1');
+    Future<void> show(List<String> items) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: cookingTheme,
+          home: RecipePreviewScreen(
+            key: ValueKey(items.join()),
+            recipe: salsa,
+            confirmedItems: items,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await show(const ['Canned diced tomatoes, drained', 'canned black beans']);
+    expect(
+      find.text('You have 1 of 7 ingredients, plus a reviewed swap'),
+      findsOneWidget,
+    );
+    final row = find.byKey(const ValueKey('preview-substitute-tomato'));
+    await tester.ensureVisible(row);
+    expect(
+      find.descendant(
+        of: row,
+        matching: find.textContaining(
+          'You have the reviewed swap: Canned diced tomatoes, drained.',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('preview-have-tomato')), findsNothing);
+    expect(find.byKey(const ValueKey('find-swap-tomato')), findsNothing);
+
+    await show(const ['Canned diced tomatoes', 'bottled lime juice']);
+    expect(
+      find.text('You have 0 of 7 ingredients, plus 2 reviewed swaps'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('without the flag, choosing opens cooking directly', (
     tester,
   ) async {
@@ -352,7 +398,8 @@ void main() {
 
     await tapVisible(tester, find.byKey(const ValueKey('find-swap-corn')));
     const question =
-        'What can I use instead of canned corn in Black Bean & Corn Salsa?';
+        'What can I use instead of "Canned corn, drained" in Black Bean & '
+        'Corn Salsa?';
     expect(find.text(question), findsOneWidget);
     final request = inference.requests.last;
     expect(request.task.feature, coachLiteFeature);
