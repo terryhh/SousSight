@@ -205,7 +205,15 @@ class HybridTask {
   final int maxOutputTokens;
   final Duration timeout;
 
-  bool get hasImage => parts.any((p) => p is HybridInlineData);
+  /// True when an attachment is an image (by MIME type), not any attachment.
+  bool get hasImage => parts.any(
+    (p) => p is HybridInlineData && p.mimeType.startsWith('image/'),
+  );
+
+  /// True when an attachment is audio. Audio never runs on-device.
+  bool get hasAudio => parts.any(
+    (p) => p is HybridInlineData && p.mimeType.startsWith('audio/'),
+  );
 }
 
 /// What the plugin receives. Built only by the app's dispatcher.

@@ -74,6 +74,49 @@ const demoCookingUi = <String, dynamic>{
 
 const cookingActions = {'check_now', 'next_step', 'ask_cook', 'start_watch'};
 
+/// Components Coach Lite (the on-device step helper used while the Live coach
+/// is off) may compose. Display only: no camera watch, no checklist that could
+/// change confirmed state, no timer or dinner panels. Timers are suggested
+/// separately and only start when the cook taps the app's own control.
+const liteCookingComponents = {'CookingColumn', 'stepCue', 'comparison'};
+
+/// The only actions a Coach Lite panel may offer. Both are cook-initiated.
+const liteCookingActions = {'next_step', 'ask_cook'};
+
+/// Coach Lite answers are short; leave room for app-authored notices.
+const liteMaxComponents = 10;
+
+/// Validates a Coach Lite payload: the lite allowlist first, then the full
+/// [validateCookingUi] rules (root `CookingColumn`, unique IDs, reachability).
+List<Map<String, dynamic>> validateLiteCookingUi(Map<String, dynamic> payload) {
+  final raw = payload['components'];
+  if (raw is! List) {
+    throw const FormatException('Expected a components list.');
+  }
+  if (raw.length > liteMaxComponents) {
+    throw const FormatException(
+      'Coach Lite supplies at most $liteMaxComponents components.',
+    );
+  }
+  for (final item in raw) {
+    if (item is! Map) {
+      throw const FormatException('Each component must be an object.');
+    }
+    final type = item['component'];
+    if (!liteCookingComponents.contains(type)) {
+      throw FormatException('Not available in Coach Lite: $type');
+    }
+    if (item.containsKey('action') &&
+        !liteCookingActions.contains(item['action'])) {
+      throw FormatException(
+        'Action not available in Coach Lite: '
+        '${item['action']}',
+      );
+    }
+  }
+  return validateCookingUi(payload);
+}
+
 /// Reject malformed or excessive model output before the GenUI runtime mutates.
 /// This also prevents cyclic layouts and model-written confirmation states.
 List<Map<String, dynamic>> validateCookingUi(Map<String, dynamic> payload) {

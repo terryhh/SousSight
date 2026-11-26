@@ -300,6 +300,80 @@ void main() {
     },
   );
 
+  group('a declined ranking after a voice leg that may have uploaded', () {
+    final maybeSent = isA<PantryException>().having(
+      (e) => e.message,
+      'message',
+      allOf(
+        contains('photo and list were not sent'),
+        contains('voice clip may have been sent'),
+        isNot(contains('was already sent')),
+        isNot(contains('nothing was sent')),
+      ),
+    );
+    DispatchResult declined(HybridTask task) => _reply(
+      null,
+      Provenance.unknown,
+      blocked: RouteReason.consentDeclined,
+    )(task);
+
+    test('an unknown, transfer-permitted voice leg says "may have"', () async {
+      dispatcher.script
+        ..add(_reply(null, Provenance.unknown)) // e.g. a network error
+        ..add(declined);
+      await expectLater(
+        client.identify(
+          PantryInput(photoJpeg: _photo, audioWav: _audio),
+          recipes,
+        ),
+        throwsA(
+          allOf(
+            maybeSent,
+            isA<PantryException>().having(
+              (e) => e.legs.first.provenance,
+              'voice leg kept',
+              Provenance.unknown,
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('a voice send that threw says "may have"', () async {
+      dispatcher.script
+        ..add((_) => throw StateError('bridge gone'))
+        ..add(declined);
+      await expectLater(
+        client.identify(
+          PantryInput(photoJpeg: _photo, audioWav: _audio),
+          recipes,
+        ),
+        throwsA(maybeSent),
+      );
+    });
+
+    test('a voice leg blocked before sending means nothing was sent', () async {
+      dispatcher.script
+        ..add(
+          (_) => const DispatchResult(
+            legs: [],
+            blocked: RouteReason.cloudNotApproved,
+          ),
+        )
+        ..add(declined);
+      await expectLater(
+        client.identify(PantryInput(text: 'corn', audioWav: _audio), recipes),
+        throwsA(
+          isA<PantryException>().having(
+            (e) => e.message,
+            'message',
+            contains('nothing was sent'),
+          ),
+        ),
+      );
+    });
+  });
+
   test(
     'a declined scan with no earlier upload says nothing was sent',
     () async {

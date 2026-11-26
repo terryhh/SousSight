@@ -9,6 +9,7 @@ import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../app/services_scope.dart';
 import '../data/dinner_messages.dart';
+import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../data/live_token_provider.dart';
 import '../genui/cooking_ui.dart';
@@ -266,20 +267,28 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   final _fakeDinner = FakeDinnerBackend();
   late final DinnerMessageSender _deliverDinner =
       widget.sendDinner ??
-      (widget.isDemo ? _fakeDinner.send : sendDinnerMessage);
+      dinnerSenderFor(
+        configuredDinnerMode,
+        isDemo: widget.isDemo,
+        fake: _fakeDinner,
+      );
 
-  /// Counts only sends Vonage accepted (`submitted`). Failed, skipped and
-  /// unknown results return normally and are not counted; errors rethrow.
+  /// Counts only sends Vonage accepted (`submitted`) in real, non-demo
+  /// builds. Simulated sends never reached a provider and are not counted.
   Future<DinnerMessageResult> _sendDinner(DinnerMessageRequest request) async {
     final result = await _deliverDinner(request);
-    if (!widget.isDemo) {
+    if (dinnerAnalyticsEnabled(configuredDinnerMode, isDemo: widget.isDemo)) {
       trackHouseholdSend(widget.services.analytics, request, result);
     }
     return result;
   }
   late final DinnerStatusSource _dinnerStatus =
       widget.dinnerStatus ??
-      (widget.isDemo ? _fakeDinner : FirestoreDinnerStatusSource());
+      dinnerStatusFor(
+        configuredDinnerMode,
+        isDemo: widget.isDemo,
+        fake: _fakeDinner,
+      );
   String _prediction = 'Not sure';
   String? _announcedAlert;
   bool _messagePending = false;
@@ -1027,6 +1036,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       recipeTitle: cook.recipe.title,
       send: _sendDinner,
       statusSource: _dinnerStatus,
+      mode: configuredDinnerMode,
       memory: _dinnerAttempts,
       isDemo: widget.isDemo,
     );
