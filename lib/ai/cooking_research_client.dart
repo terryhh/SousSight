@@ -1,9 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridErrorCode;
 import 'package:firebase_ai/firebase_ai.dart';
 
+import '../core/cloud_send.dart';
 import '../core/cooking_research.dart';
+import 'hybrid/hybrid_types.dart' show DataKind;
+
+/// Ledger key for grounded research legs.
+const kResearchFeature = 'research';
 
 const kCookingResearchModel = String.fromEnvironment(
   'RESEARCH_MODEL',
@@ -38,10 +44,16 @@ class GeminiCookingResearchClient implements CookingResearchClient {
   GeminiCookingResearchClient({
     CookingResearchGenerator? generate,
     this.timeout = const Duration(seconds: 20),
+    this.recorder,
   }) : _generate = generate ?? _generateWithGoogleSearch;
 
   final CookingResearchGenerator _generate;
   final Duration timeout;
+
+  /// Writes this sender's legs to the session ledger at the send boundary.
+  final CloudSendRecorder? recorder;
+
+  static const _kinds = {DataKind.text};
 
   @override
   Future<CookingResearchResult> research(CookingResearchQuery query) async {
@@ -50,13 +62,31 @@ class GeminiCookingResearchClient implements CookingResearchClient {
         query.currentStep.length > 2000 ||
         query.confirmedIngredients.length > 40 ||
         query.confirmedIngredients.any((item) => item.length > 200)) {
+      // Refused here: nothing left this device.
+      recorder?.rejectedLocally(
+        kResearchFeature,
+        _kinds,
+        HybridErrorCode.unsupportedInput,
+      );
       throw const CookingResearchException(
         CookingResearchFailure.invalidQuestion,
         'Ask one short cooking question so I can look it up.',
       );
     }
+    final send = recorder?.begin(kResearchFeature, _kinds);
     try {
-      final response = await _generate(query).timeout(timeout);
+      final GenerateContentResponse response;
+      try {
+        response = await _generate(query).timeout(timeout);
+      } on TimeoutException {
+        send?.failed(HybridErrorCode.timeout);
+        rethrow;
+      } catch (_) {
+        send?.failed(HybridErrorCode.network);
+        rethrow;
+      }
+      // The cloud answered; whether the answer is usable is decided below.
+      send?.confirmed(modelLabel: kCookingResearchModel);
       final answer = response.text?.trim();
       if (answer == null || answer.isEmpty || answer.length > 12000) {
         throw const CookingResearchException(
