@@ -217,138 +217,14 @@ void main() {
   });
 
   group('runtime', () {
-    test(
-      'a cancel during the configure wait stops the later forward',
-      () async {
-        final inner = _SlowConfigure();
-        final wrapper = ConfiguredHybridInference(
-          inner,
-          const HybridConfig(cloudModel: 'm'),
-          mayForward: (_) => true,
-        );
-        final request = HybridRequest(
-          requestId: 'r1',
-          mode: HybridMode.preferOnDevice,
-          task: HybridTask(
-            feature: 'pantry_scan',
-            parts: const [HybridText('eggs')],
-            maxOutputTokens: 16,
-            timeout: const Duration(seconds: 5),
-          ),
-        );
-        // Two calls waiting under the same id: one cancel stops both.
-        final outcomes = [
-          for (var i = 0; i < 2; i++)
-            expectLater(
-              wrapper.generate(request),
-              throwsA(
-                isA<HybridException>().having(
-                  (e) => e.code,
-                  'code',
-                  HybridErrorCode.cancelled,
-                ),
-              ),
-            ),
-        ];
-        await wrapper.cancel('r1');
-        inner.release.complete();
-        await Future.wait(outcomes);
-        expect(inner.requests, isEmpty, reason: 'nothing was forwarded');
-        expect(inner.cancelled, ['r1']);
-        // A later request with another id still goes through.
-        inner.enqueueText('ok');
-        final ok = await wrapper.generate(
-          HybridRequest(
-            requestId: 'r2',
-            mode: request.mode,
-            task: request.task,
-          ),
-        );
-        expect(ok.text, 'ok');
-      },
-    );
-
-    group('the configure wait counts against the task timeout', () {
-      HybridRequest req(String id, Duration timeout) => HybridRequest(
-        requestId: id,
-        mode: HybridMode.preferOnDevice,
-        task: HybridTask(
-          feature: 'pantry_scan',
-          parts: const [HybridText('eggs')],
-          maxOutputTokens: 16,
-          timeout: timeout,
-        ),
-      );
-
-      test('a wait longer than the budget times out, unsent', () async {
-        final inner = _SlowConfigure();
-        final wrapper = ConfiguredHybridInference(
-          inner,
-          const HybridConfig(cloudModel: 'm'),
-        );
-        await expectLater(
-          wrapper.generate(req('r1', const Duration(milliseconds: 30))),
-          throwsA(
-            isA<HybridException>().having(
-              (e) => e.code,
-              'code',
-              HybridErrorCode.timeout,
-            ),
-          ),
-        );
-        inner.release.complete();
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        expect(inner.requests, isEmpty);
-      });
-
-      test('only the remaining budget is forwarded', () async {
-        final inner = _SlowConfigure()..enqueueText('ok');
-        final wrapper = ConfiguredHybridInference(
-          inner,
-          const HybridConfig(cloudModel: 'm'),
-        );
-        final pending = wrapper.generate(req('r1', const Duration(seconds: 5)));
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        inner.release.complete();
-        expect((await pending).text, 'ok');
-        final sent = inner.requests.single.task.timeout;
-        expect(sent, lessThanOrEqualTo(const Duration(milliseconds: 4940)));
-        expect(sent, greaterThan(Duration.zero));
-        expect(inner.requests.single.task.feature, 'pantry_scan');
-      });
-
-      test('a cancel ends the wait at once, without configure', () async {
-        final inner = _SlowConfigure();
-        final wrapper = ConfiguredHybridInference(
-          inner,
-          const HybridConfig(cloudModel: 'm'),
-        );
-        final pending = wrapper.generate(req('r1', const Duration(seconds: 5)));
-        final outcome = expectLater(
-          pending.timeout(const Duration(seconds: 1)),
-          throwsA(
-            isA<HybridException>().having(
-              (e) => e.code,
-              'code',
-              HybridErrorCode.cancelled,
-            ),
-          ),
-        );
-        await wrapper.cancel('r1');
-        await outcome;
-        expect(inner.release.isCompleted, isFalse);
-        expect(inner.requests, isEmpty);
-      });
-    });
-
     test('configures the backend once, before any generate', () async {
       final inference = FakeHybridInference();
       final hybrid = _runtime(inference);
       await (hybrid.inference as ConfiguredHybridInference).configured;
       expect(inference.config?.cloudModel, 'test-cloud-model');
-      // No ANDROID_MODEL dart-define in tests: auto picks Nano 4 only if it works.
-      expect(inference.config?.androidModel, AndroidModelOption.auto);
-      expect(kAndroidModel, AndroidModelOption.auto);
+      // No ANDROID_MODEL dart-define in tests: the device's supported model.
+      expect(inference.config?.androidModel, AndroidModelOption.stable);
+      expect(kAndroidModel, AndroidModelOption.stable);
     });
 
     test('the first cooking session keeps pantry legs; a new cook clears', () {
@@ -675,14 +551,4 @@ void main() {
       expect(hybrid.privacy.localOnly('coach_lite'), isTrue);
     });
   });
-}
-
-/// Configure completes only when [release] does.
-class _SlowConfigure extends FakeHybridInference {
-  final release = Completer<void>();
-  @override
-  Future<void> configure(HybridConfig config) async {
-    await release.future;
-    await super.configure(config);
-  }
 }

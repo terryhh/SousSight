@@ -24,11 +24,6 @@ internal class SdkMappingTest {
         assertEquals(OnDeviceModelOption.PREVIEW, SdkMapping.option(AndroidModelOption.PREVIEW))
         assertEquals(OnDeviceModelOption.PREVIEW_FAST, SdkMapping.option(AndroidModelOption.PREVIEW_FAST))
         assertEquals(OnDeviceModelOption.STABLE, SdkMapping.option(AndroidModelOption.STABLE))
-        // auto is resolved by AutoModelEngine; it never reaches the SDK.
-        assertEquals(
-            HybridErrorCode.FAILED,
-            assertFailsWith<HybridError> { SdkMapping.option(AndroidModelOption.AUTO) }.code,
-        )
     }
 
     @Test

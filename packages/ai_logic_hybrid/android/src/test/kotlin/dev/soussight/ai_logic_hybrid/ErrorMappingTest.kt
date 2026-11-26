@@ -1,19 +1,13 @@
 package dev.soussight.ai_logic_hybrid
 
-import com.google.firebase.ai.type.FirebaseAIOnDeviceNotAvailableException
-import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.firebase.ai.type.QuotaExceededException
 import com.google.firebase.ai.type.ServerException
 import com.google.mlkit.genai.common.GenAiException
 import java.net.UnknownHostException
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertSame
-import kotlin.test.assertTrue
-import com.google.firebase.ai.ondevice.interop.FirebaseAIOnDeviceNotAvailableException as InteropNotAvailable
 
-@OptIn(PublicPreviewAPI::class)
 internal class ErrorMappingTest {
     private fun genAi(code: Int) = GenAiException("ml kit $code", null, code)
 
@@ -87,26 +81,5 @@ internal class ErrorMappingTest {
             ErrorMapping.statusReason(RuntimeException(genAi(GenAiException.ErrorCode.AICORE_INCOMPATIBLE))),
         )
         assertEquals(Reasons.MODEL_NOT_READY, ErrorMapping.statusReason(IllegalStateException()))
-    }
-
-    @Test
-    fun modelNotAvailableIsMlKitCode8OrTheTypedSdkException() {
-        assertEquals(8, GenAiException.ErrorCode.NOT_AVAILABLE)
-        // What firebase-ai 18.2.0 throws for ML Kit code 8 (the Pixel 9 Nano 4 preview failure):
-        // typed exception -> interop exception -> GenAiException(8).
-        val sdkChain = FirebaseAIOnDeviceNotAvailableException(
-            InteropNotAvailable("Feature 652 not found", genAi(GenAiException.ErrorCode.NOT_AVAILABLE)),
-        )
-        assertTrue(ErrorMapping.isModelNotAvailable(sdkChain))
-        assertEquals(HybridErrorCode.UNAVAILABLE, ErrorMapping.classify(sdkChain).code)
-        assertTrue(ErrorMapping.isModelNotAvailable(RuntimeException(genAi(GenAiException.ErrorCode.NOT_AVAILABLE))))
-        // The typed exception alone (codes 604 / -101 map to it too).
-        assertTrue(
-            ErrorMapping.isModelNotAvailable(FirebaseAIOnDeviceNotAvailableException(InteropNotAvailable("x", null))),
-        )
-        assertFalse(ErrorMapping.isModelNotAvailable(genAi(GenAiException.ErrorCode.BUSY)))
-        assertFalse(ErrorMapping.isModelNotAvailable(genAi(GenAiException.ErrorCode.NEEDS_SYSTEM_UPDATE)))
-        assertFalse(ErrorMapping.isModelNotAvailable(HybridError(HybridErrorCode.UNAVAILABLE, Reasons.MODEL_NOT_READY)))
-        assertFalse(ErrorMapping.isModelNotAvailable(IllegalStateException("?")))
     }
 }

@@ -88,9 +88,6 @@ dependencies {
     implementation("com.google.mlkit:genai-common:$mlkitGenAiVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
 
-    // Tests build the SDK's real not-available exception chain; the interop artifact is already
-    // in the runtime graph (firebase-ai-ondevice depends on it) but not on the compile classpath.
-    testImplementation("com.google.firebase:firebase-ai-ondevice-interop:$firebaseAiOnDeviceVersion")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

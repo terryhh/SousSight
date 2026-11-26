@@ -54,18 +54,6 @@ object ErrorMapping {
         else -> HybridErrorCode.FAILED
     }
 
-    /**
-     * True when the on-device model said it cannot run at all: ML Kit `NOT_AVAILABLE` (8) anywhere
-     * in the cause chain, or the SDK's typed not-available exception (firebase-ai-ondevice beta08
-     * maps ML Kit codes 8, 604 and -101 to it, keeping the GenAiException as the cause). On the
-     * Pixel 9 every Nano 4 preview generate fails this way although its status is `available`.
-     */
-    @OptIn(PublicPreviewAPI::class)
-    fun isModelNotAvailable(t: Throwable): Boolean = causeChain(t).any {
-        (it is GenAiException && it.errorCode == GenAiException.ErrorCode.NOT_AVAILABLE) ||
-            it is FirebaseAIOnDeviceNotAvailableException
-    }
-
     /** `reason` for an availability check that threw instead of returning a status. */
     fun statusReason(t: Throwable): String {
         val genAi = causeChain(t).firstOrNull { it is GenAiException } as GenAiException?

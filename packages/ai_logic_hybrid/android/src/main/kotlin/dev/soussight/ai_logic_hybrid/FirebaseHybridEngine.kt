@@ -34,9 +34,6 @@ object SdkMapping {
         AndroidModelOption.PREVIEW -> OnDeviceModelOption.PREVIEW
         AndroidModelOption.PREVIEW_FAST -> OnDeviceModelOption.PREVIEW_FAST
         AndroidModelOption.STABLE -> OnDeviceModelOption.STABLE
-        // AutoModelEngine resolves `auto` before any engine call; reaching the SDK with it is a bug.
-        AndroidModelOption.AUTO ->
-            throw HybridError(HybridErrorCode.FAILED, "androidModel auto must be resolved first")
     }
 
     /** The SDK's own report. Anything else is not inferred: the call fails. */
@@ -240,18 +237,9 @@ class FirebaseHybridEngine(
         return GenerateResult(text, source, response.modelVersion?.takeIf { it.isNotBlank() })
     }
 
-    private val cacheLock = Any()
-
-    /**
-     * The status model is cached per (cloud model, option). The lock guards only the cache:
-     * building a model can stall, and must never block another thread's lookup.
-     */
     private fun extension(config: HybridConfig, cache: Boolean = true): OnDeviceExtension? {
         val key = config.cloudModel to config.androidModel
-        if (cache) {
-            synchronized(cacheLock) { statusModel?.takeIf { statusModelKey == key } }
-                ?.let { return it.onDeviceExtension }
-        }
+        if (cache) statusModel?.takeIf { statusModelKey == key }?.let { return it.onDeviceExtension }
         val model = try {
             ai().generativeModel(
                 modelName = config.cloudModel,
@@ -265,10 +253,8 @@ class FirebaseHybridEngine(
             throw HybridError(HybridErrorCode.UNAVAILABLE, Reasons.BRIDGE_UNAVAILABLE, e)
         }
         if (cache) {
-            synchronized(cacheLock) {
-                statusModelKey = key
-                statusModel = model
-            }
+            statusModelKey = key
+            statusModel = model
         }
         return model.onDeviceExtension
     }

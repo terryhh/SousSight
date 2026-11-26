@@ -10,35 +10,28 @@ enum InferenceSource { onDevice, cloud }
 
 enum OnDeviceStatus { available, downloadable, downloading, unavailable }
 
-/// Android local model selection. Names are the wire values.
+/// Android local model selection. Names are the wire values. The default is
+/// [stable], the Gemini Nano the device supports (Nano 3 on a Pixel 9);
+/// [preview] (Nano 4) and [previewFast] are explicit opt-ins for devices that
+/// support them.
 enum AndroidModelOption {
-  /// Default. `configure` completes once the model is selected (at most
-  /// about 5 s): [preview] (Gemini Nano 4) only if it is already available
-  /// and answers a tiny on-device probe, else [stable]. Auto never downloads
-  /// [preview]; `prepare` sets up the selected model, which is [stable] unless
-  /// [preview] is already ready. After that the only change is [preview] to
-  /// [stable], for the rest of the run, when [preview] stops being available
-  /// or a call on it fails. That failing call gets its own error (there is no
-  /// immediate retry); later requests use [stable].
-  auto,
   preview,
   previewFast,
   stable;
 
-  /// Parses a wire or dart-define value. Null, blank or unknown → [auto].
+  /// Parses a wire or dart-define value. Null, blank or unknown → [stable].
   static AndroidModelOption fromName(String? name) {
     final trimmed = name?.trim();
     for (final option in values) {
       if (option.name == trimmed) return option;
     }
-    return auto;
+    return stable;
   }
 
-  /// A concrete option a backend reported, or null (absent, unknown or
-  /// [auto], which is never a concrete model).
+  /// An option a backend reported, or null (absent or unknown).
   static AndroidModelOption? _reported(Object? name) {
     for (final option in values) {
-      if (option != auto && option.name == name) return option;
+      if (option.name == name) return option;
     }
     return null;
   }
@@ -48,7 +41,7 @@ enum AndroidModelOption {
 class HybridConfig {
   const HybridConfig({
     required this.cloudModel,
-    this.androidModel = AndroidModelOption.auto,
+    this.androidModel = AndroidModelOption.stable,
     this.languages = const ['en'],
   });
 
@@ -78,8 +71,8 @@ class LocalModelLimits {
 
   final String modelFamily;
 
-  /// Android: the concrete option in use (for [AndroidModelOption.auto],
-  /// the current selection). Null before `configure` and on other platforms.
+  /// Android: the configured option in use. Null before `configure` and on
+  /// other platforms.
   final AndroidModelOption? modelOption;
   final bool supportsImage;
   final bool supportsJsonSchema;
@@ -192,8 +185,7 @@ class HybridAvailability {
   /// Exact base model name when the platform reports one.
   final String? modelLabel;
 
-  /// Android: the concrete option this answer is about (what
-  /// [AndroidModelOption.auto] chose). Null elsewhere.
+  /// Android: the option this answer is about. Null elsewhere.
   final AndroidModelOption? modelOption;
 
   factory HybridAvailability.fromMap(Map<Object?, Object?> m) =>

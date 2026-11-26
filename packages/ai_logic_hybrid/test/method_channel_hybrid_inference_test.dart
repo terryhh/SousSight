@@ -109,7 +109,7 @@ void main() {
     await bridge.configure(const HybridConfig(cloudModel: 'gemini-x'));
     expect(calls.single.arguments, {
       'cloudModel': 'gemini-x',
-      'androidModel': 'auto',
+      'androidModel': 'stable',
       'languages': ['en'],
     });
 

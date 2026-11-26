@@ -5,35 +5,22 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 
 /** The plugin boundary on the JVM: channels on a fake messenger, no Flutter engine, no SDK. */
 internal class PluginTest {
-    private val scopes = CopyOnWriteArrayList<CoroutineScope>()
-
-    @AfterTest
-    fun tearDown() = scopes.forEach { it.cancel() }
-
     private class FakeMessenger : BinaryMessenger {
         val handlers = ConcurrentHashMap<String, Any>()
 
@@ -54,25 +41,17 @@ internal class PluginTest {
         fun await() = runBlocking { withTimeout(5_000) { answer.await() } }
     }
 
-    /** Reports a fixed option for auto and records the scope it was given. */
-    private class StubEngine(val chosen: AndroidModelOption?) : HybridEngine {
+    /** Reports the observed model name the SDK would. */
+    private class StubEngine : HybridEngine {
         override suspend fun availability(config: HybridConfig, withImage: Boolean) =
-            AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v3", modelOption = chosen)
+            AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v3")
         override fun prepare(config: HybridConfig, withImage: Boolean): Flow<Double?> = flowOf(1.0)
         override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult =
             awaitCancellation()
-        override fun modelOption(config: HybridConfig): AndroidModelOption? =
-            if (config.androidModel == AndroidModelOption.AUTO) chosen else config.androidModel
     }
 
-    private fun attached(
-        engine: (Boolean, CoroutineScope) -> HybridEngine,
-        debuggable: Boolean = false,
-        messenger: FakeMessenger = FakeMessenger(),
-    ): AiLogicHybridPlugin = AiLogicHybridPlugin { d, scope ->
-        scopes += scope
-        engine(d, scope)
-    }.also { it.attach(messenger, debuggable, Dispatchers.Default) }
+    private fun attached(messenger: FakeMessenger = FakeMessenger()): AiLogicHybridPlugin =
+        AiLogicHybridPlugin { StubEngine() }.also { it.attach(messenger, Dispatchers.Default) }
 
     private fun AiLogicHybridPlugin.call(method: String, args: Any? = null): Pair<String, Any?> {
         val result = FakeResult()
@@ -82,10 +61,16 @@ internal class PluginTest {
 
     private fun local(caps: Any?): Map<*, *> = ((caps as Map<*, *>)["local"] as Map<*, *>)
 
+    private val generateArgs = mapOf(
+        "requestId" to "r1", "mode" to "onlyOnDevice", "feature" to "f",
+        "parts" to listOf(mapOf("type" to "text", "text" to "hi")),
+        "maxOutputTokens" to 8, "timeoutMs" to 1_000,
+    )
+
     @Test
     fun attachRegistersBothChannelsAndDetachRemovesThem() {
         val messenger = FakeMessenger()
-        val plugin = attached({ _, _ -> StubEngine(null) }, messenger = messenger)
+        val plugin = attached(messenger)
         assertEquals(setOf(Protocol.METHOD_CHANNEL, Protocol.PREPARE_CHANNEL), messenger.handlers.keys)
         assertNotNull(plugin.currentEngine)
         plugin.detach()
@@ -94,157 +79,57 @@ internal class PluginTest {
     }
 
     @Test
-    fun theEngineGetsTheDebugFlagAndThePluginLifetime() {
-        var seen: Pair<Boolean, CoroutineScope>? = null
-        val plugin = attached({ d, scope -> seen = d to scope; StubEngine(null) }, debuggable = true)
-        val (debuggable, scope) = assertNotNull(seen)
-        assertTrue(debuggable)
-        assertTrue(scope.isActive)
-        plugin.detach()
-        assertFalse(scope.isActive, "detach cancels the engine's background work")
-    }
-
-    @Test
-    fun detachStopsTheSelectionAndStillAnswersConfigure() = runBlocking<Unit> {
-        val lookup = CompletableDeferred<Unit>()
-        val generated = CopyOnWriteArrayList<AndroidModelOption>()
-        val inner = object : HybridEngine {
-            override suspend fun availability(config: HybridConfig, withImage: Boolean): AvailabilityResult {
-                lookup.complete(Unit)
-                awaitCancellation()
-            }
-            override fun prepare(config: HybridConfig, withImage: Boolean): Flow<Double?> = flowOf(1.0)
-            override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult {
-                generated += config.androidModel
-                return GenerateResult("OK", InferenceSourceWire.ON_DEVICE, "x")
-            }
-        }
-        val plugin = attached({ _, scope -> AutoModelEngine(inner, scope) })
-        val configure = FakeResult()
-        plugin.onMethodCall(MethodCall("configure", mapOf("cloudModel" to "m")), configure)
-        withTimeout(5_000) { lookup.await() }
-        assertFalse(configure.answer.isCompleted, "configure waits for the selection")
-        plugin.detach()
-        assertEquals("success" to null, configure.await(), "the waiting configure is still answered")
-        kotlinx.coroutines.delay(100)
-        assertTrue(generated.isEmpty(), "no probe after detach")
-    }
-
-    @Test
-    fun capabilitiesReportTheOptionInUse() {
-        val plugin = attached({ _, _ -> StubEngine(AndroidModelOption.STABLE) })
-        // Not configured yet: no option.
-        assertNull(local(plugin.call("capabilities").second)["modelOption"])
-        plugin.call("configure", mapOf("cloudModel" to "m"))
-        assertEquals("stable", local(plugin.call("capabilities").second)["modelOption"])
-        plugin.call("configure", mapOf("cloudModel" to "m", "androidModel" to "preview"))
-        assertEquals("preview", local(plugin.call("capabilities").second)["modelOption"])
-    }
-
-    @Test
-    fun capabilitiesBeforeAutoHasChosenSayNothing() {
-        val plugin = attached({ _, _ -> StubEngine(null) })
-        plugin.call("configure", mapOf("cloudModel" to "m"))
-        assertNull(local(plugin.call("capabilities").second)["modelOption"])
-        assertNull(local(AiLogicHybridPlugin.capabilities(null, null))["modelOption"])
-    }
-
-    @Test
-    fun availabilityCarriesTheChosenOption() {
-        val plugin = attached({ _, _ -> StubEngine(AndroidModelOption.STABLE) })
+    fun capabilitiesAndAvailabilityReportTheConfiguredOption() {
+        val plugin = attached()
+        assertNull(local(plugin.call("capabilities").second)["modelOption"], "not configured yet")
         assertEquals(
             "success" to mapOf("status" to "unavailable", "reason" to Reasons.NOT_CONFIGURED, "modelLabel" to null, "modelOption" to null),
             plugin.call("availability"),
         )
         plugin.call("configure", mapOf("cloudModel" to "m"))
+        assertEquals("stable", local(plugin.call("capabilities").second)["modelOption"], "stable by default")
         assertEquals(
             "success" to mapOf("status" to "available", "reason" to null, "modelLabel" to "nano-v3", "modelOption" to "stable"),
             plugin.call("availability", mapOf("withImage" to true)),
         )
+        plugin.call("configure", mapOf("cloudModel" to "m", "androidModel" to "preview"))
+        assertEquals("preview", local(plugin.call("capabilities").second)["modelOption"], "explicit opt-in")
+        assertEquals("preview", (plugin.call("availability").second as Map<*, *>)["modelOption"])
     }
 
     @Test
     fun configureErrorsAndUnknownMethods() {
-        val plugin = attached({ _, _ -> StubEngine(null) })
-        assertEquals(HybridErrorCode.FAILED.wire, plugin.call("configure", mapOf("androidModel" to "auto")).first)
+        val plugin = attached()
+        assertEquals(HybridErrorCode.FAILED.wire, plugin.call("configure", mapOf("androidModel" to "stable")).first)
         assertEquals("notImplemented", plugin.call("nope").first)
         assertEquals("success" to null, plugin.call("cancel", mapOf("requestId" to "r1")))
     }
 
     @Test
     fun unattachedGenerateIsUnavailable() {
-        val plugin = AiLogicHybridPlugin { _, _ -> StubEngine(null) }
-        val (code, message) = plugin.call("generate", mapOf("requestId" to "r1"))
+        val plugin = AiLogicHybridPlugin { StubEngine() }
+        val (code, message) = plugin.call("generate", generateArgs)
         assertEquals(HybridErrorCode.UNAVAILABLE.wire, code)
         assertEquals(Reasons.BRIDGE_UNAVAILABLE, message)
     }
 
     @Test
-    fun theDefaultEngineIsAutoOverFirebaseWithDebugVerification() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default).also { scopes += it }
-        val debug = AiLogicHybridPlugin.defaultEngine(true, scope, log = {})
-        assertIs<AutoModelEngine>(debug)
-        assertTrue(debug.verifyChoice)
-        val release = assertIs<AutoModelEngine>(AiLogicHybridPlugin.defaultEngine(false, scope, log = {}))
-        assertFalse(release.verifyChoice)
-        // The public constructor wires the same factory.
-        val plugin = AiLogicHybridPlugin().also { it.attach(FakeMessenger(), false, Dispatchers.Default) }
-        assertIs<AutoModelEngine>(plugin.currentEngine)
+    fun thePublicConstructorUsesTheFirebaseEngine() {
+        val plugin = AiLogicHybridPlugin().also { it.attach(FakeMessenger(), Dispatchers.Default) }
+        assertIs<FirebaseHybridEngine>(plugin.currentEngine)
         plugin.detach()
-        assertSame(null, plugin.currentEngine)
-    }
-
-    @Test
-    fun anEngineWithoutAutoReportsOnlyConcreteOptions() {
-        val plain = object : HybridEngine {
-            override suspend fun availability(config: HybridConfig, withImage: Boolean) =
-                AvailabilityResult(OnDeviceStatus.UNAVAILABLE)
-            override fun prepare(config: HybridConfig, withImage: Boolean): Flow<Double?> = flowOf(1.0)
-            override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult =
-                awaitCancellation()
-        }
-        val config = HybridConfig("m", AndroidModelOption.AUTO, listOf("en"))
-        assertNull(plain.modelOption(config), "auto is never reported as a model")
-        assertEquals(AndroidModelOption.PREVIEW_FAST, plain.modelOption(config.copy(androidModel = AndroidModelOption.PREVIEW_FAST)))
-        runBlocking { plain.configured(config) } // default: nothing to do
-    }
-
-    @Test
-    fun configureTellsTheEngine() {
-        val seen = CopyOnWriteArrayList<HybridConfig>()
-        val plugin = attached({ _, _ ->
-            object : HybridEngine by StubEngine(null) {
-                override suspend fun configured(config: HybridConfig) { seen += config }
-            }
-        })
-        plugin.call("configure", mapOf("cloudModel" to "m"))
-        assertEquals(listOf(AndroidModelOption.AUTO), seen.map { it.androidModel })
     }
 
     @Test
     fun detachForgetsTheConfigurationSoAReattachMustConfigureAgain() {
-        val plugin = attached({ _, _ -> StubEngine(AndroidModelOption.STABLE) })
+        val plugin = attached()
         plugin.call("configure", mapOf("cloudModel" to "m"))
         plugin.detach()
-        plugin.attach(FakeMessenger(), false, Dispatchers.Default)
-        val (code, message) = plugin.call(
-            "generate",
-            mapOf(
-                "requestId" to "r1", "mode" to "onlyOnDevice", "feature" to "f",
-                "parts" to listOf(mapOf("type" to "text", "text" to "hi")),
-                "maxOutputTokens" to 8, "timeoutMs" to 1_000,
-            ),
-        )
+        plugin.attach(FakeMessenger(), Dispatchers.Default)
+        val (code, message) = plugin.call("generate", generateArgs)
         assertEquals(HybridErrorCode.UNAVAILABLE.wire, code)
         assertEquals(Reasons.NOT_CONFIGURED, message)
         assertNull(local(plugin.call("capabilities").second)["modelOption"])
         plugin.detach()
-    }
-
-    @Test
-    fun configureBeforeAttachIsAnsweredAtOnce() {
-        val plugin = AiLogicHybridPlugin { _, _ -> StubEngine(null) }
-        assertEquals("success" to null, plugin.call("configure", mapOf("cloudModel" to "m")))
-        assertNull(local(plugin.call("capabilities").second)["modelOption"])
     }
 }

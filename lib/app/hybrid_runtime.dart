@@ -36,8 +36,9 @@ const kHybridCloudModel = String.fromEnvironment(
   defaultValue: kCookingResearchModel,
 );
 
-/// Android on-device model: `--dart-define=ANDROID_MODEL=auto|preview|
-/// previewFast|stable`. Unset or unknown means auto (Nano 4 only if it answers).
+/// Android on-device model: `--dart-define=ANDROID_MODEL=stable|preview|
+/// previewFast`. Unset or unknown means stable, the device's supported
+/// Gemini Nano; preview (Nano 4) is an explicit opt-in.
 final kAndroidModel = AndroidModelOption.fromName(
   const String.fromEnvironment('ANDROID_MODEL'),
 );
@@ -92,46 +93,7 @@ class ConfiguredHybridInference implements HybridInference {
 
   @override
   Future<HybridResult> generate(HybridRequest request) async {
-    // The task's timeout covers the configure wait too: the clock starts
-    // here and only what is left is forwarded.
-    final budget = request.task.timeout;
-    final clock = Stopwatch()..start();
-    // One marker per call: a cancel during the wait reaches the backend
-    // before it knows this request, so it ends every call waiting under that
-    // id at once, and nothing is forwarded.
-    final waiter = _Waiter(request.requestId);
-    _waiting.add(waiter);
-    try {
-      await Future.any([_configured, waiter.done.future]).timeout(budget);
-    } on TimeoutException {
-      throw _timedOut;
-    } finally {
-      _waiting.remove(waiter);
-    }
-    if (waiter.cancelled) {
-      throw const HybridException(
-        HybridErrorCode.cancelled,
-        'Cancelled before it was sent.',
-      );
-    }
-    final remaining = budget - clock.elapsed;
-    // The bridge carries whole milliseconds; under 1 ms nothing can run.
-    if (remaining.inMilliseconds <= 0) throw _timedOut;
-    if (remaining < budget) {
-      final t = request.task;
-      request = HybridRequest(
-        requestId: request.requestId,
-        mode: request.mode,
-        task: HybridTask(
-          feature: t.feature,
-          systemInstruction: t.systemInstruction,
-          parts: t.parts,
-          jsonSchema: t.jsonSchema,
-          maxOutputTokens: t.maxOutputTokens,
-          timeout: remaining,
-        ),
-      );
-    }
+    await _configured;
     final check = mayForward;
     if (request.mode != HybridMode.onlyOnDevice &&
         check != null &&
@@ -144,31 +106,8 @@ class ConfiguredHybridInference implements HybridInference {
     return inner.generate(request);
   }
 
-  final List<_Waiter> _waiting = [];
-
-  static const _timedOut = HybridException(
-    HybridErrorCode.timeout,
-    'Timed out before it was sent.',
-  );
-
   @override
-  Future<void> cancel(String requestId) {
-    for (final waiter in _waiting) {
-      if (waiter.requestId == requestId) waiter.cancel();
-    }
-    return inner.cancel(requestId);
-  }
-}
-
-/// A `generate` call waiting for the startup configure.
-class _Waiter {
-  _Waiter(this.requestId);
-  final String requestId;
-  final done = Completer<void>();
-  bool get cancelled => done.isCompleted;
-  void cancel() {
-    if (!done.isCompleted) done.complete();
-  }
+  Future<void> cancel(String requestId) => inner.cancel(requestId);
 }
 
 /// Lets the trust UI read the dispatcher's [InferenceLedger].

@@ -18,8 +18,6 @@ enum class HybridMode(val wire: String) {
 }
 
 enum class AndroidModelOption(val wire: String) {
-    /** Pick the best working Gemini Nano once per app run (AutoModelEngine). Never sent to the SDK. */
-    AUTO("auto"),
     PREVIEW("preview"),
     PREVIEW_FAST("previewFast"),
     STABLE("stable");
@@ -128,7 +126,8 @@ object Protocol {
         } ?: listOf("en")
         return HybridConfig(
             cloudModel = cloudModel,
-            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: AndroidModelOption.AUTO.wire),
+            // Default: the device's supported (stable) Gemini Nano; preview is an explicit opt-in.
+            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: AndroidModelOption.STABLE.wire),
             languages = languages,
         )
     }
@@ -155,12 +154,11 @@ object Protocol {
                 as Map<String, Any?>? ?: bad("generate: jsonSchema must be a map")
         }
         // Range-checked before narrowing: a Long such as 2^32 + 1 must not become 1.
-        val maxOutputTokens = when (val raw = m["maxOutputTokens"]) {
-            null -> bad("generate: maxOutputTokens is required")
-            is Int, is Long -> (raw as Number).toLong().takeIf { it in 1..Int.MAX_VALUE.toLong() }?.toInt()
-                ?: bad("generate: maxOutputTokens must be between 1 and ${Int.MAX_VALUE}")
-            else -> bad("generate: maxOutputTokens must be an integer")
-        }
+        val rawMax = m["maxOutputTokens"] ?: bad("generate: maxOutputTokens is required")
+        if (rawMax !is Int && rawMax !is Long) bad("generate: maxOutputTokens must be an integer")
+        val wideMax = (rawMax as Number).toLong()
+        if (wideMax !in 1..Int.MAX_VALUE.toLong()) bad("generate: maxOutputTokens must be between 1 and ${Int.MAX_VALUE}")
+        val maxOutputTokens = wideMax.toInt()
         val timeoutMs = (m["timeoutMs"] as? Number)?.toLong()
             ?: bad("generate: timeoutMs is required")
         if (timeoutMs <= 0) bad("generate: timeoutMs must be positive")
@@ -193,7 +191,7 @@ object Protocol {
 
     /**
      * DESIGN §4 capabilities for Gemini Nano through AICore. Limits are Docs-level. [modelOption]
-     * is the concrete option in use (what `auto` chose), or null while `auto` has not chosen yet.
+     * is the configured option in use, or null before `configure`.
      */
     fun capabilities(modelOption: AndroidModelOption? = null): Map<String, Any?> = mapOf(
         "platform" to "android",

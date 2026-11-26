@@ -5,20 +5,19 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('AndroidModelOption', () {
-    test('auto is the default and travels as its name', () {
+    test('stable is the default and travels as its name', () {
       const config = HybridConfig(cloudModel: 'm');
-      expect(config.androidModel, AndroidModelOption.auto);
-      expect(config.toMap()['androidModel'], 'auto');
+      expect(config.androidModel, AndroidModelOption.stable);
+      expect(config.toMap()['androidModel'], 'stable');
       // The existing wire names are unchanged.
       expect(AndroidModelOption.values.map((o) => o.name), [
-        'auto',
         'preview',
         'previewFast',
         'stable',
       ]);
     });
 
-    test('fromName parses dart-define values; anything else is auto', () {
+    test('fromName parses dart-define values; anything else is stable', () {
       expect(
         AndroidModelOption.fromName('preview'),
         AndroidModelOption.preview,
@@ -31,11 +30,13 @@ void main() {
         AndroidModelOption.fromName(' stable '),
         AndroidModelOption.stable,
       );
-      expect(AndroidModelOption.fromName('auto'), AndroidModelOption.auto);
-      expect(AndroidModelOption.fromName(null), AndroidModelOption.auto);
-      expect(AndroidModelOption.fromName(''), AndroidModelOption.auto);
-      expect(AndroidModelOption.fromName('nano4'), AndroidModelOption.auto);
-      expect(AndroidModelOption.fromName('STABLE'), AndroidModelOption.auto);
+      for (final other in [null, '', 'auto', 'nano4', 'PREVIEW']) {
+        expect(
+          AndroidModelOption.fromName(other),
+          AndroidModelOption.stable,
+          reason: '$other',
+        );
+      }
     });
   });
 
@@ -52,7 +53,7 @@ void main() {
       expect(a.modelOption, AndroidModelOption.stable);
     });
 
-    test('a missing, unknown or auto option is not a concrete model', () {
+    test('a missing or unknown option is reported as null', () {
       for (final raw in <Object?>[null, 'auto', 'nano4', 3]) {
         final a = HybridAvailability.fromMap({
           'status': 'unavailable',
@@ -62,7 +63,7 @@ void main() {
       }
     });
 
-    test('capabilities carry the option once chosen', () {
+    test('capabilities carry the option once configured', () {
       Map<Object?, Object?> caps(Object? option) => {
         'platform': 'android',
         'local': {

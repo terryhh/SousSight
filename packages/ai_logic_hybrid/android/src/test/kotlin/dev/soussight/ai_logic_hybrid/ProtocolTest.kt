@@ -32,7 +32,7 @@ internal class ProtocolTest {
             HybridMode.entries.map { it.wire },
         )
         assertEquals(
-            listOf("auto", "preview", "previewFast", "stable"),
+            listOf("preview", "previewFast", "stable"),
             AndroidModelOption.entries.map { it.wire },
         )
         assertEquals(
@@ -58,14 +58,15 @@ internal class ProtocolTest {
     }
 
     @Test
-    fun configureDefaultsToAuto() {
+    fun configureDefaultsToStable() {
         assertEquals(
-            HybridConfig("m", AndroidModelOption.AUTO, listOf("en")),
+            HybridConfig("m", AndroidModelOption.STABLE, listOf("en")),
             Protocol.parseConfig(mapOf("cloudModel" to "m")),
         )
+        // auto is gone: an unknown option fails rather than guessing.
         assertEquals(
-            AndroidModelOption.AUTO,
-            Protocol.parseConfig(mapOf("cloudModel" to "m", "androidModel" to "auto")).androidModel,
+            HybridErrorCode.FAILED,
+            assertFailsWith<HybridError> { Protocol.parseConfig(mapOf("cloudModel" to "m", "androidModel" to "auto")) }.code,
         )
     }
 
@@ -190,7 +191,7 @@ internal class ProtocolTest {
             ),
             local.keys,
         )
-        // Not chosen yet (auto before its check): reported as null, never as "auto".
+        // Not configured yet: null.
         assertNull(local["modelOption"])
         val chosen = Protocol.capabilities(AndroidModelOption.STABLE)["local"] as Map<*, *>
         assertEquals("stable", chosen["modelOption"])

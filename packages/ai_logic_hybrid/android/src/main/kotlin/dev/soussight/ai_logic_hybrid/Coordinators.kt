@@ -19,13 +19,6 @@ interface HybridEngine {
     fun prepare(config: HybridConfig, withImage: Boolean): Flow<Double?>
 
     suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult
-
-    /** Called after each `configure`, before it is answered; `auto` selects its model here. */
-    suspend fun configured(config: HybridConfig) {}
-
-    /** The concrete option [config] runs on, or null while `auto` has not chosen one. */
-    fun modelOption(config: HybridConfig): AndroidModelOption? =
-        config.androidModel.takeIf { it != AndroidModelOption.AUTO }
 }
 
 /**
@@ -42,7 +35,8 @@ suspend fun currentAvailability(
     repeat(3) {
         val answer = engine.availability(snapshot, withImage)
         val now = config() ?: return AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.NOT_CONFIGURED)
-        if (now == snapshot) return answer
+        // modelOption: the option this answer is about.
+        if (now == snapshot) return answer.copy(modelOption = snapshot.androidModel)
         snapshot = now
     }
     // Config keeps changing; report nothing rather than a status for a superseded option.
@@ -102,7 +96,7 @@ class GenerateCoordinator(
             delay(request.timeoutMs)
             if (call.fail(HybridErrorCode.TIMEOUT, "Timed out after ${request.timeoutMs} ms")) {
                 pending.remove(request.requestId, call)
-                call.work?.cancel(DeadlineExceeded())
+                call.work?.cancel()
             }
         }
         val work = scope.launch {
@@ -241,6 +235,3 @@ class DownloadProgress {
         is DownloadEvent.Failed -> throw ErrorMapping.classify(event.error)
     }
 }
-
-/** Cancels a call's work when its own deadline passes (as opposed to a caller's cancel). */
-class DeadlineExceeded : CancellationException("Deadline exceeded")
