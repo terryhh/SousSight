@@ -1,4 +1,21 @@
-# SousSight Live token service
+# SousSight Live services
+
+## `liveSession` (Firebase AI Logic Live reservation, SS-074)
+
+`liveSession` (rewritten from Hosting `/api/live-session`) admits one Gemini Live
+session for the `LIVE_BACKEND=aiLogic` client, which then connects through
+Firebase AI Logic itself. `POST` an empty JSON object with
+`Authorization: Bearer <ID token>` and `X-Firebase-AppCheck: <App Check token>`.
+Both are verified; then `createQuotaReservation` reserves the verified uid's quota
+with the server clock (same `_liveTokenLimits` buckets as `liveToken`). Success is
+`{"ok": true, "model": "<LIVE_MODEL>", "reservedAt": "..."}`; the client refuses
+when `model` is not its compiled `GEMINI_LIVE_MODEL`. Denials are
+`{"ok": false, "error": {...}}`; a 429 includes `Retry-After`. No secret is bound
+and nothing is minted. The client calls it before each new connection, not on
+resume. Native builds pass the absolute URL as `--dart-define=LIVE_SESSION_URL=`.
+This is an app-level gate; AI Logic's provider-side limits are the real ceiling.
+
+## `liveToken` (legacy ephemeral Live, not in the judged build)
 
 `liveToken` is an HTTPS Cloud Function (Node 22, `us-central1`) intended to be
 rewritten from Hosting `/api/live-token`. It authenticates the learner with a
@@ -11,7 +28,7 @@ Request: `POST` with an empty JSON object, `Authorization: Bearer <ID token>`, a
 ```json
 {
   "token": "auth_tokens/SHORT_LIVED_VALUE",
-  "model": "gemini-3.8-live",
+  "model": "gemini-3.1-flash-live-preview",
   "apiVersion": "v1beta",
   "expiresAt": "2026-11-07T21:30:00.000Z",
   "newSessionExpiresAt": "2026-11-07T21:01:00.000Z"
@@ -19,8 +36,9 @@ Request: `POST` with an empty JSON object, `Authorization: Bearer <ID token>`, a
 ```
 
 `LIVE_MODEL` and `LIVE_API_VERSION` are server-side Firebase string parameters.
-Their defaults are `gemini-3.8-live` and `v1beta`, verified against the current
-Google ephemeral-token guide. Change these at deployment when switching supported
+Their defaults are `gemini-3.1-flash-live-preview` (the one Live model Firebase
+AI Logic lists for the Gemini Developer API, shared with the client's
+`GEMINI_LIVE_MODEL`) and `v1beta`. Change these at deployment when switching supported
 models; the response passes the same settings to the browser. API versions are
 limited to `v1alpha` and `v1beta`; model names must be unprefixed `gemini-*` IDs.
 The endpoint rejects invalid deployment settings before calling Google. Browser
