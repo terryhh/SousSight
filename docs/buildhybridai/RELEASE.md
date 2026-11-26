@@ -20,7 +20,7 @@ A claim goes into the submission only if its gate passed on that platform (DESIG
 | G2b Web mappings and camera (harness) | **Passed** on Terry's desktop Chrome: text, schema, system instruction and obscured frame all on-device | |
 | G2c Production path (pantry scan) | On-device half **passed** (badge on Terry's desktop Chrome); cloud half: | |
 | G3 Web Live through AI Logic | | |
-| G4 Android (signed release APK, on-device result, attested fallback) | Pixel 9 reports Nano 4 (PREVIEW) unavailable / `not_enrolled` as of Nov 25 | |
+| G4 Android (signed release APK, on-device result, attested fallback) | Pixel 9 enrolled (Nov 25, 23:30 ET); reports `nano-v4-full` available, `generate` fails with ErrorCode 8 (Nov 26). Blocked | |
 | G5 iOS (signed build, local text probe, cloud leg attested) | | |
 | SS-075 watch evidence (8 fixtures + filmed cook-through) | | `docs/buildhybridai/EVIDENCE.md` |
 
@@ -53,7 +53,7 @@ the hosted `version.json`.
 
 | Name | Judged value | Rule |
 |---|---|---|
-| `CLOUD_ROUTES` | __________ | Only routes G1 approved (`hybridFallback`, `research`, `nearby`, `live`). Empty if none |
+| `CLOUD_ROUTES` | `hybridFallback,research` (G1, #142) | Only routes G1 approved (`hybridFallback`, `research`, `nearby`, `live`). Empty if none |
 | `LIVE_BACKEND` | `none`, or `aiLogic` only if G3 passed | **Never `ephemeral`.** `aiLogic` also needs `live` in `CLOUD_ROUTES` |
 | `DINNER_MODE` | `simulated` | CI's `--judged` check requires it |
 | `FAKE_BACKEND` | absent / `false` | The judged build is not Rehearsal mode |
