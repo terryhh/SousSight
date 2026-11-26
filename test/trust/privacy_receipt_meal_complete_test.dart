@@ -12,6 +12,7 @@ import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
 import 'package:soussight/learner/meal_complete.dart';
 import 'package:soussight/trust/ledger_source.dart';
+import 'package:soussight/trust/privacy_receipt_card.dart';
 
 import 'trust_test_helpers.dart';
 
@@ -19,7 +20,7 @@ void main() {
   Future<CookingCoordinator> pumpPanel(
     WidgetTester tester, {
     LedgerSource? ledger,
-    Object? Function()? ledgerSession,
+    PrivacyReceiptBinding? receiptBinding,
   }) async {
     tester.view.physicalSize = const Size(360, 2400);
     tester.view.devicePixelRatio = 1;
@@ -54,7 +55,7 @@ void main() {
               onTextHousehold: () {},
               onCookSomethingElse: () {},
               ledger: ledger,
-              ledgerSession: ledgerSession,
+              receiptBinding: receiptBinding,
             ),
           ),
         ),
@@ -73,7 +74,10 @@ void main() {
         leg(Provenance.simulated),
         leg(Provenance.simulated, kinds: {DataKind.image}),
       ]),
-      ledgerSession: () => 'session-1',
+      receiptBinding: PrivacyReceiptBinding(
+        session: () => 'session-1',
+        clock: () => DateTime(2026, 11, 26, 19, 42),
+      ),
     );
     expect(find.byKey(const ValueKey('privacy-receipt')), findsOneWidget);
     expect(find.text(cook.recipe.title), findsOneWidget);
@@ -93,7 +97,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a ledger without its session identity prints nothing', (
+  testWidgets('a ledger without its receipt binding prints nothing', (
     tester,
   ) async {
     await pumpPanel(

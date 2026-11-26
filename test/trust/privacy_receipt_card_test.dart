@@ -81,7 +81,7 @@ class _Saver {
 Future<void> _pump(
   WidgetTester tester,
   LedgerSource ledger, {
-  Object? Function()? session,
+  PrivacyReceiptBinding? binding,
   _Saver? saver,
   int? timersRun,
   bool reduceMotion = false,
@@ -99,11 +99,15 @@ Future<void> _pump(
             padding: const EdgeInsets.all(16),
             child: PrivacyReceiptCard(
               ledger: ledger,
-              session:
-                  session ??
-                  (ledger is _Ledger ? () => ledger.session : () => 's1'),
+              binding:
+                  binding ??
+                  PrivacyReceiptBinding(
+                    session: ledger is _Ledger
+                        ? () => ledger.session
+                        : () => 's1',
+                    clock: () => DateTime(2026, 11, 26, 19, 42),
+                  ),
               recipeTitle: 'Peanut Butter Sandwich',
-              clock: () => DateTime(2026, 11, 26, 19, 42),
               timersRun: timersRun,
               saveImage: (saver ?? _Saver()).call,
             ),
@@ -254,7 +258,7 @@ void main() {
     expect(_count(tester, 'receipt-cloud'), '0');
     expect(_count(tester, 'receipt-camera'), '2');
     expect(_count(tester, 'receipt-timers'), '2');
-    expect(find.text('RECORDED PHOTOS SENT'), findsOneWidget);
+    expect(find.text('REQUESTS THAT SENT PHOTOS'), findsOneWidget);
     expect(_photos(tester), '0');
     expect(
       find.text('No recorded request sent a photo tonight.'),
@@ -301,10 +305,7 @@ void main() {
     expect(find.text('Pantry scan · photo'), findsOneWidget);
     expect(_photos(tester), '1');
     expect(
-      find.text(
-        '1 more may have been sent: allowed to leave, not confirmed either '
-        'way.',
-      ),
+      find.text('1 more may have: allowed to leave, not confirmed either way.'),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
@@ -348,7 +349,7 @@ void main() {
       ]),
     );
     expect(
-      find.text('Each one is listed below, with where it went.'),
+      find.text('Each request is listed below, with where it went.'),
       findsOneWidget,
     );
   });
@@ -411,6 +412,64 @@ void main() {
     expect(_receipt, findsNothing);
   });
 
+  testWidgets('a retired binding stays retired when the card is remounted', (
+    tester,
+  ) async {
+    final ledger = _Ledger([_leg('first', Provenance.sdkOnDevice)]);
+    final binding = PrivacyReceiptBinding(session: () => ledger.session);
+    await _pump(tester, ledger, binding: binding);
+    expect(_receipt, findsOneWidget);
+    ledger.startSession();
+    await tester.pump();
+    expect(_receipt, findsNothing);
+    // Another meal's photo, then a fresh card for the same binding (a
+    // layout change remounts the panel): still nothing.
+    ledger.add(_leg('next', Provenance.sdkCloud, kinds: _photo));
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, ledger, binding: binding);
+    expect(_receipt, findsNothing);
+    expect(binding.isCurrent, isFalse);
+  });
+
+  testWidgets('a binding remembers when it printed', (tester) async {
+    final binding = PrivacyReceiptBinding(
+      session: () => 's',
+      clock: () => DateTime(2026, 11, 26, 19, 42),
+    );
+    await _pump(tester, ListLedgerSource(), binding: binding);
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, ListLedgerSource(), binding: binding);
+    expect(find.text('Thu 26 Nov · 7:42 pm'), findsOneWidget);
+    expect(binding.session, 's');
+  });
+
+  testWidgets('a run whose result was not used is shown as such', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      ListLedgerSource([
+        _leg(
+          'a',
+          Provenance.sdkCloud,
+          feature: 'label_check',
+          kinds: _photo,
+          error: HybridErrorCode.failed,
+        ),
+      ]),
+    );
+    expect(_count(tester, 'receipt-cloud'), '1');
+    expect(_count(tester, 'receipt-not-used'), '1');
+    expect(
+      find.text(
+        'Ran on Gemini in the cloud · asked to prefer this device · '
+        'result not used',
+      ),
+      findsOneWidget,
+    );
+    expect(_photos(tester), '1');
+  });
+
   testWidgets('prints top edge first, instantly under reduced motion', (
     tester,
   ) async {
@@ -423,7 +482,10 @@ void main() {
         data: MediaQueryData(disableAnimations: reduce),
         child: Scaffold(
           body: SingleChildScrollView(
-            child: PrivacyReceiptCard(ledger: ledger, session: () => 's'),
+            child: PrivacyReceiptCard(
+              ledger: ledger,
+              binding: PrivacyReceiptBinding(session: () => 's'),
+            ),
           ),
         ),
       ),
@@ -649,7 +711,8 @@ void main() {
   test('summary is built only from legs', () {
     expect(
       PrivacyReceipt.fromLegs([leg(Provenance.sdkOnDevice)]).summary,
-      '1 AI run tonight, 1 on this device; recorded photos sent: 0.',
+      '1 AI run tonight, 1 on this device; '
+      'recorded requests that sent photos: 0.',
     );
   });
 }

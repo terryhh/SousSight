@@ -115,11 +115,31 @@ void main() {
     expect(count('receipt-practice'), '1');
     expect(count('receipt-camera'), '2');
     expect(count('receipt-timers'), '1');
-    expect(find.text('Timers started'), findsOneWidget);
+    expect(find.text('Timers started this visit'), findsOneWidget);
     expect(tester.takeException(), isNull);
     // A new ledger session (another cook) retires tonight's receipt.
     hybrid.ledger.startSession('next-cook');
     await tester.pump();
+    expect(receipt, findsNothing);
+    // The next meal sends a photo, then the window widens past the layout
+    // breakpoint (Column to Row), which remounts the meal-complete panel.
+    // The retired receipt must not come back with the next meal's numbers.
+    hybrid.ledger.record(
+      const InferenceLeg(
+        requestId: 'next-meal-photo',
+        feature: 'label_check',
+        mode: HybridMode.onlyInCloud,
+        kinds: {DataKind.image},
+        transferPermitted: true,
+        provenance: Provenance.cloudAdapter,
+      ),
+    );
+    tester.view.physicalSize = const Size(1280, 2400);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('meal-complete')), findsOneWidget);
+    expect(receipt, findsNothing);
+    tester.view.physicalSize = const Size(412, 2400);
+    await tester.pumpAndSettle();
     expect(receipt, findsNothing);
     await tester.pumpWidget(const SizedBox());
   });

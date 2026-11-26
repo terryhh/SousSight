@@ -29,13 +29,42 @@ const _maybe = Color(0xffbf5b32);
 
 const kReceiptFileName = 'soussight-privacy-receipt.png';
 
+/// Which meal a receipt belongs to, and when it was printed.
+///
+/// Owned by whoever owns the cooking session (the cooking screen's state),
+/// not by the card, so it survives the card being rebuilt or remounted, for
+/// example when a layout breakpoint moves the panel from a column to a row.
+/// It binds to the ledger's session identity (`InferenceLedger.sessionId`) at
+/// creation; once that changes, even from an empty ledger to another empty
+/// one, the binding retires for good and any save in flight is dropped.
+class PrivacyReceiptBinding {
+  PrivacyReceiptBinding({
+    required Object? Function() session,
+    DateTime Function() clock = DateTime.now,
+  }) : _read = session,
+       session = session(),
+       printedAt = clock();
+
+  final Object? Function() _read;
+
+  /// The ledger session this receipt was printed for.
+  final Object? session;
+  final DateTime printedAt;
+  bool _retired = false;
+
+  /// Whether the ledger is still on [session]. Latches false.
+  bool get isCurrent {
+    if (!_retired && _read() != session) _retired = true;
+    return !_retired;
+  }
+}
+
 class PrivacyReceiptCard extends StatefulWidget {
   const PrivacyReceiptCard({
     super.key,
     required this.ledger,
-    required this.session,
+    required this.binding,
     this.recipeTitle,
-    this.clock = DateTime.now,
     this.timersRun,
     this.saveImage = saveReceiptImage,
   });
@@ -43,15 +72,12 @@ class PrivacyReceiptCard extends StatefulWidget {
   /// This session's ledger. Every number comes from its legs.
   final LedgerSource ledger;
 
-  /// The ledger's session identity, read now (`InferenceLedger.sessionId`).
-  /// The receipt binds to the value it was printed with: once it changes,
-  /// even from an empty ledger to another empty one, the receipt retires and
-  /// any save in flight is dropped.
-  final Object? Function() session;
+  /// The meal this receipt belongs to; see [PrivacyReceiptBinding].
+  final PrivacyReceiptBinding binding;
   final String? recipeTitle;
-  final DateTime Function() clock;
 
-  /// Timers the cook started tonight, when the caller counts them. Not a
+  /// Timers the cook started since opening this cooking screen
+  /// (`CookingCoordinator.timersStarted`), when the caller counts them. Not a
   /// privacy claim; hidden when null.
   final int? timersRun;
   final ReceiptImageSaver saveImage;
@@ -62,20 +88,9 @@ class PrivacyReceiptCard extends StatefulWidget {
 
 class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
   final _boundary = GlobalKey();
-  late final DateTime _printedAt = widget.clock();
-
-  /// The session this receipt was printed for.
-  late final Object? _session = widget.session();
-
-  /// Latched once the ledger moved on to another session.
-  bool _retired = false;
   bool _saving = false;
 
-  /// Whether this is still the session the receipt was printed for.
-  bool _current() {
-    if (!_retired && widget.session() != _session) _retired = true;
-    return !_retired;
-  }
+  bool _current() => widget.binding.isCurrent;
 
   Future<void> _save() async {
     if (_saving || !_current()) return;
@@ -151,7 +166,7 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
                       child: _ReceiptPaper(
                         receipt: receipt,
                         recipeTitle: widget.recipeTitle,
-                        printedAt: _printedAt,
+                        printedAt: widget.binding.printedAt,
                         timersRun: widget.timersRun,
                       ),
                     ),
@@ -281,6 +296,14 @@ class _ReceiptPaper extends StatelessWidget {
                   label: "Didn't finish",
                   value: r.unfinished,
                 ),
+              if (r.notUsed > 0)
+                _Line(
+                  key: const ValueKey('receipt-not-used'),
+                  icon: Icons.do_not_disturb_on_outlined,
+                  color: _muted,
+                  label: 'Ran, result not used',
+                  value: r.notUsed,
+                ),
               if (r.inProgress > 0)
                 _Line(
                   key: const ValueKey('receipt-in-progress'),
@@ -319,7 +342,7 @@ class _ReceiptPaper extends StatelessWidget {
                   key: const ValueKey('receipt-timers'),
                   icon: Icons.timer_outlined,
                   color: _ink,
-                  label: 'Timers started',
+                  label: 'Timers started this visit',
                   value: timers,
                 ),
               const _Perforation(),
@@ -612,7 +635,7 @@ class _PhotosSent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final r = receipt;
-    final zero = r.photosSent == 0 && r.photosMaybeSent == 0;
+    final zero = r.photoRequestsSent == 0 && r.photoRequestsMaybeSent == 0;
     final String note;
     if (r.practiceOnly) {
       note =
@@ -624,19 +647,19 @@ class _PhotosSent extends StatelessWidget {
           'connected it can receive your camera.';
     } else if (zero) {
       note = 'No recorded request sent a photo tonight.';
-    } else if (r.photosMaybeSent > 0) {
+    } else if (r.photoRequestsMaybeSent > 0) {
       note =
-          '${r.photosMaybeSent} more may have been sent: allowed to leave, '
-          'not confirmed either way.';
+          '${r.photoRequestsMaybeSent} more may have: allowed to leave, not '
+          'confirmed either way.';
     } else {
-      note = 'Each one is listed below, with where it went.';
+      note = 'Each request is listed below, with where it went.';
     }
     return Semantics(
       container: true,
       child: Column(
         children: [
           const Text(
-            'RECORDED PHOTOS SENT',
+            'REQUESTS THAT SENT PHOTOS',
             style: TextStyle(
               fontSize: 11,
               letterSpacing: 2.4,
@@ -645,7 +668,7 @@ class _PhotosSent extends StatelessWidget {
             ),
           ),
           Text(
-            '${r.photosSent}',
+            '${r.photoRequestsSent}',
             key: const ValueKey('receipt-photos-sent'),
             style: TextStyle(
               fontSize: 56,

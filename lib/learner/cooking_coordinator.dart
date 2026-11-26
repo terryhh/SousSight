@@ -165,9 +165,10 @@ class CookingCoordinator extends ChangeNotifier {
   int _researchEpoch = 0;
   int _timerSequence = 0;
 
-  /// Timers the cook started in this coordinator's session (a new cook gets
-  /// a new coordinator). Restored timers and re-starts of a running timer
-  /// are not counted. Shown on the privacy receipt (SS-105).
+  /// Timers the cook started since this coordinator opened the cooking
+  /// screen ("this visit"): resuming the same meal later starts again at 0.
+  /// Restored timers and re-starts of a running timer are not counted.
+  /// Shown on the privacy receipt as "Timers started this visit" (SS-105).
   int get timersStarted => _timersStarted;
   int _timersStarted = 0;
   final List<StreamSubscription<dynamic>> _subscriptions = [];

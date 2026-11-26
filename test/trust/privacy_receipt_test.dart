@@ -31,8 +31,8 @@ void main() {
     expect(r.cloudRuns, 0);
     expect(r.practiceRuns, 0);
     expect(r.cameraChecksOnDevice, 2);
-    expect(r.photosSent, 0);
-    expect(r.photosMaybeSent, 0);
+    expect(r.photoRequestsSent, 0);
+    expect(r.photoRequestsMaybeSent, 0);
     expect(r.unfinished, 0);
     expect(r.inProgress, 0);
     expect(r.nothingRecordedLeft, isTrue);
@@ -40,7 +40,8 @@ void main() {
     expect(r.headline, '4 AI runs tonight');
     expect(
       r.summary,
-      '4 AI runs tonight, 4 on this device; recorded photos sent: 0.',
+      '4 AI runs tonight, 4 on this device; '
+      'recorded requests that sent photos: 0.',
     );
   });
 
@@ -105,7 +106,7 @@ void main() {
     expect(r.runs, 8);
     expect(r.onDeviceRuns, 1);
     expect(r.cloudRuns, 7);
-    expect(r.photosSent, 3);
+    expect(r.photoRequestsSent, 3);
     expect(r.cameraChecksOnDevice, 0);
     expect(r.nothingRecordedLeft, isFalse);
     final label = r.sent.firstWhere((s) => s.feature == 'label_check');
@@ -136,7 +137,7 @@ void main() {
       'Ran on Gemini in the cloud',
     });
     expect(r.summary, contains('1 on this device, 7 in the cloud'));
-    expect(r.summary, endsWith('recorded photos sent: 3.'));
+    expect(r.summary, endsWith('recorded requests that sent photos: 3.'));
   });
 
   test('an on-device-only request that reached the cloud says so', () {
@@ -191,8 +192,8 @@ void main() {
     expect(r.runs, 0);
     expect(r.unfinished, 2);
     expect(r.inProgress, 2);
-    expect(r.photosSent, 0);
-    expect(r.photosMaybeSent, 2);
+    expect(r.photoRequestsSent, 0);
+    expect(r.photoRequestsMaybeSent, 2);
     expect(r.maybeSent, hasLength(2));
     final stopped = r.maybeSent.firstWhere((s) => s.feature == 'pantry_scan');
     expect(stopped.pending, isFalse);
@@ -205,7 +206,7 @@ void main() {
     expect(r.nothingRecordedLeft, isFalse);
     expect(
       r.summary,
-      endsWith('recorded photos sent: 0, and 2 may have been sent.'),
+      endsWith('recorded requests that sent photos: 0, and 2 more may have.'),
     );
   });
 
@@ -222,7 +223,10 @@ void main() {
     expect(r.allSimulated, isTrue);
     expect(r.practiceOnly, isTrue);
     expect(r.headline, '3 practice runs tonight');
-    expect(r.summary, '3 practice runs tonight; recorded photos sent: 0.');
+    expect(
+      r.summary,
+      '3 practice runs tonight; recorded requests that sent photos: 0.',
+    );
     final one = PrivacyReceipt.fromLegs([leg(Provenance.simulated)]);
     expect(one.headline, '1 practice run tonight');
     // An errored simulated leg is still simulated.
@@ -245,7 +249,7 @@ void main() {
     expect(
       mixed.summary,
       '2 AI runs tonight, 1 on this device, 1 practice; '
-      'recorded photos sent: 0.',
+      'recorded requests that sent photos: 0.',
     );
     // A real local-only timeout cannot establish that no model ran.
     final timeout = PrivacyReceipt.fromLegs([
@@ -292,8 +296,8 @@ void main() {
     expect(r.liveConnections, 2);
     expect(r.runs, 1);
     expect(r.cloudRuns, 0);
-    expect(r.photosSent, 0);
-    expect(r.photosMaybeSent, 0);
+    expect(r.photoRequestsSent, 0);
+    expect(r.photoRequestsMaybeSent, 0);
     expect(r.unfinished, 0);
     expect(r.sent.single.count, 2);
     expect(r.sent.single.what, 'Live coach · connection');
@@ -328,22 +332,78 @@ void main() {
     );
   });
 
-  test('sent legs that errored still count as sent, not as runs', () {
+  test('a run whose result was rejected still ran, and says so', () {
+    // The dispatcher's widened-mode case: a real cloud result rejected by
+    // policy. It ran in the cloud (data left); its result was not used.
     final r = PrivacyReceipt.fromLegs([
       leg(
         Provenance.sdkCloud,
         feature: 'label_check',
         kinds: _photo,
-        error: HybridErrorCode.blocked,
+        mode: HybridMode.onlyOnDevice,
+        error: HybridErrorCode.failed,
       ),
-      leg(Provenance.sdkOnDevice, error: HybridErrorCode.busy),
+      leg(Provenance.sdkOnDevice, error: HybridErrorCode.failed),
       leg(Provenance.simulated, error: HybridErrorCode.failed),
     ]);
-    expect(r.runs, 0);
-    expect(r.photosSent, 1);
-    expect(r.unfinished, 3);
+    expect(r.cloudRuns, 1);
+    expect(r.onDeviceRuns, 1);
+    expect(r.practiceRuns, 1);
+    expect(r.runs, 3);
+    expect(r.notUsed, 3);
+    expect(r.unfinished, 0);
+    expect(r.photoRequestsSent, 1);
     expect(r.sent.single.count, 1);
+    expect(
+      r.sent.single.why,
+      'Ran on Gemini in the cloud · asked for this device only · '
+      'result not used',
+    );
     expect(r.practiceOnly, isFalse);
+  });
+
+  test('a photo the bridge rejected before sending is not a possible send', () {
+    for (final code in [
+      HybridErrorCode.unsupportedInput,
+      HybridErrorCode.unsupportedMode,
+    ]) {
+      final rejected = leg(
+        Provenance.unknown,
+        feature: 'label_check',
+        kinds: _photo,
+        transferPermitted: true,
+        error: code,
+      );
+      expect(rejectedBeforeSend(rejected), isTrue);
+      final r = PrivacyReceipt.fromLegs([
+        rejected,
+        // The adapter then sent it once.
+        leg(Provenance.cloudAdapter, feature: 'label_check', kinds: _photo),
+      ]);
+      expect(r.photoRequestsSent, 1);
+      expect(r.photoRequestsMaybeSent, 0);
+      expect(r.maybeSent, isEmpty);
+      expect(r.unfinished, 1);
+    }
+    // A network failure after it was allowed to leave stays uncertain.
+    final network = leg(
+      Provenance.unknown,
+      kinds: _photo,
+      transferPermitted: true,
+      error: HybridErrorCode.network,
+    );
+    expect(rejectedBeforeSend(network), isFalse);
+    expect(PrivacyReceipt.fromLegs([network]).photoRequestsMaybeSent, 1);
+  });
+
+  test('photo numbers count requests, whatever their attachments', () {
+    // Legs carry data kinds, not attachment counts: one request with two
+    // photos is one request that sent photos, and the label says requests.
+    final r = PrivacyReceipt.fromLegs([
+      leg(Provenance.cloudAdapter, feature: 'pantry_scan', kinds: _photo),
+    ]);
+    expect(r.photoRequestsSent, 1);
+    expect(r.summary, endsWith('recorded requests that sent photos: 1.'));
   });
 
   test('receiptDateLine formats without a locale', () {

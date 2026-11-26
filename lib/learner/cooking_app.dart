@@ -29,6 +29,7 @@ import '../live/live_types.dart';
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
 import '../trust/inference_source_badge.dart';
+import '../trust/privacy_receipt_card.dart' show PrivacyReceiptBinding;
 import '../watch/capture_owner.dart';
 import '../watch/local_watch_controller.dart';
 import '../watch/local_watch_overlay.dart';
@@ -395,6 +396,18 @@ class _CookingSessionScreen extends StatefulWidget {
 class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
+
+  /// Tonight's privacy receipt binding: created when the meal first shows
+  /// complete and kept here, outside the layout, so a retired receipt stays
+  /// retired across breakpoint rebuilds (SS-105).
+  PrivacyReceiptBinding? _receipt;
+  PrivacyReceiptBinding? _receiptBinding() => switch (widget.hybrid) {
+    final hybrid? => _receipt ??= PrivacyReceiptBinding(
+      session: () => hybrid.ledger.sessionId,
+      clock: cook.services.clock,
+    ),
+    null => null,
+  };
   final _message = TextEditingController();
   final _dinnerAttempts = DinnerAttemptMemory();
   final _fakeDinner = FakeDinnerBackend();
@@ -1120,10 +1133,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             null => widget.onNewCook,
           },
           ledger: widget.hybrid?.ledgerSource,
-          ledgerSession: switch (widget.hybrid) {
-            final hybrid? => () => hybrid.ledger.sessionId,
-            null => null,
-          },
+          receiptBinding: _receiptBinding(),
         ),
         const SizedBox(height: 24),
       ],
