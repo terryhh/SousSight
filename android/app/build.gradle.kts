@@ -75,7 +75,8 @@ android {
 if (!hasReleaseKey) {
     gradle.taskGraph.whenReady {
         if (allTasks.any { it.name.contains("Release") }) {
-            logger.warn(
+            // Error level so `flutter build` shows it; the build still succeeds.
+            logger.error(
                 "\n" + "!".repeat(72) + "\n" +
                     "WARNING: android/key.properties is missing or incomplete.\n" +
                     "The RELEASE build is signed with the DEBUG key. Do not ship it,\n" +
