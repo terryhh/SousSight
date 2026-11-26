@@ -18,6 +18,12 @@ env:
   FIREBASE_CLI_VERSION: '15.35.0'
   FIREBASE_PROJECT: devfest-flutter-a59e8
   CI: 'true'
+  # Judged-build configuration (DESIGN.md §6-§7). Checked by
+  # tool/check_build_config.sh before every non-rehearsal compile.
+  # CLOUD_ROUTES stays empty (no cloud routes) until gate G1 approves some.
+  DINNER_MODE: ${{ vars.DINNER_MODE || 'simulated' }}
+  LIVE_BACKEND: ${{ vars.LIVE_BACKEND || 'none' }}
+  CLOUD_ROUTES: ${{ vars.CLOUD_ROUTES || '' }}
 
 jobs:
   validate:
@@ -55,15 +61,55 @@ jobs:
           flutter analyze --no-pub
           flutter test --no-pub
           node --test test/live/browser_media_test.cjs
+      - name: Validate hybrid bridge JavaScript
+        shell: bash
+        run: |
+          shopt -s nullglob
+          bridge_tests=(test/hybrid/*.cjs)
+          if ((${#bridge_tests[@]} == 0)); then
+            echo 'No test/hybrid/*.cjs files yet; skipping.'
+            exit 0
+          fi
+          node --test "${bridge_tests[@]}"
+      - name: Validate ai_logic_hybrid plugin
+        working-directory: packages/ai_logic_hybrid
+        # The plugin is a library and keeps no pubspec.lock.
+        run: |
+          flutter pub get
+          flutter test --no-pub
       - name: Validate backend and project publisher
         run: |
           npm --prefix functions run check
           npm --prefix functions test
           python3 -m unittest discover -s test/tool -p 'test_publish_backlog.py'
+          node --test test/tool/ci_scripts_test.cjs
       - name: Verify private Firestore rules in emulator
         run: npm --prefix test/rules test
       - name: Build visibly simulated rehearsal
         run: ./tool/build_web.sh --no-pub --dart-define=FAKE_BACKEND=true
+      # Compile what the deploy job compiles, minus secrets: none are needed
+      # to compile (RECAPTCHA_SITE_KEY and RESEARCH_MODEL have code defaults).
+      - name: Check judged build configuration
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path(os.environ['RUNNER_TEMP'], 'judged_defines.json').write_text(json.dumps({
+              'FAKE_BACKEND': 'false',
+              'DINNER_MODE': os.environ['DINNER_MODE'],
+              'LIVE_BACKEND': os.environ['LIVE_BACKEND'],
+              'CLOUD_ROUTES': os.environ['CLOUD_ROUTES'],
+          }))
+          PY
+          ./tool/check_build_config.sh --judged "$RUNNER_TEMP/judged_defines.json"
+      - name: Compile judged (non-rehearsal) build
+        run: ./tool/build_web.sh --no-pub "--dart-define-from-file=$RUNNER_TEMP/judged_defines.json"
+      # Ephemeral Live markers only warn here until SS-074 compiles the
+      # transport out; the deploy job enforces them.
+      - name: Check judged bundle
+        run: >-
+          ./tool/check_web_bundle.sh --warn-live-marker
+          --commit "$GITHUB_SHA" --config "$RUNNER_TEMP/judged_defines.json" build/web
 
   deploy:
     name: Deploy production
@@ -160,6 +206,9 @@ jobs:
               'FAKE_BACKEND': 'false',
               'RECAPTCHA_SITE_KEY': os.environ['RECAPTCHA_SITE_KEY'],
               'RESEARCH_MODEL': os.environ['RESEARCH_MODEL'],
+              'DINNER_MODE': os.environ['DINNER_MODE'],
+              'LIVE_BACKEND': os.environ['LIVE_BACKEND'],
+              'CLOUD_ROUTES': os.environ['CLOUD_ROUTES'],
           }
           Path('dart_defines.local.json').write_text(json.dumps(build))
           # Package main is used by Firebase discovery AND the uploaded runtime.
@@ -203,8 +252,15 @@ jobs:
           Path('functions/.env.devfest-flutter-a59e8').write_text(
               ''.join(f'{key}={value}\n' for key, value in params.items()))
           PY
+      - name: Check judged build configuration
+        run: ./tool/check_build_config.sh --judged dart_defines.local.json
       - name: Build real-service web app
         run: ./tool/build_web.sh --no-pub --dart-define-from-file=dart_defines.local.json
+      - name: Check bundle and stamp version.json
+        run: >-
+          ./tool/check_web_bundle.sh
+          --commit "$GITHUB_SHA" --ref "$GITHUB_REF_NAME"
+          --config dart_defines.local.json build/web
       # Authenticate only after package installation/build; never run this on a PR.
       - name: Authenticate with short-lived Google credentials
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
@@ -227,3 +283,19 @@ jobs:
           firebase deploy --project "$FIREBASE_PROJECT" --only "$targets" --non-interactive
       - name: Check Hosting response
         run: curl --fail --silent --show-error --retry 3 --retry-delay 5 https://devfest-flutter-a59e8.web.app/ --output /dev/null
+      - name: Check hosted version.json matches this commit
+        shell: bash
+        run: |
+          # Allow a short CDN propagation window after the release.
+          for attempt in 1 2 3 4 5 6; do
+            served="$(curl --fail --silent --show-error --retry 3 --retry-delay 5 \
+              "https://devfest-flutter-a59e8.web.app/version.json?ci=$GITHUB_RUN_ID-$attempt" |
+              python3 -c 'import json, sys; print(json.load(sys.stdin).get("commit", ""))' || true)"
+            if [[ "$served" == "$GITHUB_SHA" ]]; then
+              echo "Hosted build is $served"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Hosted version.json commit '$served' is not $GITHUB_SHA"
+          exit 1
