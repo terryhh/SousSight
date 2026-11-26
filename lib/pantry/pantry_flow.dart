@@ -120,7 +120,13 @@ class _PantryFlowState extends State<PantryFlow> {
       (false, final hybrid?) => hybridNearbyClient(hybrid),
       _ => null,
     },
-    voiceOnline: widget.hybrid?.cloudRoutes.allows(CloudRoute.hybridFallback),
+    // Read live (the gate can change when Remote Config settles).
+    voiceOnline: switch (widget.hybrid) {
+      final hybrid? => () => hybrid.cloudRoutes.allows(
+        CloudRoute.hybridFallback,
+      ),
+      null => null,
+    },
     unavailableReason: switch (widget.hybrid) {
       final hybrid? => () => hybridUnavailableReason(hybrid),
       null => null,

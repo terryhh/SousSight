@@ -88,7 +88,13 @@ class PantryUiController extends ChangeNotifier {
     // ("sunflower seed butter" never confirms "peanut butter").
     final typedEntries = pantryTypedEntries(typed);
     for (var i = 0; i < _items.length; i++) {
-      if (typedEntries.any((entry) => pantrySameItem(entry, _items[i]))) {
+      // The same food AND the same stated preparation: "frozen corn" never
+      // auto-confirms a plain "corn" guess (Codex #221).
+      if (typedEntries.any(
+        (entry) =>
+            pantrySameItem(entry, _items[i]) &&
+            pantryStatesEqual(entry, _items[i]),
+      )) {
         _confirmed.add(i);
       }
     }
@@ -233,6 +239,20 @@ bool pantrySameItem(String typed, String item) {
 
 /// Preparation states that change what a food is in a recipe.
 const pantryStates = {'canned', 'frozen', 'fresh', 'dried'};
+
+/// True when both names state exactly the same preparation (or none).
+/// "can", "cans" and "tinned" count as canned.
+bool pantryStatesEqual(String a, String b) {
+  Set<String> states(String s) => {
+    for (final w in s.toLowerCase().split(RegExp(r'[^a-z]+')))
+      if (pantryStates.contains(w))
+        w
+      else if (const {'can', 'cans', 'tin', 'tins', 'tinned'}.contains(w))
+        'canned',
+  };
+  final x = states(a), y = states(b);
+  return x.length == y.length && x.containsAll(y);
+}
 
 /// False only when both names state a preparation and the states differ.
 bool pantryStatesAgree(String a, String b) {

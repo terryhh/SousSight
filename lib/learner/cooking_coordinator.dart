@@ -903,6 +903,7 @@ $cookingUiInstructions
     if (_disposed) return;
     final liveActive = live.isActive;
     if (_wasLiveActive && !liveActive) watchService?.onLiveStopped();
+    if (live.watchId == null) watchService?.liveWatchEnded();
     _wasLiveActive = liveActive;
     final watching = live.watchGoal != null && live.isActive;
     if (_wasWatching && !watching) {

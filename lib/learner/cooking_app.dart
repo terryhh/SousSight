@@ -518,6 +518,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   final _researchKey = GlobalKey(debugLabel: 'research-panel');
   final _transcriptKey = GlobalKey(debugLabel: 'live-transcript');
   int _shownTurns = 0;
+  int _revealedTranscript = 0;
+  final _liveErrorKey = GlobalKey(debugLabel: 'live-error');
+  String? _shownLiveError;
   Object? _shownReply;
   String? _shownError;
   Object? _shownResearch;
@@ -562,8 +565,18 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     // never on a partial transcript (Codex #221).
     if (cook.live.completedTurns != _shownTurns) {
       _shownTurns = cook.live.completedTurns;
-      if (cook.live.coachTranscript.isNotEmpty) _reveal(_transcriptKey);
+      // Only a turn that brought new reply text (Codex #221).
+      if (cook.live.coachTranscriptVersion != _revealedTranscript &&
+          cook.live.coachTranscript.isNotEmpty) {
+        _revealedTranscript = cook.live.coachTranscriptVersion;
+        _reveal(_transcriptKey);
+      }
     }
+    // A Live failure (e.g. camera permission denied) is shown in view.
+    if (cook.live.error != null && cook.live.error != _shownLiveError) {
+      _reveal(_liveErrorKey);
+    }
+    _shownLiveError = cook.live.error;
     _wasResearching = cook.researching;
   }
 
@@ -1106,7 +1119,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           when legs.isNotEmpty)
         InferenceSourceBadge(legs: legs),
       if (cook.live.error case final error?)
-        _inlineNotice(error, Icons.cloud_off_outlined),
+        KeyedSubtree(
+          key: _liveErrorKey,
+          child: _inlineNotice(error, Icons.cloud_off_outlined),
+        ),
       if (cook.live.notice case final notice?)
         _inlineNotice(notice, Icons.info_outline),
       if (includeConversation) _conversation(),

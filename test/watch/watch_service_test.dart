@@ -72,7 +72,7 @@ void main() {
       expect(start!.message, contains('cloud'));
       expect(rig.liveGoals, [stepA.cue]);
       expect(rig.media.log, isEmpty);
-      expect(rig.service.statusText, contains('cloud'));
+      expect(rig.service.statusText, contains("online to Google's AI"));
       rig.service.stopWatch();
       async.flushMicrotasks();
       expect(rig.liveStops, 1);

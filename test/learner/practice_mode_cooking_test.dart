@@ -15,6 +15,8 @@ import 'package:soussight/coach_lite/tts.dart';
 import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
+import 'package:soussight/learner/demo_live.dart';
+import 'package:soussight/ai/cooking_research_client.dart';
 import 'package:soussight/research/cooking_research_panel.dart';
 import 'package:soussight/watch/watch_verdict.dart';
 
@@ -560,4 +562,47 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('live-session-toggle')));
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('a Live failure is scrolled into view (Codex #221)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final services = (await tester.runAsync(fakeServices))!;
+    late CookingCoordinator made;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: cookingTheme,
+        home: CookingScreen(
+          services: services,
+          isDemo: true,
+          createCoordinator: () => made = CookingCoordinator(
+            services: services,
+            isDemo: true,
+            research: const FakeCookingResearchClient(),
+            transportFactory: DemoLiveTransport.new,
+            media: _DeniedCamera(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('cooking-scroll')),
+      const Offset(0, -1500),
+    );
+    await tester.pumpAndSettle();
+    await tester.runAsync(made.connect);
+    await tester.pumpAndSettle();
+    expect(made.live.error, isNotNull);
+    final rect = tester.getRect(find.byIcon(Icons.cloud_off_outlined).first);
+    expect(rect.top, greaterThanOrEqualTo(0));
+    expect(rect.top, lessThan(rectOf(tester, 'cooking-control-dock').top));
+  });
+}
+
+class _DeniedCamera extends DemoLiveMedia {
+  @override
+  Future<void> start() async => throw StateError('NotAllowedError: camera');
 }

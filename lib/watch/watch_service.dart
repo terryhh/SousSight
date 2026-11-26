@@ -95,8 +95,8 @@ class WatchService extends ChangeNotifier {
       simulated
           ? 'Practice mode: the pretend live coach is "watching". Nothing is '
                 'streamed.'
-          : 'The Live coach is watching (cloud vision): camera and microphone '
-                'are streaming to Gemini Live.',
+          : 'The Live coach is watching: camera and microphone are streaming '
+                "online to Google's AI.",
     null => local.statusText ?? _message,
   };
 
@@ -240,6 +240,15 @@ class WatchService extends ChangeNotifier {
     _invalidateStartup();
     await local.onLiveConnecting();
     await capture.handOffToLive();
+  }
+
+  /// Call when Live's own watch ended while Live stays connected (for
+  /// example, Watch local-only turned on mid-watch): the status no longer
+  /// says the Live coach is watching (Codex #221).
+  void liveWatchEnded() {
+    if (_liveWatchId == null) return;
+    _liveWatchId = null;
+    _notify();
   }
 
   /// Call when Live stops for any reason.

@@ -43,7 +43,10 @@ class PlainTextResearchClient implements CookingResearchClient {
     final answer = plainResearchText(result.answer);
     // Nothing left once the Markdown and list markers are gone is no answer
     // (Codex #221).
-    if (answer.replaceAll(RegExp(r'[\s•*_\-#>`]+'), '').isEmpty) {
+    if (answer
+        .replaceAll(RegExp(r'^\s*\d+[.)]', multiLine: true), '')
+        .replaceAll(RegExp('[\\s\u200B-\u200D\u2060\uFEFF•*_\\-#>`]+'), '')
+        .isEmpty) {
       throw const CookingResearchException(
         CookingResearchFailure.empty,
         'The search did not return a usable answer. Try a more specific '

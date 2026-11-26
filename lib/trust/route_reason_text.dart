@@ -9,16 +9,15 @@ const Map<RouteReason, String> routeReasonText = {
   RouteReason.localOnlySetting:
       "You asked to keep this on your device, and it can't run here right now.",
   RouteReason.cloudNotApproved: "Sending online is off in this build.",
+  // Reasons only: whether anything was sent is shown from the request's own
+  // legs, never claimed here (Codex #221).
   RouteReason.audioNeedsCloud:
-      "Voice clips have to be sent online to Google's AI; your photo stayed "
-      'here.',
-  RouteReason.imageNeedsCloud:
-      "This device can't read photos, so the photo had to be sent online.",
+      'Voice clips need online processing; your photo stayed here.',
+  RouteReason.imageNeedsCloud: "This device can't read photos on its own.",
   RouteReason.tooLargeForDevice:
-      'This was too big for this device, so it had to be sent online.',
+      'This was too big for this device to handle on its own.',
   RouteReason.languageNotSupported:
-      "This device doesn't speak this language yet, so it had to be sent "
-      'online.',
+      "This device doesn't handle this language on its own yet.",
   RouteReason.modelNotReady:
       "Help on this device isn't set up yet. You can set it up from "
       '"On this device".',

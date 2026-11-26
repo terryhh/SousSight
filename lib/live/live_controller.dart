@@ -73,6 +73,10 @@ class LiveCookingController extends ChangeNotifier {
 
   /// Completed coach turns; the UI reveals a reply once per turn.
   int completedTurns = 0;
+
+  /// Bumped whenever reply text arrives, so a turn with no new text (a
+  /// tool-only turn) never re-reveals the previous reply.
+  int coachTranscriptVersion = 0;
   LiveCookingStatus status = LiveCookingStatus.idle;
   String? error;
   String? notice;
@@ -371,6 +375,7 @@ class LiveCookingController extends ChangeNotifier {
               _newCoachTranscript ? '' : coachTranscript,
               text,
             );
+            coachTranscriptVersion++;
             _newCoachTranscript = false;
           }
           if (finished) _newCoachTranscript = true;

@@ -417,7 +417,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('pantry-text')),
-      '2 cans black beans, corn',
+      '2 cans black beans, canned corn',
     );
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
     expect(

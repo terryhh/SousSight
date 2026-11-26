@@ -14,6 +14,11 @@ void main() {
   runApp(const SousSightBootstrap());
 }
 
+/// The rehearsal (`FAKE_BACKEND=true`) bootstrap: in-memory services and
+/// the practice-mode hybrid runtime. Nothing contacts Firebase.
+Future<(AppServices, HybridRuntime?)> loadPracticeApp() async =>
+    (await fakeServices(), RehearsalHybridRuntime.create());
+
 class SousSightBootstrap extends StatefulWidget {
   const SousSightBootstrap({super.key});
   @override
@@ -29,9 +34,7 @@ class _SousSightBootstrapState extends State<SousSightBootstrap> {
   /// and App Check first, then configure the hybrid backend once (its web
   /// bridge uses the Firebase app created here).
   Future<(AppServices, HybridRuntime?)> _load() async {
-    if (kFakeBackend) {
-      return (await fakeServices(), RehearsalHybridRuntime.create());
-    }
+    if (kFakeBackend) return loadPracticeApp();
     final services = await firebaseServices();
     // Remote Config can only tighten routing; it waits at most 2 s and falls
     // back to the in-app defaults (SS-076).

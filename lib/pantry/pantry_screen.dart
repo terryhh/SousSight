@@ -119,7 +119,7 @@ class PantryScreen extends StatefulWidget {
   /// Why AI help can't run here, in plain words, or null when it can or
   /// nobody knows. Read when matching fails without a reason (SS-089).
   final Future<String?> Function()? unavailableReason;
-  final bool? voiceOnline;
+  final bool Function()? voiceOnline;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
@@ -283,8 +283,16 @@ class _PantryScreenState extends State<PantryScreen> {
     await media?.stop();
   }
 
+  /// Read live at render, at Record and at send (Codex #221).
+  bool get _voiceOff => widget.voiceOnline?.call() == false;
+
+  /// Bumped by every mode switch; an older switch's work stops after any
+  /// await once this has moved on (Codex #221).
+  int _modeEpoch = 0;
+
   Future<void> _selectMode(PantryMode mode) async {
     final changed = mode != _mode;
+    final epoch = ++_modeEpoch;
     setState(() {
       // A clip never rides along unseen: leaving Say it deletes it.
       if (mode != PantryMode.say) {
@@ -301,8 +309,13 @@ class _PantryScreenState extends State<PantryScreen> {
     // for permission: stopping bumps the epoch so it never activates
     // (Codex #221).
     if (changed) await _stopMedia();
+    if (!mounted || epoch != _modeEpoch) return;
     if (mode == PantryMode.scan && !widget.isDemo && _photo == null) {
       await _ensureMedia();
+      // A later switch while the camera started: release it.
+      if (mounted && epoch != _modeEpoch && _mode != PantryMode.scan) {
+        await _stopMedia();
+      }
     }
   }
 
@@ -318,6 +331,10 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _record() async {
     if (_recording != null) return;
+    if (_voiceOff) {
+      setState(() => _error = pantryVoiceUnavailable);
+      return;
+    }
     if (widget.isDemo) {
       setState(() => _simulatedAudio = true);
       return;
@@ -397,8 +414,9 @@ class _PantryScreenState extends State<PantryScreen> {
         PantryInput(
           text: submitted,
           photoJpeg: _photo,
-          // Audio is sent only from Say it, where the clip is shown.
-          audioWav: _mode == PantryMode.say ? _audio : null,
+          // Audio is sent only from Say it, where the clip is shown, and only
+          // while voice processing is on (re-read at send).
+          audioWav: _mode == PantryMode.say && !_voiceOff ? _audio : null,
         ),
         widget.recipes,
       );
@@ -981,9 +999,7 @@ class _PantryScreenState extends State<PantryScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  widget.voiceOnline == false
-                      ? pantryVoiceUnavailable
-                      : pantryVoiceDisclosure,
+                  _voiceOff ? pantryVoiceUnavailable : pantryVoiceDisclosure,
                   style: const TextStyle(
                     fontSize: 14,
                     color: Color(0xFF5C4A2E),

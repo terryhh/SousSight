@@ -37,8 +37,7 @@ void main() {
     );
     expect(
       routeReasonSentence(RouteReason.audioNeedsCloud),
-      "Voice clips have to be sent online to Google's AI; your photo stayed "
-      'here.',
+      'Voice clips need online processing; your photo stayed here.',
     );
     expect(
       routeReasonSentence(RouteReason.cloudNotApproved),
