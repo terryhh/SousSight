@@ -29,7 +29,12 @@ import {
   typeInto,
 } from './flutter.mjs';
 import { COPY } from './copy.mjs';
-import { configProblems, initialPolicy, looksLikePreview } from './policy.mjs';
+import {
+  configProblems,
+  fatalConsoleErrors,
+  initialPolicy,
+  looksLikePreview,
+} from './policy.mjs';
 
 const PANTRY = 'bread, peanut butter, banana';
 const QUESTION = 'How thick should I spread the peanut butter?';
@@ -270,8 +275,6 @@ test('hero journey', async ({ page }, testInfo) => {
   }
   expect(ev.pageErrors, 'no uncaught page errors').toEqual([]);
   expect(ev.forbidden, 'rehearsal made no Firebase/AI/dinner requests').toEqual([]);
-  const consoleErrors = ev.consoleErrors.filter(
-    (text) => !/ERR_BLOCKED_BY_CLIENT/.test(text),
-  );
+  const consoleErrors = fatalConsoleErrors(ev.consoleErrors);
   expect(consoleErrors, 'no console errors').toEqual([]);
 });

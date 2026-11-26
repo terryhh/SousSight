@@ -3,7 +3,12 @@
 import { expect } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { decideRequest, pixelStats, refinePolicy } from './policy.mjs';
+import {
+  decideRequest,
+  partitionProvisionalErrors,
+  pixelStats,
+  refinePolicy,
+} from './policy.mjs';
 
 /// Turns Flutter's semantics tree on. Flutter web renders to a canvas and
 /// only builds the accessible DOM after its hidden "Enable accessibility"
@@ -147,10 +152,16 @@ export class Evidence {
   }
 
   /// Before reloading a real build that loaded under the provisional
-  /// policy: the console errors so far were caused by that blocking, so they
-  /// are kept in the report but no longer fail the run.
+  /// policy: only the console errors that the blocking itself caused (exact
+  /// signatures, policy.mjs partitionProvisionalErrors) are set aside. Every
+  /// other first-load error stays fatal.
   setAsideProvisionalErrors() {
-    this.provisionalConsoleErrors.push(...this.consoleErrors.splice(0));
+    const { setAside, fatal } = partitionProvisionalErrors(
+      this.consoleErrors,
+      this.provisionallyBlocked,
+    );
+    this.provisionalConsoleErrors.push(...setAside);
+    this.consoleErrors = fatal;
   }
 
   async mediaCalls() {
