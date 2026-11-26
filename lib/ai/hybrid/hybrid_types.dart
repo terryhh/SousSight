@@ -151,7 +151,7 @@ class FakeHybridDispatcher implements HybridDispatcher {
         text: text,
         legs: [
           InferenceLeg(
-            requestId: 'fake-${_seq + 1}',
+            requestId: 'fake-$_seq',
             feature: task.feature,
             mode: HybridMode.preferOnDevice,
             kinds: {DataKind.text, if (task.hasImage) DataKind.image},
@@ -173,16 +173,19 @@ class FakeHybridDispatcher implements HybridDispatcher {
     tasks.add(task);
     final id = 'op-${++_seq}';
     var cancelled = false;
+    // Build the scripted result now, while this operation's sequence number
+    // is current, so concurrent operations get distinct leg request ids.
     final next = script.isEmpty ? null : script.removeAt(0);
+    final scripted = next?.call(task);
     Future<DispatchResult> run() async {
       if (delay > Duration.zero) await Future<void>.delayed(delay);
       if (cancelled) {
         return const DispatchResult(legs: [], blocked: RouteReason.cancelled);
       }
-      if (next == null) {
+      if (scripted == null) {
         throw StateError('FakeHybridDispatcher: no scripted result');
       }
-      return next(task);
+      return scripted;
     }
 
     return HybridOperation(id, run(), () {
