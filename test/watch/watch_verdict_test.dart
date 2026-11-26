@@ -48,6 +48,29 @@ void main() {
     }
   });
 
+  test('missing or wrongly typed required fields abstain as unsure', () {
+    for (final text in [
+      '{"state":"ready"}',
+      '{"state":"ready","direction":"none"}',
+      '{"state":"ready","whatISee":"Golden edges."}',
+      '{"state":"ready","direction":"none","whatISee":42}',
+      '{"state":"ready","direction":"none","whatISee":null}',
+      '{"state":"ready","direction":"none","whatISee":"   "}',
+      '{"state":"not_yet","direction":"sideways","whatISee":"Pale onions."}',
+      '{"state":"not_yet","direction":1,"whatISee":"Pale onions."}',
+      '{"state":["ready"],"direction":"none","whatISee":"Golden edges."}',
+    ]) {
+      final parsed = parseWatchJson(text);
+      expect(parsed.state, WatchState.unsure, reason: text);
+      expect(parsed.whatISee, isEmpty, reason: text);
+    }
+    // A complete answer still parses.
+    expect(
+      parseWatchJson(verdictJson('ready', see: 'Golden edges.')).state,
+      WatchState.ready,
+    );
+  });
+
   test('claims vision cannot support are replaced, not shown', () {
     for (final claim in [
       'Chicken is cooked through.',

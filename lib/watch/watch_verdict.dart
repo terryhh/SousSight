@@ -167,22 +167,32 @@ parseWatchJson(String text) {
     return unsure;
   }
   if (decoded is! Map) return unsure;
-  final state = switch (decoded['state']) {
+  // Every schema field must be present with the right type and value before
+  // anything is accepted; a positive verdict also needs an observation.
+  final rawState = decoded['state'];
+  final rawDirection = decoded['direction'];
+  final raw = decoded['whatISee'];
+  if (rawState is! String || rawDirection is! String || raw is! String) {
+    return unsure;
+  }
+  final state = switch (rawState) {
     'ready' => WatchState.ready,
     'not_yet' => WatchState.notYet,
     'unsure' => WatchState.unsure,
     _ => null,
   };
-  if (state == null) return unsure;
+  final parsedDirection = switch (rawDirection) {
+    'more' => WatchDirection.more,
+    'less' => WatchDirection.less,
+    'none' => WatchDirection.none,
+    _ => null,
+  };
+  if (state == null || parsedDirection == null) return unsure;
+  var seen = _clip(raw);
+  if (seen.isEmpty && state != WatchState.unsure) return unsure;
   final direction = state == WatchState.notYet
-      ? switch (decoded['direction']) {
-          'more' => WatchDirection.more,
-          'less' => WatchDirection.less,
-          _ => WatchDirection.none,
-        }
+      ? parsedDirection
       : WatchDirection.none;
-  final raw = decoded['whatISee'];
-  var seen = raw is String ? _clip(raw) : '';
   var redacted = false;
   if (_unsupportedClaim.hasMatch(seen)) {
     seen = 'I can describe how it looks, not how it is inside.';

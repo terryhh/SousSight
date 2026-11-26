@@ -129,9 +129,13 @@ class FakeConsentGate implements ConsentGate {
 }
 
 class FakePrivacy implements PrivacySettings {
+  /// Every feature local-only.
   bool local = false;
+
+  /// Only these feature keys local-only.
+  final localFeatures = <String>{};
   @override
-  bool localOnly(String feature) => local;
+  bool localOnly(String feature) => local || localFeatures.contains(feature);
 }
 
 String verdictJson(

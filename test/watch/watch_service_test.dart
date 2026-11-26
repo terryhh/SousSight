@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
@@ -8,7 +10,7 @@ import 'package:soussight/watch/watch_service.dart';
 import 'watch_fakes.dart';
 
 class ServiceRig {
-  ServiceRig({bool localVision = true}) {
+  ServiceRig({bool localVision = true, Future<bool>? vision}) {
     capture = CaptureOwner(media);
     local = LocalWatchController(dispatcher: dispatcher, capture: capture);
     service = WatchService(
@@ -18,7 +20,7 @@ class ServiceRig {
         return 'live-watch-1';
       },
       stopLiveWatch: () => liveStops++,
-      localVisionSupported: () => localVision,
+      localVisionSupported: () => vision ?? localVision,
     );
   }
   final media = FakeMedia()..micDenied = true;
@@ -122,6 +124,96 @@ void main() {
       async.flushMicrotasks();
       expect(rig.service.activeRoute, WatchRoute.live);
       expect(rig.local.isActive, isFalse);
+    });
+  });
+
+  for (final cancel in [
+    'Stop',
+    'backgrounding',
+    'step change',
+    'session change',
+    'Live takeover',
+  ]) {
+    test('$cancel during a pending startup never opens the camera', () {
+      fakeAsync((async) {
+        final vision = Completer<bool>();
+        final rig = ServiceRig(vision: vision.future);
+        WatchStart? start;
+        rig.service
+            .startWatch(step: stepA, sessionId: 's1', liveActive: false)
+            .then((v) => start = v);
+        async.flushMicrotasks();
+        switch (cancel) {
+          case 'Stop':
+            rig.service.stopWatch();
+          case 'backgrounding':
+            rig.service.onBackgrounded();
+          case 'step change':
+            rig.service.onStepChanged('b');
+          case 'session change':
+            rig.service.onSessionChanged('s2');
+          case 'Live takeover':
+            rig.service.onLiveConnecting();
+        }
+        async.flushMicrotasks();
+        vision.complete(true);
+        async.flushMicrotasks();
+        expect(start!.started, isFalse);
+        expect(rig.media.log, isNot(contains('startCameraOnly')));
+        expect(rig.local.isActive, isFalse);
+        expect(rig.service.captureLabel, isNull);
+      });
+    });
+  }
+
+  test('a context change for the same step keeps a pending startup', () {
+    fakeAsync((async) {
+      final vision = Completer<bool>();
+      final rig = ServiceRig(vision: vision.future);
+      WatchStart? start;
+      rig.service
+          .startWatch(step: stepA, sessionId: 's1', liveActive: false)
+          .then((v) => start = v);
+      async.flushMicrotasks();
+      rig.service.onStepChanged('a');
+      rig.service.onSessionChanged('s1');
+      vision.complete(true);
+      async.flushMicrotasks();
+      expect(start!.started, isTrue);
+      expect(rig.local.isActive, isTrue);
+    });
+  });
+
+  test('Stop while the camera permission is pending leaves no watch', () {
+    fakeAsync((async) {
+      final rig = ServiceRig();
+      rig.media.cameraGate = Completer<void>();
+      WatchStart? start;
+      rig.service
+          .startWatch(step: stepA, sessionId: 's1', liveActive: false)
+          .then((v) => start = v);
+      async.flushMicrotasks();
+      rig.service.stopWatch();
+      async.flushMicrotasks();
+      rig.media.cameraGate!.complete();
+      async.flushMicrotasks();
+      expect(start!.started, isFalse);
+      expect(rig.local.isActive, isFalse);
+      expect(rig.capture.mode, CaptureMode.off);
+    });
+  });
+
+  test('after a ready verdict and a step change no stale status remains', () {
+    fakeAsync((async) {
+      final rig = ServiceRig();
+      rig.dispatcher.enqueue(verdictJson('ready'));
+      rig.service.startWatch(step: stepA, sessionId: 's1', liveActive: false);
+      async.flushMicrotasks();
+      rig.media.emit(DateTime.now());
+      async.flushMicrotasks();
+      expect(rig.service.statusText, contains('cue for this step'));
+      rig.service.onStepChanged('b');
+      expect(rig.service.statusText, isNull);
     });
   });
 }

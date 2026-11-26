@@ -252,6 +252,47 @@ void main() {
     });
   });
 
+  test('an incomplete ready answer does not end the watch', () {
+    fakeAsync((async) {
+      final rig = Rig(async);
+      rig.fake.enqueue('{"state":"ready"}');
+      rig.begin();
+      rig.frame();
+      async.flushMicrotasks();
+      expect(rig.watch.verdict!.state, WatchState.unsure);
+      expect(rig.watch.isActive, isTrue);
+      expect(rig.capture.mode, CaptureMode.localCamera);
+    });
+  });
+
+  test(
+    'a finished ready verdict is forgotten when the step or session moves on',
+    () {
+      for (final change in ['step', 'session']) {
+        fakeAsync((async) {
+          final rig = Rig(async);
+          rig.fake.enqueue(verdictJson('ready', see: 'Golden edges.'));
+          rig.begin();
+          rig.frame();
+          async.flushMicrotasks();
+          expect(rig.watch.isActive, isFalse);
+          expect(rig.watch.statusText, contains('cue for this step'));
+          // Same step and session: the cook still sees it.
+          rig.watch.onStepChanged('a');
+          rig.watch.onSessionChanged('s1');
+          expect(rig.watch.verdict, isNotNull);
+          if (change == 'step') {
+            rig.watch.onStepChanged('b');
+          } else {
+            rig.watch.onSessionChanged('s2');
+          }
+          expect(rig.watch.verdict, isNull, reason: change);
+          expect(rig.watch.statusText, isNull, reason: change);
+        });
+      }
+    },
+  );
+
   test('a blocked local route stops the watch with a reason and sends nothing else', () {
     fakeAsync((async) {
       final rig = Rig(async);
@@ -423,6 +464,37 @@ void main() {
         });
       },
     );
+
+    test(
+      'the watch feature\'s own local-only setting blocks the cloud check',
+      () {
+        fakeAsync((async) {
+          final privacy = FakePrivacy()..localFeatures.add(kLocalWatchFeature);
+          final rig = unsureRig(async, privacy: privacy);
+          rig.frame();
+          rig.watch.requestCloudCheck();
+          async.flushMicrotasks();
+          expect(rig.consent!.asks, isEmpty);
+          expect(rig.fake.tasks, hasLength(1));
+          expect(rig.watch.notice, contains('privacy setting'));
+        });
+      },
+    );
+
+    test('turning on the watch\'s local-only setting during the prompt sends nothing', () {
+      fakeAsync((async) {
+        final privacy = FakePrivacy();
+        final rig = unsureRig(async, privacy: privacy);
+        rig.frame();
+        rig.watch.requestCloudCheck();
+        async.flushMicrotasks();
+        privacy.localFeatures.add(kLocalWatchFeature);
+        rig.consent!.grant();
+        async.flushMicrotasks();
+        expect(rig.fake.tasks, hasLength(1));
+        expect(rig.watch.notice, contains('privacy setting'));
+      });
+    });
 
     test('local-only privacy never asks', () {
       fakeAsync((async) {

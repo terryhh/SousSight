@@ -55,6 +55,17 @@ class WatchService extends ChangeNotifier {
   String? _liveWatchId;
   String? _message;
 
+  /// Bumped by every start, stop and context change. A startup that awaited
+  /// across a bump is abandoned and never opens the camera or a watch.
+  int _epoch = 0;
+  String? _startingStepId;
+  String? _startingSessionId;
+
+  void _invalidateStartup() {
+    _epoch++;
+    _startingStepId = _startingSessionId = null;
+  }
+
   CaptureOwner get capture => local.capture;
 
   /// The route of the watch that is running now, if any.
@@ -83,6 +94,13 @@ class WatchService extends ChangeNotifier {
     required String sessionId,
     required bool liveActive,
   }) async {
+    final epoch = ++_epoch;
+    _startingStepId = step.id;
+    _startingSessionId = sessionId;
+    bool current() => epoch == _epoch;
+    const superseded = WatchStart(
+      message: 'That watch was cancelled before it started.',
+    );
     final cue = watchCue(step);
     if (cue == null) {
       return _result(
@@ -91,6 +109,7 @@ class WatchService extends ChangeNotifier {
     }
     if (liveActive) {
       await local.stop();
+      if (!current()) return superseded;
       final id = startLiveWatch(cue);
       _liveWatchId = id;
       return _result(
@@ -105,7 +124,9 @@ class WatchService extends ChangeNotifier {
       );
     }
     _liveWatchId = null;
-    if (!await _localVisionSupported()) {
+    final supported = await _localVisionSupported();
+    if (!current()) return superseded;
+    if (!supported) {
       return _result(
         const WatchStart(
           message:
@@ -114,7 +135,17 @@ class WatchService extends ChangeNotifier {
         ),
       );
     }
-    final id = await local.start(step: step, sessionId: sessionId);
+    final id = await local.start(
+      step: step,
+      sessionId: sessionId,
+      stillWanted: current,
+    );
+    if (!current()) {
+      // Belt and braces: never leave a watch running that was cancelled.
+      if (id != null && local.watchId == id) await local.stop();
+      return superseded;
+    }
+    _startingStepId = _startingSessionId = null;
     return _result(
       WatchStart(
         route: WatchRoute.local,
@@ -129,12 +160,14 @@ class WatchService extends ChangeNotifier {
 
   /// Records a watch the Live model started itself (`watch_cooking`).
   void liveWatchStarted(String watchId) {
+    _invalidateStartup();
     unawaited(local.stop());
     _liveWatchId = watchId;
     _notify();
   }
 
   Future<void> stopWatch() async {
+    _invalidateStartup();
     if (_liveWatchId != null) {
       _liveWatchId = null;
       stopLiveWatch();
@@ -144,13 +177,37 @@ class WatchService extends ChangeNotifier {
     _notify();
   }
 
-  void onStepChanged(String stepId) => local.onStepChanged(stepId);
-  void onSessionChanged(String sessionId) => local.onSessionChanged(sessionId);
-  void onBackgrounded() => local.onBackgrounded();
+  void onStepChanged(String stepId) {
+    if (_startingStepId != null && _startingStepId != stepId) {
+      _invalidateStartup();
+    }
+    if (_message != null) {
+      _message = null;
+      _notify();
+    }
+    local.onStepChanged(stepId);
+  }
+
+  void onSessionChanged(String sessionId) {
+    if (_startingSessionId != null && _startingSessionId != sessionId) {
+      _invalidateStartup();
+    }
+    if (_message != null) {
+      _message = null;
+      _notify();
+    }
+    local.onSessionChanged(sessionId);
+  }
+
+  void onBackgrounded() {
+    _invalidateStartup();
+    local.onBackgrounded();
+  }
 
   /// Call before `LiveCookingController.start`: cancels the local watch and
   /// its running check, releases the camera, and hands capture to Live.
   Future<void> onLiveConnecting() async {
+    _invalidateStartup();
     await local.onLiveConnecting();
     await capture.handOffToLive();
   }
@@ -163,7 +220,8 @@ class WatchService extends ChangeNotifier {
   }
 
   WatchStart _result(WatchStart start) {
-    _message = start.message;
+    // A started watch reports through [statusText]; keep only failures.
+    _message = start.started ? null : start.message;
     _notify();
     return start;
   }

@@ -133,11 +133,16 @@ class LocalWatchController extends ChangeNotifier {
 
   /// Starts a watch for [step]. Returns the watch id, or null when it could
   /// not start ([notice] says why) or was superseded before the camera opened.
+  ///
+  /// [stillWanted] lets a caller abandon the start (Stop, a step change)
+  /// while it awaits; it is checked before the camera opens and after.
   Future<String?> start({
     required RecipeStep step,
     required String sessionId,
+    bool Function()? stillWanted,
   }) async {
     await stop();
+    if (stillWanted != null && !stillWanted()) return null;
     if (watchCue(step) == null) {
       notice = 'This step has no visible cue to watch for.';
       _notify();
@@ -161,6 +166,10 @@ class LocalWatchController extends ChangeNotifier {
       return null;
     }
     if (lease == null || _token != token) return null;
+    if (stillWanted != null && !stillWanted()) {
+      await stop();
+      return null;
+    }
     _frames = capture.framesFor(lease).listen((frame) {
       if (_token != token) return;
       _latest = frame;
@@ -217,6 +226,8 @@ class LocalWatchController extends ChangeNotifier {
   void onStepChanged(String stepId) {
     if (_token != null && _token!.stepId != stepId) {
       unawaited(stop(notice: 'Watch stopped because the step changed.'));
+    } else if (_token == null && verdict != null && verdict!.stepId != stepId) {
+      _forgetFinished();
     }
   }
 
@@ -225,7 +236,18 @@ class LocalWatchController extends ChangeNotifier {
       unawaited(
         stop(notice: 'Watch stopped because the cooking session changed.'),
       );
+    } else if (_token == null &&
+        verdict != null &&
+        verdict!.sessionId != sessionId) {
+      _forgetFinished();
     }
+  }
+
+  /// A finished watch's verdict and notice describe another step or session.
+  void _forgetFinished() {
+    verdict = null;
+    notice = null;
+    _notify();
   }
 
   void onBackgrounded() {
@@ -274,7 +296,8 @@ class LocalWatchController extends ChangeNotifier {
       _notify();
       return null;
     }
-    final digest = frameDigest(frame.bytes);
+    final task = _task(token, frame, cloud: true);
+    final digest = _payloadDigest(task);
     _consentFrame = frame;
     _notify();
     ConsentGrant? grant;
@@ -300,21 +323,33 @@ class LocalWatchController extends ChangeNotifier {
     if (ask.feature != kWatchCloudCheckFeature ||
         ask.sessionId != token.sessionId ||
         ask.payloadDigest != digest ||
-        frameDigest(frame.bytes) != digest) {
+        _payloadDigest(task) != digest) {
       notice =
           'That permission was for a different photo, so nothing was sent.';
       _notify();
       return null;
     }
-    if (_localOnly) {
-      notice = 'Your privacy setting keeps watch photos on this device.';
-      _notify();
-      return null;
-    }
-    return _send(token, frame, cloud: true);
+    return _send(token, frame, task, grant: grant);
   }
 
-  bool get _localOnly => privacy?.localOnly(kWatchCloudCheckFeature) ?? false;
+  /// The cook's "keep Watch my food on this device" setting is keyed by
+  /// [kLocalWatchFeature]; the cloud-check key is honoured too. Read live.
+  bool get _localOnly =>
+      (privacy?.localOnly(kLocalWatchFeature) ?? false) ||
+      (privacy?.localOnly(kWatchCloudCheckFeature) ?? false);
+
+  /// The digest a consent grant names. When the trunk exports
+  /// `hybridPayloadDigest(HybridTask)`, return that here instead.
+  String _payloadDigest(HybridTask task) =>
+      frameDigest(task.parts.whereType<HybridInlineData>().single.bytes);
+
+  /// The only call into the dispatcher. When `HybridDispatcher.start` gains
+  /// `ConsentGrant? grant`, pass `grant: grant` here.
+  HybridOperation _dispatch(
+    HybridTask task,
+    String sessionId, {
+    ConsentGrant? grant,
+  }) => dispatcher.start(task, sessionId: sessionId);
 
   CapturedFrame? _freshFrame() {
     final frame = _latest;
@@ -332,29 +367,42 @@ class LocalWatchController extends ChangeNotifier {
       return null;
     }
     _checkedOnce = true;
-    return _send(token, frame, cloud: false);
+    return _send(token, frame, _task(token, frame, cloud: false));
   }
 
-  Future<WatchVerdict?> _send(
+  HybridTask _task(
     _WatchToken token,
     CapturedFrame frame, {
     required bool cloud,
+  }) => HybridTask(
+    feature: cloud ? kWatchCloudCheckFeature : kLocalWatchFeature,
+    systemInstruction: kWatchSystemInstruction,
+    parts: [
+      HybridText(buildWatchPrompt(token.step)),
+      HybridInlineData(frame.bytes, 'image/jpeg'),
+    ],
+    jsonSchema: kWatchSchema,
+    maxOutputTokens: 96,
+    timeout: requestTimeout,
+  );
+
+  Future<WatchVerdict?> _send(
+    _WatchToken token,
+    CapturedFrame frame,
+    HybridTask task, {
+    ConsentGrant? grant,
   }) async {
-    final task = HybridTask(
-      feature: cloud ? kWatchCloudCheckFeature : kLocalWatchFeature,
-      systemInstruction: kWatchSystemInstruction,
-      parts: [
-        HybridText(buildWatchPrompt(token.step)),
-        HybridInlineData(frame.bytes, 'image/jpeg'),
-      ],
-      jsonSchema: kWatchSchema,
-      maxOutputTokens: 96,
-      timeout: requestTimeout,
-    );
+    final cloud = task.feature == kWatchCloudCheckFeature;
+    // Privacy is read live, immediately before an upload.
+    if (cloud && _localOnly) {
+      notice = 'Your privacy setting keeps watch photos on this device.';
+      _notify();
+      return null;
+    }
     // No `validate`: a rejected on-device answer must never trigger the
     // dispatcher's cloud retry with this frame. Malformed output becomes
     // `unsure` below instead.
-    final operation = dispatcher.start(task, sessionId: token.sessionId);
+    final operation = _dispatch(task, token.sessionId, grant: grant);
     final check = _Check(operation, token, frame, cloud: cloud);
     _inFlight = check;
     _notify();
