@@ -23,9 +23,11 @@ import '../label/label_check_controller.dart';
 import '../translate/translation_runtime.dart';
 import '../trust/ledger_source.dart';
 import '../trust/privacy_preferences.dart';
-import '../trust/trust_labels.dart';
 import 'cloud_send_recorder.dart';
+import 'consent_copy.dart';
 import 'online_status.dart';
+
+export 'consent_copy.dart';
 
 /// Cloud model for hybrid fallback and the Dart cloud adapter. Defaults to
 /// the research model so one Flash model id is configured for every non-Live
@@ -117,27 +119,22 @@ class InferenceLedgerSource implements LedgerSource {
   void removeListener(VoidCallback listener) => ledger.removeListener(listener);
 }
 
-/// What the consent dialog shows. Pure, so it is testable without a widget.
-({String title, String body}) consentCopy(
-  ConsentAsk ask, {
-  required String cloudModel,
-}) => (
-  title: 'Send this to Google cloud AI?',
-  body:
-      '${featureLabel(ask.feature)} needs to send your '
-      '${dataKindsPhrase(ask.kinds)} to $kCloudRecipient '
-      '($cloudModel) to answer. It is used once, for this request only. '
-      'SousSight does not store it. If you say no, nothing is sent.',
-);
-
 /// [ConsentGate] as a modal dialog: says exactly which kinds of data would go
-/// to whom, then "Allow once" or "Don't send". No context, a dismissed
-/// dialog, or anything but "Allow once" is a decline.
+/// to whom, then [kConsentAllowLabel] or [kConsentDeclineLabel]. No context,
+/// a dismissed dialog, or anything but [kConsentAllowLabel] is a decline.
 class DialogConsentGate implements ConsentGate {
-  DialogConsentGate({required this.navigatorKey, required this.cloudModel});
+  DialogConsentGate({
+    required this.navigatorKey,
+    required this.cloudModel,
+    this.remoteRouting,
+  });
 
   final GlobalKey<NavigatorState> navigatorKey;
   final String cloudModel;
+
+  /// The live Remote Config routing, read each time the prompt opens, so the
+  /// copy follows the route the dispatcher will take.
+  final RemoteRouting? Function()? remoteRouting;
 
   @override
   Future<ConsentGrant?> request(ConsentAsk ask) =>
@@ -150,7 +147,7 @@ class DialogConsentGate implements ConsentGate {
   ) async {
     final context = navigatorKey.currentContext;
     if (context == null || !context.mounted) return null;
-    final copy = consentCopy(ask, cloudModel: cloudModel);
+    final copy = consentCopy(ask, remote: remoteRouting?.call());
     final allowed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -183,12 +180,12 @@ class DialogConsentGate implements ConsentGate {
           TextButton(
             key: const ValueKey('consent-decline'),
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Don't send"),
+            child: Text(copy.decline),
           ),
           FilledButton(
             key: const ValueKey('consent-allow'),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Allow once'),
+            child: Text(copy.allow),
           ),
         ],
       ),
@@ -345,6 +342,7 @@ class HybridRuntime {
     final consent = DialogConsentGate(
       navigatorKey: key,
       cloudModel: cloudModel,
+      remoteRouting: remote?.routing,
     );
     return HybridRuntime(
       inference: configured,
