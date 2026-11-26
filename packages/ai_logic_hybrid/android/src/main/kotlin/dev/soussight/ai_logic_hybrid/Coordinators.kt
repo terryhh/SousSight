@@ -67,8 +67,6 @@ class GenerateCoordinator(
     private val scope: CoroutineScope,
     private val engine: HybridEngine,
     private val config: () -> HybridConfig?,
-    /** Backstop past `timeoutMs` in case an SDK call does not honour coroutine cancellation. */
-    private val watchdogGraceMs: Long = 500,
 ) {
     private val pending = ConcurrentHashMap<String, PendingCall>()
 
@@ -89,8 +87,20 @@ class GenerateCoordinator(
             reply.error(HybridErrorCode.FAILED.wire, "Duplicate requestId ${request.requestId}")
             return
         }
+        // The deadline is its own coroutine, started before the work, so the caller hears
+        // `timeout` at timeoutMs even if the SDK is slow to honour cancellation (or never does).
+        // The native work is cancelled after the reply and unwinds on its own time; whatever it
+        // returns later is dropped by the one-reply guard.
+        call.deadline = scope.launch {
+            delay(request.timeoutMs)
+            if (call.fail(HybridErrorCode.TIMEOUT, "Timed out after ${request.timeoutMs} ms")) {
+                pending.remove(request.requestId, call)
+                call.work?.cancel()
+            }
+        }
         val work = scope.launch {
             try {
+                // Cooperative path; the deadline above answers even if this cannot unwind.
                 val result = withTimeout(request.timeoutMs) { engine.generate(snapshot, request) }
                 if (request.mode == HybridMode.ONLY_ON_DEVICE &&
                     result.source != InferenceSourceWire.ON_DEVICE
@@ -109,27 +119,18 @@ class GenerateCoordinator(
                 val mapped = ErrorMapping.classify(e)
                 call.fail(mapped.code, mapped.message)
             } finally {
-                call.watchdog?.cancel()
+                call.deadline?.cancel()
                 pending.remove(request.requestId, call)
             }
         }
         call.work = work
-        if (!work.isCompleted) {
-            call.watchdog = scope.launch {
-                delay(request.timeoutMs + watchdogGraceMs)
-                if (call.fail(HybridErrorCode.TIMEOUT, "Timed out after ${request.timeoutMs} ms")) {
-                    pending.remove(request.requestId, call)
-                    work.cancel()
-                }
-            }
-        }
     }
 
     fun cancel(requestId: String?) {
         if (requestId == null) return
         val call = pending.remove(requestId) ?: return
         call.fail(HybridErrorCode.CANCELLED, "Cancelled")
-        call.watchdog?.cancel()
+        call.deadline?.cancel()
         call.work?.cancel()
     }
 
@@ -142,7 +143,7 @@ class GenerateCoordinator(
     private class PendingCall(val requestId: String, private val reply: Reply) {
         private val done = AtomicBoolean(false)
         @Volatile var work: Job? = null
-        @Volatile var watchdog: Job? = null
+        @Volatile var deadline: Job? = null
 
         fun succeed(value: Any?): Boolean {
             if (!done.compareAndSet(false, true)) return false

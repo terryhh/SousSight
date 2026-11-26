@@ -135,20 +135,38 @@ internal class CoordinatorTest {
     }
 
     @Test
-    fun watchdogAnswersWhenTheSdkIgnoresCancellation() {
-        // Simulates native work that does not honour coroutine cancellation.
+    fun timeoutIsAnsweredAtTheDeadlineWhenTheSdkIgnoresCancellation() {
+        // Native work that does not honour coroutine cancellation: withTimeout cannot complete
+        // until it unwinds 1.5 s later. The caller must still hear `timeout` at timeoutMs.
+        val finished = CompletableDeferred<Unit>()
         val engine = FakeEngine(onGenerate = { _, _ ->
-            withContext(NonCancellable) { delay(1_000) }
+            withContext(NonCancellable) { delay(1_500) }
+            finished.complete(Unit)
             GenerateResult("late", InferenceSourceWire.ON_DEVICE, null)
         })
-        val c = GenerateCoordinator(scope, engine, { config }, watchdogGraceMs = 100)
+        val c = GenerateCoordinator(scope, engine, { config })
         val reply = RecordingReply()
         val started = System.nanoTime()
         c.start(args(timeoutMs = 50), reply)
-        assertEquals("timeout", reply.await().first)
-        assertTrue((System.nanoTime() - started) / 1_000_000 < 900, "answered before the late result")
-        runBlocking { delay(1_200) }
+        assertEquals("timeout" to "Timed out after 50 ms", reply.await())
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        assertTrue(elapsedMs >= 50, "not before the deadline ($elapsedMs ms)")
+        // Previously the reply waited for timeoutMs + 500 ms of grace (about 555 ms).
+        assertTrue(elapsedMs < 400, "answered at the deadline, not after the grace ($elapsedMs ms)")
+        assertFalse(finished.isCompleted, "native work was still running when the caller was told")
+        assertEquals(0, c.pendingCount, "the request id is free again")
+        runBlocking { withTimeout(5_000) { finished.await() }; delay(100) }
         assertEquals(1, reply.replies.size, "late result discarded")
+    }
+
+    @Test
+    fun aFastResultCancelsTheDeadline() {
+        val c = GenerateCoordinator(scope, FakeEngine(), { config })
+        val reply = RecordingReply()
+        c.start(args(timeoutMs = 100), reply)
+        assertEquals("success", reply.await().first)
+        runBlocking { delay(250) }
+        assertEquals(1, reply.replies.size, "no timeout after a success")
     }
 
     @Test
