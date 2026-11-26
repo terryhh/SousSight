@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_ai/firebase_ai.dart';
 
+import '../safety/cook_safety.dart';
 import 'live_types.dart';
 
 const kLiveModel = String.fromEnvironment(
@@ -161,6 +162,11 @@ String? validateLiveTool(LiveToolCall call) {
       }
     case 'watch_cooking':
       if (!text('goal', 240)) return 'Watch needs a short visible goal.';
+      // Checked before the watch starts, so a rejected goal never replaces
+      // the cook's current watch (SS-131).
+      if (touchesFoodSafety(a['goal'] as String)) {
+        return 'Watch goal: ${const UnsafeClaimException().message}';
+      }
     case 'report_readiness':
       if (!text('watchId', 80)) {
         return 'Readiness must identify the active watch.';

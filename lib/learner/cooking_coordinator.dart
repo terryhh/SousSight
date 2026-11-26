@@ -15,6 +15,7 @@ import '../genui/cooking_ui.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
 import '../pantry/recipe_draft.dart';
+import '../safety/cook_safety.dart';
 import '../watch/watch_service.dart';
 import '../watch/watch_verdict.dart';
 import 'ingredient_label.dart';
@@ -947,13 +948,22 @@ $cookingUiInstructions
           };
         }
         try {
-          ui.applyJson(a['uiJson'] as String);
+          ui.applyJson(a['uiJson'] as String, reviewed: _reviewedRecipeText);
+        } on UnsafeClaimException catch (e) {
+          // The coach touched what no camera or model can know: show the
+          // recipe's own step and cue with a thermometer / label note.
+          _showSafeStepFallback();
+          _notify();
+          return _invalidUi(e.message);
         } on FormatException catch (e) {
           return _invalidUi(e.message);
         } on TypeError catch (e) {
           return _invalidUi(e.toString());
         }
       case 'start_timer':
+        if (touchesFoodSafety(a['label'] as String)) {
+          return _gated('Timer label');
+        }
         await startTimer(
           a['id'] as String,
           a['label'] as String,
@@ -970,6 +980,21 @@ $cookingUiInstructions
           });
         }
       case 'report_readiness':
+        if (touchesFoodSafety(a['observation'] as String)) {
+          // Drop the claim, downgrade to uncertain and show the recipe's own
+          // visible cue. Not ok, so the watch is not marked ready.
+          // The watch keeps going, so the panel says so.
+          _watchPanel(
+            'watching',
+            'Still watching',
+            [
+              if (step.cue.trim().isNotEmpty) 'Look for: ${step.cue.trim()}',
+              cookSafetyFallbackNote,
+            ].join(' '),
+          );
+          _notify();
+          return {..._gated('Observation'), 'state': 'uncertain'};
+        }
         final ready = a['state'] == 'ready';
         _watchPanel(
           ready
@@ -982,6 +1007,9 @@ $cookingUiInstructions
         );
         if (ready) alert = 'Check your food: ${a['observation']}';
       case 'ask_cook':
+        if (touchesFoodSafety(a['question'] as String)) {
+          return _gated('Question');
+        }
         cookQuestion = a['question'] as String;
         ui.reopenQuestion(cookQuestion!);
         ui.upsertPanel({
@@ -1023,6 +1051,51 @@ $cookingUiInstructions
     _notify();
     return {'ok': true, 'currentStep': step.id, 'currentStepId': step.id};
   }
+
+  /// The recipe's own reviewed text: a panel may quote it verbatim. An AI
+  /// draft is model-written, so nothing in it counts as reviewed.
+  Set<String> get _reviewedRecipeText => isDraftRecipe(recipe)
+      ? const {}
+      : {
+          for (final s in [
+            recipe.title,
+            recipe.summary,
+            for (final i in recipe.ingredients) ...[i.name, i.qty],
+            for (final st in recipe.steps) ...[
+              st.title,
+              st.instruction,
+              st.cue,
+            ],
+            for (final c in recipe.checkpoints) ...[c.target, ...c.cues],
+          ])
+            if (s.trim().isNotEmpty) s.trim(),
+        };
+
+  /// The model's text touched food safety: nothing is shown.
+  Map<String, Object?> _gated(String what) => {
+    'ok': false,
+    'error': '$what: ${const UnsafeClaimException().message}',
+    'currentStepId': step.id,
+  };
+
+  /// App-authored fallback for a rejected coach panel: the recipe's own step
+  /// and visible cue, and where to check what the camera cannot.
+  void _showSafeStepFallback() => ui.applyToolPayload({
+    'components': [
+      {
+        'id': 'root',
+        'component': 'CookingColumn',
+        'children': ['step', 'safety_check'],
+      },
+      _stepPanel,
+      {
+        'id': 'safety_check',
+        'component': 'stepCue',
+        'title': 'Check it yourself',
+        'body': cookSafetyFallbackNote,
+      },
+    ],
+  });
 
   Map<String, Object?> _invalidUi(String message) => {
     'ok': false,

@@ -316,7 +316,7 @@ void main() {
           'id': 'watch',
           'component': 'watchStatus',
           'title': 'Watching',
-          'body': 'I will tell you when it is ready.',
+          'body': 'I will tell you when it bubbles.',
           'status': 'watching',
         },
       ],
@@ -352,10 +352,12 @@ void main() {
     ]) {
       expect(
         validateCoachLiteResponse(answerJson(body: claim)),
-        contains('must not certify'),
+        contains('Never certify'),
         reason: claim,
       );
     }
+    // SS-106 conservative gate: conditions that use the vocabulary are
+    // over-blocked too; the recipe step and a thermometer note show instead.
     for (final conditional in [
       "It's done when it coats a spoon.",
       'Stir until the sauce is done, then taste.',
@@ -363,7 +365,7 @@ void main() {
     ]) {
       expect(
         validateCoachLiteResponse(answerJson(body: conditional)),
-        isNull,
+        contains('Never certify'),
         reason: conditional,
       );
     }
@@ -530,16 +532,17 @@ void main() {
       );
     });
 
-    test('no note certifies anything', () {
+    test('notes are app-authored: a model could never write them', () {
+      // The notes name the very topics the conservative gate blocks in model
+      // text (SS-131), so only the app adds them, after validation.
       for (final note in [
         coachLiteSafetyNotice,
         coachLiteAllergenNotice,
         coachLiteFreshnessNotice,
       ]) {
-        // The same certification check every model answer must pass.
         expect(
           () => parseCoachLiteResponse(answerJson(body: note)),
-          returnsNormally,
+          throwsFormatException,
           reason: note,
         );
       }

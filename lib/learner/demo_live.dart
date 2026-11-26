@@ -109,7 +109,7 @@ class DemoLiveTransport implements LiveTransport {
             'component': 'comparison',
             'title': 'Rehearsal: compare your progress',
             'observed':
-                'Simulated example only; no camera image was inspected.',
+                'Simulated example only; the camera image was not inspected.',
             'target': _step?.cue ?? 'Follow the current recipe cue.',
             'cue': 'This is an example response, not a camera assessment.',
           },

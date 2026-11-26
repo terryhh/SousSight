@@ -161,8 +161,35 @@ void main() {
       expect(coachLiteCertifies(text), isFalse);
     });
 
-    test('the app safety notice is spoken: it certifies nothing', () {
-      expect(coachLiteCertifies(coachLiteSafetyNotice), isFalse);
+    test('the app safety notice is spoken; model text is gated anywhere', () {
+      // The notice uses the gated vocabulary, so a model could never say it;
+      // the app's literal notice is read as written (SS-131).
+      expect(coachLiteCertifies(coachLiteSafetyNotice), isTrue);
+      final text = coachLiteSpokenText(
+        _answer(
+          components: [
+            {
+              'id': 'root',
+              'component': 'CookingColumn',
+              'children': ['tip', 'app_safety'],
+            },
+            {
+              'id': 'tip',
+              'component': 'stepCue',
+              'title': 'Tip',
+              'body': 'The chicken is done.',
+            },
+            {
+              'id': 'app_safety',
+              'component': 'stepCue',
+              'title': 'Check for yourself',
+              'body': coachLiteSafetyNotice,
+            },
+          ],
+        ),
+      );
+      expect(text, isNot(contains('The chicken is done.')));
+      expect(text, contains(coachLiteSafetyNotice));
     });
 
     test('a cancelled answer says nothing', () {
