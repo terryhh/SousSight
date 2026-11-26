@@ -1023,32 +1023,57 @@ void main() {
       },
     );
 
-    test(
-      'unsupportedInput on a cloud-only photo goes to the adapter, one consent',
-      () async {
-        final h = _Harness(caps: fakeIosCapabilities);
-        h.bridge.script.add(
-          const HybridException(
-            HybridErrorCode.unsupportedInput,
-            'no attachment',
-          ),
-        );
-        final r = await h.run(_photo('pantry_scan'));
-        expect(r.text, 'adapter answer');
-        expect(h.consent.asks, hasLength(1));
-        expect(r.legs, [
-          _leg(
-            mode: HybridMode.onlyInCloud,
-            error: HybridErrorCode.unsupportedInput,
-          ),
-          _leg(
-            provenance: Provenance.cloudAdapter,
-            mode: HybridMode.onlyInCloud,
-            error: null,
-          ),
-        ]);
-      },
-    );
+    test('unsupportedInput on a cloud-only photo goes to the adapter; the cook '
+        'is asked again (the grant is not refunded after dispatch)', () async {
+      final h = _Harness(caps: fakeIosCapabilities);
+      h.bridge.script.add(
+        const HybridException(
+          HybridErrorCode.unsupportedInput,
+          'no attachment',
+        ),
+      );
+      final r = await h.run(_photo('pantry_scan'));
+      expect(r.text, 'adapter answer');
+      // Pre-existing (Codex): nothing proves the bridge rejected the photo
+      // before sending it, so the first grant stays spent.
+      expect(h.consent.asks, hasLength(2));
+      expect(r.legs, [
+        _leg(
+          mode: HybridMode.onlyInCloud,
+          error: HybridErrorCode.unsupportedInput,
+        ),
+        _leg(
+          provenance: Provenance.cloudAdapter,
+          mode: HybridMode.onlyInCloud,
+          error: null,
+        ),
+      ]);
+    });
+
+    test('a supplied grant spent on a bridge attempt that reports '
+        'unsupportedInput does not pay for the adapter send', () async {
+      final h = _Harness(caps: fakeIosCapabilities);
+      final task = _photo('pantry_scan');
+      final grant = await h.consent.grantFor(
+        ConsentAsk(
+          feature: 'pantry_scan',
+          kinds: taskDataKinds(task),
+          payloadDigest: hybridPayloadDigest(task),
+          sessionId: 's1',
+        ),
+      );
+      h.bridge.script.add(
+        const HybridException(HybridErrorCode.unsupportedInput, 'after send?'),
+      );
+      h.consent.answer = (_) async => null; // the cook says no this time
+      final r = await h.dispatcher
+          .start(task, sessionId: 's1', grant: grant)
+          .result;
+      expect(h.bridge.requests, hasLength(1), reason: 'the grant paid for it');
+      expect(h.consent.asks, hasLength(1), reason: 'asked for the fallback');
+      expect(h.adapter!.requests, isEmpty);
+      expect(r.text, isNull);
+    });
 
     test('the adapter fallback re-checks localOnly', () async {
       final h = _Harness(caps: fakeIosCapabilities);
