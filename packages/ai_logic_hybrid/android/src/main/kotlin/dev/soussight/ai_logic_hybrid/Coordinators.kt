@@ -19,6 +19,10 @@ interface HybridEngine {
     fun prepare(config: HybridConfig, withImage: Boolean): Flow<Double?>
 
     suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult
+
+    /** The concrete option [config] runs on, or null while `auto` has not chosen one. */
+    fun modelOption(config: HybridConfig): AndroidModelOption? =
+        config.androidModel.takeIf { it != AndroidModelOption.AUTO }
 }
 
 /**

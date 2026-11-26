@@ -18,6 +18,8 @@ enum class HybridMode(val wire: String) {
 }
 
 enum class AndroidModelOption(val wire: String) {
+    /** Pick the best working Gemini Nano once per app run (AutoModelEngine). Never sent to the SDK. */
+    AUTO("auto"),
     PREVIEW("preview"),
     PREVIEW_FAST("previewFast"),
     STABLE("stable");
@@ -102,6 +104,8 @@ data class AvailabilityResult(
     val status: OnDeviceStatus,
     val reason: String? = null,
     val modelLabel: String? = null,
+    /** The concrete option this answer is about (what `auto` chose); null if none was checked. */
+    val modelOption: AndroidModelOption? = null,
 )
 
 data class GenerateResult(
@@ -124,7 +128,7 @@ object Protocol {
         } ?: listOf("en")
         return HybridConfig(
             cloudModel = cloudModel,
-            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: "preview"),
+            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: AndroidModelOption.AUTO.wire),
             languages = languages,
         )
     }
@@ -183,11 +187,15 @@ object Protocol {
         }
     }
 
-    /** DESIGN §4 capabilities for Gemini Nano through AICore. Limits are Docs-level. */
-    fun capabilities(): Map<String, Any?> = mapOf(
+    /**
+     * DESIGN §4 capabilities for Gemini Nano through AICore. Limits are Docs-level. [modelOption]
+     * is the concrete option in use (what `auto` chose), or null while `auto` has not chosen yet.
+     */
+    fun capabilities(modelOption: AndroidModelOption? = null): Map<String, Any?> = mapOf(
         "platform" to "android",
         "local" to mapOf(
             "modelFamily" to "Gemini Nano",
+            "modelOption" to modelOption?.wire,
             "supportsImage" to true,
             // The SDK sends a manual schema only to the cloud model; on-device structured output
             // needs a compile-time @Generable class. Local runs get the schema in the prompt and
@@ -208,6 +216,7 @@ object Protocol {
         "status" to a.status.wire,
         "reason" to a.reason,
         "modelLabel" to a.modelLabel,
+        "modelOption" to a.modelOption?.wire,
     )
 
     fun resultMap(requestId: String, r: GenerateResult): Map<String, Any?> = mapOf(

@@ -31,7 +31,10 @@ internal class ProtocolTest {
             listOf("preferOnDevice", "onlyOnDevice", "preferInCloud", "onlyInCloud"),
             HybridMode.entries.map { it.wire },
         )
-        assertEquals(listOf("preview", "previewFast", "stable"), AndroidModelOption.entries.map { it.wire })
+        assertEquals(
+            listOf("auto", "preview", "previewFast", "stable"),
+            AndroidModelOption.entries.map { it.wire },
+        )
         assertEquals(
             listOf("available", "downloadable", "downloading", "unavailable"),
             OnDeviceStatus.entries.map { it.wire },
@@ -52,6 +55,18 @@ internal class ProtocolTest {
             mapOf("cloudModel" to "gemini-x", "androidModel" to "previewFast", "languages" to listOf("en", "ko")),
         )
         assertEquals(HybridConfig("gemini-x", AndroidModelOption.PREVIEW_FAST, listOf("en", "ko")), c)
+    }
+
+    @Test
+    fun configureDefaultsToAuto() {
+        assertEquals(
+            HybridConfig("m", AndroidModelOption.AUTO, listOf("en")),
+            Protocol.parseConfig(mapOf("cloudModel" to "m")),
+        )
+        assertEquals(
+            AndroidModelOption.AUTO,
+            Protocol.parseConfig(mapOf("cloudModel" to "m", "androidModel" to "auto")).androidModel,
+        )
     }
 
     @Test
@@ -154,11 +169,15 @@ internal class ProtocolTest {
         )
         assertEquals(
             setOf(
-                "modelFamily", "supportsImage", "supportsJsonSchema", "maxTotalTokens",
+                "modelFamily", "modelOption", "supportsImage", "supportsJsonSchema", "maxTotalTokens",
                 "defaultOutputReserve", "imageTokenEstimate", "validatedLanguages",
             ),
             local.keys,
         )
+        // Not chosen yet (auto before its check): reported as null, never as "auto".
+        assertNull(local["modelOption"])
+        val chosen = Protocol.capabilities(AndroidModelOption.STABLE)["local"] as Map<*, *>
+        assertEquals("stable", chosen["modelOption"])
     }
 
     @Test
@@ -168,8 +187,14 @@ internal class ProtocolTest {
             Protocol.resultMap("r9", GenerateResult("ok", InferenceSourceWire.ON_DEVICE, null)),
         )
         assertEquals(
-            mapOf("status" to "unavailable", "reason" to "not_enrolled", "modelLabel" to null),
+            mapOf("status" to "unavailable", "reason" to "not_enrolled", "modelLabel" to null, "modelOption" to null),
             Protocol.availabilityMap(AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.NOT_ENROLLED)),
+        )
+        assertEquals(
+            mapOf("status" to "available", "reason" to null, "modelLabel" to "nano-v3", "modelOption" to "stable"),
+            Protocol.availabilityMap(
+                AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v3", modelOption = AndroidModelOption.STABLE),
+            ),
         )
         assertEquals(mapOf("fraction" to null), Protocol.fractionEvent(null))
         assertTrue(Protocol.parseWithImage(mapOf("withImage" to true)))

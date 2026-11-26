@@ -34,6 +34,9 @@ object SdkMapping {
         AndroidModelOption.PREVIEW -> OnDeviceModelOption.PREVIEW
         AndroidModelOption.PREVIEW_FAST -> OnDeviceModelOption.PREVIEW_FAST
         AndroidModelOption.STABLE -> OnDeviceModelOption.STABLE
+        // AutoModelEngine resolves `auto` before any engine call; reaching the SDK with it is a bug.
+        AndroidModelOption.AUTO ->
+            throw HybridError(HybridErrorCode.FAILED, "androidModel auto must be resolved first")
     }
 
     /** The SDK's own report. Anything else is not inferred: the call fails. */

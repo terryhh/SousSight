@@ -1,5 +1,7 @@
 package dev.soussight.ai_logic_hybrid
 
+import android.content.pm.ApplicationInfo
+import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -21,10 +23,17 @@ import kotlinx.coroutines.launch
  * app's dispatcher decides the mode.
  */
 class AiLogicHybridPlugin internal constructor(
-    private val engineFactory: () -> HybridEngine,
+    private val engineFactory: (debuggable: Boolean) -> HybridEngine,
 ) : FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler {
 
-    constructor() : this({ FirebaseHybridEngine() })
+    constructor() : this({ debuggable ->
+        AutoModelEngine(
+            FirebaseHybridEngine(),
+            // Debug builds also confirm the chosen model answers, for device verification.
+            verifyChoice = debuggable,
+            log = { Log.i(LOG_TAG, it) },
+        )
+    })
 
     private var channel: MethodChannel? = null
     private var prepareChannel: EventChannel? = null
@@ -37,7 +46,9 @@ class AiLogicHybridPlugin internal constructor(
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val engine = engineFactory()
+        val debuggable =
+            (binding.applicationContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        val engine = engineFactory(debuggable)
         this.scope = scope
         this.engine = engine
         generator = GenerateCoordinator(scope, engine, { config })
@@ -72,7 +83,9 @@ class AiLogicHybridPlugin internal constructor(
             } catch (e: HybridError) {
                 reply.error(e.code.wire, e.message)
             }
-            "capabilities" -> reply.success(Protocol.capabilities())
+            "capabilities" -> reply.success(
+                Protocol.capabilities(config?.let { engine?.modelOption(it) }),
+            )
             "availability" -> availability(call.arguments, reply)
             "generate" -> generator?.start(call.arguments, reply)
                 ?: reply.error(HybridErrorCode.UNAVAILABLE.wire, Reasons.BRIDGE_UNAVAILABLE)
@@ -132,5 +145,9 @@ class AiLogicHybridPlugin internal constructor(
     private fun Result.asReply(): Reply = object : Reply {
         override fun success(value: Any?) = this@asReply.success(value)
         override fun error(code: String, message: String?) = this@asReply.error(code, message, null)
+    }
+
+    private companion object {
+        const val LOG_TAG = "AiLogicHybrid"
     }
 }

@@ -32,6 +32,12 @@ const kHybridCloudModel = String.fromEnvironment(
   defaultValue: kCookingResearchModel,
 );
 
+/// Android on-device model: `--dart-define=ANDROID_MODEL=auto|preview|
+/// previewFast|stable`. Unset or unknown means auto (Nano 4 only if it answers).
+final kAndroidModel = AndroidModelOption.fromName(
+  const String.fromEnvironment('ANDROID_MODEL'),
+);
+
 /// Who the cook is told a cloud request goes to.
 const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 
@@ -299,7 +305,7 @@ class HybridRuntime {
     final key = navigatorKey ?? GlobalKey<NavigatorState>();
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
-      HybridConfig(cloudModel: cloudModel),
+      HybridConfig(cloudModel: cloudModel, androidModel: kAndroidModel),
     );
     final prefs = privacy ?? InMemoryPrivacyPreferences();
     final routes = cloudRoutes ?? CloudRoutes.fromEnvironment();

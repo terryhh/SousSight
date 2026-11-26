@@ -222,6 +222,9 @@ void main() {
       final hybrid = _runtime(inference);
       await (hybrid.inference as ConfiguredHybridInference).configured;
       expect(inference.config?.cloudModel, 'test-cloud-model');
+      // No ANDROID_MODEL dart-define in tests: auto picks Nano 4 only if it works.
+      expect(inference.config?.androidModel, AndroidModelOption.auto);
+      expect(kAndroidModel, AndroidModelOption.auto);
     });
 
     test('the first cooking session keeps pantry legs; a new cook clears', () {
