@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
+import 'package:soussight/ai/hybrid/payload_digest.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/pantry/pantry_client.dart';
@@ -813,11 +814,12 @@ void main() {
         DialogConsentGate(navigatorKey: key, cloudModel: 'm'),
         () => _png,
       );
-      const ask = ConsentAsk(
+      final ask = ConsentAsk(
         feature: 'local_watch_cloud_check',
-        kinds: {DataKind.image},
+        kinds: const {DataKind.image},
         payloadDigest: 'd',
         sessionId: 's',
+        imageDigests: {sha256Hex(_png)},
       );
       ConsentGrant? grant;
       unawaited(gate.request(ask).then((g) => grant = g));
@@ -1014,11 +1016,12 @@ void main() {
     final frame = Uint8List.fromList([1, 2, 3]);
     final dialog = _AllowingDialog();
     final preview = FramePreviewConsentGate(dialog, () => frame);
-    const ask = ConsentAsk(
+    final ask = ConsentAsk(
       feature: 'local_watch_cloud_check',
-      kinds: {DataKind.image},
+      kinds: const {DataKind.image},
       payloadDigest: 'd',
       sessionId: 's1',
+      imageDigests: {sha256Hex(frame)},
     );
     final grant = await preview.request(ask);
     expect(dialog.previews, [same(frame)]);
@@ -1060,6 +1063,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(hybrid.consent.issued(grant!), isTrue);
   });
+
+  // Codex #224 (65/100) P1: a caller-supplied preview of another photo is
+  // never shown for photo A's grant.
+  test(
+    'the prompt shows a preview only if it is one of the payload photos',
+    () async {
+      final photoA = Uint8List.fromList([1, 2, 3]);
+      final photoB = Uint8List.fromList([9, 9, 9]);
+      final task = HybridTask(
+        feature: 'local_watch_cloud_check',
+        parts: [HybridInlineData(photoA, 'image/jpeg')],
+        maxOutputTokens: 8,
+        timeout: const Duration(seconds: 1),
+      );
+      final ask = ConsentAsk(
+        feature: 'local_watch_cloud_check',
+        kinds: const {DataKind.image},
+        payloadDigest: hybridPayloadDigest(task),
+        sessionId: 's1',
+        imageDigests: taskImageDigests(task),
+      );
+      final dialog = _AllowingDialog();
+      await dialog.request(ask, preview: photoB);
+      await dialog.request(ask, preview: photoA);
+      // Through the frame preview gate, a mismatched frame is dropped too.
+      await FramePreviewConsentGate(dialog, () => photoB).request(ask);
+      // An ask that names no photos shows no preview at all.
+      await dialog.request(
+        ConsentAsk(
+          feature: 'label_check',
+          kinds: const {DataKind.image},
+          payloadDigest: 'd',
+          sessionId: 's1',
+        ),
+        preview: photoA,
+      );
+      expect(dialog.previews, [null, photoA, null, null]);
+    },
+  );
 }
 
 class _AllowingDialog extends DialogConsentGate {

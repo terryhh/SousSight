@@ -501,7 +501,14 @@ class DefaultHybridDispatcher implements HybridDispatcher {
           payloadDigest: run.digest,
           sessionId: run.sessionId,
           mode: mode,
+          imageDigests: taskImageDigests(run.task),
         ),
+        // The prompt shows the payload's own photo, never a caller's.
+        preview: run.task.parts
+            .whereType<HybridInlineData>()
+            .where(isImagePart)
+            .firstOrNull
+            ?.bytes,
       );
     } catch (_) {
       return null;
@@ -517,6 +524,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       !_spent.contains(grant) &&
       grant.ask.feature == run.task.feature &&
       setEquals(grant.ask.kinds, run.kinds) &&
+      setEquals(grant.ask.imageDigests, taskImageDigests(run.task)) &&
       grant.ask.payloadDigest == run.digest &&
       grant.ask.sessionId == run.sessionId;
 

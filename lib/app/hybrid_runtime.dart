@@ -328,6 +328,8 @@ class DialogConsentGate extends ConsentGate {
                   height: 160,
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
+                  // Bytes that do not decode show no preview, not an error.
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
               ),
             ],

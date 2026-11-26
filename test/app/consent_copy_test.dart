@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_policy.dart';
+import 'package:soussight/ai/hybrid/payload_digest.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/config/remote_policy.dart';
 import 'package:soussight/core/models.dart';
@@ -333,7 +334,16 @@ void main() {
       ConsentGrant? grant;
       unawaited(
         framed
-            .request(_ask('label_check', {DataKind.image, DataKind.text}))
+            .request(
+              // The preview is shown because it is this payload's photo.
+              ConsentAsk(
+                feature: 'label_check',
+                kinds: const {DataKind.image, DataKind.text},
+                payloadDigest: 'd',
+                sessionId: 's',
+                imageDigests: {sha256Hex(png)},
+              ),
+            )
             .then((g) => grant = g),
       );
       await tester.pumpAndSettle();

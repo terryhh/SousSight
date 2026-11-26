@@ -18,6 +18,7 @@ class _Privacy implements PrivacySettings {
 
 class _Consent extends ConsentGate {
   final List<ConsentAsk> asks = [];
+  final List<Uint8List?> previews = [];
   Future<ConsentGrant?> Function(ConsentAsk ask)? answer;
   @override
   Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
@@ -25,6 +26,7 @@ class _Consent extends ConsentGate {
   @override
   Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) {
     asks.add(ask);
+    previews.add(preview);
     return answer?.call(ask) ?? super.request(ask);
   }
 
@@ -657,6 +659,7 @@ void main() {
         kinds: taskDataKinds(task),
         payloadDigest: hybridPayloadDigest(task),
         sessionId: 's1',
+        imageDigests: taskImageDigests(task),
       ),
     );
     h.current = 'meal-b';
@@ -681,6 +684,7 @@ void main() {
       kinds: kinds,
       payloadDigest: hybridPayloadDigest(task),
       sessionId: 's1',
+      imageDigests: taskImageDigests(task),
     );
     final grant = await h.consent.grantFor(ask);
     kinds.add(DataKind.image);
@@ -751,6 +755,29 @@ void main() {
     },
   );
 
+  test('a grant naming other photos does not fit; the cook is asked with '
+      "the payload's own photo", () async {
+    final h = _Harness();
+    final task = _photo('local_watch_cloud_check');
+    final grant = await h.consent.grantFor(
+      ConsentAsk(
+        feature: 'local_watch_cloud_check',
+        kinds: taskDataKinds(task),
+        payloadDigest: hybridPayloadDigest(task),
+        sessionId: 's1',
+        imageDigests: const {'not-this-photo'},
+      ),
+    );
+    h.consent.answer = (_) async => null;
+    final r = await h.dispatcher
+        .start(task, sessionId: 's1', grant: grant)
+        .result;
+    expect(r.blocked, RouteReason.consentDeclined);
+    expect(h.consent.asks.single.imageDigests, taskImageDigests(task));
+    expect(h.consent.previews.single, [1, 2, 3]);
+    expect(h.bridge.requests, isEmpty);
+  });
+
   test('a reader that throws counts as unknown (reachable)', () async {
     final h = _Harness();
     final d = DefaultHybridDispatcher(
@@ -795,6 +822,7 @@ void main() {
             kinds: taskDataKinds(task),
             payloadDigest: hybridPayloadDigest(task),
             sessionId: 's1',
+            imageDigests: taskImageDigests(task),
           ),
         ),
         h.consent.grantFor(
@@ -803,6 +831,7 @@ void main() {
             kinds: const {DataKind.image},
             payloadDigest: hybridPayloadDigest(task),
             sessionId: 's1',
+            imageDigests: taskImageDigests(task),
           ),
         ),
         h.consent.grantFor(
@@ -811,6 +840,7 @@ void main() {
             kinds: {...taskDataKinds(task), DataKind.audio},
             payloadDigest: hybridPayloadDigest(task),
             sessionId: 's1',
+            imageDigests: taskImageDigests(task),
           ),
         ),
       ]);
@@ -835,6 +865,7 @@ void main() {
             kinds: taskDataKinds(task),
             payloadDigest: hybridPayloadDigest(task),
             sessionId: 's1',
+            imageDigests: taskImageDigests(task),
           ),
         );
         h.bridge.enqueueText(
@@ -882,6 +913,7 @@ void main() {
               kinds: taskDataKinds(task),
               payloadDigest: hybridPayloadDigest(task),
               sessionId: 'other',
+              imageDigests: taskImageDigests(task),
             ),
           ),
         ])) {
@@ -904,6 +936,7 @@ void main() {
         kinds: taskDataKinds(task),
         payloadDigest: hybridPayloadDigest(task),
         sessionId: 's1',
+        imageDigests: taskImageDigests(task),
       );
       // Right digest, right session, never used, but issued by a gate the
       // dispatcher does not trust.
@@ -1243,6 +1276,7 @@ void main() {
           kinds: taskDataKinds(task),
           payloadDigest: hybridPayloadDigest(task),
           sessionId: 's1',
+          imageDigests: taskImageDigests(task),
         ),
       );
       h.bridge.script.add(

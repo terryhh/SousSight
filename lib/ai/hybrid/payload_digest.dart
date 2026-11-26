@@ -60,6 +60,13 @@ Set<DataKind> taskDataKinds(HybridTask task) => {
 /// case (`Image/JPEG ` → `image/jpeg`). Types are case-insensitive.
 String normalizeMimeType(String mimeType) => mimeType.trim().toLowerCase();
 
+/// SHA-256 (hex) of each image attachment in [task]: what a consent preview
+/// must hash to before the prompt shows it.
+Set<String> taskImageDigests(HybridTask task) => {
+  for (final p in task.parts)
+    if (p is HybridInlineData && isImagePart(p)) sha256Hex(p.bytes),
+};
+
 /// Same test as [HybridTask.hasImage], per part, on the normalized type.
 bool isImagePart(HybridPart p) =>
     p is HybridInlineData && normalizeMimeType(p.mimeType).startsWith('image/');

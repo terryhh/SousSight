@@ -8,6 +8,8 @@ import 'dart:typed_data';
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/foundation.dart' show protected;
 
+import 'payload_digest.dart' show sha256Hex;
+
 /// A [HybridException] for a request that was refused before anything was
 /// sent (for example, a check after the startup wait). The dispatcher records
 /// its leg as not sent rather than "may have been sent".
@@ -50,6 +52,7 @@ final class ConsentAsk {
     required this.payloadDigest,
     required this.sessionId,
     this.mode,
+    this.imageDigests = const {},
   });
   final String feature;
   final Set<DataKind> kinds;
@@ -60,6 +63,11 @@ final class ConsentAsk {
   /// `onlyInCloud` sends at once; a `prefer…` mode may still finish on the
   /// device. Null: the feature's default route decides the wording.
   final HybridMode? mode;
+
+  /// SHA-256 (hex) of each photo in the payload (`taskImageDigests`). A
+  /// preview is shown only if it hashes to one of these, so a prompt can
+  /// never show a different photo than the one the grant covers.
+  final Set<String> imageDigests;
 }
 
 /// The cook's "allow once" for one [ConsentAsk]. The only way to obtain one
@@ -96,9 +104,15 @@ abstract class ConsentGate {
       payloadDigest: ask.payloadDigest,
       sessionId: ask.sessionId,
       mode: ask.mode,
+      imageDigests: Set.unmodifiable(ask.imageDigests),
     );
+    // A preview that is not one of this payload's own photos is never shown.
+    final shownPreview =
+        preview != null && shown.imageDigests.contains(sha256Hex(preview))
+        ? preview
+        : null;
     try {
-      return await confirm(shown, preview: preview)
+      return await confirm(shown, preview: shownPreview)
           ? ConsentGrant._(shown, this)
           : null;
     } catch (_) {
