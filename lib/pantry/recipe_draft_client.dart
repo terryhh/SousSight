@@ -457,38 +457,41 @@ String? recipeDraftProblem(String text, List<String> confirmedItems) {
   }
 }
 
-/// Words that describe form or packaging, not a different food. Only these
-/// are ignored when matching a name to a confirmed item; any other word (for
-/// example "coconut" in "coconut milk") makes it a different food.
-const _formWords = {
-  'a', 'an', 'the', 'some', 'of', 'can', 'cans', 'canned', 'tin', 'tins',
-  'tinned', 'jar', 'jars', 'jarred', 'bottle', 'bottled', 'bag', 'box',
-  'package', 'packaged', 'packet', 'dried', 'dry', 'frozen', 'fresh', 'raw',
-  'cooked', 'chopped', 'diced', 'sliced', 'minced', 'shredded', 'grated',
-  'whole', 'drained', 'rinsed', 'plain', 'large', 'small', 'medium', 'ripe',
-};
+/// Preparation, packaging and unit words: they describe form or amount, not
+/// a different food. Only these are ignored when matching a name to a
+/// confirmed item. Every other word stays significant wherever it appears,
+/// including inside parentheses or after a comma, so "coconut" in
+/// "milk (coconut)" or "coconut milk" makes it a different food from "milk".
+final _formWords =
+    ('a an the some of can cans canned tin tins tinned jar jars jarred '
+            'bottle bottled bag bags box boxes package packaged packet dried '
+            'dry frozen fresh raw cooked chopped diced sliced minced shredded '
+            'grated whole drained rinsed plain large small medium ripe cup cups '
+            'tbsp tsp tablespoon tablespoons teaspoon teaspoons oz ounce ounces '
+            'lb lbs pound pounds g kg ml l slice slices')
+        .split(' ')
+        .toSet();
 
 /// Salt, pepper, oil and water: the only basics a draft may add on its own.
-const _basicNames = {
-  'salt', 'sea salt', 'kosher salt', 'table salt', 'pepper', 'black pepper',
-  'ground black pepper', 'ground pepper', 'oil', 'cooking oil',
-  'vegetable oil', 'olive oil', 'canola oil', 'neutral oil', 'water',
-  'tap water',
-};
+final _basicNames =
+    ('salt|sea salt|kosher salt|table salt|pepper|black pepper|'
+            'ground black pepper|ground pepper|oil|cooking oil|vegetable oil|'
+            'olive oil|canola oil|neutral oil|water|tap water')
+        .split('|')
+        .toSet();
 
-/// Lowercase, before any comma or parenthesis, form words and bare counts
-/// dropped, each word made singular. Compared exactly: no substring or shared-word matching.
+/// Every word of the name, lowercase and singular, minus [_formWords] and
+/// bare counts, in sorted order. Keys are compared exactly: no substring or
+/// shared-word matching, and no word is dropped for its position.
 String draftFoodKey(String name) {
-  var text = name.toLowerCase();
-  final cut = text.indexOf(RegExp(r'[,(]'));
-  if (cut >= 0) text = text.substring(0, cut);
-  return [
-    for (final word in text.split(RegExp(r'[^a-z0-9]+')))
+  final words = [
+    for (final word in name.toLowerCase().split(RegExp(r'[^a-z0-9]+')))
       if (word.isNotEmpty &&
           !_formWords.contains(word) &&
           !RegExp(r'^[0-9]+$').hasMatch(word))
         _singular(word),
-  ].join(' ');
+  ]..sort();
+  return words.join(' ');
 }
 
 String _singular(String word) {
@@ -508,24 +511,40 @@ bool _isBasic(String name) {
   var text = name.toLowerCase();
   final cut = text.indexOf(RegExp(r'[,(]'));
   if (cut >= 0) text = text.substring(0, cut);
-  return _basicNames.contains(
-    text.replaceAll(RegExp(r'[^a-z]+'), ' ').trim(),
-  );
+  return _basicNames.contains(text.replaceAll(RegExp(r'[^a-z]+'), ' ').trim());
+}
+
+/// Normalizes the ingredient list once. The quality gate and the builder both
+/// use exactly this list. A malformed entry or an oversized list rejects the
+/// whole draft rather than being skipped, so nothing unchecked is kept.
+List<(Map<Object?, Object?>, String)> _ingredientEntries(List<Object?> raw) {
+  if (raw.length > _maxIngredients) {
+    throw FormatException('too many ingredients (${raw.length})');
+  }
+  final entries = <(Map<Object?, Object?>, String)>[];
+  for (final entry in raw) {
+    final name = entry is Map ? _clip(_str(entry['name']), 80) : '';
+    if (entry is! Map || name.isEmpty) {
+      throw const FormatException('malformed ingredient');
+    }
+    entries.add((entry, name));
+  }
+  return entries;
 }
 
 /// The quality gate: every required ingredient is a confirmed item, named as
 /// that item; basics and unconfirmed extras use [kDraftBasicSource] and are
 /// optional; at least one ingredient is a confirmed item.
-void _checkSources(List<Object?> rawIngredients, List<String> confirmedItems) {
+void _checkSources(
+  List<(Map<Object?, Object?>, String)> entries,
+  List<String> confirmedItems,
+) {
   final confirmed = {
     for (final item in draftSourceEnum(confirmedItems))
       if (item != kDraftBasicSource) item.toLowerCase(): draftFoodKey(item),
   };
   var fromConfirmed = 0;
-  for (final raw in rawIngredients.take(_maxIngredients)) {
-    if (raw is! Map) continue;
-    final name = _str(raw['name']);
-    if (name.isEmpty) continue;
+  for (final (raw, name) in entries) {
     final source = _str(raw['fromConfirmed']).toLowerCase();
     final optional = raw['optional'] == true;
     if (source == kDraftBasicSource) {
@@ -567,13 +586,11 @@ Recipe buildDraftRecipe(
 
   final rawIngredients = m['ingredients'];
   if (rawIngredients is! List) throw const FormatException('no ingredients');
-  _checkSources(rawIngredients, confirmedItems);
+  final entries = _ingredientEntries(rawIngredients);
+  _checkSources(entries, confirmedItems);
   final usedIds = <String>{};
   final ingredients = <Ingredient>[];
-  for (final raw in rawIngredients) {
-    if (raw is! Map) continue;
-    final name = _clip(_str(raw['name']), 80);
-    if (name.isEmpty) continue;
+  for (final (raw, name) in entries) {
     final allergens = <String>{};
     final rawAllergens = raw['allergens'];
     if (rawAllergens is List) {
@@ -591,7 +608,6 @@ Recipe buildDraftRecipe(
         allergens: allergens.toList(),
       ),
     );
-    if (ingredients.length == _maxIngredients) break;
   }
   if (ingredients.length < _minIngredients) {
     throw FormatException('too few ingredients (${ingredients.length})');

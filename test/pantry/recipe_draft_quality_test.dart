@@ -169,6 +169,106 @@ void main() {
       );
     });
 
+    test('the gate checks exactly the ingredients the builder keeps', () {
+      // Repro from review: malformed entries pushed an unconfirmed required
+      // ingredient past the first 12 raw entries.
+      final padded = jsonEncode({
+        'title': 'Pantry Bowl',
+        'summary': 'A quick bowl.',
+        'ingredients': [
+          _ing('Rice', 'rice'),
+          for (var i = 0; i < 11; i++) null,
+          _ing('Chicken', 'basic'),
+        ],
+        'equipment': ['Bowl'],
+        'steps': _plainSteps,
+      });
+      expect(recipeDraftProblem(padded, const ['rice']), isNotNull);
+      expect(
+        () =>
+            parseDraftRecipe(padded, confirmedItems: const ['rice'], seed: 's'),
+        throwsFormatException,
+      );
+      // A malformed entry anywhere rejects the draft instead of being skipped.
+      final oneNull = jsonEncode({
+        'title': 'Pantry Bowl',
+        'summary': 'A quick bowl.',
+        'ingredients': [
+          _ing('Rice', 'rice'),
+          null,
+          _ing('Salt', 'basic', optional: true),
+        ],
+        'equipment': ['Bowl'],
+        'steps': _plainSteps,
+      });
+      expect(
+        recipeDraftProblem(oneNull, const ['rice']),
+        'malformed ingredient',
+      );
+      // More than the schema's 12 is rejected, not silently truncated.
+      expect(
+        recipeDraftProblem(
+          _draft([
+            _ing('Rice', 'rice'),
+            for (var i = 0; i < 12; i++) _ing('Salt', 'basic', optional: true),
+          ]),
+          const ['rice'],
+        ),
+        contains('too many ingredients'),
+      );
+    });
+
+    test('a parenthetical or comma qualifier keeps its identity', () {
+      const confirmedCoconut = ['milk (coconut)', 'rice'];
+      expect(
+        recipeDraftProblem(
+          _draft([_ing('Milk', 'milk (coconut)'), _ing('Rice', 'rice')]),
+          confirmedCoconut,
+        ),
+        contains('not the confirmed item'),
+        reason: 'a parenthetical identity cannot authorize a substitute',
+      );
+      expect(
+        recipeDraftProblem(
+          _draft([
+            _ing('Coconut milk', 'milk (coconut)'),
+            _ing('Rice', 'rice'),
+          ]),
+          confirmedCoconut,
+        ),
+        isNull,
+        reason: 'the same food in a different word order still matches',
+      );
+      expect(
+        recipeDraftProblem(
+          _draft([_ing('Milk (coconut)', 'milk'), _ing('Rice', 'rice')]),
+          const ['milk', 'rice'],
+        ),
+        isNotNull,
+      );
+      expect(
+        recipeDraftProblem(
+          _draft([_ing('Beans, black', 'pinto beans'), _ing('Rice', 'rice')]),
+          const ['pinto beans', 'rice'],
+        ),
+        isNotNull,
+        reason: 'words after a comma are significant',
+      );
+      expect(
+        recipeDraftProblem(
+          _draft([
+            _ing('Black beans (1 can, drained)', 'canned black beans'),
+            _ing('Rice', 'rice'),
+          ]),
+          const ['canned black beans', 'rice'],
+        ),
+        isNull,
+        reason: 'packaging and preparation words are still ignored',
+      );
+      expect(draftFoodKey('Milk (coconut)'), draftFoodKey('coconut milk'));
+      expect(draftFoodKey('milk'), isNot(draftFoodKey('coconut milk')));
+    });
+
     test('a draft of basics alone is rejected', () {
       expect(
         check([
