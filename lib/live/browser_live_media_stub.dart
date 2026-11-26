@@ -10,9 +10,15 @@ class _UnsupportedMedia implements LiveMedia {
   @override
   Stream<Uint8List> get frames => const Stream.empty();
   @override
+  Stream<CapturedFrame> get timedFrames => const Stream.empty();
+  @override
   Stream<String> get errors => const Stream.empty();
   @override
   Future<void> start() async => throw UnsupportedError(
+    'The cooking camera currently requires a browser.',
+  );
+  @override
+  Future<void> startCameraOnly() async => throw UnsupportedError(
     'The cooking camera currently requires a browser.',
   );
   @override
