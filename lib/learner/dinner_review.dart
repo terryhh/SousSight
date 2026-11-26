@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/dinner_messages.dart';
+import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 
 /// The latest cook-confirmed attempt of each kind. Reopening the review shows
@@ -40,6 +41,7 @@ Future<void> showDinnerReview(
   required DinnerStatusSource statusSource,
   required DinnerAttemptMemory memory,
   required bool isDemo,
+  DinnerMode mode = DinnerMode.real,
 }) => showDialog<void>(
   context: context,
   builder: (_) => DinnerReviewDialog(
@@ -50,6 +52,7 @@ Future<void> showDinnerReview(
     statusSource: statusSource,
     memory: memory,
     isDemo: isDemo,
+    mode: mode,
   ),
 );
 
@@ -63,6 +66,7 @@ class DinnerReviewDialog extends StatefulWidget {
     required this.statusSource,
     required this.memory,
     required this.isDemo,
+    this.mode = DinnerMode.real,
   });
   final DinnerKind kind;
   final String sessionId;
@@ -71,6 +75,11 @@ class DinnerReviewDialog extends StatefulWidget {
   final DinnerStatusSource statusSource;
   final DinnerAttemptMemory memory;
   final bool isDemo;
+
+  /// [DinnerMode.simulated] shows the fictional [simulatedDinnerRecipient]
+  /// instead of a phone field; the cook still reviews and confirms. Pair it
+  /// with a sender and status source from `dinnerSenderFor`/`dinnerStatusFor`.
+  final DinnerMode mode;
 
   @override
   State<DinnerReviewDialog> createState() => _DinnerReviewDialogState();
@@ -91,6 +100,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
   String? _validationError;
 
   bool get _started => widget.kind == DinnerKind.started;
+  bool get _simulated => widget.mode == DinnerMode.simulated;
   bool get _locked => _attempt.claimed || _sending;
 
   @override
@@ -130,7 +140,9 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
       DinnerMessageRequest(
         sessionId: widget.sessionId,
         notificationId: _attempt.notificationId,
-        recipient: _recipient.text.trim(),
+        recipient: _simulated
+            ? simulatedDinnerRecipient
+            : _recipient.text.trim(),
         kind: widget.kind,
         recipeTitle: widget.recipeTitle,
         minutes: _started ? int.tryParse(_minutes.text.trim()) : null,
@@ -142,8 +154,15 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     // Guard the callback too: two taps can arrive before a rebuild.
     if (_locked) return;
     final minutes = int.tryParse(_minutes.text.trim());
-    if (!RegExp(r'^\+?[1-9][0-9]{7,14}$').hasMatch(_recipient.text.trim()) ||
-        (_started && (minutes == null || minutes < 1 || minutes > 120))) {
+    final badMinutes =
+        _started && (minutes == null || minutes < 1 || minutes > 120);
+    if (_simulated && badMinutes) {
+      setState(() => _validationError = 'Enter 1–120 minutes.');
+      return;
+    }
+    if (!_simulated &&
+        (!RegExp(r'^\+?[1-9][0-9]{7,14}$').hasMatch(_recipient.text.trim()) ||
+            badMinutes)) {
       setState(
         () => _validationError = _started
             ? 'Enter a full international phone number and 1–120 minutes.'
@@ -151,6 +170,8 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
       );
       return;
     }
+    // Simulated mode: a plain confirm is a simulated delivery, never a send.
+    if (_simulated) simulate ??= DinnerSimulation.delivered;
     final attempt = _attempt;
     final request = _request(simulate: simulate);
     setState(() {
@@ -163,7 +184,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
         ..claimed = true
         ..recipient = request.recipient
         ..result = result;
-      widget.memory.lastRecipient = request.recipient;
+      if (!_simulated) widget.memory.lastRecipient = request.recipient;
       if (mounted && identical(attempt, _attempt)) _watch();
     } on DinnerValidationException catch (error) {
       // Nothing was claimed; the same ID may be confirmed again after edits.
@@ -236,19 +257,32 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Choose your configured household contact and review the exact message.',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _recipient,
-              enabled: !_locked,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Recipient',
-                hintText: '+14075550123',
+            if (_simulated) ...[
+              const Text(
+                '$simulatedLabel This build simulates household messages. '
+                'Review the exact message, then confirm.',
+                key: Key('dinner-simulated-notice'),
               ),
-            ),
+              const SizedBox(height: 16),
+              const Text(
+                'Recipient: $simulatedDinnerRecipient (fictional)',
+                key: Key('dinner-simulated-recipient'),
+              ),
+            ] else ...[
+              const Text(
+                'Choose your configured household contact and review the exact message.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _recipient,
+                enabled: !_locked,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Recipient',
+                  hintText: '+14075550123',
+                ),
+              ),
+            ],
             if (_started) ...[
               const SizedBox(height: 12),
               TextField(
@@ -316,7 +350,8 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
         ),
         // Zero-cost demo: the server never contacts Vonage for these and
         // labels every resulting status "Simulated — no SMS sent".
-        if (!_attempt.claimed)
+        // In simulated mode the primary button already simulates delivery.
+        if (!_attempt.claimed && !_simulated)
           OutlinedButton(
             onPressed: _locked
                 ? null
@@ -333,7 +368,13 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
           ),
         FilledButton(
           onPressed: _locked ? null : () => unawaited(_submit()),
-          child: Text(widget.isDemo ? 'Rehearse send' : 'Confirm and send'),
+          child: Text(
+            _simulated
+                ? 'Confirm simulated send'
+                : widget.isDemo
+                ? 'Rehearse send'
+                : 'Confirm and send',
+          ),
         ),
       ],
     );
