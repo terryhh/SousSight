@@ -1,5 +1,6 @@
 import '../app/services_scope.dart';
 import '../core/models.dart';
+import 'pantry_ui.dart' show pantryStatesAgree;
 
 /// What the cook confirmed on the pantry screen, carried into cooking.
 class PantryHandoff {
@@ -32,6 +33,11 @@ const _ignoredWords = {
   'whole',
   'for',
   'serving',
+  // Textures and styles of the same food ("creamy peanut butter").
+  'creamy',
+  'crunchy',
+  'smooth',
+  'plain',
 };
 
 String _stem(String word) {
@@ -47,23 +53,70 @@ String _stem(String word) {
   return word;
 }
 
+/// Stems first, then drops packaging words, so "cans" is dropped like "can"
+/// (the same normalization as ranking and confirmation, Codex #221).
 Set<String> _words(String text) => {
   for (final word in text.toLowerCase().split(RegExp(r'[^a-z]+')))
-    if (word.isNotEmpty && !_ignoredWords.contains(word)) _stem(word),
+    if (word.isNotEmpty &&
+        !_ignoredWords.contains(word) &&
+        !_ignoredWords.contains(_stem(word)))
+      _stem(word),
 };
 
-/// Maps a cook-confirmed pantry item to a recipe ingredient ID when every
-/// meaningful word of the ingredient ID appears in the item name.
+/// Maps a cook-confirmed pantry item to a recipe ingredient ID only when it
+/// IS that ingredient: its meaningful words equal the ID's words. "peanut
+/// butter cups" is not peanut butter (Codex #221); such items stay as
+/// cook-confirmed facts instead.
 String? matchIngredientId(String item, Recipe recipe) {
   final itemWords = _words(item);
   if (itemWords.isEmpty) return null;
+  bool same(Set<String> words) =>
+      words.isNotEmpty &&
+      itemWords.length == words.length &&
+      itemWords.containsAll(words);
   for (final ingredient in recipe.ingredients) {
-    final idWords = _words(ingredient.id.replaceAll('_', ' '));
-    if (idWords.isNotEmpty && itemWords.containsAll(idWords)) {
+    // The ID, or the canonical name before its first comma (notes in
+    // brackets dropped), or one explicit "X or Y" alternative: "Dijon
+    // mustard" → mustard, "Flour tortillas (10 inch)" → tortillas.
+    final head = ingredient.name
+        .split(',')
+        .first
+        .replaceAll(RegExp(r'\([^)]*\)'), ' ');
+    final names = [
+      ingredient.id.replaceAll('_', ' '),
+      head,
+      ...head.split(RegExp(r'\s+or\s+', caseSensitive: false)),
+    ];
+    if (names.any((name) => same(_words(name))) &&
+        pantryStatesAgree(item, head)) {
       return ingredient.id;
     }
   }
   return null;
+}
+
+/// Every recipe ingredient ID the cook's confirmed [items] account for: one
+/// item naming it, or (for "X and Y" ingredients such as "Salt and black
+/// pepper") separate items covering every part (Codex #221).
+Set<String> matchIngredientIds(List<String> items, Recipe recipe) {
+  final ids = {for (final item in items) ?matchIngredientId(item, recipe)};
+  for (final ingredient in recipe.ingredients) {
+    final head = ingredient.name.split(',').first;
+    final parts = head.split(RegExp(r'\s+and\s+', caseSensitive: false));
+    if (parts.length < 2) continue;
+    bool covered(String part) {
+      final want = _words(part);
+      return items.any((item) {
+        final have = _words(item);
+        return want.isNotEmpty &&
+            have.length == want.length &&
+            have.containsAll(want);
+      });
+    }
+
+    if (parts.every(covered)) ids.add(ingredient.id);
+  }
+  return ids;
 }
 
 /// Writes pantry context into the cook's session before the cooking screen
@@ -80,9 +133,7 @@ Future<void> applyPantryHandoff(
   // A pantry scan is a new meal: start a fresh session (earlier sessions are
   // preserved) that the coordinator then resumes as the newest one.
   final session = await services.sessions.createNew(uid, recipe);
-  final matched = {
-    for (final item in handoff.confirmedItems) ?matchIngredientId(item, recipe),
-  };
+  final matched = matchIngredientIds(handoff.confirmedItems, recipe);
   final facts = [
     if (handoff.confirmedItems.isNotEmpty)
       'Pantry has (confirmed by the cook): ${handoff.confirmedItems.join(', ')}.',

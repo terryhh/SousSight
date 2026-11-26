@@ -265,9 +265,20 @@ class FakePantryClient implements PantryClient {
       ),
       PantryMeal(
         recipeId: 'chickpea_wrap_v1',
-        why: 'Possible later if you pick up chickpeas and a few fresh vegetables.',
+        why: 'Possible later if you pick up chickpeas, mayo and tortillas.',
+        // Kept in step with assets/recipes/chickpea_wrap_v1.json after #215:
+        // red onion, celery and red bell pepper are optional; every required
+        // ingredient is listed (test/app/rehearsal_runtime_test.dart checks
+        // both directions against the asset).
         matched: ['red onion'],
-        missing: ['chickpeas', 'mayonnaise', 'celery', 'tortillas'],
+        missing: [
+          'chickpeas',
+          'mayonnaise',
+          'dijon mustard',
+          'lemon juice',
+          'salt and black pepper',
+          'tortillas',
+        ],
       ),
     ];
     return PantryResult(
@@ -484,6 +495,21 @@ HybridTask buildPantryVoiceTask(
   timeout: timeout,
 );
 
+/// Shown when "Keep Pantry scan on this device" kept the voice clip here
+/// (voice needs the cloud), and the scan went on without it.
+const kPantryVoiceKeptLocalNotice =
+    'Your voice clip stayed on this device because "Keep Pantry scan on this '
+    'device" is on, and reading voice needs Google cloud AI. These '
+    'suggestions come from your photo and typed list only.';
+
+/// Shown when "Keep Pantry scan on this device" stopped the voice clip, but
+/// only after an earlier attempt whose upload is unknown or confirmed, so the
+/// clip cannot be said to have stayed here.
+const kPantryVoiceMaybeSentNotice =
+    'Your voice clip may have reached Google cloud AI before "Keep Pantry '
+    'scan on this device" stopped it, and I could not use it. These '
+    'suggestions come from your photo and typed list only.';
+
 /// Shown when the voice leg could not be used and the scan went on without it.
 const kPantryVoiceSkippedNotice =
     'I could not use your voice clip, so these suggestions come from your '
@@ -535,6 +561,9 @@ class HybridPantryClient implements PantryClient {
     // True when the voice send failed without a result (threw or timed out),
     // so whether the clip left the device is not known.
     var voiceOutcomeUnknown = false;
+    // The cook's local-only setting blocked the voice task. Whether the clip
+    // actually stayed here is what the legs say ([_voiceUpload]), not this.
+    var voiceBlockedLocal = false;
     if (input.audioWav case final audio? when audio.isNotEmpty) {
       try {
         final voice = await _run(
@@ -543,6 +572,7 @@ class HybridPantryClient implements PantryClient {
           validate: (text) => _check(() => parsePantryItems(text)),
         );
         legs.addAll(voice.legs);
+        voiceBlockedLocal = voice.blocked == RouteReason.localOnlySetting;
         voiceOutcomeUnknown =
             voice.text == null && voice.blocked == null && voice.legs.isEmpty;
         spoken = parsePantryItems(voice.text);
@@ -552,12 +582,33 @@ class HybridPantryClient implements PantryClient {
         voiceOutcomeUnknown = true;
         debugPrint('Pantry voice leg dropped: ${error.message}');
       }
-      if (spoken.isEmpty) notice = kPantryVoiceSkippedNotice;
+    }
+    // "Stayed on this device" only when the legs prove nothing left: the
+    // switch may have been turned on after an attempt whose upload is unknown.
+    final voiceUpload = _voiceUpload(legs, outcomeUnknown: voiceOutcomeUnknown);
+    final voiceKeptLocal =
+        voiceBlockedLocal && voiceUpload == _VoiceUpload.none;
+    final hasAudio = input.audioWav?.isNotEmpty ?? false;
+    if (hasAudio && spoken.isEmpty) {
+      notice = voiceKeptLocal
+          ? kPantryVoiceKeptLocalNotice
+          : voiceBlockedLocal
+          ? kPantryVoiceMaybeSentNotice
+          : kPantryVoiceSkippedNotice;
     }
     final hasPhoto = input.photoJpeg?.isNotEmpty ?? false;
     if (input.text.trim().isEmpty && !hasPhoto && spoken.isEmpty) {
       throw fail(
-        'I could not use your voice clip. Type what you got, or snap a photo.',
+        voiceKeptLocal
+            ? 'Your voice clip stayed on this device because "Keep Pantry '
+                  'scan on this device" is on, and reading voice needs Google '
+                  'cloud AI. Type what you got, or snap a photo.'
+            : voiceBlockedLocal
+            ? 'I could not use your voice clip, and it may have reached '
+                  'Google cloud AI before "Keep Pantry scan on this device" '
+                  'stopped it. Type what you got, or snap a photo.'
+            : 'I could not use your voice clip. Type what you got, or snap a '
+                  'photo.',
       );
     }
     if (_sessionId() != sessionId) {

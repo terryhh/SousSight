@@ -121,11 +121,22 @@ void main() {
       LedgerView(ledger: ledger, localModelFamily: 'Gemini Nano'),
     );
 
+    expect(find.text('What we sent'), findsOneWidget);
     expect(
       find.text(
-        '2 AI requests this session: 1 stayed on this device, '
-        '1 reported as sent.',
+        '2 requests since you opened SousSight: 1 answered on this device, '
+        '1 sent online.',
       ),
+      findsOneWidget,
+    );
+
+    // The headline counts from legs: the photo stayed, the voice clip went.
+    expect(
+      find.text('photos recorded as sent online since you opened SousSight'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('1 voice clip sent online to Google\'s AI'),
       findsOneWidget,
     );
 
@@ -136,14 +147,14 @@ void main() {
     expect(
       find.descendant(
         of: allowed,
-        matching: find.text('photo and text · On this device · Gemini Nano'),
+        matching: find.text('photo and text · On this device'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: sent,
-        matching: find.text('voice clip · Cloud · Gemini'),
+        matching: find.text("voice clip · Sent online to Google's AI"),
       ),
       findsOneWidget,
     );
@@ -151,6 +162,7 @@ void main() {
       find.descendant(of: sent, matching: find.textContaining('photo')),
       findsNothing,
     );
+    await tester.scrollUntilVisible(local, 200);
     expect(
       find.descendant(of: local, matching: find.text('Pantry scan')),
       findsOneWidget,
@@ -163,7 +175,17 @@ void main() {
     );
     expect(find.text(sessionStorageNote), findsOneWidget);
     expect(find.text(liveCoachNote), findsOneWidget);
-    expect(sessionStorageNote, contains('Firestore'));
+    // SS-089: no product names in the plain note; they live under Details.
+    expect(sessionStorageNote, isNot(contains('Firestore')));
+    expect(sessionStorageDetails, contains('Firestore'));
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('ledger-details')),
+      200,
+    );
+    expect(find.text(sessionStorageDetails), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('ledger-details')));
+    await tester.pumpAndSettle();
+    expect(find.text(sessionStorageDetails), findsOneWidget);
     expect(liveCoachNote, contains('facts you confirmed'));
     expect(liveCoachNote, contains('allergy context'));
     expect(tester.takeException(), isNull);
@@ -193,7 +215,9 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('ledger-not-finished')),
-        matching: find.text("photo · Didn't finish · nothing left this device"),
+        matching: find.text(
+          'photo · Running or stopped · nothing left this device',
+        ),
       ),
       findsOneWidget,
     );
@@ -202,7 +226,17 @@ void main() {
   testWidgets('updates when the ledger records a leg', (tester) async {
     final ledger = ListLedgerSource();
     await pumpPhone(tester, LedgerView(ledger: ledger));
-    expect(find.text('No AI requests yet this session.'), findsOneWidget);
+    // SS-089: never "no requests" — a blocked attempt is not listed, and
+    // the empty line says so instead of implying nothing was tried.
+    // Codex #221: the empty line says what the ledger recorded, not that
+    // nothing was ever sent.
+    expect(
+      find.textContaining(
+        'No AI requests or location shares recorded since you opened SousSight.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining("couldn't start isn't listed"), findsOneWidget);
     expect(find.byKey(const ValueKey('ledger-sent-empty')), findsOneWidget);
 
     ledger.add(
@@ -214,8 +248,24 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('No AI requests yet this session.'), findsNothing);
+    expect(
+      find.textContaining('No AI requests or location shares recorded'),
+      findsNothing,
+    );
+    // Codex #221: an uncertain transfer is counted apart from "sent".
+    expect(
+      find.text(
+        '1 request since you opened SousSight: 0 answered on this device, 0 sent online, '
+        '1 may have been sent.',
+      ),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('ledger-sent-empty')), findsOneWidget);
+    // The merged sheet is longer: scroll the uncertain section into view.
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('ledger-maybe')),
+      200,
+    );
     expect(find.byKey(const ValueKey('ledger-maybe')), findsOneWidget);
     expect(find.text('May have been sent'), findsOneWidget);
   });

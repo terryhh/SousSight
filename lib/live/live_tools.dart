@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_ai/firebase_ai.dart';
 
+import '../safety/cook_safety.dart';
 import 'live_types.dart';
 
 const kLiveModel = String.fromEnvironment(
@@ -143,6 +144,14 @@ String? validateLiveTool(LiveToolCall call) {
           return 'Invalid uiJson: it must be an object with a components '
               'array. Fix and call show_cooking_ui again.';
         }
+        // app_* IDs belong to the app's own panels (watch, checklist), so a
+        // model layout can never shadow or orphan them (Codex #221).
+        if ((json['components'] as List).any(
+          (c) => c is Map && '${c['id']}'.startsWith('app_'),
+        )) {
+          return 'Invalid uiJson: IDs starting with app_ are reserved for the '
+              'app. Rename them and call show_cooking_ui again.';
+        }
       } on FormatException catch (e) {
         return 'Invalid uiJson: malformed JSON (${e.message}). '
             'Fix and call show_cooking_ui again.';
@@ -161,6 +170,11 @@ String? validateLiveTool(LiveToolCall call) {
       }
     case 'watch_cooking':
       if (!text('goal', 240)) return 'Watch needs a short visible goal.';
+      // Checked before the watch starts, so a rejected goal never replaces
+      // the cook's current watch (SS-131).
+      if (touchesFoodSafety(a['goal'] as String)) {
+        return 'Watch goal: ${const UnsafeClaimException().message}';
+      }
     case 'report_readiness':
       if (!text('watchId', 80)) {
         return 'Readiness must identify the active watch.';

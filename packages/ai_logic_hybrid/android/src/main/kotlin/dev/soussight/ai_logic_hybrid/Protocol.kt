@@ -18,6 +18,8 @@ enum class HybridMode(val wire: String) {
 }
 
 enum class AndroidModelOption(val wire: String) {
+    /** Default: decided once at `configure` from the documented Nano 4 device list. Never sent to the SDK. */
+    DEVICE_LIST("deviceList"),
     PREVIEW("preview"),
     PREVIEW_FAST("previewFast"),
     STABLE("stable");
@@ -102,6 +104,10 @@ data class AvailabilityResult(
     val status: OnDeviceStatus,
     val reason: String? = null,
     val modelLabel: String? = null,
+    /** The concrete option this answer is about; null if none was checked. */
+    val modelOption: AndroidModelOption? = null,
+    /** Why that option is in use, for the cook ("device list: Pixel 10 → preview"). */
+    val modelChoice: String? = null,
 )
 
 data class GenerateResult(
@@ -124,7 +130,8 @@ object Protocol {
         } ?: listOf("en")
         return HybridConfig(
             cloudModel = cloudModel,
-            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: "preview"),
+            // Default: decided from the documented Nano 4 device list; preview and stable override.
+            androidModel = AndroidModelOption.fromWire(m["androidModel"] ?: AndroidModelOption.DEVICE_LIST.wire),
             languages = languages,
         )
     }
@@ -150,9 +157,12 @@ object Protocol {
             (it as? Map<*, *>)?.takeIf { s -> s.keys.all { k -> k is String } }
                 as Map<String, Any?>? ?: bad("generate: jsonSchema must be a map")
         }
-        val maxOutputTokens = (m["maxOutputTokens"] as? Number)?.toInt()
-            ?: bad("generate: maxOutputTokens is required")
-        if (maxOutputTokens <= 0) bad("generate: maxOutputTokens must be positive")
+        // Range-checked before narrowing: a Long such as 2^32 + 1 must not become 1.
+        val rawMax = m["maxOutputTokens"] ?: bad("generate: maxOutputTokens is required")
+        if (rawMax !is Int && rawMax !is Long) bad("generate: maxOutputTokens must be an integer")
+        val wideMax = (rawMax as Number).toLong()
+        if (wideMax !in 1..Int.MAX_VALUE.toLong()) bad("generate: maxOutputTokens must be between 1 and ${Int.MAX_VALUE}")
+        val maxOutputTokens = wideMax.toInt()
         val timeoutMs = (m["timeoutMs"] as? Number)?.toLong()
             ?: bad("generate: timeoutMs is required")
         if (timeoutMs <= 0) bad("generate: timeoutMs must be positive")
@@ -183,11 +193,16 @@ object Protocol {
         }
     }
 
-    /** DESIGN §4 capabilities for Gemini Nano through AICore. Limits are Docs-level. */
-    fun capabilities(): Map<String, Any?> = mapOf(
+    /**
+     * DESIGN §4 capabilities for Gemini Nano through AICore. Limits are Docs-level. [modelOption]
+     * is the option in use and [modelChoice] why, or null before `configure`.
+     */
+    fun capabilities(modelOption: AndroidModelOption? = null, modelChoice: String? = null): Map<String, Any?> = mapOf(
         "platform" to "android",
         "local" to mapOf(
             "modelFamily" to "Gemini Nano",
+            "modelOption" to modelOption?.wire,
+            "modelChoice" to modelChoice,
             "supportsImage" to true,
             // The SDK sends a manual schema only to the cloud model; on-device structured output
             // needs a compile-time @Generable class. Local runs get the schema in the prompt and
@@ -208,6 +223,8 @@ object Protocol {
         "status" to a.status.wire,
         "reason" to a.reason,
         "modelLabel" to a.modelLabel,
+        "modelOption" to a.modelOption?.wire,
+        "modelChoice" to a.modelChoice,
     )
 
     fun resultMap(requestId: String, r: GenerateResult): Map<String, Any?> = mapOf(
@@ -270,12 +287,13 @@ object InputRules {
     }
 
     /** Same formula as the Dart policy's estimateLocalTokens (DESIGN §4). */
-    fun estimateLocalTokens(request: GenerateRequest): Int {
-        var chars = request.systemInstruction?.length ?: 0
+    fun estimateLocalTokens(request: GenerateRequest): Long {
+        // Long: a huge maxOutputTokens must not wrap negative and pass the budget.
+        var chars = (request.systemInstruction?.length ?: 0).toLong()
         for (part in request.parts) if (part is HybridPart.Text) chars += part.text.length
         request.jsonSchema?.let { chars += JsonText.encode(it).length }
         val textTokens = (chars + 3) / 4
-        return textTokens + request.images.size * IMAGE_TOKEN_ESTIMATE + request.maxOutputTokens
+        return textTokens + request.images.size.toLong() * IMAGE_TOKEN_ESTIMATE + request.maxOutputTokens
     }
 
     private fun unsupported(message: String): Nothing =

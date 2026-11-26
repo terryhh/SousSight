@@ -88,8 +88,25 @@ class _NearbyPanelState extends State<NearbyPanel> {
     NearbyKind.groceries => 'Where to get the missing items',
   };
 
+  /// Shows why a search cannot be sent now, before asking for location or
+  /// sending anything; the refused tap is recorded as one unsent leg. The
+  /// client checks again at send time.
+  bool _blocked() {
+    final client = widget.client;
+    final blocked = client is GatedNearbyClient
+        ? client.refuseIfBlocked()
+        : null;
+    if (blocked == null) return false;
+    _request++;
+    setState(() {
+      _result = null;
+      _error = blocked.message;
+    });
+    return true;
+  }
+
   Future<void> _useLocation() async {
-    if (_busy) return;
+    if (_busy || _blocked()) return;
     final request = ++_request;
     setState(() {
       _busy = true;
@@ -121,12 +138,14 @@ class _NearbyPanelState extends State<NearbyPanel> {
   Future<void> _useArea() async {
     if (_busy) return;
     final typed = _area.text.trim();
-    // Never search an implied place: the hint is only an example.
+    // Never search an implied place: the hint is only an example. A blank
+    // area is a form error, not a search attempt, so no ledger leg.
     if (typed.isEmpty) {
       setState(() => _error = nearbyAreaRequired);
       _areaFocus.requestFocus();
       return;
     }
+    if (_blocked()) return;
     final request = ++_request;
     setState(() {
       _busy = true;

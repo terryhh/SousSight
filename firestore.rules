@@ -46,7 +46,8 @@ service cloud.firestore {
             'learnerId', 'recipeId', 'recipeVersion', 'ingredients',
             'substitutions', 'currentStepId', 'completedStepIds', 'revision',
             'createdAt', 'updatedAt', 'language', 'timerDeadline',
-            'timerLabel', 'timerId', 'confirmedFacts'
+            'timerLabel', 'timerId', 'confirmedFacts', 'appliedOpIds',
+            'finishedTimerStepIds'
           ])
           && shortText(data.learnerId, 128)
           && shortText(data.recipeId, 128) && data.recipeId.size() > 0
@@ -63,7 +64,26 @@ service cloud.firestore {
           && optionalText(data.get('timerLabel', null), 160)
           && optionalText(data.get('timerId', null), 128)
           && data.get('confirmedFacts', []) is list
-          && data.get('confirmedFacts', []).size() <= 100;
+          && data.get('confirmedFacts', []).size() <= 100
+          && data.get('finishedTimerStepIds', []) is list
+          && data.get('finishedTimerStepIds', []).size() <= 100
+          && validOpIds(data.get('appliedOpIds', []));
+      }
+
+      // Ids of saved offline step changes (SS-072): a list of at most 32
+      // strings, each "op-" plus 1-61 of [A-Za-z0-9_-] (64 characters at
+      // most; the client sends op-<uuid>). Rules cannot loop over a list, so
+      // the ids are joined and matched as one string. join() stringifies
+      // other types, but no number, bool, null, timestamp, map or list
+      // renders as "op-...", so any non-string item fails the match.
+      function validOpIds(ids) {
+        return ids is list && ids.size() <= 32
+          && (ids.size() == 0 || validJoinedOpIds(ids.join(','), ids.size()));
+      }
+      // The split count catches an item that itself contains the separator.
+      function validJoinedOpIds(joined, count) {
+        return joined.split(',').size() == count
+          && joined.matches('op-[A-Za-z0-9_-]{1,61}(,op-[A-Za-z0-9_-]{1,61})*');
       }
 
       allow read, delete: if owns(resource.data);
@@ -75,7 +95,7 @@ service cloud.firestore {
         && changed().hasOnly([
           'ingredients', 'substitutions', 'currentStepId', 'completedStepIds',
           'revision', 'updatedAt', 'language', 'timerDeadline', 'timerLabel',
-          'timerId', 'confirmedFacts'
+          'timerId', 'confirmedFacts', 'appliedOpIds', 'finishedTimerStepIds'
         ])
         && request.resource.data.revision >= resource.data.revision;
 

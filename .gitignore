@@ -74,3 +74,6 @@ service_account*.json
 application_default_credentials.json
 credentials.json
 gha-creds-*.json
+
+# Demo video inputs (Terry's clips, voice-over) and outputs; build/video/ is under /build/.
+/tool/video/input/

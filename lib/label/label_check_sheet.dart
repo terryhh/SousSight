@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../trust/inference_source_badge.dart';
 import 'label_check.dart';
 import 'label_check_controller.dart';
+import '../app/centered_scroll.dart';
 
 /// Opens the sheet with [controller] and disposes the controller when the
 /// sheet closes. Create a new controller for each opening.
@@ -26,7 +27,7 @@ Future<void> showLabelCheckSheet(
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      constraints: const BoxConstraints(maxWidth: 720),
+      constraints: fullWidthSheet,
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.viewInsetsOf(context).bottom,
@@ -80,10 +81,10 @@ class _LabelCheckSheetState extends State<LabelCheckSheet> {
       listenable: _c,
       builder: (context, _) {
         final busy = _c.busy;
-        return ListView(
+        return CenteredListView(
           key: const ValueKey('label-check-sheet'),
           shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+          bottom: 28,
           children: [
             Semantics(
               header: true,

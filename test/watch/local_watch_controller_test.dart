@@ -93,19 +93,22 @@ void main() {
     });
   });
 
-  test('shows the cook each local frame and clears it when the watch stops', () {
-    fakeAsync((async) {
-      final rig = Rig(async);
-      rig.fake.enqueue(verdictJson('not_yet', direction: 'more'));
-      rig.begin();
-      expect(rig.watch.previewFrame, isNull);
-      rig.frame(bytes: const [9, 8, 7]);
-      expect(rig.watch.previewFrame, [9, 8, 7]);
-      rig.watch.stop();
-      async.flushMicrotasks();
-      expect(rig.watch.previewFrame, isNull);
-    });
-  });
+  test(
+    'shows the cook each local frame and clears it when the watch stops',
+    () {
+      fakeAsync((async) {
+        final rig = Rig(async);
+        rig.fake.enqueue(verdictJson('not_yet', direction: 'more'));
+        rig.begin();
+        expect(rig.watch.previewFrame, isNull);
+        rig.frame(bytes: const [9, 8, 7]);
+        expect(rig.watch.previewFrame, [9, 8, 7]);
+        rig.watch.stop();
+        async.flushMicrotasks();
+        expect(rig.watch.previewFrame, isNull);
+      });
+    },
+  );
 
   test('a frame acquired 2 s or more ago is skipped', () {
     fakeAsync((async) {
@@ -186,7 +189,10 @@ void main() {
           expect(rig.media.log.last, 'stop');
           // The platform could only abandon the request: its answer still
           // arrives, and is dropped.
-          rig.manual.answer(0, verdictJson('ready'));
+          rig.manual.answer(
+            0,
+            verdictJson('ready', see: 'Onions look soft and golden.'),
+          );
           async.flushMicrotasks();
           expect(rig.watch.verdict, isNull);
           if (trigger == '3-minute limit') {
@@ -215,7 +221,10 @@ void main() {
       rig.frame();
       final second = rig.begin();
       expect(second, isNot(first));
-      rig.manual.answer(0, verdictJson('ready'));
+      rig.manual.answer(
+        0,
+        verdictJson('ready', see: 'Onions look soft and golden.'),
+      );
       async.flushMicrotasks();
       expect(rig.watch.verdict, isNull);
       expect(rig.watch.isActive, isTrue);
@@ -264,6 +273,36 @@ void main() {
       expect(text, contains('Golden edges on soft onions.'));
       expect(text, contains('Have a look yourself'));
       expect(text, contains('can\'t check temperature or food safety'));
+    });
+  });
+
+  test('a ready resting only on a doneness claim keeps watching', () {
+    fakeAsync((async) {
+      final rig = Rig(async);
+      rig.fake.enqueue(
+        verdictJson('ready', see: 'The chicken is done and ready to eat'),
+      );
+      rig.begin();
+      rig.frame();
+      async.flushMicrotasks();
+      expect(rig.watch.verdict!.state, WatchState.unsure);
+      expect(rig.watch.verdict!.redacted, isTrue);
+      expect(rig.watch.isActive, isTrue);
+      final text = rig.watch.statusText!.toLowerCase();
+      expect(text, isNot(contains('ready to eat')));
+      expect(text, isNot(contains('done')));
+    });
+  });
+
+  test('a ready that does not mention the step cue keeps watching', () {
+    fakeAsync((async) {
+      final rig = Rig(async);
+      rig.fake.enqueue(verdictJson('ready', see: 'A pan on the stove.'));
+      rig.begin();
+      rig.frame();
+      async.flushMicrotasks();
+      expect(rig.watch.verdict!.state, WatchState.unsure);
+      expect(rig.watch.isActive, isTrue);
     });
   });
 
@@ -410,7 +449,7 @@ void main() {
         // The digest is the dispatcher's own, and the grant travels with
         // the send so the dispatcher does not prompt again.
         expect(hybridPayloadDigest(sent), ask.payloadDigest);
-        expect(rig.fake.grants.last?.ask, same(ask));
+        expect(rig.fake.grants.last?.ask, _sameAskAs(ask));
         expect(cloud!.source, WatchVerdictSource.cloud);
         expect(cloud!.message, contains('cloud check of one photo'));
       });
@@ -538,3 +577,10 @@ void main() {
     });
   });
 }
+
+/// The gate grants a frozen copy of the ask: equal fields, not the instance.
+Matcher _sameAskAs(ConsentAsk a) => isA<ConsentAsk>()
+    .having((x) => x.feature, 'feature', a.feature)
+    .having((x) => x.kinds, 'kinds', a.kinds)
+    .having((x) => x.payloadDigest, 'payloadDigest', a.payloadDigest)
+    .having((x) => x.sessionId, 'sessionId', a.sessionId);

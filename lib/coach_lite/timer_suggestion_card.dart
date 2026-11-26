@@ -39,27 +39,83 @@ class _TimerSuggestionCardState extends State<TimerSuggestionCard> {
   Widget build(BuildContext context) {
     final s = widget.suggestion;
     final theme = Theme.of(context);
-    return Card(
+    const accent = Color(0xffbf5b32);
+    const foreground = Color(0xff4a2410);
+    return DecoratedBox(
+      key: const ValueKey('timer-suggestion'),
+      decoration: BoxDecoration(
+        color: const Color(0xfffff3e6),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.timer_outlined),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(s.label, style: theme.textTheme.titleMedium),
-                  Text(
-                    'Suggested timer · ${duration(s.seconds)}',
-                    style: theme.textTheme.bodySmall,
+            Row(
+              children: [
+                const ExcludeSemantics(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.timer_outlined,
+                        size: 20,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        s.label,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: foreground,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Suggested timer · ${duration(s.seconds)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: foreground,
+                        ),
+                      ),
+                      if (s.capped)
+                        Text(
+                          coachLiteTimerCapNote,
+                          key: const ValueKey('timer-cap-note'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: foreground,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
+            const SizedBox(height: 12),
             FilledButton.icon(
+              key: const ValueKey('timer-suggestion-start'),
+              style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                minimumSize: const Size.fromHeight(52),
+                textStyle: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
               icon: Icon(_started ? Icons.check : Icons.play_arrow),
               label: Text(_started ? 'Timer started' : 'Start timer'),
               onPressed: _started
@@ -68,6 +124,12 @@ class _TimerSuggestionCardState extends State<TimerSuggestionCard> {
                       setState(() => _started = true);
                       widget.onStart(s.label, s.seconds);
                     },
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'The coach only suggests it. Nothing starts until you tap.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(color: foreground),
             ),
           ],
         ),

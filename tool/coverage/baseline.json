@@ -1,0 +1,7 @@
+{
+  "minimum_line_coverage": {
+    "lib": 92,
+    "plugin": 94
+  },
+  "note": "Integer line-coverage minimums enforced by tool/coverage/coverage_gate.py. Raised with --update-baseline; never lowered."
+}

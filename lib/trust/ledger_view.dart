@@ -7,34 +7,49 @@ import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
 import 'ledger_source.dart';
+import 'privacy_receipt.dart' show cloudFirst;
 import 'trust_labels.dart';
+import 'trust_motion.dart';
+import '../app/centered_scroll.dart';
 
 /// What the session keeps, and what the Live coach is told. Static, because
 /// it describes the app, not one request. Keep in step with
 /// `FirestoreSessionRepository`, `CookingSession.toMap` and
 /// `CookingCoordinator.cookingContext`.
 const sessionStorageNote =
-    'Your cooking session is saved to Firestore so you can pick it up again: '
+    'Your cooking session is saved online so you can pick it up again: '
     'the recipe, ingredient checks, substitutions, step progress, your timer, '
     'the facts you confirm (including allergy answers) and the delivery status '
     'of any dinner-ready message. Camera frames and voice clips are not saved '
     'there.';
+
+/// The technical version, shown only under "Details".
+const sessionStorageDetails =
+    'Sessions are stored in Cloud Firestore. AI requests go through Firebase '
+    'AI Logic: on this device with the browser or phone model when it can, '
+    "otherwise online to Google's Gemini models where this build allows it.";
 
 const liveCoachNote =
     'When the Live coach is on, it is told the recipe, the facts you confirmed '
     "and the recipe's allergy context, and it hears and sees what you share "
     'while it is connected.';
 
+/// Practice mode keeps its pretend session in memory (Codex #221).
+const practiceStorageNote =
+    'Practice mode keeps this cooking session in memory on this device only. '
+    'Nothing is saved online, and it is gone when you close SousSight.';
+
 Future<void> showLedgerSheet(
   BuildContext context, {
   required LedgerSource ledger,
   String? localModelFamily,
+  bool practice = false,
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: true,
-  constraints: const BoxConstraints(maxWidth: 720),
+  constraints: fullWidthSheet,
   builder: (context) => DraggableScrollableSheet(
     expand: false,
     initialChildSize: 0.85,
@@ -44,6 +59,7 @@ Future<void> showLedgerSheet(
       ledger: ledger,
       localModelFamily: localModelFamily,
       controller: controller,
+      practice: practice,
     ),
   ),
 );
@@ -117,17 +133,345 @@ class LedgerSummary {
   final List<LedgerRow> simulated;
 }
 
+/// One line of the ledger's headline counter: "0 photos recorded as sent
+/// online since you opened SousSight". The ledger spans the app run, across New
+/// cook (Codex #221). [count] is shown large; [phrase] follows it.
+class LedgerCount {
+  const LedgerCount(this.count, this.phrase, this.tone);
+  final int count;
+  final String phrase;
+
+  /// Which outcome's colours the line uses.
+  final LegOutcome tone;
+
+  String get sentence => '$count $phrase';
+}
+
+/// The headline counters for the ledger sheet. Computed only from the legs:
+/// a data kind counts as sent when a leg carrying it was reported as sent
+/// (`sdkCloud` or `cloudAdapter`), and as "may have been sent" when a leg
+/// carrying it was allowed to leave and then ended `unknown`. Settings,
+/// intent and consent never move these numbers. Pure; tested directly.
+class LedgerCounters {
+  LedgerCounters._(
+    this._sent,
+    this._maybe,
+    this._local,
+    this.liveStreams,
+    this.liveMaybe,
+  );
+
+  factory LedgerCounters.of(List<InferenceLeg> legs) {
+    final sent = <DataKind, int>{};
+    final maybe = <DataKind, int>{};
+    final local = <DataKind, int>{};
+    var liveStreams = 0, liveMaybe = 0;
+    for (final leg in legs) {
+      final outcome = legOutcome(leg);
+      // A Live connection streams camera and microphone for as long as it is
+      // on, so it is counted as a connection, never as "1 photo".
+      if (streamingFeatures.contains(leg.feature)) {
+        if (reportedAsSent(outcome)) liveStreams++;
+        if (outcome == LegOutcome.maybeSent) liveMaybe++;
+        continue;
+      }
+      // A cloud-first leg allowed to leave may have sent its input before
+      // the on-device answer came back: the same rule as the receipt.
+      final bucket = reportedAsSent(outcome)
+          ? sent
+          : outcome == LegOutcome.maybeSent ||
+                (outcome == LegOutcome.onDevice && cloudFirst(leg))
+          ? maybe
+          : outcome == LegOutcome.onDevice
+          ? local
+          : null;
+      if (bucket == null) continue;
+      for (final kind in leg.kinds) {
+        bucket[kind] = (bucket[kind] ?? 0) + 1;
+      }
+    }
+    return LedgerCounters._(sent, maybe, local, liveStreams, liveMaybe);
+  }
+
+  /// Features whose one leg covers a continuous stream (Live connect and
+  /// each resume), not a single payload.
+  static const streamingFeatures = {'live'};
+
+  /// Live coach connections reported as made (camera and microphone stream
+  /// while it is on).
+  final int liveStreams;
+
+  /// Live connections that were allowed and then failed.
+  final int liveMaybe;
+
+  final Map<DataKind, int> _sent;
+  final Map<DataKind, int> _maybe;
+  final Map<DataKind, int> _local;
+
+  /// Legs carrying [kind] that were reported as sent to the cloud.
+  int sent(DataKind kind) => _sent[kind] ?? 0;
+
+  /// Legs carrying [kind] that were allowed to leave and then failed, so we
+  /// cannot tell whether they went out.
+  int maybeSent(DataKind kind) => _maybe[kind] ?? 0;
+
+  /// Legs carrying [kind] that the SDK reported ran on this device.
+  int onDevice(DataKind kind) => _local[kind] ?? 0;
+
+  static String noun(DataKind kind, int count) {
+    final one = count == 1;
+    return switch (kind) {
+      DataKind.image => one ? 'photo' : 'photos',
+      DataKind.audio => one ? 'voice clip' : 'voice clips',
+      DataKind.location => one ? 'location share' : 'location shares',
+      DataKind.text => one ? 'text request' : 'text requests',
+    };
+  }
+
+  /// The big line, always about photos: the camera is what a cook worries
+  /// about most. Never claims "0" while a photo may have been sent.
+  LedgerCount get headline {
+    final photos = sent(DataKind.image);
+    final maybe = maybeSent(DataKind.image);
+    if (photos > 0) {
+      return LedgerCount(
+        photos,
+        '${noun(DataKind.image, photos)} sent online to Google\'s AI since '
+        'you opened SousSight',
+        LegOutcome.cloudSdk,
+      );
+    }
+    if (liveStreams > 0) {
+      return LedgerCount(
+        liveStreams,
+        '${_liveNoun(liveStreams)} streamed your camera and microphone to '
+        'Google\'s AI since you opened SousSight',
+        LegOutcome.cloudSdk,
+      );
+    }
+    if (maybe > 0 || liveMaybe > 0) {
+      final n = maybe > 0 ? maybe : liveMaybe;
+      return LedgerCount(
+        n,
+        maybe > 0
+            ? '${noun(DataKind.image, n)} may have been sent online since '
+                  'you opened SousSight'
+            : '${_liveNoun(n)} may have streamed your camera since you '
+                  'opened SousSight',
+        LegOutcome.maybeSent,
+      );
+    }
+    return LedgerCount(
+      0,
+      'photos recorded as sent online since you opened SousSight',
+      LegOutcome.onDevice,
+    );
+  }
+
+  static String _liveNoun(int n) =>
+      n == 1 ? 'Live coach connection' : 'Live coach connections';
+
+  /// Smaller lines under the headline, most significant first: other kinds
+  /// that were sent or may have been, extra photos that may have been, then
+  /// what stayed on this device.
+  List<LedgerCount> get details {
+    final lines = <LedgerCount>[];
+    final photosLead = sent(DataKind.image) > 0;
+    if (photosLead && liveStreams > 0) {
+      lines.add(
+        LedgerCount(
+          liveStreams,
+          '${_liveNoun(liveStreams)} streamed camera and microphone',
+          LegOutcome.cloudSdk,
+        ),
+      );
+    }
+    // The headline already shows Live maybe-streams only when nothing else
+    // was sent or may have been.
+    final headlineShowsLiveMaybe =
+        sent(DataKind.image) == 0 &&
+        liveStreams == 0 &&
+        maybeSent(DataKind.image) == 0;
+    if (liveMaybe > 0 && !headlineShowsLiveMaybe) {
+      lines.add(
+        LedgerCount(
+          liveMaybe,
+          '${_liveNoun(liveMaybe)} may have streamed',
+          LegOutcome.maybeSent,
+        ),
+      );
+    }
+    if ((photosLead || liveStreams > 0) && maybeSent(DataKind.image) > 0) {
+      final n = maybeSent(DataKind.image);
+      lines.add(
+        LedgerCount(
+          n,
+          '${photosLead ? 'more ' : ''}${noun(DataKind.image, n)} may have '
+          'been sent',
+          LegOutcome.maybeSent,
+        ),
+      );
+    }
+    for (final kind in const [
+      DataKind.audio,
+      DataKind.location,
+      DataKind.text,
+    ]) {
+      final n = sent(kind);
+      if (n > 0) {
+        lines.add(
+          LedgerCount(
+            n,
+            '${noun(kind, n)} sent online to Google\'s AI',
+            LegOutcome.cloudSdk,
+          ),
+        );
+      }
+      final m = maybeSent(kind);
+      if (m > 0) {
+        lines.add(
+          LedgerCount(
+            m,
+            '${noun(kind, m)} may have been sent',
+            LegOutcome.maybeSent,
+          ),
+        );
+      }
+    }
+    final localPhotos = onDevice(DataKind.image);
+    if (localPhotos > 0) {
+      lines.add(
+        LedgerCount(
+          localPhotos,
+          localPhotos == 1
+              ? 'photo check stayed on this device'
+              : 'photo checks stayed on this device',
+          LegOutcome.onDevice,
+        ),
+      );
+    }
+    return lines;
+  }
+}
+
+/// The headline counter card at the top of the ledger sheet.
+class LedgerHeadline extends StatelessWidget {
+  const LedgerHeadline({super.key, required this.counters});
+
+  final LedgerCounters counters;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final headline = counters.headline;
+    final details = counters.details;
+    final colors = outcomeColors(headline.tone);
+    final duration = motionDuration(context, const Duration(milliseconds: 260));
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: [
+        headline.sentence,
+        for (final line in details) line.sentence,
+      ].join('. '),
+      excludeSemantics: true,
+      child: DecoratedBox(
+        key: const ValueKey('ledger-headline'),
+        decoration: BoxDecoration(
+          color: colors.background,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: colors.border.withValues(alpha: 0.35)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  AnimatedSwitcher(
+                    duration: duration,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(
+                        scale: Tween(begin: 0.85, end: 1.0).animate(animation),
+                        child: child,
+                      ),
+                    ),
+                    child: Text(
+                      '${headline.count}',
+                      key: ValueKey('ledger-count-${headline.count}'),
+                      style: theme.textTheme.displayMedium?.copyWith(
+                        color: colors.foreground,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                        letterSpacing: -1.5,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      headline.phrase,
+                      key: const ValueKey('ledger-headline-phrase'),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: colors.foreground,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (details.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                for (final line in details)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Row(
+                      children: [
+                        Icon(
+                          outcomeIcon(line.tone),
+                          size: 16,
+                          color: outcomeColors(line.tone).foreground,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            line.sentence,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class LedgerView extends StatelessWidget {
   const LedgerView({
     super.key,
     required this.ledger,
     this.localModelFamily,
     this.controller,
+    this.practice = false,
   });
 
   final LedgerSource ledger;
   final String? localModelFamily;
   final ScrollController? controller;
+
+  /// Practice mode: the storage note describes the in-memory session.
+  final bool practice;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -163,44 +507,51 @@ class LedgerView extends StatelessWidget {
         : Column(
             key: ValueKey('ledger-$section'),
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final row in rows)
-                _LedgerRowTile(row: row, localModelFamily: localModelFamily),
-            ],
+            children: [for (final row in rows) _LedgerRowTile(row: row)],
           );
 
     final sentCount = summary.reportedSent.fold(0, (n, r) => n + r.count);
     final localCount = summary.stayedLocal.fold(0, (n, r) => n + r.count);
+    final simulatedCount = summary.simulated.fold(0, (n, r) => n + r.count);
+    final maybeCount = summary.maybeSent.fold(0, (n, r) => n + r.count);
 
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('ledger-view'),
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+      bottom: 32,
       children: [
         Semantics(
           header: true,
           child: Text(
-            'What left this device',
+            'What we sent',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 14),
+        LedgerHeadline(counters: LedgerCounters.of(ledger.legs)),
+        const SizedBox(height: 12),
         Semantics(
           liveRegion: true,
           child: Text(
             summary.total == 0
-                ? 'No AI requests yet this session.'
-                : '${summary.total} AI ${summary.total == 1 ? 'request' : 'requests'} '
-                      'this session: $localCount stayed on this device, '
-                      '$sentCount reported as sent.',
+                ? 'No AI requests or location shares recorded since you '
+                      'opened SousSight. '
+                      "A question or scan that couldn't start isn't listed: "
+                      'nothing ran and nothing was sent for it.'
+                : '${summary.total} ${summary.total == 1 ? 'request' : 'requests'} '
+                      'since you opened SousSight: $localCount answered on '
+                      'this device, '
+                      '$sentCount sent online'
+                      '${maybeCount == 0 ? '' : ', $maybeCount may have been sent'}'
+                      '${simulatedCount == 0 ? '' : ', $simulatedCount practice (pretend)'}.',
             key: const ValueKey('ledger-summary'),
           ),
         ),
         heading('Allowed to leave'),
         note(
-          'SousSight allowed these to go to the cloud. Being allowed is not '
+          'SousSight allowed these to be sent online. Being allowed is not '
           'proof that anything was sent.',
         ),
         rows(
@@ -210,40 +561,58 @@ class LedgerView extends StatelessWidget {
         ),
         heading('Reported as sent'),
         note(
-          'The Firebase AI Logic SDK or our own client said these went out.',
+          "Google's AI tools or SousSight's own app said these went online.",
         ),
         rows(summary.reportedSent, 'Nothing was reported as sent.', 'sent'),
         if (summary.maybeSent.isNotEmpty) ...[
           heading('May have been sent'),
           note(
-            'These were allowed to leave and then stopped with an error, so '
-            "we can't tell whether they went out.",
+            "These were allowed to leave and aren't confirmed either way: "
+            'they may still be running, or they stopped before saying '
+            'whether they went out.',
           ),
           rows(summary.maybeSent, '', 'maybe'),
         ],
         heading('Stayed on this device'),
         rows(summary.stayedLocal, 'Nothing ran on this device yet.', 'local'),
         if (summary.notFinishedLocal.isNotEmpty) ...[
-          heading("Didn't finish"),
+          heading('Not finished'),
           note(
-            "These stopped before giving an answer. They weren't allowed to "
-            'leave, so nothing left this device.',
+            'These are still running, or stopped before giving an answer. '
+            "Nothing left this device: they weren't allowed to leave, or "
+            'were refused before sending.',
           ),
           rows(summary.notFinishedLocal, '', 'not-finished'),
         ],
         if (summary.simulated.isNotEmpty) ...[
-          heading('Simulated'),
-          note('Rehearsal only. No model ran and nothing was sent.'),
+          heading(kPracticeLabel),
+          note('No AI ran and nothing was sent.'),
           rows(summary.simulated, '', 'simulated'),
         ],
         heading('What this session keeps'),
-        const Text(sessionStorageNote, key: ValueKey('ledger-storage-note')),
+        Text(
+          practice ? practiceStorageNote : sessionStorageNote,
+          key: const ValueKey('ledger-storage-note'),
+        ),
         const SizedBox(height: 8),
         const Text(liveCoachNote, key: ValueKey('ledger-live-note')),
+        if (!practice)
+          ExpansionTile(
+            key: const ValueKey('ledger-details'),
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'Details',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            children: const [Text(sessionStorageDetails)],
+          ),
         const SizedBox(height: 12),
         note(
-          'This list covers this session only, shows kinds of data and never '
-          'their content, and is cleared when you close SousSight.',
+          'This list covers everything since you opened SousSight, shows '
+          'kinds of data and never their content, and is cleared when you '
+          'close it.',
         ),
       ],
     );
@@ -251,15 +620,14 @@ class LedgerView extends StatelessWidget {
 }
 
 class _LedgerRowTile extends StatelessWidget {
-  const _LedgerRowTile({required this.row, this.localModelFamily});
+  const _LedgerRowTile({required this.row});
 
   final LedgerRow row;
-  final String? localModelFamily;
 
   @override
   Widget build(BuildContext context) {
     final colors = outcomeColors(row.outcome);
-    final where = outcomeLabel(row.outcome, localModel: localModelFamily);
+    final where = outcomeLabel(row.outcome);
     final times = row.count == 1 ? '' : ' · ${row.count} times';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

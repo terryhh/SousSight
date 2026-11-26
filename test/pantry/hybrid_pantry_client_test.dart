@@ -174,7 +174,7 @@ void main() {
         (kPantryScanFeature, Provenance.sdkOnDevice),
       ]);
       expect(result.legs.map(pantryLegLabel), [
-        'Voice list · Google cloud',
+        "Voice list · sent online to Google's AI",
         'Meal match · on this device',
       ]);
       expect(result.notice, isNull);
@@ -527,7 +527,7 @@ void main() {
     expect(result.legs.single.provenance, Provenance.simulated);
     expect(
       pantryLegLabel(result.legs.single),
-      'Meal match · simulated, no model used',
+      'Meal match · practice mode, pretend answer',
     );
   });
 
@@ -540,7 +540,7 @@ void main() {
           error: HybridErrorCode.network,
         ),
       ),
-      'Meal match · may have used Google cloud · did not finish',
+      "Meal match · may have been sent online to Google's AI · did not finish",
     );
   });
 }

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 /// Household lifecycle messages. Text is composed by the server from fixed
@@ -19,7 +20,14 @@ String cleanTemplateText(String value, int maxLength) {
   return text;
 }
 
-/// Mirrors `composeDinnerMessage` in functions/src/dinner-ready.js.
+/// The server template version this client previews (functions/src/
+/// dinner-ready.js). Sent with every request so the household gets exactly
+/// the wording the cook reviewed; the server keeps older wording for older
+/// clients.
+const kDinnerTemplateVersion = 2;
+
+/// Mirrors `composeDinnerMessage` (template version 2) in
+/// functions/src/dinner-ready.js.
 String composeDinnerMessage({
   required DinnerKind kind,
   required String recipeTitle,
@@ -29,8 +37,10 @@ String composeDinnerMessage({
   final title = cleanTemplateText(recipeTitle, 60);
   if (kind == DinnerKind.started) {
     final name = cleanTemplateText(cookName ?? '', 30);
-    return 'SousSight: ${name.isEmpty ? 'Your cook' : name} started $title. '
-        'Dinner in about $minutes min.';
+    // No estimate (null): the time is left out rather than guessed.
+    final time = minutes == null ? '' : ', about $minutes minutes to go';
+    return "SousSight: Dinner's started$time. "
+        '${name.isEmpty ? 'Your cook' : name} is making $title.';
   }
   return 'SousSight: Dinner is ready! $title is on the table.';
 }
@@ -74,10 +84,11 @@ class DinnerMessageRequest {
     'recipient': recipient,
     'kind': kind.name,
     'recipeTitle': recipeTitle,
-    if (kind == DinnerKind.started) 'minutes': minutes,
+    if (kind == DinnerKind.started && minutes != null) 'minutes': minutes,
     if (kind == DinnerKind.started && (cookName?.trim().isNotEmpty ?? false))
       'cookName': cookName!.trim(),
     if (simulate != null) 'simulateOutcome': simulate!.name,
+    'templateVersion': kDinnerTemplateVersion,
   };
 }
 
@@ -168,28 +179,40 @@ typedef DinnerMessageSender = Future<DinnerMessageResult> Function(
   DinnerMessageRequest request,
 );
 
+/// The HTTP POST used by [sendDinnerMessage]; [http.post] in production.
+typedef DinnerMessagePost = Future<http.Response> Function(
+  Uri url, {
+  Map<String, String>? headers,
+  Object? body,
+});
+
+/// [auth], [appCheck] and [post] are test seams; production passes none of
+/// them and uses the Firebase singletons and [http.post].
 Future<DinnerMessageResult> sendDinnerMessage(
-  DinnerMessageRequest request,
-) async {
+  DinnerMessageRequest request, {
+  @visibleForTesting FirebaseAuth? auth,
+  @visibleForTesting FirebaseAppCheck? appCheck,
+  @visibleForTesting DinnerMessagePost? post,
+}) async {
   const configured = String.fromEnvironment('DINNER_MESSAGE_URL');
   final endpoint = configured.isEmpty
       ? Uri.base.resolve('/api/dinner-ready')
       : Uri.parse(configured);
-  final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-  final appCheck = await FirebaseAppCheck.instance.getToken();
-  if (idToken == null || appCheck == null) {
+  final idToken = await (auth ?? FirebaseAuth.instance).currentUser
+      ?.getIdToken();
+  final appCheckToken = await (appCheck ?? FirebaseAppCheck.instance)
+      .getToken();
+  if (idToken == null || appCheckToken == null) {
     throw StateError('Sign-in required.');
   }
-  final response = await http
-      .post(
-        endpoint,
-        headers: {
-          'Authorization': 'Bearer $idToken',
-          'X-Firebase-AppCheck': appCheck,
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(request.toJson()),
-      )
-      .timeout(const Duration(seconds: 25));
+  final response = await (post ?? http.post)(
+    endpoint,
+    headers: {
+      'Authorization': 'Bearer $idToken',
+      'X-Firebase-AppCheck': appCheckToken,
+      'Content-Type': 'application/json',
+    },
+    body: jsonEncode(request.toJson()),
+  ).timeout(const Duration(seconds: 25));
   return parseDinnerMessageResponse(response);
 }

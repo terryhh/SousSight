@@ -41,9 +41,14 @@ class InferenceLedger extends ChangeNotifier {
 
   final DateTime Function() _clock;
   String _sessionId;
+  int _generation = 0;
   final List<LedgerEntry> _entries = [];
 
   String get sessionId => _sessionId;
+
+  /// Bumped by every [startSession]. Work that began under an older
+  /// generation belongs to a ledger that is gone and must not send.
+  int get generation => _generation;
   List<LedgerEntry> get entries => List.unmodifiable(_entries);
   List<InferenceLeg> get legs => [for (final e in _entries) e.leg];
 
@@ -55,6 +60,7 @@ class InferenceLedger extends ChangeNotifier {
   /// A new cooking session starts an empty ledger.
   void startSession(String sessionId) {
     _sessionId = sessionId;
+    _generation++;
     _entries.clear();
     notifyListeners();
   }
@@ -85,6 +91,26 @@ class InferenceLedger extends ChangeNotifier {
         entry.leg,
         provenance: provenance,
         modelLabel: modelLabel,
+        error: error,
+      )
+      ..completedAt = _clock();
+    notifyListeners();
+  }
+
+  /// Settles a leg written with [begin] as never sent: a last check right
+  /// before transmission refused it, so nothing left this device.
+  void withdraw(LedgerEntry entry, {required HybridErrorCode error}) {
+    if (!_entries.contains(entry) || !entry.pending) return;
+    final leg = entry.leg;
+    entry
+      ..leg = InferenceLeg(
+        requestId: leg.requestId,
+        feature: leg.feature,
+        mode: leg.mode,
+        kinds: leg.kinds,
+        transferPermitted: false,
+        provenance: Provenance.unknown,
+        modelLabel: leg.modelLabel,
         error: error,
       )
       ..completedAt = _clock();

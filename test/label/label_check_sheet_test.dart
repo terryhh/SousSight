@@ -83,7 +83,7 @@ void main() {
       find.byKey(const ValueKey('inference-source-badge')),
       findsOneWidget,
     );
-    expect(find.text('On this device · Gemini Nano'), findsOneWidget);
+    expect(find.text('On this device'), findsOneWidget);
     expectNoSafetyClaim(tester);
   });
 

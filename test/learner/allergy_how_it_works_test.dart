@@ -6,11 +6,13 @@ import 'package:soussight/ai/cooking_research_client.dart';
 import 'package:soussight/app/how_it_works.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/models.dart';
+import 'package:soussight/data/dinner_mode.dart';
 import 'package:soussight/learner/allergen_chip.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
 import 'package:soussight/learner/recipe_allergens.dart';
+import 'package:soussight/live/live_backend.dart';
 import 'package:soussight/pantry/pantry_flow.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
 
@@ -88,6 +90,60 @@ void main() {
       expect(recipeAllergens(_allergenFree), isEmpty);
     });
 
+    test('allergen swap lines cover only allergen ingredients', () {
+      final recipe = Recipe(
+        id: _optionalOnly.id,
+        version: 1,
+        title: _optionalOnly.title,
+        summary: _optionalOnly.summary,
+        ingredients: [
+          ..._optionalOnly.ingredients,
+          const Ingredient(id: 'salt', name: 'Salt', qty: 'a pinch'),
+        ],
+        equipment: const [],
+        steps: _optionalOnly.steps,
+        checkpoints: const [],
+        reviewedSubstitutions: const [
+          ReviewedSubstitution(
+            ingredientId: 'butter',
+            substitute: 'Olive oil',
+            note: ' Check the label. ',
+            approvedBy: 'Recipe reviewer',
+          ),
+          ReviewedSubstitution(
+            ingredientId: 'bread',
+            substitute: 'Rice cake',
+            note: '',
+            approvedBy: 'Recipe reviewer',
+          ),
+          ReviewedSubstitution(
+            ingredientId: 'salt',
+            substitute: 'Herbs',
+            note: 'No allergen here.',
+            approvedBy: 'Recipe reviewer',
+          ),
+        ],
+        adjustmentLabels: const {},
+      );
+      expect(allergenSwapLines(recipe), [
+        'Butter -> Olive oil: Check the label.',
+        'Bread -> Rice cake.',
+      ]);
+      expect(allergenSwapLines(_allergenFree), isEmpty);
+      // No reviewed swap: the line has no swaps clause.
+      expect(
+        allergyContextLine(_optionalOnly, const []),
+        isNot(contains('Reviewed swaps')),
+      );
+      expect(
+        allergyContextLine(recipe, const []),
+        contains(
+          'Reviewed swaps: Butter -> Olive oil: Check the label. '
+          'Bread -> Rice cake. Before any other step guidance',
+        ),
+      );
+    });
+
     test('recognises a saved allergy answer', () {
       expect(hasAllergyAnswer(['Pan is hot. Answer from cook: yes']), isFalse);
       expect(
@@ -119,10 +175,27 @@ void main() {
       final context = cook.cookingContext;
       expect(context, contains('Recipe allergens: wheat, peanut.'));
       expect(context, contains('use ask_cook once'));
-      expect(context, contains('research_cooking for a safe substitution'));
+      expect(context, contains('research_cooking for a substitution'));
+      expect(context, isNot(contains('safe substitution')));
+      expect(
+        context,
+        contains(
+          'remind the cook to read labels and use a clean knife, plate and '
+          'board to avoid cross-contact; never call a swap allergen-free',
+        ),
+      );
       expect(
         context,
         contains('Never claim the camera can verify allergen absence'),
+      );
+      // The reviewed peanut swap reaches the coach with its label note.
+      expect(
+        context,
+        contains(
+          'Reviewed swaps: Peanut butter -> Sunflower seed butter: Use a '
+          'clean knife and plate. Some brands are made alongside peanuts — '
+          'check the label.',
+        ),
       );
       // The opening workspace instruction is still present.
       expect(context, contains('call show_cooking_ui'));
@@ -187,7 +260,9 @@ void main() {
       () => loadBundledRecipe('peanut_butter_sandwich_v1'),
     ))!;
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: AllergenChip(recipe: sandwich))),
+      MaterialApp(
+        home: Scaffold(body: AllergenChip(recipe: sandwich)),
+      ),
     );
     final node = tester.getSemantics(
       find.bySemanticsLabel(RegExp('Allergens. Contains: wheat, peanut')),
@@ -229,12 +304,17 @@ void main() {
       expect(item, findsOneWidget);
     }
 
-    for (final (title, _) in howItWorksSteps) {
+    // Rehearsal always has its simulated Live coach.
+    final live = demo || configuredLiveBackend != LiveBackend.none;
+    for (final (title, _) in howItWorksStepsFor(live: live)) {
       await expectListed(
         find.descendant(of: sheet, matching: find.textContaining(title)),
       );
     }
-    for (final tech in howItWorksTechnologies) {
+    for (final tech in howItWorksTechnologiesFor(
+      live: live,
+      vonage: !demo && configuredDinnerMode == DinnerMode.real,
+    )) {
       await expectListed(find.descendant(of: sheet, matching: find.text(tech)));
     }
     await expectListed(find.text('Your privacy'));
@@ -275,5 +355,40 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Contains: wheat, peanut'), findsOneWidget);
     await expectSheet(tester, demo: true);
+  });
+
+  test('SS-089: the build decides Live and Vonage wording', () {
+    final noLive = howItWorksStepsFor(live: false);
+    expect(noLive.map((s) => s.$1), isNot(contains('Cook with a live coach')));
+    expect(noLive.map((s) => s.$2).join(' '), isNot(contains('by voice')));
+    expect(howItWorksStepsFor(live: true), howItWorksSteps);
+    final lean = howItWorksTechnologiesFor(live: false, vonage: false);
+    expect(lean.where((t) => t.contains('Gemini Live')), isEmpty);
+    expect(lean.where((t) => t.contains('Vonage')), isEmpty);
+    expect(
+      howItWorksTechnologiesFor(live: true, vonage: true),
+      howItWorksTechnologies,
+    );
+  });
+
+  testWidgets('SS-089: no Live and simulated dinner: no Live/Vonage lines', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: HowItWorksSheet(
+            liveBackend: LiveBackend.none,
+            dinnerMode: DinnerMode.simulated,
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.textContaining('Cook step by step', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Gemini Live API'), findsNothing);
+    expect(find.textContaining('Vonage Messages'), findsNothing);
   });
 }

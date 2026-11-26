@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
+import '../app/centered_scroll.dart';
 import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../learner/draft_recipe_chip.dart';
@@ -24,10 +25,47 @@ typedef PantryRecipeChosen = void Function(
   PantryHandoff handoff,
 );
 
+/// Plain words, no promises about what this device can do (SS-089): each
+/// result's badge says where it actually ran.
 const pantryPrivacyLine =
-    'On-device AI reads typed lists and photos when it is ready. Voice clips, '
-    'and anything this device cannot handle, may go to Google cloud AI; each '
-    'result shows where it ran. Nothing is stored.';
+    "Each result shows whether it was worked out on this device or sent "
+    "online to Google's AI. Photos and voice clips aren't stored. When you "
+    'start cooking, the items you confirmed and your answer are saved with '
+    'your cooking session.';
+
+/// Items found that no suggested meal uses, so nothing the cook typed is
+/// silently dropped (SS-089). Empty when there are no meals.
+List<String> pantryUnusedItems(PantryResult result) {
+  if (result.meals.isEmpty) return const [];
+  return [
+    for (final item in result.items)
+      if (!result.meals.any(
+        (meal) => meal.matched.any((m) => pantryNamesMatch(item.name, m)),
+      ))
+        item.name,
+  ];
+}
+
+/// Shown beside Record: voice clips can't be understood on this device.
+/// Says only what Record needs (Codex #221): no promise about other paths.
+const pantryVoiceDisclosure =
+    'Voice lists need online processing: when you tap Find my meal, the clip '
+    "is sent to Google's AI. Leaving Say it deletes the clip.";
+
+/// Said when a recorded clip is dropped because voice went off before send.
+const pantryVoiceSkipped =
+    'Your voice clip was skipped: online processing is off in this build.';
+
+/// The same, in a build where online processing is off.
+const pantryVoiceUnavailable =
+    'Voice lists need online processing and a connection, which aren\'t '
+    'available right now (off in this build or offline). Type your list '
+    'instead.';
+
+/// The catch-all when matching failed without a reason of its own.
+const pantryUnavailableMessage =
+    "Matching your food didn't work just now — no answer came back. Pick a "
+    'recipe below, or try again.';
 
 /// "What did you get from the pantry?" The cook shows, says, or types their
 /// haul; one Gemini call suggests bundled recipes; the cook confirms and picks.
@@ -46,7 +84,12 @@ class PantryScreen extends StatefulWidget {
     this.openLink,
     this.header,
     this.headerActions,
+    this.unavailableReason,
+    this.voiceOnline,
   });
+
+  /// Whether this build can process a voice clip online. Null when unknown
+  /// (the disclosure then states what Record needs without availability).
 
   final List<Recipe> recipes;
   final PantryClient client;
@@ -62,7 +105,9 @@ class PantryScreen extends StatefulWidget {
   final Duration recordDuration;
 
   /// Grounding with Google Maps search. Defaults to the rehearsal client in
-  /// demo mode and the Gemini client otherwise.
+  /// demo mode; real mode needs a gated client (`nearbyClientFor`). Without
+  /// one, or when this build does not approve the nearby route, the nearby
+  /// entry points are hidden.
   final NearbyClient? nearbyClient;
 
   /// One-time location lookup; defaults to browser geolocation (real mode)
@@ -73,22 +118,29 @@ class PantryScreen extends StatefulWidget {
   /// Shown under the brand row (for example the readiness panel).
   final Widget? header;
 
-  /// Extra buttons beside "How it works" (On-device AI, ledger, label check).
+  /// Labelled buttons under the brand row (On this device, What we sent,
+  /// Check a label).
   final Widget? headerActions;
+
+  /// Why AI help can't run here, in plain words, or null when it can or
+  /// nobody knows. Read when matching fails without a reason (SS-089).
+  final Future<String?> Function()? unavailableReason;
+  final bool Function()? voiceOnline;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
 }
 
 class _PantryScreenState extends State<PantryScreen> {
+  late final NearbyClient? _nearby =
+      widget.nearbyClient ?? (widget.isDemo ? const FakeNearbyClient() : null);
   late final PantryUiController _ui = PantryUiController(
     onChooseMeal: _chooseById,
-    onFindMissing: (missing) =>
-        unawaited(_openNearby(NearbyKind.groceries, missing: missing)),
+    onFindMissing: nearbyOffered(_nearby)
+        ? (missing) =>
+              unawaited(_openNearby(NearbyKind.groceries, missing: missing))
+        : null,
   );
-  late final NearbyClient _nearby =
-      widget.nearbyClient ??
-      (widget.isDemo ? const FakeNearbyClient() : GeminiNearbyClient());
   final _text = TextEditingController();
   final _answer = TextEditingController();
   PantryMode _mode = PantryMode.type;
@@ -110,12 +162,54 @@ class _PantryScreenState extends State<PantryScreen> {
   bool _thinking = false;
   String? _error;
   List<InferenceLeg> _errorLegs = const [];
+
+  /// True only when [_error] came from matching (not the camera or mic), so
+  /// the "no answer came back" source line appears only there (Codex #221).
+  bool _matchError = false;
   PantryResult? _result;
   bool _drafting = false;
+  final _resultsKey = GlobalKey(debugLabel: 'pantry-results');
+  final _errorKey = GlobalKey(debugLabel: 'pantry-error');
+
+  /// Scrolls [key]'s widget into view after the next frame, instantly when
+  /// the platform asks for reduced motion.
+  void _reveal(GlobalKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = key.currentContext;
+      if (!mounted || target == null || !target.mounted) return;
+      final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      unawaited(
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0.05,
+          duration: still ? Duration.zero : const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    });
+  }
+
   String? _draftError;
   Recipe? _drafted;
   List<InferenceLeg> _draftLegs = const [];
   int _draftEpoch = 0;
+
+  /// Set when a recipe is chosen and cleared when the cook comes back to
+  /// the pantry: until then the mode switches are off and no capture starts,
+  /// even while the cooking screen is still opening (Codex #221 P1).
+  bool _leaving = false;
+  bool _covered = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_onScreen) {
+      _covered = true;
+    } else if (_covered) {
+      _covered = false;
+      if (_leaving) setState(() => _leaving = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -129,8 +223,17 @@ class _PantryScreenState extends State<PantryScreen> {
 
   // ---- media ---------------------------------------------------------------
 
-  Future<bool> _ensureMedia() async {
-    if (_media != null) return true;
+  /// Whether the running capture includes the microphone.
+  bool _mediaHasMic = false;
+
+  /// Scan needs only the camera; Record asks for the microphone too
+  /// (Codex #221). A camera-only capture is restarted with the microphone
+  /// when Record needs it.
+  Future<bool> _ensureMedia({bool microphone = false}) async {
+    // Never after a recipe was chosen or behind another screen.
+    if (_leaving || !_onScreen) return false;
+    if (_media != null && (!microphone || _mediaHasMic)) return true;
+    if (_media != null) await _stopMedia();
     final factory = widget.mediaFactory;
     if (factory == null || _mediaStarting) return false;
     setState(() => _mediaStarting = true);
@@ -139,24 +242,32 @@ class _PantryScreenState extends State<PantryScreen> {
     _pendingMedia = media;
     try {
       _subscriptions.addAll([
-        media.frames.listen((frame) {
-          if (mounted) setState(() => _preview = frame);
-        }),
-        media.microphone.listen((chunk) => _recording?.add(chunk)),
+        if (microphone)
+          media.frames.listen((frame) {
+            if (mounted) setState(() => _preview = frame);
+          })
+        else
+          media.timedFrames.listen((frame) {
+            if (mounted) setState(() => _preview = frame.bytes);
+          }),
+        if (microphone)
+          media.microphone.listen((chunk) => _recording?.add(chunk)),
         media.errors.listen((message) {
           if (!mounted) return;
           setState(() {
             _error = message;
+            _matchError = false;
             _media = null;
           });
         }),
       ]);
-      await media.start();
-      if (!mounted || epoch != _mediaEpoch) {
+      await (microphone ? media.start() : media.startCameraOnly());
+      if (!mounted || epoch != _mediaEpoch || _leaving || !_onScreen) {
         await media.stop();
         return false;
       }
       _media = media;
+      _mediaHasMic = microphone;
       return true;
     } catch (_) {
       for (final subscription in _subscriptions) {
@@ -167,6 +278,7 @@ class _PantryScreenState extends State<PantryScreen> {
       if (mounted) {
         setState(() {
           _error = 'Camera or microphone is blocked. Allow access in the browser, or type your list instead.';
+          _matchError = false;
           _mode = PantryMode.type;
         });
       }
@@ -192,17 +304,48 @@ class _PantryScreenState extends State<PantryScreen> {
     _subscriptions.clear();
     final media = _media;
     _media = null;
+    _mediaHasMic = false;
     _preview = null;
     await media?.stop();
   }
 
+  /// Read live at render, at Record and at send (Codex #221).
+  bool get _voiceOff => widget.voiceOnline?.call() == false;
+
+  /// Shown once a clip was dropped at send because voice went off.
+  String? _voiceSkipped;
+
+  /// Bumped by every mode switch; an older switch's work stops after any
+  /// await once this has moved on (Codex #221).
+  int _modeEpoch = 0;
+
   Future<void> _selectMode(PantryMode mode) async {
+    if (_leaving) return;
+    final changed = mode != _mode;
+    final epoch = ++_modeEpoch;
     setState(() {
+      // A clip never rides along unseen: leaving Say it deletes it.
+      if (mode != PantryMode.say) {
+        _recordTimer?.cancel();
+        _recording = null;
+        _recordProgress = 0;
+        _audio = null;
+        _simulatedAudio = false;
+      }
       _mode = mode;
       _error = null;
     });
+    // Release capture when the mode changes, including a start still waiting
+    // for permission: stopping bumps the epoch so it never activates
+    // (Codex #221).
+    if (changed) await _stopMedia();
+    if (!mounted || epoch != _modeEpoch || !_onScreen) return;
     if (mode == PantryMode.scan && !widget.isDemo && _photo == null) {
       await _ensureMedia();
+      // A later switch while the camera started: release it.
+      if (mounted && epoch != _modeEpoch && _mode != PantryMode.scan) {
+        await _stopMedia();
+      }
     }
   }
 
@@ -218,11 +361,23 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _record() async {
     if (_recording != null) return;
+    // A pretend clip needs no online processing (Codex #221).
     if (widget.isDemo) {
       setState(() => _simulatedAudio = true);
       return;
     }
-    if (!await _ensureMedia() || !mounted) return;
+    if (_voiceOff) {
+      setState(() => _error = pantryVoiceUnavailable);
+      return;
+    }
+    // A new clip replaces any earlier "skipped" notice.
+    if (_voiceSkipped != null) setState(() => _voiceSkipped = null);
+    if (!await _ensureMedia(microphone: true) || !mounted) return;
+    // The cook may have left Say it while permission was pending.
+    if (_mode != PantryMode.say) {
+      await _stopMedia();
+      return;
+    }
     _media?.setMicrophoneMuted(false);
     setState(() {
       _audio = null;
@@ -252,6 +407,7 @@ class _PantryScreenState extends State<PantryScreen> {
       // Under half a second of 16 kHz PCM16 is not a usable clip.
       if (pcm == null || pcm.length < 16000) {
         _error = 'I did not hear anything. Check the microphone and try again.';
+        _matchError = false;
       } else {
         _audio = pcm16ToWav(pcm);
       }
@@ -269,8 +425,30 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _analyze() async {
     if (_thinking) return;
+    // The notice belongs to the submission that dropped a clip (Codex #221).
+    if (_voiceSkipped != null) setState(() => _voiceSkipped = null);
+    // Re-read the voice gate at send: a closed gate drops the clip, and the
+    // cook is told (Codex #221).
+    if (_audio != null && _voiceOff && !widget.isDemo) {
+      setState(() {
+        _audio = null;
+        _voiceSkipped = pantryVoiceSkipped;
+      });
+      if (!_hasInput) {
+        setState(() {
+          _error = pantryVoiceSkipped;
+          _matchError = false;
+        });
+        // Same cleanup as a send: release capture (Codex #221).
+        await _stopMedia();
+        return;
+      }
+    }
     if (!_hasInput && !widget.isDemo) {
-      setState(() => _error = 'Show, say, or type what you got first.');
+      setState(() {
+        _error = 'Show, say, or type what you got first.';
+        _matchError = false;
+      });
       return;
     }
     setState(() {
@@ -280,13 +458,43 @@ class _PantryScreenState extends State<PantryScreen> {
     });
     // Release the camera and microphone as soon as the inputs are captured.
     await _stopMedia();
+    if (!mounted) return;
+    // Re-read the gate after the await: it may have closed meanwhile
+    // (Codex #221).
+    if (_audio != null && _voiceOff && !widget.isDemo) {
+      setState(() {
+        _audio = null;
+        _voiceSkipped = pantryVoiceSkipped;
+      });
+      if (!_hasInput) {
+        setState(() {
+          _thinking = false;
+          _error = pantryVoiceSkipped;
+          _matchError = false;
+        });
+        return;
+      }
+    }
+    // The cook's submitted words, not whatever the field holds when the
+    // answer arrives (Codex #221).
+    final submitted = _text.text;
     try {
       final result = await widget.client.identify(
-        PantryInput(text: _text.text, photoJpeg: _photo, audioWav: _audio),
+        PantryInput(
+          text: submitted,
+          simulatedPhoto: _simulatedPhoto,
+          simulatedAudio: _simulatedAudio && _mode == PantryMode.say,
+          photoJpeg: _photo,
+          // Audio is sent only from Say it, where the clip is shown, and only
+          // while voice processing is on (re-read at send).
+          audioWav: _mode == PantryMode.say && !_voiceOff ? _audio : null,
+        ),
         widget.recipes,
       );
       if (!mounted) return;
-      _ui.show(result, widget.recipes);
+      // What the cook typed is their own word: those items start confirmed.
+      _ui.show(result, widget.recipes, typed: submitted);
+      _reveal(_resultsKey);
       setState(() {
         _result = result;
         _draftEpoch++;
@@ -298,20 +506,47 @@ class _PantryScreenState extends State<PantryScreen> {
       });
     } on PantryException catch (error) {
       if (mounted) {
+        final message = await _withReason(error.message);
+        if (!mounted) return;
         setState(() {
-          _error = error.message;
+          _error = message;
           _errorLegs = error.legs;
+          _matchError = true;
         });
+        _reveal(_errorKey);
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Ingredient matching is unavailable right now. Pick a recipe below.',
-        );
+        final message = await _withReason(pantryUnavailableMessage);
+        if (!mounted) return;
+        setState(() {
+          _error = message;
+          _matchError = true;
+        });
+        _reveal(_errorKey);
       }
     } finally {
       if (mounted) setState(() => _thinking = false);
     }
+  }
+
+  /// Adds the known reason to a reasonless "unavailable" message.
+  Future<String> _withReason(String message) async {
+    const generic = {
+      pantryUnavailableMessage,
+      'Ingredient matching is unavailable right now. Pick a recipe below.',
+    };
+    if (!generic.contains(message)) return message;
+    String? reason;
+    try {
+      reason = await widget.unavailableReason?.call();
+    } catch (_) {
+      reason = null;
+    }
+    return reason == null
+        ? pantryUnavailableMessage
+        : "Matching your food didn't work just now. $reason Pick a recipe "
+              'below, or try again.';
   }
 
   Future<void> _openNearby(
@@ -319,7 +554,7 @@ class _PantryScreenState extends State<PantryScreen> {
     List<String> missing = const [],
   }) => showNearbySheet(
     context,
-    client: _nearby,
+    client: _nearby!,
     kind: kind,
     missingItems: missing,
     locate:
@@ -368,9 +603,21 @@ class _PantryScreenState extends State<PantryScreen> {
     if (recipe != null) _choose(recipe);
   }
 
+  /// False once another route (cooking) covers the pantry.
+  bool get _onScreen => ModalRoute.of(context)?.isCurrent ?? true;
+
   void _choose(Recipe recipe, {bool skipped = false}) {
     final question = _result?.question;
     final answer = _answer.text.trim();
+    // Leaving the pantry: any pending mode switch is superseded, so it never
+    // opens a camera behind the cooking screen, and no clip is kept
+    // (Codex #221).
+    _modeEpoch++;
+    setState(() => _leaving = true);
+    _recordTimer?.cancel();
+    _recording = null;
+    _audio = null;
+    _simulatedAudio = false;
     unawaited(_stopMedia());
     widget.onChooseRecipe(
       recipe,
@@ -390,12 +637,19 @@ class _PantryScreenState extends State<PantryScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xFFF7EFE1),
+    // The scroll view spans the window and the column is centred inside it,
+    // so the wheel works over the side margins on desktop (SS-089).
     body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final side = centeredSide(
+            constraints.maxWidth,
+            maxWidth: 720,
+            gutter: 16,
+          );
+          return SingleChildScrollView(
+            key: const ValueKey('pantry-scroll'),
+            padding: EdgeInsets.fromLTRB(side, 16, side, 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -404,7 +658,8 @@ class _PantryScreenState extends State<PantryScreen> {
                 ?widget.header,
                 if (widget.isDemo) ...[
                   _notice(
-                    'Rehearsal mode · Camera, microphone, and Gemini are not used. Results are simulated.',
+                    'Practice mode (pretend answers) · No real camera, '
+                    'microphone or AI is used.',
                     Icons.science_outlined,
                   ),
                   const SizedBox(height: 14),
@@ -437,21 +692,31 @@ class _PantryScreenState extends State<PantryScreen> {
                     ),
                   ],
                 ),
+                // Shown only while the gate is still closed (Codex #221).
+                if (_voiceSkipped case final skipped? when _error == null) ...[
+                  const SizedBox(height: 14),
+                  _notice(skipped, Icons.mic_off_outlined),
+                ],
                 if (_error case final error?) ...[
                   const SizedBox(height: 14),
-                  _notice(
-                    error,
-                    Icons.info_outline,
-                    color: const Color(0xFFFBE3DC),
+                  Semantics(
+                    key: _errorKey,
+                    liveRegion: true,
+                    child: _notice(
+                      error,
+                      Icons.info_outline,
+                      color: const Color(0xFFFBE3DC),
+                    ),
                   ),
-                  if (_errorLegs.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    PantryLegList(legs: _errorLegs),
-                  ],
+                  const SizedBox(height: 8),
+                  if (_matchError)
+                    _errorLegs.isNotEmpty
+                        ? PantryLegList(legs: _errorLegs)
+                        : const _NoAnswerSource(),
                 ],
                 if (_result case final result?) ...[
                   const SizedBox(height: 28),
-                  _resultsHeader(result),
+                  KeyedSubtree(key: _resultsKey, child: _resultsHeader(result)),
                   const SizedBox(height: 8),
                   PantryLegList(legs: result.legs),
                   if (result.notice case final notice?) ...[
@@ -463,6 +728,18 @@ class _PantryScreenState extends State<PantryScreen> {
                     ),
                   ],
                   const SizedBox(height: 14),
+                  if (pantryUnusedItems(result) case final unused
+                      when unused.isNotEmpty) ...[
+                    Text(
+                      'Not used in these recipes: ${unused.join(', ')}',
+                      key: const ValueKey('pantry-unused'),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF5C4A2E),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (result.question case final question?) ...[
                     _questionCard(question),
                     const SizedBox(height: 18),
@@ -476,54 +753,64 @@ class _PantryScreenState extends State<PantryScreen> {
                   ],
                   PantrySurface(controller: _ui),
                 ],
-                const SizedBox(height: 24),
-                _nearbyCard(),
+                if (nearbyOffered(_nearby)) ...[
+                  const SizedBox(height: 24),
+                  _nearbyCard(),
+                ],
                 const SizedBox(height: 32),
                 _skipList(),
               ],
             ),
-          ),
-        ),
+          );
+        },
       ),
     ),
   );
 
-  Widget _brand() => Row(
+  Widget _brand() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: pantryGreen,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Icon(
-          Icons.soup_kitchen_outlined,
-          color: Colors.white,
-          size: 26,
-        ),
-      ),
-      const SizedBox(width: 12),
-      const Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'SousSight',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1,
-              ),
+      Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: pantryGreen,
+              borderRadius: BorderRadius.circular(16),
             ),
-            Text(
-              'Pantry to plate, with a coach beside you',
-              style: TextStyle(fontSize: 12),
+            child: const Icon(
+              Icons.soup_kitchen_outlined,
+              color: Colors.white,
+              size: 26,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SousSight',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
+                ),
+                Text(
+                  'Pantry to plate, with a coach beside you',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          HowItWorksButton(isDemo: widget.isDemo),
+        ],
       ),
-      ?widget.headerActions,
-      HowItWorksButton(isDemo: widget.isDemo),
+      if (widget.headerActions case final actions?) ...[
+        const SizedBox(height: 6),
+        Align(alignment: Alignment.centerLeft, child: actions),
+      ],
     ],
   );
 
@@ -585,13 +872,15 @@ class _PantryScreenState extends State<PantryScreen> {
           child: Semantics(
             selected: _mode == mode,
             button: true,
+            enabled: !_leaving,
             child: Material(
               color: _mode == mode ? pantryTomato : Colors.white,
               borderRadius: BorderRadius.circular(20),
               child: InkWell(
                 key: ValueKey('mode-${mode.name}'),
                 borderRadius: BorderRadius.circular(20),
-                onTap: () => unawaited(_selectMode(mode)),
+                // Off once a recipe is chosen (Codex #221 P1).
+                onTap: _leaving ? null : () => unawaited(_selectMode(mode)),
                 child: SizedBox(
                   height: 84,
                   child: Column(
@@ -664,8 +953,8 @@ class _PantryScreenState extends State<PantryScreen> {
                               child: Text(
                                 widget.isDemo
                                     ? (_simulatedPhoto
-                                          ? 'Simulated photo captured'
-                                          : 'Rehearsal: the camera is not used')
+                                          ? 'Pretend photo captured'
+                                          : 'Practice mode: the camera is not used')
                                     : 'Lay your haul out on the counter and point the camera at it.',
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
@@ -682,7 +971,7 @@ class _PantryScreenState extends State<PantryScreen> {
                   left: 10,
                   child: _pill(
                     widget.isDemo
-                        ? 'SIMULATED'
+                        ? 'PRACTICE MODE'
                         : _photo != null
                         ? 'PHOTO READY'
                         : _preview != null
@@ -714,7 +1003,7 @@ class _PantryScreenState extends State<PantryScreen> {
             icon: const Icon(Icons.camera_alt),
             label: Text(
               widget.isDemo
-                  ? 'Simulate a photo'
+                  ? 'Take a pretend photo'
                   : _preview == null
                   ? 'Start camera'
                   : 'Snap photo',
@@ -739,7 +1028,7 @@ class _PantryScreenState extends State<PantryScreen> {
               ? 'Listening… name everything you got.'
               : captured
               ? (widget.isDemo
-                    ? 'Simulated voice clip ready.'
+                    ? 'Pretend voice clip ready.'
                     : 'Got it. Your $seconds-second clip is ready.')
               : 'Tap and list what’s in your bag, like “black beans, corn, two tomatoes, bread.”',
           style: const TextStyle(fontSize: 16, height: 1.4),
@@ -764,15 +1053,42 @@ class _PantryScreenState extends State<PantryScreen> {
             recording
                 ? 'Recording…'
                 : widget.isDemo
-                ? 'Simulate a voice clip'
+                ? 'Record a pretend voice clip'
                 : captured
                 ? 'Record again ($seconds s)'
                 : 'Record $seconds seconds',
           ),
-          onPressed: recording || _mediaStarting
+          onPressed:
+              recording || _mediaStarting || (_voiceOff && !widget.isDemo)
               ? null
               : () => unawaited(_record()),
         ),
+        if (!widget.isDemo) ...[
+          const SizedBox(height: 10),
+          // Said before the cook records (Codex #221): the voice task asks
+          // no further consent because this line is the disclosure.
+          Row(
+            key: const ValueKey('voice-cloud-disclosure'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.cloud_outlined,
+                size: 18,
+                color: Color(0xFF5C4A2E),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _voiceOff ? pantryVoiceUnavailable : pantryVoiceDisclosure,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF5C4A2E),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -825,7 +1141,8 @@ class _PantryScreenState extends State<PantryScreen> {
           ),
         ),
       ),
-      if (result.simulated) _pill('SIMULATED', color: const Color(0xFF6B5A3E)),
+      if (result.simulated)
+        _pill('PRACTICE MODE', color: const Color(0xFF6B5A3E)),
     ],
   );
 
@@ -869,7 +1186,10 @@ class _PantryScreenState extends State<PantryScreen> {
           controller: _answer,
           maxLength: 300,
           decoration: const InputDecoration(
-            hintText: 'Your answer (optional) — I’ll pass it to your coach',
+            hintText: 'Your answer (optional)',
+            hintMaxLines: 2,
+            helperText: 'I’ll pass it to your coach.',
+            helperMaxLines: 2,
             filled: true,
             fillColor: Colors.white,
             counterText: '',
@@ -913,7 +1233,7 @@ class _PantryScreenState extends State<PantryScreen> {
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
-          child: DraftRecipeChip(recipe: drafted),
+          child: DraftRecipeChip(recipe: drafted, practice: widget.isDemo),
         ),
         const SizedBox(height: 8),
         PantryLegList(legs: _draftLegs),
@@ -942,8 +1262,9 @@ class _PantryScreenState extends State<PantryScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Tap the ingredients you have below, then Gemini creates a recipe '
-            'from exactly those. It is labelled as not reviewed by a person.',
+            "Tap the ingredients you have below, then SousSight's AI creates a "
+            'recipe from exactly those. It is labelled as not reviewed by a '
+            'person.',
             style: TextStyle(fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 14),
@@ -1128,4 +1449,30 @@ class _PantryScreenState extends State<PantryScreen> {
           ],
         ),
       );
+}
+
+/// The source line for a failure with no inference legs: says that no answer
+/// came back, and claims nothing about where anything ran (SS-089).
+class _NoAnswerSource extends StatelessWidget {
+  const _NoAnswerSource();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    key: const ValueKey('pantry-no-answer-source'),
+    container: true,
+    label: 'Where this ran: no answer came back.',
+    excludeSemantics: true,
+    child: const Row(
+      children: [
+        Icon(Icons.block, size: 16, color: Color(0xFF3D3A34)),
+        SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'Meal match · no answer came back',
+            style: TextStyle(fontSize: 13, color: Color(0xFF3D3A34)),
+          ),
+        ),
+      ],
+    ),
+  );
 }

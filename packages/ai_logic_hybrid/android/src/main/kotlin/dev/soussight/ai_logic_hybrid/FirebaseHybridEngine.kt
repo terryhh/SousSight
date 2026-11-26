@@ -34,6 +34,9 @@ object SdkMapping {
         AndroidModelOption.PREVIEW -> OnDeviceModelOption.PREVIEW
         AndroidModelOption.PREVIEW_FAST -> OnDeviceModelOption.PREVIEW_FAST
         AndroidModelOption.STABLE -> OnDeviceModelOption.STABLE
+        // Resolved to preview or stable at configure; reaching the SDK with it is a bug.
+        AndroidModelOption.DEVICE_LIST ->
+            throw HybridError(HybridErrorCode.FAILED, "androidModel deviceList must be resolved first")
     }
 
     /** The SDK's own report. Anything else is not inferred: the call fails. */
@@ -159,30 +162,32 @@ class FirebaseHybridEngine(
     }
 
     override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult {
+        // Every input check comes before any SDK call: rules, schema, then each image's size and
+        // a full decode (once; the bitmap is reused below).
         InputRules.validate(request)
         val schema = request.jsonSchema
         // Converted for every mode so an unsupported schema fails the same way everywhere; only
         // the cloud provider reads it (the on-device provider ignores generationConfig).
         val cloudSchema = schema?.let { SchemaMapping.toSchema(it) }
         val maySendLocally = request.mode != HybridMode.ONLY_IN_CLOUD
+        val bitmaps = request.images.associateWith { part ->
+            val (w, h) = codec.bounds(part.bytes)
+                ?: throw HybridError(HybridErrorCode.UNSUPPORTED_INPUT, "Image could not be decoded")
+            InputRules.checkDimensions(w, h)
+            // The on-device provider accepts only TextPart and ImagePart(Bitmap).
+            if (maySendLocally) {
+                codec.decode(part.bytes)
+                    ?: throw HybridError(HybridErrorCode.UNSUPPORTED_INPUT, "Image could not be decoded")
+            } else {
+                null
+            }
+        }
         val prompt = content {
             for (part in request.parts) {
                 when (part) {
                     is HybridPart.Text -> text(part.text)
                     is HybridPart.InlineData -> if (part.isImage) {
-                        val (w, h) = codec.bounds(part.bytes)
-                            ?: throw HybridError(HybridErrorCode.UNSUPPORTED_INPUT, "Image could not be decoded")
-                        InputRules.checkDimensions(w, h)
-                        if (maySendLocally) {
-                            // The on-device provider accepts only TextPart and ImagePart(Bitmap).
-                            image(
-                                codec.decode(part.bytes) ?: throw HybridError(
-                                    HybridErrorCode.UNSUPPORTED_INPUT, "Image could not be decoded",
-                                ),
-                            )
-                        } else {
-                            inlineData(part.bytes, part.mimeType)
-                        }
+                        bitmaps[part]?.let { image(it) } ?: inlineData(part.bytes, part.mimeType)
                     } else {
                         inlineData(part.bytes, part.mimeType) // audio: onlyInCloud (validated)
                     }

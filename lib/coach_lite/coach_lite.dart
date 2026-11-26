@@ -14,6 +14,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
 import '../genui/cooking_ui_contract.dart';
+import '../safety/cook_safety.dart';
 
 const coachLiteFeature = 'coach_lite';
 
@@ -59,14 +60,25 @@ class CoachLiteStamp {
   String toString() => 'CoachLiteStamp($sessionId, $epoch, $stepId, $sequence)';
 }
 
+/// Shown when a suggested timer was longer than the app allows.
+const coachLiteTimerCapNote = 'Timer capped at 60 minutes — check the recipe';
+
 /// A timer the model suggested. The app clamps it and shows its own control.
 class CoachLiteTimerSuggestion {
-  const CoachLiteTimerSuggestion({required this.label, required this.seconds});
+  const CoachLiteTimerSuggestion({
+    required this.label,
+    required this.seconds,
+    this.capped = false,
+  });
 
   final String label;
 
   /// Always within [coachLiteMinTimerSeconds]..[coachLiteMaxTimerSeconds].
   final int seconds;
+
+  /// True when the model asked for more than [coachLiteMaxTimerSeconds]; the
+  /// card then says so ([coachLiteTimerCapNote]) instead of capping silently.
+  final bool capped;
 
   /// Null when the suggestion is unusable (no label, no number).
   static CoachLiteTimerSuggestion? fromModel(Object? raw) {
@@ -82,6 +94,7 @@ class CoachLiteTimerSuggestion {
         coachLiteMinTimerSeconds,
         coachLiteMaxTimerSeconds,
       ),
+      capped: seconds.round() > coachLiteMaxTimerSeconds,
     );
   }
 }
@@ -121,11 +134,48 @@ final _substitutionPattern = RegExp(
   caseSensitive: false,
 );
 
+/// The safety topics a question touches. Classification and the safety note
+/// both use this, so a question that earns a topic note is always a safety
+/// question.
+enum CoachLiteSafetyTopic { allergen, freshness, doneness }
+
+final _allergenTopic = RegExp(
+  r'\b(allerg\w*|gluten\w*|celiac|coeliac|'
+  r'(nut|peanut|dairy|egg|milk|wheat|soy|sesame|allergen)[- ]free|'
+  r'contains?|labels?|cross[- ]contact|cross[- ]contaminat\w*)\b',
+  caseSensitive: false,
+);
+final _freshnessTopic = RegExp(
+  r'\b(expir\w*|spoil\w*|gone bad|go bad|goes bad|gone off|mou?ldy?|'
+  r'smells? (off|funny|bad|weird|sour)|stale|rancid|still fresh|'
+  r'(is|are) (it|this|that|they|these|those) fresh|fresh enough|freshness|'
+  r'best before|use[- ]by|sell[- ]by|leftovers?|'
+  r'how long (can|will|does|do|would)\b.{0,40}\b(keep|last|stay)|'
+  r'refrigerat\w*|fridge|freezer)\b',
+  caseSensitive: false,
+);
+final _donenessTopic = RegExp(
+  r'\b(done yet|(is|are)\b[^.?!]{0,30}\bdone|doneness|'
+  r'cooked through|undercooked|under-cooked|raw|internal temp\w*|'
+  r'temperature|thermometer|degrees|reheat\w*|still pink|pink inside|'
+  r'no longer pink)\b|°',
+  caseSensitive: false,
+);
+
+Set<CoachLiteSafetyTopic> coachLiteSafetyTopics(String question) => {
+  if (_allergenTopic.hasMatch(question)) CoachLiteSafetyTopic.allergen,
+  if (_freshnessTopic.hasMatch(question)) CoachLiteSafetyTopic.freshness,
+  if (_donenessTopic.hasMatch(question)) CoachLiteSafetyTopic.doneness,
+};
+
 /// Flags questions that need facts rather than step coaching. Safety wins over
 /// substitution because a substitution that touches allergens is a safety
 /// question too.
 CoachLiteQuestionKind classifyCoachLiteQuestion(String question) {
-  if (_safetyPattern.hasMatch(question)) return CoachLiteQuestionKind.safety;
+  if (_safetyPattern.hasMatch(question) ||
+      coachLiteSafetyTopics(question).isNotEmpty) {
+    return CoachLiteQuestionKind.safety;
+  }
   if (_substitutionPattern.hasMatch(question)) {
     return CoachLiteQuestionKind.substitution;
   }
@@ -273,22 +323,11 @@ anything cooked through. If a fact is missing, ask the cook with a stepCue whose
 action is ask_cook. Suggest a timer only if this step needs one.
 ''';
 
-/// Phrases that would certify doneness, temperature or safety. App-authored
-/// notices never pass through this check; model answers always do.
-final _certification = RegExp(
-  r"\bsafe to (eat|serve|consume)\b|"
-  // "is done" / "it's safe", unless it is a condition ("stir until it is
-  // done", "it's done when it coats a spoon").
-  r"(?<!\b(when|once|until|till|if|after|before|whether)\b[^.,;:!?]{0,40})"
-  r"\b(is|are|['\u2019]s|['\u2019]re)\s+"
-  r"(now\s+|definitely\s+|fully\s+|already\s+|completely\s+)*"
-  r"(safe|cooked through|fully cooked|ready to eat|"
-  r"done(?!\s+(when|once|if|after|before|in)\b))\b|"
-  r"\b(is|are)\s+(allergen|gluten|nut|peanut|dairy|egg)[- ]free\b|"
-  r"\breached\s+(a\s+|an\s+|the\s+)?(safe|internal)\b|"
-  r"\bno risk\b",
-  caseSensitive: false,
-);
+/// True when [text] touches doneness, temperature, freshness, safety or
+/// allergen status: the shared, conservative safety gate
+/// (lib/safety/cook_safety.dart) every model answer must pass. The
+/// read-aloud path (SS-077) applies it again to each sentence it speaks.
+bool coachLiteCertifies(String text) => touchesFoodSafety(text);
 
 /// Parses and validates model output. Throws [FormatException].
 ({List<Map<String, dynamic>> components, CoachLiteTimerSuggestion? timer})
@@ -333,12 +372,20 @@ parseCoachLiteResponse(String text) {
       throw const FormatException('IDs starting with app_ are reserved.');
     }
   }
-  if (_certification.hasMatch(jsonEncode(cleaned))) {
-    throw const FormatException(
-      'Coach Lite must not certify doneness, temperature or safety.',
-    );
+  // Every cook-facing string, the timer label included (SS-131).
+  if (payloadTouchesFoodSafety({
+    'components': cleaned,
+    'timerSuggestion': decoded['timerSuggestion'],
+  })) {
+    throw const UnsafeClaimException();
   }
   final components = validateLiteCookingUi({'components': cleaned});
+  // A tree of columns with no card says nothing: treat it as malformed so
+  // the retry or the recipe-step fallback runs. The validator has already
+  // checked that every component is reachable from the root.
+  if (!components.any((c) => c['component'] != 'CookingColumn')) {
+    throw const FormatException('Coach Lite answer has no content card.');
+  }
   return (
     components: components,
     timer: CoachLiteTimerSuggestion.fromModel(decoded['timerSuggestion']),
@@ -442,6 +489,7 @@ class CoachLite {
         stamp: stamp,
         status: status,
         kind: kind,
+        question: question,
         modelComponents: modelComponents,
         timer: timer,
         legs: legs,
@@ -471,25 +519,38 @@ class CoachLite {
       timeout: timeout,
     );
 
+    // The dispatcher discards a rejected answer's text; remember when a
+    // rejection was the safety gate so the safety fallback still shows.
+    var gatedBySafety = false;
+    String? validate(String text) {
+      try {
+        parseCoachLiteResponse(text);
+        return null;
+      } on UnsafeClaimException catch (e) {
+        gatedBySafety = true;
+        return e.message;
+      } on FormatException catch (e) {
+        return e.message;
+      } on TypeError catch (e) {
+        return e.toString();
+      }
+    }
+
     final HybridOperation operation;
     final DispatchResult result;
     try {
       operation = dispatcher.start(
         task,
         sessionId: sessionId,
-        validate: validateCoachLiteResponse,
+        validate: validate,
       );
       _inflight = operation;
       result = await operation.result;
     } catch (e) {
       if (stamp.sequence != _sequence) {
-        return finish(CoachLiteStatus.cancelled, _fallback(step, null));
+        return finish(CoachLiteStatus.cancelled, _fallback(step));
       }
-      return finish(
-        CoachLiteStatus.failed,
-        _fallback(step, 'The on-device coach could not answer.'),
-        error: '$e',
-      );
+      return finish(CoachLiteStatus.failed, _fallback(step), error: '$e');
     }
     if (identical(_inflight, operation)) _inflight = null;
 
@@ -497,17 +558,24 @@ class CoachLite {
         result.blocked == RouteReason.cancelled) {
       return finish(
         CoachLiteStatus.cancelled,
-        _fallback(step, null),
+        _fallback(step),
         legs: result.legs,
         blocked: result.blocked,
       );
     }
     final text = result.text;
+    if (text == null && result.blocked == null && gatedBySafety) {
+      return finish(
+        CoachLiteStatus.invalid,
+        _fallback(step, cookSafetyFallbackNote),
+        legs: result.legs,
+      );
+    }
     if (text == null) {
       final reason = result.blocked;
       return finish(
         reason == null ? CoachLiteStatus.failed : CoachLiteStatus.blocked,
-        _fallback(step, _blockedSentence(reason)),
+        _fallback(step),
         legs: result.legs,
         blocked: reason,
       );
@@ -525,7 +593,12 @@ class CoachLite {
     } on Object catch (e) {
       return finish(
         CoachLiteStatus.invalid,
-        _fallback(step, "The on-device coach's answer could not be shown."),
+        _fallback(
+          step,
+          // A gated answer is replaced by the recipe step, its cue and where
+          // to check what the coach cannot know.
+          e is UnsafeClaimException ? cookSafetyFallbackNote : null,
+        ),
         legs: result.legs,
         error: e is FormatException ? e.message : '$e',
       );
@@ -614,21 +687,11 @@ String buildCoachLitePrompt({
   return prompt.length <= maxChars ? prompt : prompt.substring(0, maxChars);
 }
 
-String? _blockedSentence(RouteReason? reason) => switch (reason) {
-  RouteReason.modelDownloading =>
-    'The on-device coach is still downloading. Try again in a moment.',
-  RouteReason.modelNotReady || RouteReason.noLocalModel =>
-    "This device can't run the on-device coach right now.",
-  RouteReason.offline => "You're offline and the on-device coach isn't ready.",
-  RouteReason.localOnlySetting =>
-    'On-device only is on, and the on-device coach is not available.',
-  RouteReason.consentDeclined => 'Nothing was sent.',
-  null => 'The on-device coach could not answer.',
-  _ => 'The on-device coach is not available for this question.',
-};
-
 /// App-authored fallback: the recipe's own step text, never model output.
-List<Map<String, dynamic>> _fallback(RecipeStep step, String? note) {
+/// Why there is no answer is shown beside it by `coachLiteStatusLine`, never
+/// mixed into the step text (SS-089). Only the food-safety pointer
+/// ([safetyNote]) is shown with the step, since it says where to check.
+List<Map<String, dynamic>> _fallback(RecipeStep step, [String? safetyNote]) {
   String cut(String v, int max) =>
       v.length <= max ? v : '${v.substring(0, max - 1)}…';
   return [
@@ -643,7 +706,7 @@ List<Map<String, dynamic>> _fallback(RecipeStep step, String? note) {
       'title': cut(step.title.trim().isEmpty ? 'This step' : step.title, 120),
       'body': cut(
         [
-          ?note,
+          ?safetyNote,
           step.instruction.trim(),
           if (step.cue.trim().isNotEmpty) 'Look for: ${step.cue.trim()}',
         ].where((s) => s.isNotEmpty).join('\n'),
@@ -653,15 +716,44 @@ List<Map<String, dynamic>> _fallback(RecipeStep step, String? note) {
   ];
 }
 
+/// The doneness and temperature note, and the note for any other safety
+/// question.
 const coachLiteSafetyNotice =
     "Neither the camera nor this coach can confirm doneness, internal "
     'temperature, freshness or allergens. Check with a food thermometer and '
     'trusted guidance.';
 
+/// Allergen and label questions: a thermometer does not help here.
+const coachLiteAllergenNotice =
+    "I can't confirm a food is free of an allergen. Read the package label "
+    'and keep tools separate.';
+
+/// Expiry, spoilage and freshness questions.
+const coachLiteFreshnessNotice =
+    "I can't judge freshness from here. When in doubt, throw it out.";
+
+/// The app's safety note for [question], chosen by topic: allergen and label
+/// questions get the label note, expiry and spoilage questions the freshness
+/// note, and doneness or temperature questions the thermometer note. A
+/// question on several topics gets each note; anything else gets
+/// [coachLiteSafetyNotice]. None of them certifies anything.
+String coachLiteSafetyNoteFor(String question) {
+  final topics = coachLiteSafetyTopics(question);
+  final allergen = topics.contains(CoachLiteSafetyTopic.allergen);
+  final freshness = topics.contains(CoachLiteSafetyTopic.freshness);
+  final doneness = topics.contains(CoachLiteSafetyTopic.doneness);
+  return [
+    if (allergen) coachLiteAllergenNotice,
+    if (freshness) coachLiteFreshnessNotice,
+    if (doneness || !(allergen || freshness)) coachLiteSafetyNotice,
+  ].join(' ');
+}
+
 CoachLiteAnswer _answer({
   required CoachLiteStamp stamp,
   required CoachLiteStatus status,
   required CoachLiteQuestionKind kind,
+  required String question,
   required List<Map<String, dynamic>> modelComponents,
   required CoachLiteTimerSuggestion? timer,
   required List<InferenceLeg> legs,
@@ -676,6 +768,7 @@ CoachLiteAnswer _answer({
   components: _withNotices(
     modelComponents,
     kind: kind,
+    question: question,
     legs: legs,
     researchAllowed: researchAllowed,
     sourcesUnavailable: sourcesUnavailable,
@@ -716,6 +809,7 @@ String coachLiteSourcesSentence(CoachLiteSourcesUnavailable reason) =>
 List<Map<String, dynamic>> _withNotices(
   List<Map<String, dynamic>> components, {
   required CoachLiteQuestionKind kind,
+  required String question,
   required List<InferenceLeg> legs,
   required bool researchAllowed,
   required CoachLiteSourcesUnavailable? sourcesUnavailable,
@@ -744,7 +838,7 @@ List<Map<String, dynamic>> _withNotices(
         'id': 'app_safety',
         'component': 'stepCue',
         'title': 'Check for yourself',
-        'body': coachLiteSafetyNotice,
+        'body': coachLiteSafetyNoteFor(question),
       },
   ];
   if (notices.isEmpty) return components;
@@ -763,4 +857,26 @@ List<Map<String, dynamic>> _withNotices(
     ...notices,
   ];
   return validateLiteCookingUi({'components': merged});
+}
+
+/// The app's own literal notices: they name doneness, temperature and
+/// allergens on purpose and are never model-written (SS-131).
+const coachLiteAppLiterals = [
+  coachLiteSafetyNotice,
+  coachLiteAllergenNotice,
+  coachLiteFreshnessNotice,
+  cookSafetyFallbackNote,
+];
+
+/// True when [sentence] is one complete sentence of a
+/// [coachLiteAppLiterals] notice, after the read-aloud whitespace
+/// normalization. A fragment ("free of an allergen.") never matches, so a
+/// negation cannot be cut away.
+bool isCoachLiteAppLiteral(String sentence) {
+  String norm(String v) => v.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final s = norm(sentence);
+  if (s.isEmpty) return false;
+  return coachLiteAppLiterals.any(
+    (l) => norm(l).split(RegExp(r'(?<=[.!?])\s+')).contains(s),
+  );
 }

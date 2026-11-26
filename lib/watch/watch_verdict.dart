@@ -122,7 +122,7 @@ class WatchVerdict {
     final seen = whatISee.isEmpty ? '' : ' I can see: $whatISee';
     final where = switch (source) {
       WatchVerdictSource.cloud => ' (cloud check of one photo)',
-      WatchVerdictSource.simulated => ' (simulated)',
+      WatchVerdictSource.simulated => ' (practice mode, pretend answer)',
       _ => '',
     };
     return switch (state) {
@@ -132,8 +132,10 @@ class WatchVerdict {
             'check temperature or food safety.',
       WatchState.notYet => switch (direction) {
         WatchDirection.more => 'Not at the cue yet — keep going$where.$seen',
+        // Food keeps cooking while the cook looks, so heat comes off first.
         WatchDirection.less =>
-          'It may be past the cue — have a look$where.$seen',
+          "It may be past the cue$where. If it's on the heat, slide the pan "
+              'off the heat, then look.$seen',
         WatchDirection.none => 'Not at the cue yet$where.$seen',
       },
       WatchState.unsure =>
@@ -143,17 +145,120 @@ class WatchVerdict {
   }
 }
 
+// Words may be separated by spaces or hyphens ("cooked-through").
+const _sp = r'[\s-]+';
+const _middle = '(inside|in${_sp}the$_sp(middle|centre|center)|throughout)';
+
+/// Judgements a photo cannot support: doneness, temperature, safety,
+/// freshness and allergens, in English and basic Spanish. Doneness words
+/// ("cooked", "done", "cocido") are matched on their own rather than in
+/// phrases, because phrase lists kept leaking ("cooked to the
+/// bone", "well-done"). Matching is deliberately broad: a false match only
+/// swaps the sentence for a neutral one, a miss shows the cook a claim the
+/// camera cannot make. Spanish "hecho" is the exception: it is also the
+/// auxiliary in visible cues ("se han hecho burbujas"), so only its doneness
+/// predicate ("está hecho", "bien hecho", "ya hecho") is matched.
 final _unsupportedClaim = RegExp(
-  r'safe to eat|food[- ]safe|\bunsafe\b|\bsafe\b|temperature|°|\bdegrees\b|'
-  r'cooked through|fully cooked|undercooked|raw (inside|in the middle)|'
-  r'done inside|spoil|gone off|allergen',
+  [
+    // Doneness, any phrasing: overcooked, undercooked, well-done, doneness.
+    r'cooked\b', r'\bdone', r'\b(under|over)[\s-]*done\b',
+    '(all${_sp}the${_sp}way|right)${_sp}through',
+    '\\b(raw|pink|bloody|red|opaque|set)$_sp$_middle',
+    r'no\s+longer\s+pink', r'\binternal(ly)?\b', r'\binterior\b',
+    r'juices?\s+(run|running|are|is)\s+clear', r'medium[\s-]+rare',
+    // Safety.
+    r'\bsafe(ly|ty)?\b', r'\bunsafe\b', 'food${_sp}safe',
+    '\\b(ready|okay|ok|fine|good|fit)${_sp}to$_sp(eat|serve)\\b',
+    r'\b(salmonella|bacteria|pathogens?|food\s+poisoning)\b',
+    // Temperature, with or without a number or unit.
+    r'temperature', r'\btemps?\b', r'thermometer', r'[°º]',
+    r'\b(degrees?|deg|fahrenheit|celsius)\b', r'\b\d+\s*[fc]\b',
+    // Freshness and allergens.
+    r'spoil', r'gone\s+off', r'allerg', r'\bgluten\b', r'\blactose\b',
+    '\\b(nut|peanut|dairy|egg|soy|wheat|shellfish)$_sp?free\\b',
+    r'\bmay\s+contain\b', r'\b(in)?edible\b', r'\bcomestible\b',
+    // Whether an ingredient is absent or present is not something a photo
+    // of the pan can establish ("there are no peanuts", "contains nuts").
+    '\\b(no|any|without|contains?|free$_sp(of|from))$_sp'
+        '(peanuts?|nuts?|dairy|milk|eggs?|soy|wheat|shellfish|sesame|fish)\\b',
+    // Spanish basics: cocido/cocinado, hecho, seguro, sin gluten,
+    // temperatura, grados, por dentro, listo para comer, alérgeno.
+    r'\b(cocid|cocinad|segur|crud)[oa]s?\b',
+    r'\b(est[aá]n?|estar|bien|ya|muy|poco|medio|mal)\s+hech[oa]s?\b',
+    r'\bsin\s+gluten\b',
+    r'temperatura', r'\bgrados?\b', r'\bpor\s+dentro\b',
+    r'\blist[oa]s?\s+para\s+(comer|servir)\b', r'al[eé]rg',
+  ].join('|'),
   caseSensitive: false,
 );
 
+/// True when [text] claims something vision cannot establish.
+bool claimsUnsupported(String text) =>
+    _unsupportedClaim.hasMatch(text.replaceAll('\u2019', "'"));
+
+// Words that say nothing about what the cue looks like. Compared by their
+// first four letters, like the content words below.
+const _fillerStems = {
+  'with', 'that', 'this', 'thes', 'have', 'look', 'like', 'from', 'into', //
+  'they', 'them', 'ther', 'been', 'some', 'more', 'unti', 'abou', 'when',
+  'then', 'than', 'very', 'just', 'also', 'each', 'stil', 'only', 'what',
+  'your', 'will', 'step', 'food', 'appe', 'seem', 'visi', 'phot', 'imag',
+  'clea', 'show',
+};
+
+/// Food and cookware nouns. Naming the food ("chicken", "peanut butter")
+/// or the pan says nothing about whether the cue's visible change happened,
+/// so they never count as overlap (Codex #221 P1).
+const _foodNouns = {
+  'apple', 'avocado', 'bacon', 'banana', 'basil', 'batter', 'bean', //
+  'beef', 'berry', 'board', 'bowl', 'bread', 'broccoli', 'broth', 'butter',
+  'cabbage', 'carrot', 'cheese', 'chicken', 'chickpea', 'cilantro', 'corn',
+  'cream', 'cucumber', 'dish', 'dough', 'dressing', 'egg', 'filling', 'fish',
+  'flour', 'fruit', 'garlic', 'ham', 'herb', 'honey', 'jam', 'jelly',
+  'juice', 'kale', 'lemon', 'lentil', 'lettuce', 'lime', 'mayonnaise',
+  'meat', 'milk', 'mushroom', 'mustard', 'noodle', 'oil', 'onion', 'oven',
+  'pan', 'parsley', 'pasta', 'pea', 'peanut', 'pepper', 'piece', 'plate',
+  'pork', 'pot', 'potato', 'rice', 'salmon', 'salsa', 'salt', 'sauce',
+  'sausage', 'shrimp', 'skillet', 'slice', 'soup', 'spice', 'spinach',
+  'spoon', 'steak', 'stock', 'stove', 'sugar', 'toast', 'tofu', 'tomato',
+  'tortilla', 'tray', 'turkey', 'vegetable', 'veggie', 'water', 'zucchini',
+};
+
+bool _isFoodNoun(String word) =>
+    _foodNouns.contains(word) ||
+    (word.endsWith('ies') &&
+        _foodNouns.contains('${word.substring(0, word.length - 3)}y')) ||
+    (word.endsWith('es') &&
+        _foodNouns.contains(word.substring(0, word.length - 2))) ||
+    (word.endsWith('s') &&
+        _foodNouns.contains(word.substring(0, word.length - 1)));
+
+Set<String> _contentStems(String text) => {
+  for (final word in RegExp(
+    r'[a-záéíóúñü]+',
+  ).allMatches(text.toLowerCase()).map((m) => m[0]!))
+    if (word.length >= 4 &&
+        !_isFoodNoun(word) &&
+        !_fillerStems.contains(word.substring(0, 4)))
+      word.substring(0, 4),
+};
+
+/// True when [observation] shares a cue-specific visual word with [cue]
+/// ("Golden edges." and "golden at the edges"), so a positive verdict
+/// points at the change the step asked the camera to look for. Food and
+/// cookware nouns don't count: "The chicken is in the pan" says nothing
+/// about "Chicken is golden".
+bool relatesToCue(String observation, String cue) =>
+    _contentStems(observation).intersection(_contentStems(cue)).isNotEmpty;
+
 /// Parses the model's JSON. Anything malformed becomes `unsure` so the cook
 /// is asked for a better view rather than shown a guess. Never throws.
+///
+/// With [cue], a `ready` whose observation does not mention anything in the
+/// cue also abstains: "ready" must rest on the visible cue it was asked
+/// about.
 ({WatchState state, WatchDirection direction, String whatISee, bool redacted})
-parseWatchJson(String text) {
+parseWatchJson(String text, {String? cue}) {
   const unsure = (
     state: WatchState.unsure,
     direction: WatchDirection.none,
@@ -188,22 +293,34 @@ parseWatchJson(String text) {
     _ => null,
   };
   if (state == null || parsedDirection == null) return unsure;
-  var seen = _clip(raw);
+  final seen = _clip(raw);
   if (seen.isEmpty && state != WatchState.unsure) return unsure;
   final direction = state == WatchState.notYet
       ? parsedDirection
       : WatchDirection.none;
-  var redacted = false;
-  if (_unsupportedClaim.hasMatch(seen)) {
-    seen = 'I can describe how it looks, not how it is inside.';
-    redacted = true;
+  // Check the whole observation, not the clipped display text, so a claim
+  // past the clip (or split by it) is still caught.
+  if (claimsUnsupported(raw.replaceAll(RegExp(r'\s+'), ' '))) {
+    // The sentence was the only evidence. A positive verdict resting on a
+    // claim the camera cannot make abstains, so the watch keeps looking
+    // instead of stopping and telling the cook it saw the cue; and a "more"
+    // or "less" resting on it is dropped, so no heat change is suggested.
+    return (
+      state: state == WatchState.ready ? WatchState.unsure : state,
+      direction: WatchDirection.none,
+      whatISee: 'I can describe how it looks, not how it is inside.',
+      redacted: true,
+    );
   }
-  return (
-    state: state,
-    direction: direction,
-    whatISee: seen,
-    redacted: redacted,
-  );
+  if (state == WatchState.ready && cue != null && !relatesToCue(seen, cue)) {
+    return (
+      state: WatchState.unsure,
+      direction: WatchDirection.none,
+      whatISee: seen,
+      redacted: false,
+    );
+  }
+  return (state: state, direction: direction, whatISee: seen, redacted: false);
 }
 
 WatchVerdictSource sourceOf(List<InferenceLeg> legs) {

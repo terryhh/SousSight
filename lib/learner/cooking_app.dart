@@ -2,31 +2,43 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show OnDeviceStatus;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart';
 import '../app/cloud_send_recorder.dart';
+import '../app/centered_scroll.dart';
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
+import '../app/rehearsal_runtime.dart';
 import '../app/services_scope.dart';
 import '../coach_lite/coach_lite.dart';
-import '../coach_lite/timer_suggestion_card.dart';
+import '../coach_lite/coach_lite_answer_card.dart';
+import '../coach_lite/tts.dart';
+import '../coach_lite/tts_toggle.dart';
 import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
+import '../data/offline_ops_banner.dart';
 import '../genui/cooking_ui.dart';
+import '../kitchen/kitchen_mode.dart';
+import '../kitchen/kitchen_text.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
+import '../nearby/nearby_client.dart' show nearbyClientFor;
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
 import '../trust/inference_source_badge.dart';
+import '../trust/privacy_receipt_card.dart' show PrivacyReceiptBinding;
 import '../watch/capture_owner.dart';
 import '../watch/local_watch_controller.dart';
+import '../watch/local_watch_overlay.dart';
 import '../watch/watch_service.dart';
 import '../core/analytics.dart';
 import '../core/models.dart';
@@ -34,10 +46,11 @@ import '../pantry/pantry_flow.dart';
 import '../app/how_it_works.dart';
 import 'allergen_chip.dart';
 import 'cooking_coordinator.dart';
-import 'demo_live.dart';
 import 'draft_recipe_chip.dart';
 import 'dinner_review.dart';
 import 'meal_complete.dart';
+import 'plain_research_text.dart';
+import 'recipe_notes.dart';
 
 final cookingTheme = ThemeData(
   useMaterial3: true,
@@ -87,7 +100,8 @@ class CookingApp extends StatelessWidget {
   final bool pantryFirst;
   final String? initialRecipeId;
 
-  /// Shared hybrid inference services (real builds). Null in rehearsal.
+  /// Shared hybrid inference services. In rehearsal, the practice-mode
+  /// runtime (scripted, labelled "Practice mode (pretend answers)").
   final HybridRuntime? hybrid;
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -133,12 +147,16 @@ class CookingScreen extends StatefulWidget {
     this.recipe,
     this.onBackToPantry,
     this.hybrid,
+    this.textToSpeech,
   });
   final AppServices services;
   final bool isDemo;
 
-  /// Shared hybrid inference services. Null in rehearsal and in tests that
-  /// build their own coordinator.
+  /// Coach Lite read-aloud voice; defaults to the device's (SS-077).
+  final TextToSpeech Function()? textToSpeech;
+
+  /// Shared hybrid inference services (the practice-mode runtime in
+  /// rehearsal). Null in tests that build their own coordinator.
   final HybridRuntime? hybrid;
 
   /// The recipe chosen at runtime; defaults to the bundled build-time recipe.
@@ -189,13 +207,19 @@ LiveTransportFactory? ledgeredLiveFactory({
 /// The one "Watch my food" service for a cooking session: an on-device watch
 /// over a camera-only capture of [live]'s media, or the Live watch when Live
 /// is connected (SS-067).
+/// [liveAvailable] is false in builds without the Live coach, so refusals
+/// never point to it; [simulated] labels practice mode (SS-089).
 @visibleForTesting
 WatchService buildWatchService(
   HybridRuntime hybrid,
-  LiveCookingController live,
-) {
+  LiveCookingController live, {
+  bool liveAvailable = true,
+  bool simulated = false,
+}) {
   late final LocalWatchController local;
   local = LocalWatchController(
+    liveAvailable: liveAvailable,
+    simulated: simulated,
     dispatcher: hybrid.dispatcher,
     capture: CaptureOwner(live.media),
     // The "Ask the cloud about this photo" offer exists only when the build
@@ -209,13 +233,41 @@ WatchService buildWatchService(
     privacy: hybrid.privacy,
   );
   return WatchService(
+    liveAvailable: liveAvailable,
+    simulated: simulated,
     local: local,
     startLiveWatch: live.startWatch,
     stopLiveWatch: live.stopWatch,
-    localVisionSupported: () async =>
-        (await hybrid.inference.capabilities()).local?.supportsImage ?? false,
+    // Decide before any "watching" state (SS-089): the model must take
+    // photos and be ready now, or the watch is refused up front.
+    localVisionSupported: () async {
+      final local = (await hybrid.inference.capabilities()).local;
+      if (local == null || !local.supportsImage) return false;
+      final image = await hybrid.inference.availability(withImage: true);
+      return image.status == OnDeviceStatus.available;
+    },
   );
 }
+
+/// Per runtime, the ledger generation each meal's session was bound on,
+/// recorded in the same call that bound it (SS-105).
+final _mealLedgerGenerations = Expando<Map<String, int>>(
+  'meal ledger generations',
+);
+
+/// A coordinator's `onSessionReady` for a hybrid build: binds the runtime's
+/// ledger to the session with [bind] (default `bindCookingSession`) and, in
+/// the same call, records the generation the meal starts on. The privacy
+/// receipt prints only while the ledger is still on it, however late the
+/// cooking screen subscribes. A bind that did not take records nothing.
+void Function(String sessionId) bindMealSession(
+  HybridRuntime hybrid, [
+  void Function(String sessionId)? bind,
+]) => (sessionId) {
+  (bind ?? hybrid.bindCookingSession)(sessionId);
+  if (hybrid.sessionId != sessionId) return;
+  (_mealLedgerGenerations[hybrid] ??= {})[sessionId] = hybrid.ledger.generation;
+};
 
 /// Owns a cooking session's lifetime; a new cook gets a fresh screen and coordinator.
 class _CookingScreenState extends State<CookingScreen> {
@@ -226,19 +278,33 @@ class _CookingScreenState extends State<CookingScreen> {
   CookingCoordinator _createCoordinator() {
     final custom = widget.createCoordinator?.call();
     if (custom != null) return custom;
-    final hybrid = widget.isDemo ? null : widget.hybrid;
+    // Rehearsal gets the practice-mode runtime: Coach Lite, the local watch
+    // (over a drawn practice camera) and the trust sheets all run, labelled
+    // as pretend. Research and Live stay simulated as before.
+    final hybrid = widget.hybrid;
+    final transport = ledgeredLiveFactory(
+      isDemo: widget.isDemo,
+      hybrid: widget.isDemo ? null : hybrid,
+    );
     return CookingCoordinator(
       services: widget.services,
       isDemo: widget.isDemo,
       recipe: widget.recipe,
-      research: widget.isDemo
-          ? FakeCookingResearchClient()
-          : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
-      transportFactory: ledgeredLiveFactory(
-        isDemo: widget.isDemo,
-        hybrid: hybrid,
+      // Answers arrive as plain text: the panel shows Markdown raw (G2c).
+      research: PlainTextResearchClient(
+        widget.isDemo
+            ? FakeCookingResearchClient()
+            : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
       ),
-      media: widget.isDemo ? DemoLiveMedia() : createLiveMedia(),
+      transportFactory: transport,
+      media: widget.isDemo
+          ? RehearsalLiveMedia(
+              onCameraStart: switch (hybrid?.inference) {
+                final RehearsalHybridInference practice => practice.newWatch,
+                _ => null,
+              },
+            )
+          : createLiveMedia(),
       coachLite: hybrid == null
           ? null
           : CoachLite(
@@ -247,14 +313,24 @@ class _CookingScreenState extends State<CookingScreen> {
               cloudRoutes: hybrid.cloudRoutes,
               isOnline: hybrid.isOnline,
             ),
-      // Rehearsal keeps the Live-only watch: no local watch on DemoLiveMedia.
       watchServiceFactory: hybrid == null
           ? null
-          : (live) => buildWatchService(hybrid, live),
-      onSessionReady: hybrid?.bindCookingSession,
-      researchAllowed: hybrid == null
+          : (live) => buildWatchService(
+              hybrid,
+              live,
+              liveAvailable: transport != null,
+              simulated: widget.isDemo || isPracticeRuntime(hybrid),
+            ),
+      // Bound to this screen's pantry flow: a late load after the cook
+      // went back to the pantry is ignored (SS-096 / Codex #224).
+      onSessionReady: hybrid == null
+          ? null
+          : bindMealSession(hybrid, hybrid.cookingSessionBinder()),
+      // Rehearsal research is the simulated client; nothing is sent.
+      researchAllowed: hybrid == null || widget.isDemo
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
+      isOnline: hybrid?.isOnline,
     );
   }
 
@@ -340,7 +416,8 @@ class _CookingScreenState extends State<CookingScreen> {
     startingNewCook: _startingNewCook,
     sendDinner: widget.sendDinner,
     dinnerStatus: widget.dinnerStatus,
-    hybrid: widget.isDemo ? null : widget.hybrid,
+    hybrid: widget.hybrid,
+    textToSpeech: widget.textToSpeech,
   );
 
   @override
@@ -363,8 +440,10 @@ class _CookingSessionScreen extends StatefulWidget {
     required this.sendDinner,
     required this.dinnerStatus,
     this.hybrid,
+    this.textToSpeech,
   });
   final HybridRuntime? hybrid;
+  final TextToSpeech Function()? textToSpeech;
   final AppServices services;
   final bool isDemo;
   final CookingCoordinator cook;
@@ -382,8 +461,32 @@ class _CookingSessionScreen extends StatefulWidget {
 class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
+
+  /// Tonight's privacy receipt binding, bound to the generation recorded by
+  /// [bindMealSession] when this meal's session was bound, and kept
+  /// here, outside the layout, so a retired receipt stays retired across
+  /// breakpoint rebuilds. Null (no receipt) until the meal is complete and
+  /// the ledger is known to be this meal's.
+  PrivacyReceiptBinding? _receipt;
+  PrivacyReceiptBinding? _receiptBinding() {
+    final hybrid = widget.hybrid;
+    final meal = switch (cook.session?.id) {
+      final id? when hybrid != null => _mealLedgerGenerations[hybrid]?[id],
+      _ => null,
+    };
+    if (hybrid == null || meal == null || !cook.complete) return null;
+    return _receipt ??= PrivacyReceiptBinding(
+      generation: () => hybrid.ledger.generation,
+      expected: meal,
+      clock: cook.services.clock,
+    );
+  }
+
+  /// Screen wake lock and Big text for this session (SS-107).
+  late final KitchenMode _kitchen;
   final _message = TextEditingController();
   final _dinnerAttempts = DinnerAttemptMemory();
+  final _dinnerTimers = DinnerTimerMemory();
   final _fakeDinner = FakeDinnerBackend();
   late final DinnerMessageSender _deliverDinner =
       widget.sendDinner ??
@@ -410,25 +513,135 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         isDemo: widget.isDemo,
         fake: _fakeDinner,
       );
-  String _prediction = 'Not sure';
+
+  /// Nothing is preselected: the cook says how it looks (SS-089).
+  String? _prediction;
+
+  /// The step [_prediction] was chosen on; a new step clears it (Codex #221).
+  String? _predictionStep;
   String? _announcedAlert;
   bool _messagePending = false;
+
+  /// Coach Lite read-aloud; only where Coach Lite exists (SS-077).
+  CoachLiteSpeaker? _speaker;
+
+  /// Rehearsal / practice mode: nothing may leave the browser, voice
+  /// included.
+  bool get _practice => widget.isDemo || isPracticeRuntime(widget.hybrid);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     cook = widget.cook;
+    _dinnerTimers.attach(cook.ui);
+    // Screen stays on while this session is cooking; Big text (SS-107).
+    _kitchen = KitchenModeScope.createFor(context)
+      ..followSession(cook, () => cook.session != null && !cook.complete);
+    unawaited(_kitchen.load());
+    if (cook.coachLite != null) {
+      final privacy = widget.hybrid?.privacy;
+      _speaker = CoachLiteSpeaker(
+        (widget.textToSpeech ?? deviceTextToSpeech)(),
+        // Read at every speak: local-only allows only a local voice. Practice
+        // mode is always local-only: a pretend answer and the echoed typed
+        // question never go to an online voice service (Codex #221).
+        localOnly: () =>
+            _practice ||
+            (privacy != null && localOnlyFor(privacy, coachLiteFeature)),
+      );
+      unawaited(_speaker!.init());
+    }
     cook.addListener(_onChange);
     if (!widget.initialized) unawaited(cook.initialize());
   }
 
+  /// Anchors that [_reveal] scrolls into view when something new appears,
+  /// so replies and alerts never land under the fold or the dock (SS-089).
+  final _alertKey = GlobalKey(debugLabel: 'cooking-alert');
+  final _replyKey = GlobalKey(debugLabel: 'coach-reply');
+  final _errorKey = GlobalKey(debugLabel: 'cooking-error');
+  final _researchKey = GlobalKey(debugLabel: 'research-panel');
+  final _transcriptKey = GlobalKey(debugLabel: 'live-transcript');
+  int _shownTurns = 0;
+  int _revealedTranscript = 0;
+  final _liveErrorKey = GlobalKey(debugLabel: 'live-error');
+  String? _shownLiveError;
+  Object? _shownReply;
+  String? _shownError;
+  Object? _shownResearch;
+  bool _wasResearching = false;
+
+  /// Scrolls [key]'s widget near the top of the cooking scroll view after the
+  /// next frame. Instant when the platform asks for reduced motion.
+  void _reveal(GlobalKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = key.currentContext;
+      if (!mounted || target == null || !target.mounted) return;
+      final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      unawaited(
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0.05,
+          duration: still ? Duration.zero : const Duration(milliseconds: 320),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    });
+  }
+
+  void _revealChanges() {
+    // A new typed question (busy) or its answer.
+    final reply = cook.coachLiteBusy
+        ? ('busy', cook.coachLiteQuestion)
+        : cook.coachLiteAnswer?.stamp;
+    if (reply != null && reply != _shownReply) _reveal(_replyKey);
+    _shownReply = reply;
+    if (cook.error != null && cook.error != _shownError) _reveal(_errorKey);
+    _shownError = cook.error;
+    // A new research panel, and again when its sources arrive (G2c).
+    final panel = cook.researchPanel;
+    if (panel != null &&
+        (!identical(panel, _shownResearch) ||
+            (_wasResearching && !cook.researching))) {
+      _reveal(_researchKey);
+    }
+    _shownResearch = panel;
+    // A finished Live reply, once per completed turn (typed or spoken),
+    // never on a partial transcript (Codex #221).
+    if (cook.live.completedTurns != _shownTurns) {
+      _shownTurns = cook.live.completedTurns;
+      // Only a turn that brought new reply text (Codex #221).
+      if (cook.live.coachTranscriptVersion != _revealedTranscript &&
+          cook.live.coachTranscript.isNotEmpty) {
+        _revealedTranscript = cook.live.coachTranscriptVersion;
+        _reveal(_transcriptKey);
+      }
+    }
+    // A Live failure (e.g. camera permission denied) is shown in view.
+    if (cook.live.error != null && cook.live.error != _shownLiveError) {
+      _reveal(_liveErrorKey);
+    }
+    _shownLiveError = cook.live.error;
+    _wasResearching = cook.researching;
+  }
+
   void _onChange() {
     if (!mounted) return;
+    // Bind the receipt at the completion event itself (SS-105).
+    _receiptBinding();
+    _speaker?.sync(
+      answer: cook.coachLiteAnswer,
+      busy: cook.coachLiteBusy,
+      liveActive: cook.live.isActive,
+      stepId: cook.step.id,
+    );
     if (cook.session?.id case final id?) _label?.setSession(id);
+    _revealChanges();
     if (cook.alert == null) _announcedAlert = null;
     if (cook.alert != null && cook.alert != _announcedAlert) {
       _announcedAlert = cook.alert;
+      _reveal(_alertKey);
       if (cook.alert == 'Dinner-ready draft is ready to review.') {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_reviewDinner());
@@ -462,14 +675,21 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         state == AppLifecycleState.paused) {
       unawaited(cook.live.stop());
       cook.watchService?.onBackgrounded();
+      _speaker?.setForeground(false);
     }
-    if (state == AppLifecycleState.resumed) cook.ui.refreshTimers();
+    if (state == AppLifecycleState.resumed) {
+      cook.ui.refreshTimers();
+      _speaker?.setForeground(true);
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _dinnerTimers.detach();
+    _kitchen.dispose();
+    _speaker?.dispose();
     _message.dispose();
     unawaited(_fakeDinner.dispose());
     super.dispose();
@@ -496,27 +716,40 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   }
 
   @override
+  // The scroll view spans the window; content is centred inside it (max
+  // 1320 px) so the wheel works over the side margins on desktop (SS-089).
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1320),
-          child: Column(
+      child: LayoutBuilder(
+        builder: (context, outer) {
+          final extra = centeredSide(outer.maxWidth, maxWidth: 1320);
+          return Column(
             children: [
               Expanded(
                 child: CustomScrollView(
+                  key: const ValueKey('cooking-scroll'),
                   slivers: [
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 22, 24, 14),
+                        padding: EdgeInsets.fromLTRB(
+                          extra + (_compact ? 16 : 24),
+                          _compact ? 10 : 22,
+                          extra + (_compact ? 16 : 24),
+                          _compact ? 6 : 14,
+                        ),
                         child: _header(),
                       ),
                     ),
                     if (widget.isDemo)
                       SliverToBoxAdapter(
-                        child: _banner(
-                          'Rehearsal mode · Camera, voice, and AI responses are simulated. No messages are sent.',
-                          Icons.science_outlined,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: extra),
+                          child: _banner(
+                            'Practice mode (pretend answers) · No real camera, '
+                            'microphone or AI is used, and no messages are '
+                            'sent.',
+                            Icons.science_outlined,
+                          ),
                         ),
                       ),
                     if (cook.loading)
@@ -525,7 +758,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                       )
                     else
                       SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+                        padding: EdgeInsets.fromLTRB(
+                          extra + (_compact ? 16 : 24),
+                          8,
+                          extra + (_compact ? 16 : 24),
+                          32,
+                        ),
                         sliver: SliverToBoxAdapter(
                           child: LayoutBuilder(
                             builder: (context, constraints) {
@@ -533,7 +771,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                               final left = _cameraColumn(
                                 includeConversation: !narrow,
                               );
-                              final right = _workspace();
+                              final right = KitchenBigText(
+                                mode: _kitchen,
+                                child: _workspace(),
+                              );
                               if (narrow) {
                                 return Column(
                                   children: [
@@ -560,97 +801,128 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                   ],
                 ),
               ),
-              if (!cook.loading) _controlDock(),
+              if (!cook.loading)
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1320),
+                    child: _controlDock(),
+                  ),
+                ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     ),
   );
 
-  Widget _header() => Wrap(
-    alignment: WrapAlignment.spaceBetween,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    spacing: 24,
-    runSpacing: 12,
-    children: [
-      if (widget.onBackToPantry case final back?)
-        TextButton.icon(
-          key: const ValueKey('back-to-pantry'),
-          onPressed: () {
-            unawaited(cook.live.stop());
-            back();
-          },
-          icon: const Icon(Icons.arrow_back),
-          label: const Text('Back to pantry'),
-        ),
-      Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              color: const Color(0xff285b43),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(
-              Icons.soup_kitchen_outlined,
-              color: Colors.white,
-              size: 26,
-            ),
+  /// Phone-width layout: a tighter header and camera card (SS-089).
+  bool get _compact => MediaQuery.sizeOf(context).width < 600;
+
+  /// Two deliberate rows (SS-089): brand and navigation, then the tools
+  /// (chips and labelled buttons), which wrap as a group. About 110 px less
+  /// than before on phones, and no accidental wrap on desktop.
+  Widget _header() {
+    final compact = _compact;
+    final back = widget.onBackToPantry;
+    void goBack() {
+      unawaited(cook.live.stop());
+      back!();
+    }
+
+    final brand = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: EdgeInsets.all(compact ? 8 : 11),
+          decoration: BoxDecoration(
+            color: const Color(0xff285b43),
+            borderRadius: BorderRadius.circular(compact ? 12 : 16),
           ),
-          const SizedBox(width: 12),
-          const Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'SousSight',
-                  style: TextStyle(
-                    fontSize: 27,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -1,
-                  ),
+          child: Icon(
+            Icons.soup_kitchen_outlined,
+            color: Colors.white,
+            size: compact ? 22 : 26,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'SousSight',
+                style: TextStyle(
+                  fontSize: compact ? 22 : 27,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1,
                 ),
-                Text(
+              ),
+              if (!compact)
+                const Text(
                   'A little guidance. A lot more confidence.',
                   style: TextStyle(fontSize: 12),
                 ),
-              ],
+            ],
+          ),
+        ),
+      ],
+    );
+    final hybrid = widget.hybrid;
+    return Column(
+      key: const ValueKey('cooking-header'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            if (back != null) ...[
+              if (compact)
+                IconButton(
+                  key: const ValueKey('back-to-pantry'),
+                  onPressed: goBack,
+                  icon: const Icon(Icons.arrow_back),
+                  tooltip: 'Back to pantry',
+                )
+              else
+                TextButton.icon(
+                  key: const ValueKey('back-to-pantry'),
+                  onPressed: goBack,
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Back to pantry'),
+                ),
+              SizedBox(width: compact ? 2 : 16),
+            ],
+            Expanded(
+              child: Align(alignment: Alignment.centerLeft, child: brand),
             ),
-          ),
-        ],
-      ),
-      DecoratedBox(
-        decoration: BoxDecoration(
-          color: const Color(0xffe4ebdf),
-          borderRadius: BorderRadius.circular(20),
+            HowItWorksButton(isDemo: widget.isDemo),
+          ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Text(
-            widget.isDemo
-                ? 'Interactive rehearsal'
-                : 'Your live cooking companion',
-          ),
+        SizedBox(height: compact ? 4 : 10),
+        Wrap(
+          key: const ValueKey('cooking-header-tools'),
+          spacing: 6,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            TextButton.icon(
+              key: const ValueKey('new-cook'),
+              onPressed: cook.loading ? null : widget.onNewCook,
+              icon: const Icon(Icons.restart_alt),
+              label: Text(widget.startingNewCook ? 'Starting…' : 'New cook'),
+            ),
+            DraftRecipeChip(recipe: cook.recipe, practice: widget.isDemo),
+            AllergenChip(recipe: cook.recipe),
+            if (hybrid != null)
+              HybridHeaderButtons(
+                hybrid: hybrid,
+                onLabel: cook.session == null ? null : () => _openLabel(hybrid),
+              ),
+          ],
         ),
-      ),
-      TextButton.icon(
-        key: const ValueKey('new-cook'),
-        onPressed: cook.loading ? null : widget.onNewCook,
-        icon: const Icon(Icons.restart_alt),
-        label: Text(widget.startingNewCook ? 'Starting…' : 'New cook'),
-      ),
-      DraftRecipeChip(recipe: cook.recipe),
-      AllergenChip(recipe: cook.recipe),
-      if (widget.hybrid case final hybrid?)
-        HybridHeaderButtons(
-          hybrid: hybrid,
-          onLabel: cook.session == null ? null : () => _openLabel(hybrid),
-        ),
-      HowItWorksButton(isDemo: widget.isDemo),
-    ],
-  );
+      ],
+    );
+  }
 
   /// The open label check, told when the cooking session changes under it.
   LabelCheckController? _label;
@@ -698,33 +970,66 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     }
   }
 
+  /// Which ledger legs belong to the local watch running now.
+  final _watchLegs = WatchLegScope();
+
+  /// The privacy chip, viewfinder and status over the camera preview while
+  /// a local watch shows it. Null when Live owns the preview or no local
+  /// watch is running. Upload wording comes from this watch's ledger legs.
+  Widget? _localWatchOverlay() {
+    if (cook.live.isActive) return null;
+    final local = cook.watchService?.local;
+    if (local == null) return null;
+    final ledger = widget.hybrid?.ledgerSource;
+    // Snapshot the ledger as soon as a watch is seen, before its first frame.
+    if (ledger != null) {
+      _watchLegs.begin(local.isActive ? local.watchId : null, ledger.legs);
+    }
+    // A local watch only exists with the hybrid runtime, so its ledger.
+    if (local.previewFrame == null || ledger == null) return null;
+    return ListenableBuilder(
+      listenable: ledger,
+      builder: (context, _) =>
+          LocalWatchOverlay.of(
+            local,
+            ledgerLegs: ledger.legs,
+            scope: _watchLegs,
+          ) ??
+          const SizedBox.shrink(),
+    );
+  }
+
   Widget _cameraColumn({bool includeConversation = true}) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const Text(
-        'LET’S MAKE SOMETHING GOOD',
-        style: TextStyle(
-          fontSize: 11,
-          letterSpacing: 2,
-          fontWeight: FontWeight.w700,
+      if (!_compact) ...[
+        const Text(
+          'LET’S MAKE SOMETHING GOOD',
+          style: TextStyle(
+            fontSize: 11,
+            letterSpacing: 2,
+            fontWeight: FontWeight.w700,
+          ),
         ),
-      ),
-      const SizedBox(height: 10),
+        const SizedBox(height: 10),
+      ],
       Text(
         cook.recipe.title,
-        style: const TextStyle(
-          fontSize: 32,
+        style: TextStyle(
+          fontSize: _compact ? 26 : 32,
           height: 1.12,
           letterSpacing: -1,
           fontWeight: FontWeight.w700,
         ),
       ),
-      const SizedBox(height: 10),
-      const Text(
-        'Show your ingredients. Talk through the tricky parts. Cook at your pace.',
-        style: TextStyle(fontSize: 15, height: 1.5),
-      ),
-      const SizedBox(height: 20),
+      if (!_compact) ...[
+        const SizedBox(height: 10),
+        const Text(
+          'Show your ingredients. Talk through the tricky parts. Cook at your pace.',
+          style: TextStyle(fontSize: 15, height: 1.5),
+        ),
+      ],
+      SizedBox(height: _compact ? 12 : 20),
       ClipRRect(
         borderRadius: BorderRadius.circular(26),
         child: Stack(
@@ -749,19 +1054,21 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                     colors: [Color(0xff214937), Color(0xff102d24)],
                   ),
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.fromLTRB(24, 70, 24, 24),
+                child: Padding(
+                  padding: _compact
+                      ? const EdgeInsets.fromLTRB(20, 52, 20, 18)
+                      : const EdgeInsets.fromLTRB(24, 70, 24, 24),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         Icons.soup_kitchen_outlined,
-                        size: 76,
-                        color: Color(0xffefce98),
+                        size: _compact ? 52 : 76,
+                        color: const Color(0xffefce98),
                       ),
-                      SizedBox(height: 18),
-                      Text(
+                      SizedBox(height: _compact ? 10 : 18),
+                      const Text(
                         'Your counter is the canvas',
                         textAlign: TextAlign.center,
                         style: TextStyle(
@@ -770,16 +1077,28 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      SizedBox(height: 10),
+                      const SizedBox(height: 10),
                       Text(
-                        'Connect your camera and microphone\nso we can cook together.',
+                        widget.isDemo
+                            ? 'Practice mode: no real camera. Tap Watch my '
+                                  'food to try a pretend watch.'
+                            : cook.liveEnabled
+                            ? 'Connect your camera and microphone\nso we can '
+                                  'cook together.'
+                            : 'Your camera stays off until you tap Watch my '
+                                  'food.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xffc8d8c9), height: 1.5),
+                        style: const TextStyle(
+                          color: Color(0xffc8d8c9),
+                          height: 1.5,
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
+            if (_localWatchOverlay() case final overlay?)
+              Positioned.fill(child: overlay),
             Positioned(
               top: 16,
               left: 16,
@@ -796,7 +1115,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                   ),
                   child: Text(
                     widget.isDemo
-                        ? 'SIMULATED'
+                        ? 'PRACTICE MODE'
                         : cook.live.isActive
                         ? _liveLabel
                         : (cook.watchService?.captureLabel?.toUpperCase() ??
@@ -840,13 +1159,18 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       if (cook.watchService?.statusText case final status?)
         Semantics(
           liveRegion: true,
-          child: _inlineNotice(status, Icons.visibility_outlined),
+          child:
+              watchStatusNotice(cook.watchService!) ??
+              _inlineNotice(status, Icons.visibility_outlined),
         ),
       if (cook.watchService?.local.verdict?.legs case final legs?
           when legs.isNotEmpty)
         InferenceSourceBadge(legs: legs),
       if (cook.live.error case final error?)
-        _inlineNotice(error, Icons.cloud_off_outlined),
+        KeyedSubtree(
+          key: _liveErrorKey,
+          child: _inlineNotice(error, Icons.cloud_off_outlined),
+        ),
       if (cook.live.notice case final notice?)
         _inlineNotice(notice, Icons.info_outline),
       if (includeConversation) _conversation(),
@@ -858,6 +1182,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     children: [
       if (cook.live.coachTranscript.isNotEmpty)
         Padding(
+          key: _transcriptKey,
           padding: const EdgeInsets.only(top: 16),
           child: Card(
             child: Padding(
@@ -929,15 +1254,18 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                         ? liveCostPauseMessage
                         : widget.isDemo
                         ? (cook.live.isActive
-                              ? 'Rehearsal on'
-                              : 'Rehearsal ready')
+                              ? 'Practice mode on'
+                              : cook.watchService?.captureLabel ??
+                                    'Practice mode ready')
                         : (cook.live.isActive
                               ? _liveLabel
                               : cook.watchService?.captureLabel ??
                                     (cook.liveEnabled
                                         ? 'Camera and microphone off'
-                                        : 'Live coach is off in this build · '
-                                              'type a question for Coach Lite')),
+                                        : cook.coachLite != null
+                                        ? 'Type a question below.'
+                                        : 'Follow the steps below; your '
+                                              'timers still work.')),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -977,6 +1305,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                 ),
             ],
           ),
+          if (cook.researching) const _CheckingSources(),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -995,17 +1324,23 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                     hintText: cook.cookQuestion != null
                         ? 'Your answer…'
                         : !cook.live.isActive && cook.coachLite != null
-                        ? 'Ask Coach Lite (on-device)…'
+                        ? 'Ask a question…'
                         : 'Ask the coach…',
-                    suffixIcon: IconButton(
-                      onPressed: _messagePending ? null : _send,
-                      icon: const Icon(Icons.arrow_upward_rounded),
-                      tooltip: 'Send message',
-                    ),
                   ),
                 ),
               ),
-              IconButton(
+              // A sibling of the field, not its suffix, so the field's
+              // accessible name and the button's are each said once.
+              _DockButton(
+                key: const ValueKey('send-message'),
+                label: 'Send message',
+                icon: Icons.arrow_upward_rounded,
+                onPressed: _messagePending ? null : _send,
+              ),
+              _DockButton(
+                key: const ValueKey('research-question'),
+                label: 'Research a cooking question',
+                icon: Icons.travel_explore,
                 onPressed: () {
                   final question = _message.text.trim();
                   if (question.isNotEmpty) {
@@ -1014,8 +1349,6 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                     _message.text = 'What should I look for during this step?';
                   }
                 },
-                icon: const Icon(Icons.travel_explore),
-                tooltip: 'Research a cooking question',
               ),
             ],
           ),
@@ -1041,6 +1374,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         MealCompletePanel(
           cook: cook,
           isDemo: widget.isDemo,
+          nearbyClient: nearbyClientFor(
+            isDemo: widget.isDemo,
+            hybrid: widget.hybrid,
+          ),
           onTextHousehold: _reviewDinner,
           onCookSomethingElse: switch (widget.onBackToPantry) {
             final back? => () {
@@ -1049,6 +1386,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             },
             null => widget.onNewCook,
           },
+          ledger: widget.hybrid?.ledgerSource,
+          receiptBinding: _receiptBinding(),
         ),
         const SizedBox(height: 24),
       ],
@@ -1066,6 +1405,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ],
       ),
+      const SizedBox(height: 8),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: KitchenBigTextToggle(mode: _kitchen),
+      ),
       const SizedBox(height: 12),
       LinearProgressIndicator(
         value:
@@ -1075,10 +1419,18 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         minHeight: 5,
       ),
       const SizedBox(height: 16),
+      if (cook.offline) OfflineBanner(pendingSteps: cook.pendingStepSaves),
       if (cook.error case final error?)
-        _inlineNotice(error, Icons.error_outline),
+        KeyedSubtree(
+          key: _errorKey,
+          child: Semantics(
+            liveRegion: true,
+            child: _inlineNotice(error, Icons.error_outline),
+          ),
+        ),
       if (cook.alert case final alert?)
         Semantics(
+          key: _alertKey,
           liveRegion: true,
           child: Card(
             color: const Color(0xfffbe8c9),
@@ -1100,36 +1452,53 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       const SizedBox(height: 10),
-      if (cook.coachLiteBusy)
-        Semantics(
-          liveRegion: true,
-          child: _inlineNotice(
-            'Coach Lite is thinking…',
-            Icons.hourglass_top_outlined,
-          ),
+      // The reply region: a typed question's "thinking" line, then why it
+      // ran where it did (or why there is no answer); the workspace the
+      // answer fills follows. [_reveal] scrolls to the region's top, which is
+      // kept short so it always lands in view.
+      KeyedSubtree(
+        key: _replyKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (cook.coachLiteBusy)
+              Semantics(
+                liveRegion: true,
+                child: _inlineNotice(switch (cook.coachLiteQuestion) {
+                  final q? when q.isNotEmpty =>
+                    'Thinking about “${q.length > 80 ? '${q.substring(0, 79)}…' : q}”…',
+                  _ => 'Thinking about your question…',
+                }, Icons.hourglass_top_outlined),
+              ),
+            if (cook.coachLiteAnswer case final answer?)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: CoachLiteAnswerFooter(
+                  answer: answer,
+                  question: cook.coachLiteQuestion,
+                  recipeNotes: recipeNotesFor(
+                    cook.coachLiteQuestion ?? '',
+                    cook.recipe,
+                    cook.step,
+                  ),
+                  recipeNotesLabel: recipeNotesLabel(cook.recipe),
+                  onStartTimer: (label, seconds) =>
+                      unawaited(cook.startSuggestedTimer(label, seconds)),
+                ),
+              ),
+          ],
         ),
+      ),
       CookingSurface(controller: cook.ui),
-      if (cook.coachLiteAnswer case final answer?) ...[
-        if (answer.legs.isNotEmpty)
+      if (cook.coachLiteAnswer != null)
+        if (_speaker case final speaker?)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: InferenceSourceBadge(
-              key: const ValueKey('coach-lite-source'),
-              legs: answer.legs,
-              reason: answer.blocked,
+            child: CoachLiteSpeakerToggle(
+              speaker: speaker,
+              practice: _practice,
             ),
           ),
-        if (answer.timerSuggestion case final suggestion?)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: TimerSuggestionCard(
-              key: ValueKey(answer.stamp),
-              suggestion: suggestion,
-              onStart: (label, seconds) =>
-                  unawaited(cook.startSuggestedTimer(label, seconds)),
-            ),
-          ),
-      ],
       const SizedBox(height: 16),
       const Text(
         'How does your food look?',
@@ -1142,8 +1511,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           for (final prediction in ['Ready', 'Not yet', 'Not sure'])
             ChoiceChip(
               label: Text(prediction),
-              selected: _prediction == prediction,
-              onSelected: (_) => setState(() => _prediction = prediction),
+              selected:
+                  _predictionStep == cook.step.id && _prediction == prediction,
+              onSelected: (_) => setState(() {
+                _prediction = prediction;
+                _predictionStep = cook.step.id;
+              }),
             ),
         ],
       ),
@@ -1153,7 +1526,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         runSpacing: 10,
         children: [
           FilledButton.icon(
-            onPressed: () => cook.checkNow(_prediction),
+            onPressed: () => cook.checkNow(
+              _predictionStep == cook.step.id ? _prediction : null,
+            ),
             icon: const Icon(Icons.auto_awesome),
             label: const Text('Check my food'),
           ),
@@ -1185,6 +1560,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       ),
       if (cook.researchPanel case final panel?)
         Padding(
+          key: _researchKey,
           padding: const EdgeInsets.only(top: 20),
           child: CookingResearchPanel(
             key: ObjectKey(panel),
@@ -1206,9 +1582,13 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             children: [
               const Icon(Icons.sms_outlined),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
+                // Matches the message the button opens (SS-100).
                 child: Text(
-                  'Call everyone to the table.\nReview a dinner-ready message before sending.',
+                  _dinnerDraft().kind == DinnerKind.ready
+                      ? 'Call everyone to the table.\nReview a dinner-ready message before sending.'
+                      : "Let everyone know dinner's started.\nReview a household message before sending.",
+                  key: const Key('dinner-card-copy'),
                 ),
               ),
               IconButton(
@@ -1248,12 +1628,29 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     child: _inlineNotice(text, icon),
   );
 
-  Future<void> _reviewDinner() => _reviewHousehold(DinnerKind.ready);
+  /// "Started" or "ready" from the cook's step, with a time estimate (SS-100).
+  DinnerDraft _dinnerDraft() => dinnerDraftFor(
+    steps: cook.recipe.steps,
+    currentStepId: cook.session?.currentStepId,
+    complete: cook.complete,
+    now: cook.services.clock(),
+    timers: cook.ui.timers,
+    pastTimers: _dinnerTimers.pastTimers,
+    finishedStepIds: cook.session?.finishedTimerStepIds ?? const [],
+  );
+
+  Future<void> _reviewDinner() {
+    final draft = _dinnerDraft();
+    return _reviewHousehold(draft.kind, initialMinutes: draft.minutes);
+  }
 
   /// Opt-in "started cooking" text; opens the same review, never auto-sends.
-  Future<void> _reviewStarted() => _reviewHousehold(DinnerKind.started);
+  Future<void> _reviewStarted() => _reviewHousehold(
+    DinnerKind.started,
+    initialMinutes: _dinnerDraft().minutes,
+  );
 
-  Future<void> _reviewHousehold(DinnerKind kind) async {
+  Future<void> _reviewHousehold(DinnerKind kind, {int? initialMinutes}) async {
     final session = cook.session;
     if (session == null) return;
     await showDinnerReview(
@@ -1266,6 +1663,71 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       mode: configuredDinnerMode,
       memory: _dinnerAttempts,
       isDemo: widget.isDemo,
+      initialMinutes: initialMinutes,
+    );
+  }
+}
+
+/// A dock icon button whose accessible name is [label], said once: the
+/// tooltip is visual only and the button carries the semantics label.
+class _DockButton extends StatelessWidget {
+  const _DockButton({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    enabled: onPressed != null,
+    label: label,
+    excludeSemantics: true,
+    onTap: onPressed,
+    child: Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: IconButton(onPressed: onPressed, icon: Icon(icon)),
+    ),
+  );
+}
+
+/// Shown in the dock, where the cook tapped "Research a cooking question",
+/// while sources are being checked (G2c). A still icon under reduced motion.
+class _CheckingSources extends StatelessWidget {
+  const _CheckingSources();
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    return Semantics(
+      liveRegion: true,
+      child: Padding(
+        key: const ValueKey('research-checking'),
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(
+          children: [
+            SizedBox.square(
+              dimension: 18,
+              child: still
+                  ? const Icon(Icons.travel_explore, size: 18)
+                  : const CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Checking sources… the answer will appear in your cooking '
+                'space.',
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

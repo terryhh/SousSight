@@ -38,7 +38,36 @@ test('cook creates, reads, updates timers and facts, and deletes their session',
   await assertSucceeds(getDoc(ref));
   await assertSucceeds(updateDoc(ref, { revision: 1, timerDeadline: Timestamp.fromMillis(60000),
     timerLabel: 'Rest', timerId: 'timer-1', confirmedFacts: ['No dairy'], updatedAt: Timestamp.fromMillis(2000) }));
+  // A step timer that ran out before it was dismissed (SS-100).
+  await assertSucceeds(updateDoc(ref, { revision: 2, timerDeadline: null, timerLabel: null, timerId: null,
+    finishedTimerStepIds: ['pickle_onion'], updatedAt: Timestamp.fromMillis(3000) }));
+  await assertFails(updateDoc(ref, { revision: 3, finishedTimerStepIds: 'pickle_onion' }));
+  await assertFails(updateDoc(ref, { revision: 3,
+    finishedTimerStepIds: Array.from({ length: 101 }, (_, i) => `step-${i}`) }));
   await assertSucceeds(deleteDoc(ref));
+});
+
+test('owner saves an offline step change with its bounded op-id list', async () => {
+  await seed('sessions/meal', session());
+  const ref = doc(db(), 'sessions/meal');
+  await assertSucceeds(updateDoc(ref, { revision: 1, currentStepId: 'wrap', completedStepIds: ['mash'],
+    appliedOpIds: ['op-1'], updatedAt: Timestamp.fromMillis(2000) }));
+  await assertFails(updateDoc(ref, { revision: 2, appliedOpIds: 'op-2' }));
+  await assertFails(updateDoc(ref, { revision: 2,
+    appliedOpIds: Array.from({ length: 33 }, (_, i) => `op-${i}`) }));
+  await assertFails(updateDoc(doc(db('cook-b'), 'sessions/meal'), { appliedOpIds: [] }));
+  // Every item must be an "op-" id string of at most 64 characters, in any slot.
+  const ids = n => Array.from({ length: n }, (_, i) => `op-${i}`);
+  for (const appliedOpIds of [['op-1', 7], ['op-1', 7.5], [true], [null], [{ id: 'op-1' }],
+    [Timestamp.fromMillis(1)], ['op-1', ''], ['op-'], ['op-1,op-2'], ['op-1 x'],
+    ['op-' + 'x'.repeat(62)], [...ids(31), 'op-' + 'y'.repeat(62)]]) {
+    await assertFails(updateDoc(ref, { revision: 2, appliedOpIds }));
+  }
+  await assertSucceeds(updateDoc(ref, { revision: 2, updatedAt: Timestamp.fromMillis(3000),
+    appliedOpIds: [...ids(31), 'op-' + 'z'.repeat(61)] }));
+  await assertFails(setDoc(doc(db(), 'sessions/fresh'), { ...session(), appliedOpIds: [42] }));
+  await assertSucceeds(setDoc(doc(db(), 'sessions/fresh'), { ...session(),
+    appliedOpIds: ['op-6f1c2a1e-9d3b-4c55-8a7e-2b4f0e9c1d77'] }));
 });
 
 test('unauthenticated callers and another cook cannot access a private session', async () => {
@@ -72,6 +101,7 @@ test('malformed sessions, invalid ingredient states and nonzero initial revision
   const ref = doc(db(), 'sessions/meal');
   for (const patch of [{ revision: 1 }, { ingredients: { chickpeas: 'unsafe' } },
     { timerDeadline: 'tomorrow' }, { confirmedFacts: 'fact' }, { language: null },
+    { finishedTimerStepIds: 'mash' },
     { currentStepId: '' }, { recipeVersion: 0 }, { extra: true }]) {
     await assertFails(setDoc(ref, { ...session(), ...patch }));
   }

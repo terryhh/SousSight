@@ -21,6 +21,7 @@ import '../ai/hybrid/hybrid_types.dart';
 import '../trust/route_reason_text.dart';
 import 'household_allergens.dart';
 import 'label_check.dart';
+import '../ai/hybrid/payload_digest.dart' show taskImageDigests;
 import 'label_payload_digest.dart';
 
 enum LabelSource { photo, typed }
@@ -268,6 +269,7 @@ class LabelCheckController extends ChangeNotifier {
           kinds: const {DataKind.image, DataKind.text},
           payloadDigest: digest,
           sessionId: token.sessionId,
+          imageDigests: taskImageDigests(task),
         ),
       );
     } catch (_) {

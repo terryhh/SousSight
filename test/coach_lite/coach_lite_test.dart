@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/coach_lite/coach_lite.dart';
+import 'package:soussight/coach_lite/coach_lite_answer_card.dart';
 import 'package:soussight/coach_lite/timer_suggestion_card.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/genui/cooking_ui.dart';
@@ -135,6 +136,24 @@ String answerJson({
   'timerSuggestion': ?timer,
 });
 
+/// Its operation's result fails with an error when [fail] is called.
+class _FailingDispatcher implements HybridDispatcher {
+  final pending = <Completer<DispatchResult>>[];
+  @override
+  HybridOperation start(
+    HybridTask task, {
+    required String sessionId,
+    ResultValidator? validate,
+    ConsentGrant? grant,
+  }) {
+    final done = Completer<DispatchResult>();
+    pending.add(done);
+    return HybridOperation('op-${pending.length}', done.future, () {});
+  }
+
+  void fail(int index) => pending[index].completeError(StateError('bridge'));
+}
+
 void main() {
   late FakeHybridDispatcher dispatcher;
   late _Privacy privacy;
@@ -184,6 +203,7 @@ void main() {
       expect(answer.legs.single.provenance, Provenance.sdkOnDevice);
       expect(answer.timerSuggestion!.label, 'Simmer sauce');
       expect(answer.timerSuggestion!.seconds, coachLiteMaxTimerSeconds);
+      expect(answer.timerSuggestion!.capped, isTrue);
       expect(
         lite.isCurrent(
           answer.stamp,
@@ -240,6 +260,11 @@ void main() {
       );
       expect(find.text('Low and slow'), findsOneWidget);
       expect(find.text('Suggested timer · 60 min'), findsOneWidget);
+      // 9000 s was asked for: the cap is said, not silent.
+      expect(
+        find.text('Timer capped at 60 minutes — check the recipe'),
+        findsOneWidget,
+      );
       expect(ui.timers, isEmpty, reason: 'a suggestion never starts itself');
 
       await tester.tap(find.text('Start timer'));
@@ -277,6 +302,20 @@ void main() {
           .seconds,
       90,
     );
+    // Only a timer over 60 minutes is flagged as capped.
+    for (final (seconds, capped) in [
+      (5, false),
+      (3600, false),
+      (3600.4, false),
+      (3601, true),
+    ]) {
+      expect(
+        CoachLiteTimerSuggestion.fromModel({'label': 'R', 'seconds': seconds})!
+            .capped,
+        capped,
+        reason: '$seconds',
+      );
+    }
     expect(
       CoachLiteTimerSuggestion.fromModel({'label': ' ', 'seconds': 90}),
       isNull,
@@ -296,7 +335,7 @@ void main() {
           'id': 'watch',
           'component': 'watchStatus',
           'title': 'Watching',
-          'body': 'I will tell you when it is ready.',
+          'body': 'I will tell you when it bubbles.',
           'status': 'watching',
         },
       ],
@@ -315,8 +354,10 @@ void main() {
     // The fallback is app-authored from the recipe and is itself lite-valid.
     expect(validateLiteCookingUi(answer.payload), hasLength(2));
     final body = answer.components.last['body'] as String;
-    expect(body, contains("answer could not be shown"));
+    // SS-089: the reason is a status line beside the step, not in it.
+    expect(body, isNot(contains('could not be shown')));
     expect(body, contains('simmer the tomato sauce'));
+    expect(coachLiteStatusLine(answer), contains("couldn't show that answer"));
   });
 
   test('answers that certify doneness or safety are rejected', () {
@@ -332,10 +373,12 @@ void main() {
     ]) {
       expect(
         validateCoachLiteResponse(answerJson(body: claim)),
-        contains('must not certify'),
+        contains('Never certify'),
         reason: claim,
       );
     }
+    // SS-106 conservative gate: conditions that use the vocabulary are
+    // over-blocked too; the recipe step and a thermometer note show instead.
     for (final conditional in [
       "It's done when it coats a spoon.",
       'Stir until the sauce is done, then taste.',
@@ -343,7 +386,7 @@ void main() {
     ]) {
       expect(
         validateCoachLiteResponse(answerJson(body: conditional)),
-        isNull,
+        contains('Never certify'),
         reason: conditional,
       );
     }
@@ -460,6 +503,103 @@ void main() {
       expect(safety['body'], contains('food thermometer'));
     },
   );
+
+  group('the safety note matches the question topic', () {
+    test('allergen and label questions get the label note', () {
+      for (final q in [
+        'Is this peanut butter allergy friendly?',
+        'Does the bread contain nuts?',
+        'Is the mustard gluten-free?',
+        'Is this dairy-free?',
+        'What should I check on the label?',
+      ]) {
+        expect(coachLiteSafetyNoteFor(q), coachLiteAllergenNotice, reason: q);
+      }
+    });
+
+    test('expiry and spoilage questions get the freshness note', () {
+      for (final q in [
+        'The jam expired last week, is it ok?',
+        'Has this bread gone bad?',
+        'There is a spot of mold on the bread',
+        'How long can leftovers stay in the fridge?',
+        'Is the lime still fresh?',
+      ]) {
+        expect(coachLiteSafetyNoteFor(q), coachLiteFreshnessNotice, reason: q);
+      }
+    });
+
+    test('doneness and temperature keep the thermometer line', () {
+      for (final q in [
+        'Is the chicken done?',
+        'What internal temperature should it reach?',
+        'Is it still raw inside?',
+        'Is 160° enough?',
+        'Is it safe to leave the sauce out?',
+      ]) {
+        expect(coachLiteSafetyNoteFor(q), coachLiteSafetyNotice, reason: q);
+        expect(coachLiteSafetyNoteFor(q), contains('food thermometer'));
+      }
+    });
+
+    test('a question on two topics gets both notes', () {
+      expect(
+        coachLiteSafetyNoteFor('Is the expired egg mix cooked through?'),
+        '$coachLiteFreshnessNotice $coachLiteSafetyNotice',
+      );
+      expect(
+        coachLiteSafetyNoteFor('Is the old jam allergen free and not moldy?'),
+        '$coachLiteAllergenNotice $coachLiteFreshnessNotice',
+      );
+    });
+
+    test('notes are app-authored: a model could never write them', () {
+      // The notes name the very topics the conservative gate blocks in model
+      // text (SS-131), so only the app adds them, after validation.
+      for (final note in [
+        coachLiteSafetyNotice,
+        coachLiteAllergenNotice,
+        coachLiteFreshnessNotice,
+      ]) {
+        expect(
+          () => parseCoachLiteResponse(answerJson(body: note)),
+          throwsFormatException,
+          reason: note,
+        );
+      }
+    });
+
+    test('topic notes reach real answers through CoachLite.ask', () async {
+      for (final (q, note) in [
+        ('What should I check on the label?', coachLiteAllergenNotice),
+        ('Is the lime still fresh?', coachLiteFreshnessNotice),
+        ('Is the chicken done?', coachLiteSafetyNotice),
+        (
+          'The jam expired, does it contain nuts?',
+          '$coachLiteAllergenNotice $coachLiteFreshnessNotice',
+        ),
+      ]) {
+        dispatcher.enqueue(answerJson());
+        final answer = await ask(coach(), q);
+        expect(answer.kind, CoachLiteQuestionKind.safety, reason: q);
+        final safety = answer.components.firstWhere(
+          (c) => c['id'] == 'app_safety',
+        );
+        expect(safety['body'], note, reason: q);
+      }
+    });
+
+    test('an allergen question shows the label note in the answer', () async {
+      dispatcher.enqueue(answerJson());
+      final answer = await ask(coach(), 'Is this bread allergen free?');
+      expect(answer.kind, CoachLiteQuestionKind.safety);
+      final safety = answer.components.firstWhere(
+        (c) => c['id'] == 'app_safety',
+      );
+      expect(safety['body'], coachLiteAllergenNotice);
+      expect(safety['body'], isNot(contains('thermometer')));
+    });
+  });
 
   group('without sources the answer says it cannot check them', () {
     Future<CoachLiteAnswer> factual() {
@@ -616,9 +756,10 @@ void main() {
     expect(answer.blocked, RouteReason.noLocalModel);
     expect(answer.legs, isEmpty);
     expect(validateLiteCookingUi(answer.payload), hasLength(2));
+    expect(answer.components.last['body'], isNot(contains("can't run")));
     expect(
-      answer.components.last['body'],
-      startsWith("This device can't run the on-device coach right now."),
+      coachLiteStatusLine(answer),
+      startsWith("I can't answer questions on this device right now."),
     );
   });
 
@@ -635,6 +776,16 @@ void main() {
         'How long can leftovers stay in the fridge?',
         CoachLiteQuestionKind.safety,
       ),
+      // Topic-note questions are always safety questions (SS-094).
+      ('What should I check on the label?', CoachLiteQuestionKind.safety),
+      ('Is the lime still fresh?', CoachLiteQuestionKind.safety),
+      ('This bread is stale, is that ok?', CoachLiteQuestionKind.safety),
+      ('Is the chicken done?', CoachLiteQuestionKind.safety),
+      ('Is it still pink inside?', CoachLiteQuestionKind.safety),
+      ('How long will the jam keep?', CoachLiteQuestionKind.safety),
+      // ...without catching ordinary step help.
+      ('How long does it take to simmer?', CoachLiteQuestionKind.stepHelp),
+      ('Should I add fresh herbs now?', CoachLiteQuestionKind.stepHelp),
     ]) {
       expect(classifyCoachLiteQuestion(q), kind, reason: q);
     }
@@ -660,5 +811,84 @@ void main() {
             4 +
         coachLiteMaxOutputTokens;
     expect(tokens, lessThanOrEqualTo(coachLiteDefaultMaxTotalTokens));
+  });
+
+  group('SS-089: a send that throws still gives the step, never a reason '
+      'inside it', () {
+    test(
+      'failed: the recipe step, with the reason only in the status line',
+      () async {
+        final failing = _FailingDispatcher();
+        final lite = coach(failing);
+        final pending = ask(lite, 'How often should I stir?');
+        await Future<void>.delayed(Duration.zero);
+        failing.fail(0);
+        final answer = await pending;
+        expect(answer.status, CoachLiteStatus.failed);
+        expect(answer.error, contains('bridge'));
+        expect(validateLiteCookingUi(answer.payload), hasLength(2));
+        final body = answer.components.last['body'] as String;
+        expect(body, contains('simmer the tomato sauce'));
+        expect(body, isNot(contains('could not answer')));
+        expect(
+          coachLiteStatusLine(answer),
+          "I can't answer that right now — try the recipe step text below.",
+        );
+      },
+    );
+
+    test('superseded while failing: cancelled, with no status line', () async {
+      final failing = _FailingDispatcher();
+      final lite = coach(failing);
+      final first = ask(lite, 'How often should I stir?');
+      await Future<void>.delayed(Duration.zero);
+      lite.cancel(); // a newer question or Live took over
+      failing.fail(0);
+      final answer = await first;
+      expect(answer.status, CoachLiteStatus.cancelled);
+      expect(answer.error, isNull);
+      expect(coachLiteStatusLine(answer), isNull);
+      expect(
+        (answer.components.last['body'] as String),
+        contains('simmer the tomato sauce'),
+      );
+    });
+  });
+
+  testWidgets('the timer card resets for a new suggestion and shows seconds', (
+    tester,
+  ) async {
+    final started = <(String, int)>[];
+    Widget card(CoachLiteTimerSuggestion s) => MaterialApp(
+      home: Scaffold(
+        body: TimerSuggestionCard(
+          suggestion: s,
+          onStart: (label, seconds) => started.add((label, seconds)),
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      card(const CoachLiteTimerSuggestion(label: 'Rest', seconds: 90)),
+    );
+    expect(find.text('Suggested timer · 1 min 30 s'), findsOneWidget);
+    expect(find.byKey(const ValueKey('timer-cap-note')), findsNothing);
+    await tester.tap(find.text('Start timer'));
+    await tester.pump();
+    expect(find.text('Timer started'), findsOneWidget);
+
+    await tester.pumpWidget(
+      card(
+        const CoachLiteTimerSuggestion(
+          label: 'Soak',
+          seconds: 3600,
+          capped: true,
+        ),
+      ),
+    );
+    expect(find.text('Start timer'), findsOneWidget);
+    expect(find.text(coachLiteTimerCapNote), findsOneWidget);
+    await tester.tap(find.text('Start timer'));
+    await tester.pump();
+    expect(started, [('Rest', 90), ('Soak', 3600)]);
   });
 }

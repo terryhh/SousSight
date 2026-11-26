@@ -328,6 +328,7 @@ class CookingSession {
     this.timerLabel,
     this.timerId,
     this.confirmedFacts = const [],
+    this.finishedTimerStepIds = const [],
   });
 
   final String id;
@@ -352,6 +353,11 @@ class CookingSession {
   final String? timerId;
   final List<String> confirmedFacts;
 
+  /// Steps whose step timer ran out before the cook dismissed it (SS-100).
+  /// Saved with the session so a reload does not count that step's time
+  /// again in the household message's estimate.
+  final List<String> finishedTimerStepIds;
+
   CookingSession copyWith({
     Map<String, IngredientStatus>? ingredients,
     List<SessionSubstitution>? substitutions,
@@ -364,6 +370,7 @@ class CookingSession {
     Object? timerLabel = _unset,
     Object? timerId = _unset,
     List<String>? confirmedFacts,
+    List<String>? finishedTimerStepIds,
   }) => CookingSession(
     id: id,
     learnerId: learnerId,
@@ -385,6 +392,7 @@ class CookingSession {
         : timerLabel as String?,
     timerId: identical(timerId, _unset) ? this.timerId : timerId as String?,
     confirmedFacts: confirmedFacts ?? this.confirmedFacts,
+    finishedTimerStepIds: finishedTimerStepIds ?? this.finishedTimerStepIds,
   );
 
   factory CookingSession.fromMap(String id, Map<String, dynamic> m) =>
@@ -417,6 +425,7 @@ class CookingSession {
         timerLabel: m['timerLabel'] as String?,
         timerId: m['timerId'] as String?,
         confirmedFacts: readStrings(m['confirmedFacts']),
+        finishedTimerStepIds: readStrings(m['finishedTimerStepIds']),
       );
 
   Map<String, dynamic> toMap() => {
@@ -435,5 +444,6 @@ class CookingSession {
     'timerLabel': timerLabel,
     'timerId': timerId,
     'confirmedFacts': confirmedFacts,
+    'finishedTimerStepIds': finishedTimerStepIds,
   };
 }

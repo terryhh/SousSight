@@ -54,7 +54,16 @@ class LocalWatchController extends ChangeNotifier {
     this.maxFrameAge = const Duration(seconds: 2),
     this.watchLimit = const Duration(minutes: 3),
     this.requestTimeout = const Duration(seconds: 15),
+    this.liveAvailable = true,
+    this.simulated = false,
   }) : _now = now ?? DateTime.now;
+
+  /// False in builds without the Live coach: refusals then never point to it.
+  final bool liveAvailable;
+
+  /// Practice mode: the camera is a drawn practice picture and every check is
+  /// pretend; status lines say so instead of "on this device".
+  final bool simulated;
 
   final HybridDispatcher dispatcher;
   final CaptureOwner capture;
@@ -125,15 +134,24 @@ class LocalWatchController extends ChangeNotifier {
     if (current != null && current.watchId == token.watchId) {
       return current.message;
     }
-    if (isChecking) return 'Checking the photo on this device…';
+    if (isChecking) {
+      return simulated
+          ? 'Checking the practice picture (pretend)…'
+          : 'Checking the photo on this device…';
+    }
     if (capture.mode != CaptureMode.localCamera) return 'Starting the camera…';
-    return 'Watching on this device for: ${watchCue(token.step)}';
+    return simulated
+        ? 'Practice watch (pretend) for: ${watchCue(token.step)}'
+        : 'Watching on this device for: ${watchCue(token.step)}';
   }
 
   /// What the capture indicator says while this watch holds the camera.
   /// Never "Camera and microphone off" during a local watch.
-  String? get captureLabel =>
-      isActive ? 'Camera on for an on-device watch · microphone off' : null;
+  String? get captureLabel => !isActive
+      ? null
+      : simulated
+      ? 'Practice camera on · microphone off'
+      : 'Camera on for an on-device watch · microphone off';
 
   /// Starts a watch for [step]. Returns the watch id, or null when it could
   /// not start ([notice] says why) or was superseded before the camera opened.
@@ -316,6 +334,7 @@ class LocalWatchController extends ChangeNotifier {
           kinds: const {DataKind.image, DataKind.text},
           payloadDigest: digest,
           sessionId: token.sessionId,
+          imageDigests: taskImageDigests(task),
         ),
       );
     } finally {
@@ -430,7 +449,7 @@ class LocalWatchController extends ChangeNotifier {
       _blocked(token, result.blocked);
       return null;
     }
-    final parsed = parseWatchJson(result.text!);
+    final parsed = parseWatchJson(result.text!, cue: watchCue(token.step));
     final next = WatchVerdict(
       state: parsed.state,
       direction: parsed.direction,
@@ -463,8 +482,12 @@ class LocalWatchController extends ChangeNotifier {
       RouteReason.modelNotReady =>
         'The on-device model isn\'t ready yet, so I can\'t watch.',
       RouteReason.noLocalModel || RouteReason.imageNeedsCloud =>
-        'This device\'s on-device model can\'t look at photos. Connect the '
-            'Live coach to watch with cloud vision.',
+        liveAvailable
+            ? 'This device\'s on-device model can\'t look at photos. Connect '
+                  'the Live coach to watch with cloud vision.'
+            : "This device can't check photos yet — \"On this device\" "
+                  'shows how to set it up. Meanwhile, look for: '
+                  '${watchCue(token.step)}',
       RouteReason.consentDeclined => 'OK — that photo stays on this device.',
       RouteReason.localOnlySetting =>
         'Your privacy setting keeps watch photos on this device.',

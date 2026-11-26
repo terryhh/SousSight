@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../nearby/nearby_client.dart';
 import '../nearby/nearby_sheet.dart';
+import '../trust/ledger_source.dart';
+import '../trust/privacy_receipt_card.dart';
 import 'cooking_coordinator.dart';
 
 const _pantryFactPrefix = 'Pantry has (confirmed by the cook):';
@@ -39,16 +41,30 @@ class MealCompletePanel extends StatefulWidget {
     this.nearbyClient,
     this.locate,
     this.openLink,
+    this.ledger,
+    this.receiptBinding,
   });
 
   final CookingCoordinator cook;
   final bool isDemo;
   final VoidCallback onTextHousehold;
 
+  /// This session's inference ledger. When given, the panel shows tonight's
+  /// privacy receipt, counted only from its legs (SS-105).
+  final LedgerSource? ledger;
+
+  /// Which meal the receipt belongs to. Owned by the cooking screen so it
+  /// survives layout rebuilds; the receipt shows only when both are given.
+  final PrivacyReceiptBinding? receiptBinding;
+
   /// Back to the pantry when the flow has one, otherwise a new cook. Null
   /// while a new cook is already starting.
   final VoidCallback? onCookSomethingElse;
   final String cookSomethingElseLabel;
+
+  /// Nearby food help. Defaults to the rehearsal client in demo mode; real
+  /// mode needs a gated client (`nearbyClientFor`), and without one, or when
+  /// this build does not approve the nearby route, the button is hidden.
   final NearbyClient? nearbyClient;
   final NearbyLocator? locate;
   final NearbyLinkOpener? openLink;
@@ -58,9 +74,8 @@ class MealCompletePanel extends StatefulWidget {
 }
 
 class _MealCompletePanelState extends State<MealCompletePanel> {
-  late final NearbyClient _nearby =
-      widget.nearbyClient ??
-      (widget.isDemo ? const FakeNearbyClient() : GeminiNearbyClient());
+  late final NearbyClient? _nearby =
+      widget.nearbyClient ?? (widget.isDemo ? const FakeNearbyClient() : null);
 
   @override
   void initState() {
@@ -76,9 +91,9 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
     });
   }
 
-  void _openNearby() => showNearbySheet(
+  void _openNearby(NearbyClient client) => showNearbySheet(
     context,
-    client: _nearby,
+    client: client,
     kind: NearbyKind.foodHelp,
     locate:
         widget.locate ??
@@ -164,6 +179,18 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
               const SizedBox(height: 4),
               _recapLine(Icons.pause_circle_outline, mealCompleteCoachNote),
             ],
+            if ((widget.ledger, widget.receiptBinding) case (
+              final ledger?,
+              final binding?,
+            )) ...[
+              const SizedBox(height: 16),
+              PrivacyReceiptCard(
+                ledger: ledger,
+                binding: binding,
+                recipeTitle: cook.recipe.title,
+                timersRun: cook.timersStarted,
+              ),
+            ],
             const SizedBox(height: 18),
             FilledButton.icon(
               key: const ValueKey('meal-complete-text-household'),
@@ -171,13 +198,15 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
               icon: const Icon(Icons.sms_outlined),
               label: const Text('Text the household: dinner is ready'),
             ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              key: const ValueKey('meal-complete-nearby'),
-              onPressed: _openNearby,
-              icon: const Icon(Icons.volunteer_activism_outlined),
-              label: const Text('Find food help nearby for next time'),
-            ),
+            if (_nearby case final nearby? when nearbyOffered(nearby)) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                key: const ValueKey('meal-complete-nearby'),
+                onPressed: () => _openNearby(nearby),
+                icon: const Icon(Icons.volunteer_activism_outlined),
+                label: const Text('Find food help nearby for next time'),
+              ),
+            ],
             const SizedBox(height: 6),
             TextButton.icon(
               key: const ValueKey('meal-complete-cook-again'),

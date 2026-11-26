@@ -10,21 +10,30 @@ import 'trust_test_helpers.dart';
 
 void main() {
   test('each leg gets a label from its provenance and permission', () {
-    expect(
-      legLabel(leg(Provenance.sdkOnDevice), localModel: 'Gemini Nano'),
-      'On this device · Gemini Nano',
-    );
+    // SS-089: plain labels; the model name is only in the details sheet.
     expect(legLabel(leg(Provenance.sdkOnDevice)), 'On this device');
-    expect(legLabel(leg(Provenance.sdkCloud)), 'Cloud · Gemini');
-    expect(legLabel(leg(Provenance.cloudAdapter)), 'Cloud');
-    expect(legLabel(leg(Provenance.simulated)), 'Simulated');
+    expect(
+      legModelName(leg(Provenance.sdkOnDevice), localModel: 'Gemini Nano'),
+      'Gemini Nano',
+    );
+    expect(legModelName(leg(Provenance.sdkCloud), localModel: 'X'), isNull);
+    expect(legModelName(leg(Provenance.sdkOnDevice)), isNull);
+    expect(legLabel(leg(Provenance.sdkCloud)), "Sent online to Google's AI");
+    expect(
+      legLabel(leg(Provenance.cloudAdapter)),
+      "Sent online to Google's AI",
+    );
+    expect(
+      legLabel(leg(Provenance.simulated)),
+      'Practice mode (pretend answers)',
+    );
     expect(
       legLabel(leg(Provenance.unknown, transferPermitted: true)),
       'May have been sent',
     );
     expect(
       legLabel(leg(Provenance.unknown, transferPermitted: false)),
-      "Didn't finish · nothing left this device",
+      'Running or stopped · nothing left this device',
     );
   });
 
@@ -50,7 +59,9 @@ void main() {
       ),
     );
     expect(
-      find.text("Didn't finish · nothing left this device (took too long)"),
+      find.text(
+        'Running or stopped · nothing left this device (took too long)',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('May have been sent'), findsNothing);
@@ -88,8 +99,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Cloud · Gemini'), findsOneWidget);
-    expect(find.text('On this device · Gemini Nano'), findsOneWidget);
+    expect(find.text("Sent online to Google's AI"), findsOneWidget);
+    expect(find.text('On this device'), findsOneWidget);
+    expect(find.textContaining('Gemini Nano'), findsNothing);
     expect(find.byKey(const ValueKey('inference-leg-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('inference-leg-1')), findsOneWidget);
 
@@ -98,7 +110,7 @@ void main() {
     );
     expect(
       semantics.label,
-      'Where this ran: Cloud · Gemini; On this device · Gemini Nano. '
+      "Where this ran: Sent online to Google's AI; On this device. "
       'Tap for details.',
     );
 
@@ -121,10 +133,14 @@ void main() {
       find.text('Used: photo and text. Not allowed to leave this device.'),
       findsOneWidget,
     );
+    // The model name appears in the details sheet only.
+    expect(find.text('Model: Gemini Nano'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('an observed model label wins over the family', (tester) async {
+  testWidgets('an observed model label wins over the family in details', (
+    tester,
+  ) async {
     await pumpPhone(
       tester,
       InferenceSourceBadge(
@@ -132,7 +148,11 @@ void main() {
         legs: [leg(Provenance.sdkOnDevice, modelLabel: 'gemini-nano-4')],
       ),
     );
-    expect(find.text('On this device · gemini-nano-4'), findsOneWidget);
+    expect(find.text('On this device'), findsOneWidget);
+    expect(find.textContaining('gemini-nano-4'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('inference-leg-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('Model: gemini-nano-4'), findsOneWidget);
   });
 
   testWidgets('a failed permitted send says it may have been sent', (
@@ -153,11 +173,99 @@ void main() {
       find.text('May have been sent (connection problem)'),
       findsOneWidget,
     );
-    expect(find.text('Simulated'), findsOneWidget);
+    expect(find.text('Practice mode (pretend answers)'), findsOneWidget);
   });
 
   testWidgets('no legs renders nothing', (tester) async {
     await pumpPhone(tester, const InferenceSourceBadge(legs: []));
     expect(find.byKey(const ValueKey('inference-source-badge')), findsNothing);
+  });
+
+  testWidgets('multi-leg chips show which data each leg carried', (
+    tester,
+  ) async {
+    await pumpPhone(
+      tester,
+      InferenceSourceBadge(
+        legs: [
+          leg(
+            Provenance.sdkCloud,
+            feature: 'pantry_voice',
+            kinds: {DataKind.audio},
+          ),
+          leg(Provenance.sdkOnDevice, kinds: {DataKind.image}),
+        ],
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('inference-leg-0')),
+        matching: find.byIcon(Icons.mic_none),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('inference-leg-1')),
+        matching: find.byIcon(Icons.photo_camera_outlined),
+      ),
+      findsOneWidget,
+    );
+    // On-device and cloud differ by icon, not colour alone.
+    expect(find.byIcon(Icons.memory), findsOneWidget);
+    expect(find.byIcon(Icons.cloud), findsOneWidget);
+  });
+
+  testWidgets('a single leg shows no data-kind glyphs', (tester) async {
+    await pumpPhone(
+      tester,
+      InferenceSourceBadge(legs: [leg(Provenance.sdkOnDevice)]),
+    );
+    expect(find.byIcon(Icons.notes), findsNothing);
+  });
+
+  testWidgets('a result arrives with a short fade, settled after it', (
+    tester,
+  ) async {
+    await pumpPhone(
+      tester,
+      InferenceSourceBadge(legs: [leg(Provenance.sdkOnDevice)]),
+    );
+    final arrival = find.byType(TweenAnimationBuilder<double>);
+    expect(arrival, findsOneWidget);
+    await tester.pumpAndSettle();
+    final opacity = tester.widget<Opacity>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('inference-source-badge')),
+        matching: find.byType(Opacity),
+      ),
+    );
+    expect(opacity.opacity, 1);
+  });
+
+  testWidgets('reduced motion: no arrival animation at all', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: InferenceSourceBadge(legs: [leg(Provenance.sdkCloud)]),
+          ),
+        ),
+      ),
+    );
+    // Fully shown on the very first frame: the transition takes no time.
+    final opacity = tester.widget<Opacity>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('inference-source-badge')),
+        matching: find.byType(Opacity),
+      ),
+    );
+    expect(opacity.opacity, 1);
+    expect(tester.hasRunningAnimations, isFalse);
+    expect(find.text("Sent online to Google's AI"), findsOneWidget);
   });
 }

@@ -2,9 +2,22 @@ import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'dart:async';
 
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridErrorCode;
 import 'package:firebase_ai/firebase_ai.dart';
 
 import '../ai/cooking_research_client.dart' show kCookingResearchModel;
+import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart' show localOnlyFor;
+import '../app/hybrid_runtime.dart';
+import '../core/cloud_send.dart';
+import '../app/network_reachability.dart';
+
+/// Ledger and privacy feature key for nearby lookups.
+const kNearbyFeature = 'nearby';
+
+/// Every nearby search sends the cook's area (typed, or an approximate
+/// position) and the search text.
+const kNearbyKinds = {DataKind.location, DataKind.text};
 
 /// Override with `--dart-define=NEARBY_MODEL=...`. It must be a model that
 /// supports Grounding with Google Maps; defaults to the research model.
@@ -88,7 +101,33 @@ class NearbyResult {
   final bool simulated;
 }
 
-enum NearbyFailure { invalidQuery, noResults, timeout, unavailable }
+enum NearbyFailure {
+  invalidQuery,
+  noResults,
+  timeout,
+  unavailable,
+
+  /// Not sent: off in this build, or the cook keeps it on this device.
+  blocked,
+
+  /// Not sent: the device is offline.
+  offline,
+}
+
+const nearbyRouteOffMessage = 'Find food help is not available in this build.';
+
+const nearbyKeptOnDeviceMessage =
+    'You chose "Keep Find food help on this device", so nothing was sent. '
+    'Searching Google Maps needs the cloud; turn that switch off in On-device '
+    'AI to search.';
+
+/// The cook started another meal (or went back to the pantry) while the
+/// search was starting; it belonged to the previous session.
+const nearbySessionChangedMessage =
+    'Your cooking session changed, so I stopped that search. Please try again.';
+
+const nearbyOfflineMessage =
+    'You look offline, so nothing was sent. Try again when you are connected.';
 
 /// Safe to show to a cook; provider errors are never exposed.
 class NearbyException implements Exception {
@@ -102,6 +141,110 @@ class NearbyException implements Exception {
 abstract class NearbyClient {
   Future<NearbyResult> find(NearbyQuery query);
 }
+
+/// A client that sends to the cloud only when this build and the cook allow
+/// it. Entry points are hidden when it is not [offered].
+abstract interface class GatedNearbyClient implements NearbyClient {
+  /// Whether this build approves the nearby cloud route at all.
+  bool get offered;
+
+  /// Why a search could not be sent right now, or null. Read live; records
+  /// nothing.
+  NearbyException? precheck();
+
+  /// [precheck] for a cook's tap: when blocked, the refused attempt is
+  /// written to the session ledger as one unsent leg, and the reason is
+  /// returned. Nothing is sent and no
+  /// location is requested.
+  NearbyException? refuseIfBlocked();
+}
+
+/// Whether to show a nearby entry point for [client].
+bool nearbyOffered(NearbyClient? client) => switch (client) {
+  null => false,
+  GatedNearbyClient(:final offered) => offered,
+  _ => true,
+};
+
+/// What a [GeminiNearbyClient] reads immediately before every send, never
+/// from a value captured earlier: the `nearby` cloud route, the cook's
+/// "Keep Find food help on this device" switch, and connectivity. Every
+/// search the client is asked to make, and every tap the gate refuses, is
+/// written to the session ledger through [recorder]. A blank area is caught
+/// by the sheet's own form check before any search starts and is not
+/// recorded: it is not a search attempt, and nothing could have been sent.
+class NearbyGate {
+  const NearbyGate({
+    required this.cloudRoutes,
+    required this.privacy,
+    required this.isOnline,
+    required this.recorder,
+    this.reachable = _assumeReachable,
+    this.generation = _noGeneration,
+  });
+
+  /// The app's shared settings and ledger.
+  NearbyGate.forRuntime(HybridRuntime hybrid)
+    : this(
+        cloudRoutes: hybrid.cloudRoutes,
+        privacy: hybrid.privacy,
+        isOnline: hybrid.isOnline,
+        recorder: hybrid.cloudSends,
+        reachable: hybrid.reachable ?? _assumeReachable,
+        generation: () => hybrid.ledger.generation,
+      );
+
+  final CloudRoutes cloudRoutes;
+  final PrivacySettings privacy;
+  final bool Function() isOnline;
+  final CloudSendRecorder recorder;
+
+  /// The platform's network probe, awaited before every send. On Android
+  /// and iOS [isOnline] has no signal, so this is what sees airplane mode
+  /// ([networkReachable]); on web [isOnline] already does.
+  final Future<bool> Function() reachable;
+
+  static Future<bool> _assumeReachable() async => true;
+
+  /// The session ledger's generation; a search is bound to the one it
+  /// started under and never sends under the next session's ledger.
+  final int Function() generation;
+
+  static int _noGeneration() => 0;
+
+  bool get routeApproved => cloudRoutes.allows(CloudRoute.nearby);
+
+  /// Null when a search may be sent now. [reachable] is the latest
+  /// [NearbyGate.reachable] probe, when one was taken.
+  NearbyException? check({bool reachable = true}) {
+    if (!routeApproved) {
+      return const NearbyException(
+        NearbyFailure.blocked,
+        nearbyRouteOffMessage,
+      );
+    }
+    if (localOnlyFor(privacy, kNearbyFeature)) {
+      return const NearbyException(
+        NearbyFailure.blocked,
+        nearbyKeptOnDeviceMessage,
+      );
+    }
+    if (!isOnline() || !reachable) {
+      return const NearbyException(NearbyFailure.offline, nearbyOfflineMessage);
+    }
+    return null;
+  }
+}
+
+/// The nearby client for an app run: simulated in rehearsal, the gated
+/// Gemini client with the shared runtime, and none otherwise (no entry
+/// points are shown without a client).
+NearbyClient? nearbyClientFor({required bool isDemo, HybridRuntime? hybrid}) =>
+    isDemo
+    ? const FakeNearbyClient()
+    : hybrid == null
+    ? null
+    : GeminiNearbyClient(gate: NearbyGate.forRuntime(hybrid));
 
 class NearbyGenerationRequest {
   const NearbyGenerationRequest({
@@ -205,19 +348,80 @@ NearbyResult parseNearbyResponse(GenerateContentResponse response) {
 /// One grounded Gemini call through Firebase AI Logic with Grounding with
 /// Google Maps. Coordinates, when shared, go only in the request's
 /// `toolConfig.retrievalConfig.latLng`.
-class GeminiNearbyClient implements NearbyClient {
+///
+/// [gate] is checked immediately before each send. A search it blocks, or
+/// one refused as invalid, is recorded as not sent; a send is recorded as
+/// pending before it leaves, confirmed when Gemini answers, and left
+/// "may have been sent" when it fails or times out.
+class GeminiNearbyClient implements GatedNearbyClient {
   GeminiNearbyClient({
+    required this.gate,
     NearbyGenerator? generate,
     this.model = kNearbyModel,
     this.timeout = const Duration(seconds: 20),
   }) : _generate = generate ?? _generateWithGoogleMaps;
 
+  final NearbyGate gate;
   final NearbyGenerator _generate;
   final String model;
   final Duration timeout;
 
   @override
+  bool get offered => gate.routeApproved;
+
+  @override
+  NearbyException? precheck() => gate.check();
+
+  @override
+  NearbyException? refuseIfBlocked() {
+    final blocked = gate.check();
+    if (blocked != null) _recordRefused(blocked);
+    return blocked;
+  }
+
+  void _recordRefused(NearbyException blocked) => gate.recorder.rejectedLocally(
+    kNearbyFeature,
+    kNearbyKinds,
+    _refusalCode(blocked),
+  );
+
+  static HybridErrorCode _refusalCode(NearbyException blocked) =>
+      blocked.reason == NearbyFailure.offline
+      ? HybridErrorCode.network
+      : HybridErrorCode.blocked;
+
+  @override
   Future<NearbyResult> find(NearbyQuery query) async {
+    if (gate.check() case final blocked?) {
+      _recordRefused(blocked);
+      throw blocked;
+    }
+    final NearbyQuery cleaned;
+    try {
+      cleaned = _validated(query);
+    } on _Invalid catch (invalid) {
+      gate.recorder.rejectedLocally(
+        kNearbyFeature,
+        kNearbyKinds,
+        HybridErrorCode.unsupportedInput,
+      );
+      throw invalid.error;
+    }
+    final started = gate.generation();
+    final reachable = await gate.reachable();
+    // The session may have changed during the probe: this search belonged to
+    // the previous one, whose ledger is gone, so it stops here and writes
+    // nothing into the new session's ledger.
+    if (gate.generation() != started) throw _sessionChanged;
+    // Read again after the probe: the settings may have changed meanwhile.
+    if (gate.check(reachable: reachable) case final blocked?) {
+      _recordRefused(blocked);
+      throw blocked;
+    }
+    return _send(cleaned, reachable: reachable, generation: started);
+  }
+
+  NearbyQuery _validated(NearbyQuery query) {
     final area = query.area.trim();
     final items = [
       for (final item in query.missingItems)
@@ -225,26 +429,32 @@ class GeminiNearbyClient implements NearbyClient {
     ];
     final coordinates = query.coordinates;
     if ((coordinates == null || !coordinates.isValid) && area.isEmpty) {
-      throw const NearbyException(
-        NearbyFailure.invalidQuery,
-        'Share your location or type a city or ZIP code first.',
+      throw const _Invalid(
+        NearbyException(
+          NearbyFailure.invalidQuery,
+          'Share your location or type a city or ZIP code first.',
+        ),
       );
     }
     if (area.length > 80) {
-      throw const NearbyException(
-        NearbyFailure.invalidQuery,
-        'Please use a shorter city or ZIP code.',
+      throw const _Invalid(
+        NearbyException(
+          NearbyFailure.invalidQuery,
+          'Please use a shorter city or ZIP code.',
+        ),
       );
     }
     if (items.length > _maxItems ||
         items.any((item) => item.length > 80) ||
         (query.kind == NearbyKind.groceries && items.isEmpty)) {
-      throw const NearbyException(
-        NearbyFailure.invalidQuery,
-        'I need a short list of missing items to search for.',
+      throw const _Invalid(
+        NearbyException(
+          NearbyFailure.invalidQuery,
+          'I need a short list of missing items to search for.',
+        ),
       );
     }
-    final cleaned = NearbyQuery(
+    return NearbyQuery(
       kind: query.kind,
       coordinates: coordinates != null && coordinates.isValid
           ? coordinates
@@ -252,8 +462,33 @@ class GeminiNearbyClient implements NearbyClient {
       area: area,
       missingItems: items,
     );
+  }
+
+  /// No await between [gate]'s check in [find] and the pending leg here.
+  static const _sessionChanged = NearbyException(
+    NearbyFailure.blocked,
+    nearbySessionChangedMessage,
+  );
+
+  Future<NearbyResult> _send(
+    NearbyQuery cleaned, {
+    required bool reachable,
+    required int generation,
+  }) async {
+    final send = gate.recorder.begin(kNearbyFeature, kNearbyKinds);
+    // begin() notifies ledger listeners synchronously, and a listener may
+    // change a setting: check once more immediately before transmitting.
+    if (gate.generation() != generation) {
+      send.notSent(HybridErrorCode.cancelled);
+      throw _sessionChanged;
+    }
+    if (gate.check(reachable: reachable) case final blocked?) {
+      send.notSent(_refusalCode(blocked));
+      throw blocked;
+    }
+    final GenerateContentResponse response;
     try {
-      final response = await _generate(
+      response = await _generate(
         NearbyGenerationRequest(
           model: model,
           systemInstruction: nearbyInstruction,
@@ -261,33 +496,52 @@ class GeminiNearbyClient implements NearbyClient {
           coordinates: cleaned.coordinates,
         ),
       ).timeout(timeout);
-      return parseNearbyResponse(response);
-    } on NearbyException {
-      rethrow;
     } on TimeoutException {
+      send.failed(HybridErrorCode.timeout);
       throw const NearbyException(
         NearbyFailure.timeout,
         'That search took too long. Please try again.',
       );
     } catch (error) {
-      // Console-only diagnostics; keys/tokens redacted, never shown to cooks.
-      final detail = '$error'
-          .replaceAll(RegExp(r'AIza[0-9A-Za-z_-]{20,}'), '[key]')
-          .replaceAll(
-            RegExp(r'ey[A-Za-z0-9_-]{20,}\.[A-Za-z0-9._-]+'),
-            '[token]',
-          );
+      send.failed(HybridErrorCode.network);
+      // Console-only diagnostics: an error category only. The provider's
+      // message can echo the typed area, the grocery list or a credential,
+      // so it is never logged.
       debugPrint(
-        'Nearby request failed (${error.runtimeType}, '
-        'location=${cleaned.coordinates != null}): '
-        '${detail.length > 400 ? detail.substring(0, 400) : detail}',
+        'Nearby request failed (${nearbyErrorCategory(error)}, '
+        'location=${cleaned.coordinates != null})',
       );
       throw const NearbyException(
         NearbyFailure.unavailable,
         'Nearby search is unavailable right now. Please try again.',
       );
     }
+    // Gemini answered, so the search was sent; whether it is usable is
+    // decided below.
+    send.confirmed(modelLabel: model);
+    return parseNearbyResponse(response);
   }
+}
+
+/// A fixed category for a failed nearby request, safe to log: never the
+/// provider's message, which can echo the cook's area, items or a key.
+String nearbyErrorCategory(Object error) => switch (error) {
+  InvalidApiKey() => 'invalid-api-key',
+  UnsupportedUserLocation() => 'unsupported-location',
+  ServiceApiNotEnabled() => 'service-not-enabled',
+  QuotaExceeded() => 'quota-exceeded',
+  ServerException() => 'server-error',
+  FirebaseAIException() => 'firebase-ai-error',
+  FirebaseAISdkException() => 'sdk-error',
+  TimeoutException() => 'timeout',
+  FormatException() => 'malformed-response',
+  _ => 'other',
+};
+
+/// A query refused before anything was sent.
+class _Invalid implements Exception {
+  const _Invalid(this.error);
+  final NearbyException error;
 }
 
 /// Builds the tool config; exposed so tests can verify location handling.

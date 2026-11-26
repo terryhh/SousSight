@@ -7,6 +7,8 @@
 //   a leg that was not allowed to leave;
 // - about to transmit: [CloudSendRecorder.begin], a pending leg whose
 //   provenance is unknown;
+// - refused by a last check after [CloudSendRecorder.begin] but before
+//   transmission (a ledger listener may change a setting): [CloudSend.notSent];
 // - the cloud answered: [CloudSend.confirmed];
 // - transmission failed or timed out: [CloudSend.failed], which keeps the leg
 //   as "may have been sent".
@@ -32,4 +34,7 @@ abstract class CloudSendRecorder {
 abstract class CloudSend {
   void confirmed({String? modelLabel});
   void failed(HybridErrorCode code);
+
+  /// Nothing was transmitted after all; the leg becomes not-allowed-to-leave.
+  void notSent(HybridErrorCode code);
 }

@@ -372,7 +372,7 @@ void main() {
           {
             'title': 'Scramble',
             'instruction': 'Cook the eggs in a pan, stirring.',
-            'cue': 'Eggs are fully cooked and safe to eat.',
+            'cue': 'Curds hold together.',
             'timerSeconds': 180,
           },
           {
@@ -384,7 +384,8 @@ void main() {
       );
       final result = await client(_RetryingDispatcher([risky]))
           .draft(const RecipeDraftRequest(confirmedItems: ['eggs', 'bread']));
-      expect(result.recipe.steps[1].cue, endsWith(kThermometerDisclaimer));
+      expect(result.recipe.steps[1].cue, contains('egg dishes 160°F (71°C)'));
+      expect(result.recipe.steps[1].cue, isNot(contains('safe to eat')));
       expect(result.recipe.steps[0].cue, 'Yolks are whole.');
     });
 

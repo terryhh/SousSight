@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import {
   cleanTemplateText, composeDinnerMessage, createDinnerLedger, createDinnerReadyHandler,
   createDinnerService, nextSendLimit, providerConfigProblem, sendVonageDinner,
-  SEND_LIMIT_PER_HOUR, validateDinnerRequest,
+  legacyFingerprints, requestFingerprint, SEND_LIMIT_PER_HOUR, validateDinnerRequest,
 } from '../src/dinner-ready.js';
 import { createDeliveryStatusStore, providerIndexId } from '../src/vonage-status.js';
+import { createHash } from 'node:crypto';
 import { fakeFirestore } from './fake-firestore.js';
 
+// A current client: it previews and sends template version 2.
 const input = (overrides = {}) => ({ sessionId: 'meal-1', notificationId: 'notice-123',
-  recipient: '+14075550100', kind: 'ready', recipeTitle: 'Chickpea wraps', ...overrides });
+  recipient: '+14075550100', kind: 'ready', recipeTitle: 'Chickpea wraps', templateVersion: 2, ...overrides });
 const started = (overrides = {}) => input({ kind: 'started', minutes: 25, notificationId: 'start-123', ...overrides });
 const settings = { enabled: true, channel: 'whatsapp', allowedRecipients: ['14075550100'] };
 const nowMs = Date.parse('2026-11-07T21:00:00Z');
@@ -35,9 +37,15 @@ const mirror = (db, id = 'notice-123') => db.docs.get(`sessions/meal-1/notificat
 test('server templates compose started and ready messages from validated slots only', () => {
   assert.equal(validateDinnerRequest(input(), settings.allowedRecipients).message, READY_TEXT);
   assert.equal(validateDinnerRequest(started(), settings.allowedRecipients).message,
-    'SousSight: Your cook started Chickpea wraps. Dinner in about 25 min.');
+    "SousSight: Dinner's started, about 25 minutes to go. Your cook is making Chickpea wraps.");
   assert.equal(validateDinnerRequest(started({ cookName: 'Terry' }), settings.allowedRecipients).message,
-    'SousSight: Terry started Chickpea wraps. Dinner in about 25 min.');
+    "SousSight: Dinner's started, about 25 minutes to go. Terry is making Chickpea wraps.");
+  // Unknown time: left out, never guessed.
+  for (const minutes of [undefined, null]) {
+    const request = validateDinnerRequest(started({ minutes }), settings.allowedRecipients);
+    assert.equal(request.minutes, null);
+    assert.equal(request.message, "SousSight: Dinner's started. Your cook is making Chickpea wraps.");
+  }
   assert.equal(composeDinnerMessage({ kind: 'ready', recipeTitle: 'Soup' }),
     'SousSight: Dinner is ready! Soup is on the table.');
   // Links, markup and control characters cannot pass through the slots.
@@ -46,6 +54,52 @@ test('server templates compose started and ready messages from validated slots o
   const request = validateDinnerRequest(input({ recipeTitle: 'Mac & cheese!\nvisit evil.example' }),
     settings.allowedRecipients);
   assert.equal(request.recipeTitle, 'Mac & cheese! visit evil example');
+});
+
+// GSM 03.38 basic set: no em dash or curly quotes (they force UCS-2).
+const GSM7 = new Set([...'@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?' +
+  '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà']);
+const outsideGsm7 = (text) => [...text].filter((c) => !GSM7.has(c));
+
+test('the fixed template text is GSM-7 only; with ASCII slots one message is one segment', () => {
+  const messages = [composeDinnerMessage({ kind: 'ready', recipeTitle: 'Soup' })];
+  for (const minutes of [null, 1, 25, 120]) {
+    for (const cookName of [null, 'Terry']) {
+      messages.push(composeDinnerMessage({ kind: 'started', recipeTitle: 'Chickpea wraps', minutes, cookName }));
+    }
+  }
+  for (const message of messages) {
+    assert.deepEqual(outsideGsm7(message), [], message);
+    assert.ok(message.length <= 160, message);
+  }
+});
+
+test('accented names in the GSM-7 alphabet keep the whole message GSM-7', () => {
+  // Same fixture as test/data/dinner_messages_test.dart.
+  const request = validateDinnerRequest(started({ cookName: 'René', recipeTitle: 'Crème brûlée', minutes: 25 }),
+    settings.allowedRecipients);
+  const message = composeDinnerMessage({ kind: 'started', recipeTitle: 'Paella', minutes: 25, cookName: 'René' });
+  assert.equal(message, "SousSight: Dinner's started, about 25 minutes to go. René is making Paella.");
+  assert.deepEqual(outsideGsm7(message), []);
+  assert.ok(message.length <= 160);
+  // û is outside GSM-7: that title alone makes the SMS UCS-2.
+  assert.deepEqual(outsideGsm7(request.message), ['û']);
+});
+
+test('Unicode names and titles pass through; only the fixed text is guaranteed GSM-7', () => {
+  // Same fixture as test/data/dinner_messages_test.dart.
+  const cookName = '豆腐'.repeat(15);
+  const request = validateDinnerRequest(started({ recipeTitle: '豆腐汤', cookName, minutes: 120 }),
+    settings.allowedRecipients);
+  assert.equal(request.message,
+    `SousSight: Dinner's started, about 120 minutes to go. ${cookName} is making 豆腐汤.`);
+  // The template around the slots stays GSM-7...
+  const fixed = request.message.replace(cookName, '').replace('豆腐汤', '');
+  assert.deepEqual(outsideGsm7(fixed), []);
+  // ...but a Unicode slot makes the whole SMS UCS-2: past 70 characters it is
+  // more than one segment. The claim is narrowed to the fixed text.
+  assert.ok(outsideGsm7(request.message).length > 0);
+  assert.ok(request.message.length > 70);
 });
 
 test('rejects free-form messages, bad kinds, minutes and recipients', () => {
@@ -60,11 +114,108 @@ test('rejects free-form messages, bad kinds, minutes and recipients', () => {
   ]) {
     assert.throws(() => validateDinnerRequest(input(change), settings.allowedRecipients), { code: 'invalid-request' }, JSON.stringify(change));
   }
-  for (const minutes of [undefined, 0, 121, 2.5, '20']) {
+  for (const minutes of [0, 121, 2.5, '20', -5]) {
     assert.throws(() => validateDinnerRequest(started({ minutes }), settings.allowedRecipients), { code: 'invalid-request' });
   }
   assert.throws(() => validateDinnerRequest(input({ recipient: '4075550100 ext123' }), settings.allowedRecipients),
     { code: 'invalid-recipient' });
+});
+
+// What a pre-SS-100 deployment (commit 1e4cb4c) wrote when it claimed and
+// sent a started message, rebuilt here from that commit's algorithm rather
+// than stored: its ledger key and fingerprint are computed at test time.
+const LEGACY_BODY = Object.freeze({ sessionId: 'meal-1', notificationId: 'start-123',
+  recipient: '+14075550100', kind: 'started', recipeTitle: 'Chickpea wraps', minutes: 25, cookName: 'Terry' });
+const LEGACY_TEXT = 'SousSight: Terry started Chickpea wraps. Dinner in about 25 min.';
+function seedLegacyClaim(db, { channel = 'whatsapp', status = 'submitted' } = {}) {
+  const hash = (text) => createHash('sha256').update(text).digest('hex');
+  // 1e4cb4c: key = sha256(uid \n id); fingerprint = sha256 of its validated
+  // request (this field order, recipient without '+', the v1 message) + channel.
+  const key = hash(`cook-1\n${LEGACY_BODY.notificationId}`);
+  const fingerprint = hash(JSON.stringify({ sessionId: 'meal-1', notificationId: 'start-123',
+    recipient: '14075550100', kind: 'started', recipeTitle: 'Chickpea wraps', minutes: 25,
+    cookName: 'Terry', simulateOutcome: null, message: LEGACY_TEXT, channel }));
+  db.docs.set(`_dinnerNotifications/${key}`, { fingerprint, status, channel, kind: 'started',
+    sessionId: 'meal-1', notificationId: 'start-123', simulated: false, createdAt: nowMs, updatedAt: nowMs });
+  db.docs.set(`_dinnerMealClaims/${hash('cook-1\nmeal-1\n14075550100\nstarted')}`,
+    { notificationId: 'start-123', ledgerKey: key, createdAt: nowMs });
+  return fingerprint;
+}
+
+test('an older client (no template version) gets the wording it previewed', async () => {
+  const { service, sent } = harness();
+  const result = await service('cook-1', { ...LEGACY_BODY, notificationId: 'old-client-1' });
+  assert.equal(result.message, LEGACY_TEXT);
+  assert.equal(sent[0].request.message, LEGACY_TEXT);
+  assert.equal(sent[0].request.templateVersion, 1);
+  // Version 1 never had a started message without minutes.
+  assert.throws(() => validateDinnerRequest({ ...LEGACY_BODY, minutes: undefined }, settings.allowedRecipients),
+    { code: 'invalid-request' });
+  assert.equal(validateDinnerRequest({ ...LEGACY_BODY, kind: 'ready', minutes: undefined, cookName: undefined },
+    settings.allowedRecipients).message, READY_TEXT);
+});
+
+test('a current client (template version 2) gets the new wording; unknown versions are refused', async () => {
+  const { service, sent } = harness();
+  const result = await service('cook-1', { ...LEGACY_BODY, templateVersion: 2, notificationId: 'new-client-1' });
+  const v2 = "SousSight: Dinner's started, about 25 minutes to go. Terry is making Chickpea wraps.";
+  assert.equal(result.message, v2);
+  assert.equal(sent[0].request.message, v2);
+  for (const templateVersion of [0, 3, '2', 2.5]) {
+    assert.throws(() => validateDinnerRequest({ ...LEGACY_BODY, templateVersion }, settings.allowedRecipients),
+      { code: 'invalid-request' }, String(templateVersion));
+  }
+});
+
+test('a replay of a pre-change claim returns its original outcome and wording', async () => {
+  const { service, sent, db } = harness();
+  const fingerprint = seedLegacyClaim(db);
+  const request = validateDinnerRequest(LEGACY_BODY, settings.allowedRecipients);
+  assert.deepEqual(legacyFingerprints(request, 'whatsapp'), [fingerprint]);
+  assert.notEqual(requestFingerprint(request, 'whatsapp'), fingerprint);
+  const replay = await service('cook-1', LEGACY_BODY);
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.status, 'submitted');
+  assert.equal(replay.channel, 'whatsapp');
+  assert.equal(replay.message, LEGACY_TEXT);
+  assert.equal(sent.length, 0);
+  // The same ID with other content, or as a version-2 request, conflicts.
+  for (const changed of [{ minutes: 30 }, { templateVersion: 2 }]) {
+    await assert.rejects(service('cook-1', { ...LEGACY_BODY, ...changed }),
+      { code: 'idempotency-conflict', status: 409 }, JSON.stringify(changed));
+  }
+  assert.equal(sent.length, 0);
+});
+
+test('new claims store their template version; a replay repeats that wording', async () => {
+  const { service, sent, db } = harness();
+  for (const body of [{ ...LEGACY_BODY, notificationId: 'v1-claim-1' },
+    { ...LEGACY_BODY, sessionId: 'meal-2', notificationId: 'v2-claim-1', templateVersion: 2 }]) {
+    db.docs.set(`sessions/${body.sessionId}`, { learnerId: 'cook-1' });
+    const first = await service('cook-1', body);
+    const record = [...db.docs.entries()].find(([path, data]) =>
+      path.startsWith('_dinnerNotifications/') && data.notificationId === body.notificationId)[1];
+    assert.equal(record.templateVersion, body.templateVersion ?? 1);
+    assert.doesNotMatch(JSON.stringify(record), /Chickpea|Terry/);
+    const replay = await service('cook-1', body);
+    assert.equal(replay.duplicate, true);
+    assert.equal(replay.message, first.message);
+  }
+  assert.equal(sent.length, 2);
+});
+
+test('fingerprints ignore the rendered message but not the slots or version', () => {
+  const request = validateDinnerRequest(started(), settings.allowedRecipients);
+  const fingerprint = requestFingerprint(request, 'sms');
+  assert.match(fingerprint, /^v2:[0-9a-f]{64}$/);
+  assert.equal(requestFingerprint({ ...request, message: 'any other template' }, 'sms'), fingerprint);
+  assert.notEqual(requestFingerprint({ ...request, minutes: 26 }, 'sms'), fingerprint);
+  assert.notEqual(requestFingerprint({ ...request, templateVersion: 1 }, 'sms'), fingerprint);
+  assert.notEqual(requestFingerprint(request, 'whatsapp'), fingerprint);
+  // Only an unversioned (version 1) request can match a pre-change record.
+  assert.deepEqual(legacyFingerprints(request, 'sms'), []);
+  assert.equal(legacyFingerprints(validateDinnerRequest({ ...input(), templateVersion: undefined },
+    settings.allowedRecipients), 'sms').length, 1);
 });
 
 test('session ownership is verified in claim transaction before any provider call', async () => {

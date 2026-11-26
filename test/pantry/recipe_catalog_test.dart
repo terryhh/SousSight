@@ -39,7 +39,11 @@ void main() {
       expect(salsa.step('dice').cue, contains('no large chunks'));
       expect(salsa.step('meld').timerSeconds, 300);
       expect(salsa.steps.where((s) => s.timerSeconds != null), hasLength(1));
-      expect(salsa.reviewedSubstitutions, isEmpty);
+      // Chef-reviewed pantry swaps (SS-094).
+      expect(salsa.reviewedSubstitutions.map((s) => s.ingredientId), [
+        'lime',
+        'tomato',
+      ]);
       expect(salsa.ingredient('cilantro').optional, isTrue);
       expect(salsa.ingredient('tortillas').allergens, ['wheat']);
       expect(
@@ -80,6 +84,9 @@ void main() {
       'peanut_butter',
     );
     expect(matchIngredientId('butter', sandwich), isNull);
+    // Codex #221: a different food that contains the name is not it.
+    expect(matchIngredientId('peanut butter cups', sandwich), isNull);
+    expect(matchIngredientId('sunflower seed butter', sandwich), isNull);
   });
 
   test('pantry handoff seeds the same learner+recipe session', () async {
