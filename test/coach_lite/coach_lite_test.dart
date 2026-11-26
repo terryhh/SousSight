@@ -56,9 +56,15 @@ class _RecordingDispatcher extends FakeHybridDispatcher {
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   }) {
     validators.add(validate);
-    return super.start(task, sessionId: sessionId, validate: validate);
+    return super.start(
+      task,
+      sessionId: sessionId,
+      validate: validate,
+      grant: grant,
+    );
   }
 }
 
@@ -71,6 +77,7 @@ class _GatedDispatcher implements HybridDispatcher {
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   }) {
     final gate = Completer<DispatchResult>();
     final index = gates.length;
