@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import '../ai/cooking_research_client.dart';
 import '../ai/hybrid/hybrid_dispatcher.dart';
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart';
 import '../ai/hybrid/inference_ledger.dart';
 import '../config/remote_policy.dart';
 import '../core/cloud_send.dart';
@@ -334,7 +335,7 @@ class HybridRuntime {
       // The same checks the dispatcher made, read again after the wait.
       mayForward: (request) =>
           routes.allows(CloudRoute.hybridFallback) &&
-          !prefs.localOnly(request.task.feature),
+          !localOnlyFor(prefs, request.task.feature),
     );
     final online = isOnline ?? deviceOnline;
     final ledger = InferenceLedger(sessionId: _newRunId());

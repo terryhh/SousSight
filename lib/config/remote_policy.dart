@@ -24,8 +24,10 @@ import '../ai/hybrid/inference_policy.dart';
 
 /// Remote Config parameter names.
 abstract final class RemoteKeys {
-  /// Bool. False turns hybrid cloud fallback off for this app run (and live,
-  /// if it changes mid-run). True defers to the compiled `CLOUD_ROUTES`.
+  /// Bool. False removes the hybridFallback cloud route; it is read at every
+  /// check, so a change mid-run applies to the next send. It does not affect
+  /// the research, nearby or Live routes. True defers to the compiled
+  /// `CLOUD_ROUTES`.
   static const hybridEnabled = 'hybrid_enabled';
 
   /// String. Cloud model id for hybrid fallback; empty = the compiled one.

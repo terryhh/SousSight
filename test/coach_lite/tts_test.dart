@@ -40,10 +40,19 @@ class FakeTts implements TextToSpeech {
   /// When set, `speak` throws it (a platform error).
   Object? speakError;
 
+  /// Whether the platform has a voice it reports as local.
+  bool hasLocalVoice = true;
+
+  /// The localVoiceOnly flag of every speak call.
+  final List<bool> localOnlyRequests = [];
+
   @override
-  Future<void> speak(String text) async {
+  Future<bool> speak(String text, {bool localVoiceOnly = false}) async {
     if (speakError case final e?) throw e;
+    localOnlyRequests.add(localVoiceOnly);
+    if (localVoiceOnly && !hasLocalVoice) return false;
     spoken.add(text);
+    return true;
   }
 
   @override
@@ -374,6 +383,96 @@ void main() {
       tts.stopGate = null;
       await _settle();
       expect(tts.spoken, isEmpty);
+    });
+
+    group('local-only (a browser voice may be an online service)', () {
+      late bool localOnly;
+      late FakeTts browser;
+      late CoachLiteSpeaker local;
+
+      setUp(() async {
+        localOnly = true;
+        browser = FakeTts(
+          support: const TtsSupport(
+            available: true,
+            locality: VoiceLocality.browserMayUseNetwork,
+          ),
+        )..hasLocalVoice = false;
+        local = CoachLiteSpeaker(browser, localOnly: () => localOnly);
+        await local.init();
+        local.setEnabled(true);
+      });
+
+      tearDown(() => local.dispose());
+
+      void syncLocal(CoachLiteAnswer answer) => local.sync(
+        answer: answer,
+        busy: false,
+        liveActive: false,
+        stepId: 'simmer',
+      );
+
+      test('with no local voice nothing is spoken, and the toggle says '
+          'why', () async {
+        syncLocal(_answer());
+        await _settle();
+        expect(browser.localOnlyRequests, [true]);
+        expect(browser.spoken, isEmpty);
+        expect(local.silencedForLocalOnly, isTrue);
+        expect(
+          readAloudCaption(
+            local.locality,
+            localOnly: local.localOnly,
+            silencedForLocalOnly: local.silencedForLocalOnly,
+          ),
+          contains("aren't read aloud"),
+        );
+      });
+
+      test('a voice the browser reports as local is used', () async {
+        browser.hasLocalVoice = true;
+        syncLocal(_answer());
+        await _settle();
+        expect(browser.spoken, hasLength(1));
+        expect(local.silencedForLocalOnly, isFalse);
+      });
+
+      test('the setting is read at every speak', () async {
+        syncLocal(_answer());
+        await _settle();
+        expect(browser.spoken, isEmpty);
+        localOnly = false;
+        syncLocal(_answer(sequence: 2));
+        await _settle();
+        expect(browser.localOnlyRequests, [true, false]);
+        expect(browser.spoken, hasLength(1));
+        expect(local.silencedForLocalOnly, isFalse);
+        // Off again: the online-voice caption is back.
+        expect(
+          readAloudCaption(local.locality, localOnly: local.localOnly),
+          contains('may use an online voice'),
+        );
+      });
+
+      test('a throwing setting is treated as local-only', () async {
+        final strict = CoachLiteSpeaker(
+          browser,
+          localOnly: () => throw StateError('settings gone'),
+        );
+        expect(strict.localOnly, isTrue);
+        strict.dispose();
+      });
+
+      testWidgets('the toggle shows the local-only reason before anything '
+          'is spoken', (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: CoachLiteSpeakerToggle(speaker: local)),
+          ),
+        );
+        expect(find.textContaining("aren't read aloud"), findsOneWidget);
+        expect(find.textContaining('online voice'), findsNothing);
+      });
     });
 
     test('a platform speak error is contained', () async {

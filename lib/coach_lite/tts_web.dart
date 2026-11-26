@@ -48,12 +48,15 @@ class WebTextToSpeech implements TextToSpeech {
   }
 
   @override
-  Future<void> speak(String text) async {
-    if (!_supported) return;
+  Future<bool> speak(String text, {bool localVoiceOnly = false}) async {
+    if (!_supported) return false;
     final synth = web.window.speechSynthesis;
     synth.cancel();
-    final utterance = web.SpeechSynthesisUtterance(text);
     final voice = _localVoice();
+    // Local-only: never fall back to the browser's default voice, which may
+    // be an online service.
+    if (voice == null && localVoiceOnly) return false;
+    final utterance = web.SpeechSynthesisUtterance(text);
     if (voice != null) {
       utterance.voice = voice;
       utterance.lang = voice.lang;
@@ -61,6 +64,7 @@ class WebTextToSpeech implements TextToSpeech {
       utterance.lang = 'en-US';
     }
     synth.speak(utterance);
+    return true;
   }
 
   @override

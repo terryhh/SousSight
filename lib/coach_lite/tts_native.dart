@@ -16,7 +16,7 @@ class UnavailableTextToSpeech implements TextToSpeech {
   Future<TtsSupport> probe() async => TtsSupport.unavailable;
 
   @override
-  Future<void> speak(String text) async {}
+  Future<bool> speak(String text, {bool localVoiceOnly = false}) async => false;
 
   @override
   Future<void> stop() async {}

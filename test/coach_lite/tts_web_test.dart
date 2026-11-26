@@ -25,6 +25,10 @@ void main() {
     } else {
       expect(support.locality, VoiceLocality.browserMayUseNetwork);
     }
+    if (support.locality == VoiceLocality.browserMayUseNetwork) {
+      // No local voice: local-only never falls back to the default voice.
+      expect(await tts.speak('Stir.', localVoiceOnly: true), isFalse);
+    }
     await tts.speak('Stir the sauce.');
     await tts.stop();
   });

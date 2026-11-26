@@ -500,5 +500,29 @@ void main() {
         expect(configured.mayForward!(request), isFalse);
       },
     );
+
+    test("a sub-step honours its parent feature's local-only switch", () async {
+      final inner = _SlowConfigure();
+      final hybrid = HybridRuntime.create(
+        inference: inner,
+        cloudRoutes: const CloudRoutes({CloudRoute.hybridFallback}),
+        isOnline: () => true,
+      );
+      final configured = hybrid.inference as ConfiguredHybridInference;
+      final check = HybridRequest(
+        requestId: 'frame',
+        mode: HybridMode.onlyInCloud,
+        task: HybridTask(
+          feature: 'local_watch_cloud_check',
+          parts: const [HybridText('Is it golden?')],
+          maxOutputTokens: 64,
+          timeout: const Duration(seconds: 5),
+        ),
+      );
+      expect(configured.mayForward!(check), isTrue);
+      // Only the parent (the watch) is set to on-device only.
+      hybrid.privacy.setLocalOnly('local_watch', true);
+      expect(configured.mayForward!(check), isFalse);
+    });
   });
 }

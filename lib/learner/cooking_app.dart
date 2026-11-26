@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart';
 import '../app/cloud_send_recorder.dart';
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
@@ -433,8 +434,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     WidgetsBinding.instance.addObserver(this);
     cook = widget.cook;
     if (cook.coachLite != null) {
+      final privacy = widget.hybrid?.privacy;
       _speaker = CoachLiteSpeaker(
         (widget.textToSpeech ?? deviceTextToSpeech)(),
+        // Read at every speak: local-only allows only a local voice.
+        localOnly: () =>
+            privacy != null && localOnlyFor(privacy, coachLiteFeature),
       );
       unawaited(_speaker!.init());
     }

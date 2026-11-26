@@ -42,8 +42,10 @@ abstract class TextToSpeech {
   /// Never throws; unavailable when the platform cannot speak.
   Future<TtsSupport> probe();
 
-  /// Replaces anything being spoken.
-  Future<void> speak(String text);
+  /// Replaces anything being spoken. With [localVoiceOnly], speaks only with
+  /// a voice the platform reports as on this device; returns false (and says
+  /// nothing) when there is none. Returns true when speech was started.
+  Future<bool> speak(String text, {bool localVoiceOnly = false});
   Future<void> stop();
 }
 
@@ -91,9 +93,18 @@ String coachLiteSpokenText(CoachLiteAnswer answer, {int maxChars = 1500}) {
 
 /// Owns read-aloud for one cooking screen.
 class CoachLiteSpeaker extends ChangeNotifier {
-  CoachLiteSpeaker(this._tts);
+  CoachLiteSpeaker(this._tts, {bool Function()? localOnly})
+    : _localOnly = localOnly ?? (() => false);
 
   final TextToSpeech _tts;
+
+  /// The cook's Coach Lite local-only setting (parent-aware), read at every
+  /// speak: while it is on, only a voice reported as local may be used.
+  final bool Function() _localOnly;
+
+  /// True after a speak was skipped because local-only is on and no local
+  /// voice exists. Cleared by the next speak that starts.
+  bool _silencedForLocalOnly = false;
   TtsSupport _support = TtsSupport.unavailable;
   bool _enabled = false;
   bool _disposed = false;
@@ -118,6 +129,18 @@ class CoachLiteSpeaker extends ChangeNotifier {
   bool get available => _support.available;
   VoiceLocality get locality => _support.locality;
   bool get enabled => _enabled;
+
+  /// Whether local-only applies now. Read live.
+  bool get localOnly {
+    try {
+      return _localOnly();
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// See [_silencedForLocalOnly].
+  bool get silencedForLocalOnly => _silencedForLocalOnly;
 
   /// Checks the platform once. The toggle stays hidden until this reports
   /// the voice available.
@@ -202,7 +225,12 @@ class CoachLiteSpeaker extends ChangeNotifier {
       if (_disposed || generation != _generation || !_enabled || !_foreground) {
         return;
       }
-      await _tts.speak(text);
+      final started = await _tts.speak(text, localVoiceOnly: localOnly);
+      if (_disposed || generation != _generation) return;
+      if (started == _silencedForLocalOnly) {
+        _silencedForLocalOnly = !started;
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint('Read aloud failed (${e.runtimeType}).');
     }

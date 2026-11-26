@@ -6,7 +6,23 @@ import 'package:flutter/material.dart';
 
 import 'tts.dart';
 
-String readAloudCaption(VoiceLocality locality) => switch (locality) {
+/// The caption, given where the voice runs and whether the cook's
+/// local-only setting applies to Coach Lite.
+String readAloudCaption(
+  VoiceLocality locality, {
+  bool localOnly = false,
+  bool silencedForLocalOnly = false,
+}) {
+  if (localOnly &&
+      (silencedForLocalOnly ||
+          locality == VoiceLocality.browserMayUseNetwork)) {
+    return "On-device only is on and this browser reports no on-device "
+        "voice, so answers aren't read aloud.";
+  }
+  return _localityCaption(locality);
+}
+
+String _localityCaption(VoiceLocality locality) => switch (locality) {
   VoiceLocality.deviceEngine => "Uses this device's text-to-speech voice.",
   VoiceLocality.browserLocal =>
     'Uses a voice your browser reports as on this device.',
@@ -40,7 +56,7 @@ class CoachLiteSpeakerToggle extends StatelessWidget {
           Expanded(
             child: Text(
               '${on ? 'Reading answers aloud.' : 'Read answers aloud: off.'} '
-              '${readAloudCaption(speaker.locality)}',
+              '${readAloudCaption(speaker.locality, localOnly: speaker.localOnly, silencedForLocalOnly: speaker.silencedForLocalOnly)}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
