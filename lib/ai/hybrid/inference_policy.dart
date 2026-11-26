@@ -12,11 +12,13 @@ import 'payload_digest.dart';
 /// in the app; a missing value means "use the feature default".
 ///
 /// Overrides are applied last, after `localOnly`, cloud approval, hard limits
-/// and availability, so they can never loosen any of those. They also cannot
+/// and availability, so they can never loosen any of those. A feature whose
+/// default is `onlyOnDevice` (local watch, Coach Lite, label check) ignores
+/// them entirely: it cannot be widened remotely. They also cannot
 /// push a feature to the cloud: only on-device-first modes
 /// ([HybridMode.onlyOnDevice], [HybridMode.preferOnDevice]) are honoured, and
 /// a cloud-primary value is ignored. Remote Config can tighten or relax the
-/// SDK's own fallback for a feature, and nothing more.
+/// SDK's own fallback for an on-device-first feature, and nothing more.
 class RemoteRouting {
   const RemoteRouting({this.modes = const {}});
 
@@ -53,6 +55,8 @@ class FeatureRoute {
     required this.semanticRetry,
     this.consent = UploadConsent.media,
     this.cloudReason = RouteReason.noLocalModel,
+    this.cloudOnlyWithImage = false,
+    this.parentFeature,
   });
 
   /// The mode used when nothing above it in the precedence applies.
@@ -67,6 +71,15 @@ class FeatureRoute {
   /// answer.
   final bool semanticRetry;
   final UploadConsent consent;
+
+  /// [cloudWhenLocalCannot] applies only to a request that carries an image
+  /// (the consented photo). Anything else a hard limit rules out locally is
+  /// blocked, so a typed alternative never goes to the cloud quietly.
+  final bool cloudOnlyWithImage;
+
+  /// A sub-step of another feature (a watch's cloud check). The parent's
+  /// local-only setting applies to it too.
+  final String? parentFeature;
 
   /// The reason given when a cloud-first default is what sends it to the
   /// cloud (no hard limit or availability reason applies).
@@ -114,6 +127,7 @@ const featureRoutes = <String, FeatureRoute>{
     semanticRetry: false,
     consent: UploadConsent.always,
     cloudReason: RouteReason.cloudRetryAfterCheck,
+    parentFeature: 'local_watch',
   ),
   // On-device; cloud only if the panel fails validation and the cook is
   // online.
@@ -128,6 +142,8 @@ const featureRoutes = <String, FeatureRoute>{
     HybridMode.onlyOnDevice,
     cloudWhenLocalCannot: true,
     semanticRetry: false,
+    consent: UploadConsent.always,
+    cloudOnlyWithImage: true,
   ),
 };
 
@@ -139,6 +155,14 @@ const _unknownFeature = FeatureRoute(
 
 FeatureRoute featureRouteFor(String feature) =>
     featureRoutes[feature] ?? _unknownFeature;
+
+/// The cook's local-only setting as it applies to [feature]: its own, or its
+/// parent feature's for a sub-step. Read live; never cache the result.
+bool localOnlyFor(PrivacySettings privacy, String feature) {
+  if (privacy.localOnly(feature)) return true;
+  final parent = featureRouteFor(feature).parentFeature;
+  return parent != null && privacy.localOnly(parent);
+}
 
 class RouteInput {
   const RouteInput({
@@ -245,7 +269,10 @@ RouteDecision decideRoute(RouteInput input) {
   }
 
   if (hardLimit != null) {
-    return route.cloudWhenLocalCannot
+    final cloudAllowed =
+        route.cloudWhenLocalCannot &&
+        (!route.cloudOnlyWithImage || input.hasImage);
+    return cloudAllowed
         ? _cloud(
             input,
             HybridMode.onlyInCloud,
@@ -254,7 +281,10 @@ RouteDecision decideRoute(RouteInput input) {
         : RouteDecision.blocked(hardLimit);
   }
 
-  final wanted = input.remote?.modeFor(input.feature) ?? route.defaultMode;
+  // A feature that is on-device only by design is never widened remotely.
+  final wanted = route.defaultMode == HybridMode.onlyOnDevice
+      ? HybridMode.onlyOnDevice
+      : input.remote?.modeFor(input.feature) ?? route.defaultMode;
 
   if (notReady != null) {
     // preferOnDevice is exactly the hybrid SDK's job here: it answers from

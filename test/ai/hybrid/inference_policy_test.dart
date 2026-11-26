@@ -49,7 +49,12 @@ void main() {
     modes: {'pantry_scan': _cloud, 'label_check': _cloud},
   );
   const relax = RemoteRouting(
-    modes: {'label_check': _prefer, 'pantry_scan': _local},
+    modes: {
+      'label_check': _prefer,
+      'local_watch': _prefer,
+      'coach_lite': _prefer,
+      'pantry_scan': _local,
+    },
   );
 
   final rows = <_Row>[
@@ -341,12 +346,54 @@ void main() {
       RouteReason.onDevice,
       false,
     ),
+    // Codex P2: an on-device-only feature is never widened remotely.
     (
-      'remote can relax label check',
+      'remote cannot widen label check',
       _in('label_check', image: true, remote: relax),
-      _prefer,
+      _local,
       RouteReason.onDevice,
-      true,
+      false,
+    ),
+    (
+      'remote cannot widen local watch (ready image model)',
+      _in('local_watch', image: true, remote: relax),
+      _local,
+      RouteReason.onDevice,
+      false,
+    ),
+    (
+      'remote cannot widen coach lite',
+      _in('coach_lite', remote: relax),
+      _local,
+      RouteReason.onDevice,
+      false,
+    ),
+    (
+      'remote cannot make a downloading watch fall back',
+      _in(
+        'local_watch',
+        image: true,
+        remote: relax,
+        status: OnDeviceStatus.downloading,
+      ),
+      null,
+      RouteReason.modelDownloading,
+      false,
+    ),
+    // Codex P2: the typed-label path never goes to the cloud quietly.
+    (
+      'typed label in an unvalidated language stays blocked',
+      _in('label_check', lang: 'fr', caps: fakeIosCapabilities),
+      null,
+      RouteReason.languageNotSupported,
+      false,
+    ),
+    (
+      'typed label too large stays blocked',
+      _in('label_check', tokens: 9217),
+      null,
+      RouteReason.tooLargeForDevice,
+      false,
     ),
     // A watch frame's explicit cloud check: cloud only, consent always.
     (
@@ -523,6 +570,15 @@ void main() {
       }
     },
   );
+
+  test('label check asks consent for any upload, text included', () {
+    expect(consentRequired('label_check', {DataKind.text}), isTrue);
+    expect(
+      consentRequired('label_check', {DataKind.text, DataKind.image}),
+      isTrue,
+    );
+    expect(consentRequired('pantry_scan', {DataKind.text}), isFalse);
+  });
 
   group('decideCloudRetry', () {
     test('respects the live settings in order', () {
