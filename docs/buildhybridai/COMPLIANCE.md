@@ -10,6 +10,11 @@
 > called, nothing was run on a device, and no console was opened for this document.
 > **Deadline:** Mon **Nov 30, 2026, 2:00 pm PT (5:00 pm ET)**. Freeze **12:00 pm ET (9:00 am PT)**.
 > Commits after the deadline are not evaluated.
+> **Revised Thu Nov 26 (review round on #217):** G2b corrected to **partly**, with the probes that
+> ran and the probes still pending listed separately. Rows that depend on the #143 G2/G2c re-run
+> (comment posted 05:18Z, run 05:10–05:17Z) and on Terry's G6 answer (#147, closed; Terry on #217)
+> were re-checked against that evidence. Deployment and hosting facts were **not** refreshed and
+> still describe the 00:15 ET snapshot.
 
 Status values: **met** (evidence exists for the judged build), **partly** (some evidence, a named
 gap), **not met**, **unknown** (nothing checked yet).
@@ -22,10 +27,10 @@ Nov 30 can disqualify the entry before it is scored.
 | # | Requirement | Source | Status | Evidence | Gap | Owner card |
 |---|---|---|---|---|---|---|
 | S1 | Submitted on Devpost inside the period, by Nov 30 2:00 pm PT | Rules: submission period | **not met** | No Devpost entry exists yet (Terry, Nov 26) | Join the hackathon, create the project, add Jenna, fill the form, submit | #167 SS-080 |
-| S2 | App uses the Firebase AI Logic **hybrid** SDK: "runs prompts on-device when a local model is available and falls back to the cloud when it isn't" | Rules: hybrid requirement | **partly** | Code: `packages/ai_logic_hybrid/assets/ai_logic_hybrid.js:230` calls `getGenerativeModel(ai, { mode, inCloudParams, onDeviceParams })`. On-device half: G2b and G2c passed on Terry's desktop Chrome (#143, comment 04:14Z). Cloud half: **blocked**, both requests got `401 Firebase App Check token is invalid` because the debug-token exchange returned 403 (#143, comment 04:59Z) | No run yet shows the automatic cloud fallback returning an answer. The G2 cloud re-run is in progress | #143 G2 |
+| S2 | App uses the Firebase AI Logic **hybrid** SDK: "runs prompts on-device when a local model is available and falls back to the cloud when it isn't" | Rules: hybrid requirement | **partly** | Code: `packages/ai_logic_hybrid/assets/ai_logic_hybrid.js:230` calls `getGenerativeModel(ai, { mode, inCloudParams, onDeviceParams })`. On-device: the G2b `onlyOnDevice` probes and the G2c typed scan ran on Terry's desktop Chrome (#143, comment 04:14Z). Cloud fallback: the first attempt was blocked by App Check (401, comment 04:59Z); the re-run with a newly registered debug token **passed**: `preferOnDevice` with no local model returned SDK source `cloud` with an answer (#143, comment 05:18Z). Both from local builds against the live service | The two halves ran on different machines and builds; the `preferOnDevice` probe has not been recorded running on-device (G2). Nothing has run on the hosted judged build | #143 G2 |
 | S3 | Built for at least one platform: Web (Chrome), Android with Gemini Nano 4, or iOS with Apple Foundation Models, "all through Firebase AI Logic" | Rules: platforms | **partly** | Web: on-device runs on Terry's Chrome, from a local build (#143). Android: Nano 4 Full reports `available` after enrolment, then every `generate` fails with `[ErrorCode 8]` (#145). iOS: not run (#146) | Web needs one end-to-end run on the hosted build. Android and iOS have no passing run | #143, #145, #146 |
 | S4 | "your app's AI runs on Firebase AI Logic" (no direct Gemini path in the judged build) | Rules: tools | **partly** | Judged settings in #214: `LIVE_BACKEND=none`, so the ephemeral direct-Gemini Live client is not compiled in. `tool/check_web_bundle.sh` rejects `generativelanguage.googleapis.com` and ephemeral Live markers (#214 checks: OK). The G2 harness's request went only to `firebasevertexai.googleapis.com` (#143) | Not yet confirmed on the **deployed** bundle: deploy of `73b411d` was pending at 05:10Z | #207 SS-090 |
-| S5 | "Firebase AI Logic requires App Check; debug tokens are accepted" | Rules: App Check | **partly** | Console (Terry's screenshot, Nov 26): Firebase AI Logic **Basic – Enforced**, replay protection off. Web activation with reCAPTCHA Enterprise: `lib/data/firebase_services.dart:34-37,75` | No AI Logic request has succeeded under enforcement yet. The registered debug token is rejected (403) for the web, Android and iOS app IDs (#143). The hosted reCAPTCHA path is untested | #143 G2 |
+| S5 | "Firebase AI Logic requires App Check; debug tokens are accepted" | Rules: App Check | **partly** | Console (Terry's screenshot, Nov 26): Firebase AI Logic **Basic – Enforced**, replay protection off. Web activation with reCAPTCHA Enterprise: `lib/data/firebase_services.dart:34-37,75`. With the newly registered web debug token, `exchangeDebugToken` returned 200 and all 6 model requests carried an App Check header and returned 200 (#143, comment 05:18Z; the earlier token got 403, comment 04:59Z) | Only the debug-token path has succeeded, from local builds. The hosted reCAPTCHA Enterprise path is untested. Debug-token builds must not be deployed | #143 G2 |
 | S6 | New, or "significantly updated after the start of the Hackathon Submission Period" | Rules: eligibility of existing projects | **met** (repo) | Baseline `430747b` is dated Nov 10 01:20 EST, before Nov 11. `git diff --shortstat 430747b 73b411d`: 215 files, +31,985 / −517. 27 PRs merged since (#170–#214). Tag `pre-buildhybridai` → `430747b` is on `origin` (`git ls-remote --tags`) | The GitHub Release for the baseline tag was not checked | #167 |
 | S7 | "disclose any other pre-existing code or work" and "provide a summary of what you built during the submission period" | Rules: eligibility | **partly** | Drafted: `SUBMISSION.md:111-137`; inventory in `AUDIT.md` (a) | Not on Devpost yet. The "built during" list has 8 VERIFY markers and still names unmerged work (SS-072 offline) and Live, which the judged build doesn't ship (section 2) | #167 |
 | S8 | Repo shows Firebase AI Logic "imported and actually called ... not just named in the README" | Rules: repository | **met** | `lib/pantry/pantry_client.dart:8` (import), `:236` (`FirebaseAI.googleAI().generativeModel`); `ai_logic_hybrid.js:230`; `FirebaseHybridEngine.kt:205-227` (`OnDeviceConfig`, `generateContent`); `FoundationModelsEngine.swift:14` (`import FirebaseAILogic`) | None | — |
@@ -35,7 +40,7 @@ Nov 30 can disqualify the entry before it is scored.
 | S12 | No "production API keys, live Google Cloud project secrets ... or PII" in the repo, form or testing instructions | Rules: testing | **partly** | Repo: `AUDIT.md` (f) found only public Firebase client identifiers and 555 numbers; gitleaks passed on `73b411d`. `JUDGES.md:164-166` documents the client config | Devpost form, video and gallery not yet made, so not checked. The App Check JS SDK prints the debug token to the console (#143): no debug-token build may be deployed, filmed or screenshotted | #167 |
 | S13 | Video: ≤3 minutes, public on YouTube, "showing the Project functioning on the platform(s) for which it was built" | Rules: video | **not met** | `DEMO-SCRIPT.md` exists (2:45 cut). No footage yet | Film on the hosted judged build after the gates; upload as Public | #167 |
 | S14 | No content that shows "third party advertising, slogan, logo, trademark" or implies endorsement | Rules: content | **partly** | The DevFest card is gone from `lib/app/how_it_works.dart` (no `DevFest`/`devfest-x-ray` match in `lib/`). Plugin README says "Unofficial" (`packages/ai_logic_hybrid/README.md:3`) | App icons are still the default **Flutter logo** (no change to `web/favicon.png`, `web/icons/`, Android mipmaps or the iOS app icon since `430747b`; `AUDIT.md` (b)). `TRADEMARKS.md:3` claims a SousSight logo and icon that don't exist. The hosted URL contains `devfest-flutter` (`AUDIT.md` (e)). Google Search suggestions are a required attribution, not a violation | integration owner, #167 |
-| S15 | Not developed "with financial or preferential support from the Sponsor or Administrator" | Rules: eligibility | **unknown** | G6 (#147) has no answer: who funded the DevFest prize; whether the $300 trial credit or the $10 Developer Program benefit in `docs/COST-LEDGER.md` was used | Terry answers on #147; asks the hackathon manager if unclear | #147 G6 |
+| S15 | Not developed "with financial or preferential support from the Sponsor or Administrator" | Rules: eligibility | **met** (Terry's statement) | Terry on #217 (Nov 26): SousSight was not sponsored or funded by Google or Devpost, and no Google credits were used. #147 (closed): no Google credits used; Terry decided to submit with the DevFest Florida placement and the `pre-buildhybridai` baseline disclosed, without asking the organizer | Who funded the DevFest prize is still unknown (#147); keep the disclosure in `SUBMISSION.md` | #147 G6 |
 | S16 | Devpost platform selection matches what the video and build show | Rules: platforms + video | **not met** | No entry yet. Evidence today supports **Web only** | Select Android only if G4 passes, iOS only if G5 passes (`RELEASE.md:30-31`) | #167 |
 
 ## 2. Judging criteria and plan objectives
@@ -44,19 +49,19 @@ Scored in Stage Two (1–5 each, equally weighted). None of these is pass/fail.
 
 | # | Objective | Source | Status | Evidence | Gap | Owner card |
 |---|---|---|---|---|---|---|
-| J1 | Technological implementation: "how effectively does it use Firebase AI Logic hybrid inference" | Criterion 1 | **partly** | Bridge on three SDKs merged (#182, #189, #194 via #214); 673 Flutter tests, 17 plugin, 41 node, 64 functions tests passed **on fakes** (#214) | No real automatic fallback yet (S2) | #143 |
+| J1 | Technological implementation: "how effectively does it use Firebase AI Logic hybrid inference" | Criterion 1 | **partly** | Bridge on three SDKs merged (#182, #189, #194 via #214); 673 Flutter tests, 17 plugin, 41 node, 64 functions tests passed **on fakes** (#214) | The automatic fallback has answered only from a local build (S2); no hosted run | #143 |
 | J2 | "Apps that run across multiple platforms will be given strong consideration" | Rules: Grand Prize | **not met** | Web only has device evidence | G4 blocked (ErrorCode 8); G5 needs Xcode and the iPhone | #145, #146 |
 | J3 | Design: "a complete, coherent product experience" (hero journey, PLAN §1) | Criterion 2, PLAN §1 | **unknown** | Features merged: #176, #178, #180, #181, #184, #188 | Never run end to end on the hosted build | #207 |
 | J4 | Potential impact: "a credible, specific case" (evidence K, SS-075) | Criterion 3, PLAN §5K | **not met** | `docs/buildhybridai/EVIDENCE.md` does not exist; SS-075 is not merged | Score the 8 reference fixtures and film one cook-through | SS-075 |
 | J5 | Quality of idea: the private on-device watch | Criterion 4, PLAN §5C | **partly** | Code merged (#181). The obscured frame abstained on-device in the G2b harness only (#143) | No run through the production path | SS-075 |
 | G1 | Free (now: capped) cloud route for each judged path; real SMS off server-side | PLAN §2 | **partly** | Decision on #142: `CLOUD_ROUTES=hybridFallback,research`, Live and Maps off, `ENABLE_DINNER_MESSAGES=false` | Cap not verified in the console. No `docs/COST-LEDGER.md` entry (RELEASE §1 asks for one). `ENABLE_DINNER_MESSAGES=false` was last read on Nov 8 (`COST-LEDGER.md:207`). The capped paid tier departs from PLAN's "free tier only"; Terry made that call on #142 | #142 |
-| G2 | Same task: on-device, then cloud with SDK source and App Check | PLAN §2 | **partly** | See S2 | Cloud leg | #143 |
-| G2b | Mappings and camera (harness) | DESIGN §8 | **met** (device) | #143: text, schema, system instruction, obscured frame all `onDevice` | The camera-frame probe was not run | #143 |
-| G2c | Production path pantry scan | DESIGN §8 | **partly** | On-device half passed (#143). Cloud half: honest "May have been sent" badge and ledger after a 401 | Cloud half | #143 |
+| G2 | Same task: on-device, then cloud with SDK source and App Check | PLAN §2, DESIGN §8 | **partly** | Cloud leg **passed** (#143, comment 05:18Z): `preferOnDevice` text probe with no local model → SDK source `cloud`, 2277 ms, `gemini-3.8-flash`, fingerprint `d543ff76b5847c13`, App Check header present, one POST to `firebasevertexai.googleapis.com` → 200 | Model-ready leg not recorded: DESIGN §8 wants the **same** `preferOnDevice` probe, adapter and config with the model ready, with mode, fingerprint and SDK source. The 04:14Z device pass ran its probes `onlyOnDevice` and recorded no fingerprint | #143 |
+| G2b | Mappings and camera (harness) | DESIGN §8 | **partly** (device) | **Ran** (#143, comment 04:14Z, Terry's desktop Chrome, all `onlyOnDevice`, outputs, sources and latency recorded): text `onDevice` 1191 ms; schema `onDevice` 938 ms, PASS (value in the enum); system instruction `onDevice` 572 ms, PASS (codeword present); obscured frame `onDevice` 4292 ms, PASS (abstained, `state: unsure`) | **Not run:** alternating two incompatible tasks to show neither inherits the other's instruction or schema; the cloud JSON probe (`onlyInCloud` + schema); the real camera frame `onlyOnDevice` (the comment says it was not run). **Not recorded:** network traffic during the on-device probes, which DESIGN §8 requires to be zero for the frame probes | #143 |
+| G2c | Production path pantry scan | DESIGN §8 | **partly** | On-device: typed scan "bread, peanut butter, banana" showed **On this device** (#143, comment 04:14Z, all cloud routes off). Cloud: **passed** (comment 05:18Z) with `CLOUD_ROUTES=hybridFallback,research`: badge "Cloud · Gemini", ledger "Pantry scan · text · Cloud · Gemini" under Reported as sent | DESIGN §8 wants both runs with the **same** `CLOUD_ROUTES` and ledger legs for both. The on-device run had all cloud routes off and its ledger legs were not recorded. Re-run on-device with `hybridFallback,research` and record the ledger | #143 |
 | G3 | Web Live through AI Logic | PLAN §2 | **not met** (not run) | Code merged (#200 via #214); judged build ships `LIVE_BACKEND=none` | Default per PLAN §9: no Live on web | #144 |
 | G4 | Android signed release APK on Gemini Nano 4 | PLAN §2 | **not met** (blocked) | #145: AICore preview enrolled, `nano-v4-full` available, `generate` fails with `[ErrorCode 8]` / ML Kit `606` | Unblock or drop Android by the Fri go/no-go | #145 |
 | G5 | iOS on Apple Foundation Models | PLAN §2 | **not met** (not run) | Swift backend merged (#189) | Xcode, signing, iPhone run | #146 |
-| G6 | Eligibility facts | PLAN §2 | **unknown** | No answer on #147 | See S15 | #147 |
+| G6 | Eligibility facts | PLAN §2 | **met** (decided) | #147 closed with Terry's written answer and decision; Terry's statement on #217. See S15 | DevFest prize funder unknown; disclosed | #147 |
 | R1 | Firestore App Check enforcement on | `RELEASE.md:93` | **not met** | Console: Firestore **Unenforced** (Terry's screenshot) | Not a contest rule. Turn it on only after a hosted run proves App Check works, or the app loses its session store | #167 |
 | R2 | API-key restrictions applied, sign-in survives a token refresh | `AUDIT.md` (d) | **unknown** | — | Console check | #167 |
 | R3 | README links `JUDGES.md`; README matches the judged build | `RELEASE.md:108` | **not met** | `README.md` has no `JUDGES` link. `README.md:128` says "A real text sent from the hosted app reached a phone", but the judged build is simulated | Update the README before the freeze | #167 |
@@ -73,15 +78,15 @@ still unproven at the freeze" is what the release owner does with the text.
 | Line | Claim | Depends on | Status now | Action if still unproven at the freeze |
 |---|---|---|---|---|
 | 36 | Photo scan runs on the device | Production-path photo scan | Not run (G2c was typed) | Say "typed list" only |
-| 37 | Recipe draft retries once in the cloud | #184 merged; G2 cloud fallback | #184 merged via #214; fallback unproven | Drop the retry sentence |
+| 37 | Recipe draft retries once in the cloud | #184 merged; G2 cloud fallback | #184 merged via #214. The G2 harness fallback answered from a local build (#143, 05:18Z); the recipe retry itself was not run | Drop the retry sentence unless it runs on the hosted build |
 | 38 | Private watch compares fresh frames on-device | SS-075; filmed cook-through | Harness only | Keep the design description; drop result claims |
 | 43 | Coach Lite works when the Wi-Fi drops | SS-072 | Not merged | Drop "or the Wi-Fi drops" |
 | 46 | Grounded research, **nearby food help (Maps)** and **Live coach** are "cloud moments" | G1 per route; G3 | Research approved; Maps and Live **off** in the judged build (#142) | Cut nearby and Live from this item |
-| 57 | Web automatic cloud fallback | G2 | Unproven | Delete the VERIFY tail; state on-device only |
+| 57 | Web automatic cloud fallback | G2 | Cloud leg passed from a local build (#143, 05:18Z); not run on the hosted build | Keep only after one hosted run; otherwise delete the VERIFY tail and state on-device only |
 | 58 | Android: "Built and unit-tested; on-device run pending" | G4; #194 merged | #194 merged. Comment is stale: after enrolment the Pixel reports `nano-v4-full` available, and `generate` fails with ErrorCode 8 | Keep "on-device run pending" wording or drop the row |
 | 59 | iOS built | G5 | Not run | Same |
 | 76 | Play Integrity and App Attest on native release builds | G4, G5 | Not registered or run | Drop the native App Check clause |
-| 86 | Release checklist requires one genuine fallback run | G2 | Unproven | Keep as a requirement only if it passes; otherwise remove challenge 4's last sentence |
+| 86 | Release checklist requires one genuine fallback run | G2 | One fallback run passed from a local build (#143, 05:18Z); hosted run pending | Keep as a requirement only if it passes on the hosted build; otherwise remove challenge 4's last sentence |
 | 92 | Watch "asks for a better view when it's unsure, and doesn't guess" | SS-075 | Harness only | Qualify as "in our gate harness" |
 | 115 | Bridge list with Android and iOS backends | #194 merged; G4, G5 | Merged; gates open | Keep (built during the period is true); no platform claim |
 | 116 | Dispatcher etc. (#186) | #186 merged | **Resolved**: merged via #214 | Delete marker |
@@ -110,12 +115,12 @@ Unmarked claims in `SUBMISSION.md` that also lack evidence:
 |---|---|---|---|---|
 | 17 | Hosted URL matches `/version.json` at the final tag | Deploy + tag | Pending | Fill in after the freeze check |
 | 20–21 | "Chrome on Android also works" (unmarked) | Any Android Chrome run | No evidence | Drop or verify once |
-| 39 | Pantry scan and recipe draft fall back to Cloud · Gemini | G1, G2 | G1 decided; G2 cloud unproven | If G2 fails: "say they can't run here" |
+| 39 | Pantry scan and recipe draft fall back to Cloud · Gemini | G1, G2 | G1 decided. Pantry scan fell back to "Cloud · Gemini" from a local build (#143, 05:18Z); recipe draft fallback not run; nothing on the hosted build | If it fails on the hosted build: "say they can't run here" |
 | 69 | Hosted origin runs Chrome's on-device model in a clean profile with only the listed steps | Clean-profile run on the hosted origin | G2/G2c ran on `localhost` only | Run it; if an origin trial or flag is needed, say so |
 | 75 | Badge label "On this device · Gemini Nano" | Hosted build | #143 recorded "On this device" with **no model label** ("not reported by the web SDK") | Match the label the hosted build shows |
 | 80 | Watch asks for a better view on the hosted build | SS-075 | Harness only | Keep the instruction; drop the promise if it fails |
 | 83 | Coach Lite answers offline | SS-072 | Not merged | Remove step 4's offline part |
-| 91 | Research appears as a cloud request | G1 research route; G2 App Check | Route approved; never answered under App Check | Run once on hosted |
+| 91 | Research appears as a cloud request | G1 research route; G2 App Check | Route approved. Answered under App Check with sources from a local build, ledger "Research · text · Cloud" (#143, 05:18Z) | Run once on hosted |
 | 125 | Android section | G4 | Blocked | Replace with "Android is not part of this entry" |
 | 133 | iOS section | G5 | Not run | Replace with "iOS is not part of this entry" |
 | 148–149 | Real SMS "disabled on the server for this one" (unmarked) | Deployed `ENABLE_DINNER_MESSAGES=false` | Last read Nov 8 | Re-read in the console |
@@ -130,8 +135,8 @@ Unmarked claims in `SUBMISSION.md` that also lack evidence:
 | 76 | 0:12 typed scan on-device | G2c on-device | **Passed** on Terry's Chrome (local build) | Re-take on the hosted build, then delete marker |
 | 77 | 0:50 watch beat | SS-075; hosted take | Harness only | Rehearse on hosted; never edit a verdict |
 | 78 | 1:18 Wi-Fi off, Coach Lite answers | SS-072 | Not merged | Replace with an on-device Coach Lite answer **online**, or cut 22 s |
-| 80 | 1:54 cloud research | G1 research; working App Check | Approved; unproven | Film only after one successful hosted run |
-| 81 | 2:14 bridge inserts and optional fallback insert | G4, G5, G2 | Open | Film D1 only; add the fallback insert only if G2 passes |
+| 80 | 1:54 cloud research | G1 research; working App Check | Approved; passed from a local build with the debug token (#143, 05:18Z) | Film only after one successful hosted run |
+| 81 | 2:14 bridge inserts and optional fallback insert | G4, G5, G2 | G4, G5 open; G2 cloud leg passed locally, model-ready leg not recorded | Film D1 only; add the fallback insert only if G2 passes on the hosted build |
 | 82 | 2:38 end card | Frozen URL and tag | Pending | Fill after the freeze |
 | 90 VO | "Firebase AI Logic still runs this on Chrome's built-in Gemini Nano" | G2c | Passed (local build) | OK on hosted take |
 | 96, 98 VO | "Now the Wi-Fi drops ... Coach Lite answers on the device" | SS-072 | Not merged | Re-record without the offline claim |
@@ -141,6 +146,9 @@ Unmarked claims in `SUBMISSION.md` that also lack evidence:
 - `README.md:128` claims a real hosted SMS send; `README.md:66,99` present Vonage as part of the
   stack. Judges will read the README first. Reword for the simulated judged build.
 - `TRADEMARKS.md:3` claims a SousSight logo and icon; the app ships the Flutter logo (S14).
+- `RELEASE.md:20` marks G2b **Passed**, and `DEMO-SCRIPT.md:38` and the `SUBMISSION.md:8` header
+  comment say G2b passed. Only four of its probes ran (G2b row); say "partly passed" until the
+  alternating-task, cloud JSON and camera-frame probes run.
 
 ## 4. Human tasks and deadlines
 
@@ -148,8 +156,9 @@ All times Eastern. Hard deadline **Mon Nov 30, 5:00 pm ET (2:00 pm PT)**; freeze
 
 | By | Task | Who | Unblocks |
 |---|---|---|---|
-| **Thu Nov 26, morning** | Answer G6 on #147: who funded the DevFest prize; whether the $300 trial or $10 Developer Program credit was used. If unclear, email the hackathon manager today: replies can take days | Terry | S15 (eligibility) |
-| Thu Nov 26 | Register the App Check debug token for the web app `1:402211265005:web:ccbaf6d63d3a274147efe4` (or confirm which token is registered) so the G2/G2c cloud re-run can pass | Terry | S2, S5, G2 |
+| ~~Thu Nov 26, morning~~ | **Done:** G6 answered and closed on #147 (no Google credits; submit with the DevFest placement disclosed; no organizer email) | Terry | S15 (eligibility) |
+| ~~Thu Nov 26~~ | **Done:** new web debug token registered; G2/G2c cloud re-run passed (#143, 05:18Z) | Terry | S2, S5, G2 |
+| Thu Nov 26 | Finish G2b on the harness: alternating-task probe, cloud JSON probe (`onlyInCloud` + schema; one model request, and #142 counts about 2 left under the cap), real camera frame `onlyOnDevice`, with traffic recorded. Record the model-ready `preferOnDevice` G2 leg and the on-device G2c run with `CLOUD_ROUTES=hybridFallback,research` and its ledger | Terry / QA | G2, G2b, G2c |
 | Thu Nov 26 | Confirm the $15 Gemini cap and $20 alerts exist in the console; read the deployed `ENABLE_DINNER_MESSAGES`; record both in `docs/COST-LEDGER.md` | Terry | G1, S11 |
 | Thu Nov 26 | Watch the deploy of `73b411d`; confirm hosted `/version.json` shows that commit; run the hero journey once from a clean Chrome profile on the hosted URL | Terry / QA | S4, S10 |
 | Thu Nov 26 | Join the hackathon on Devpost, create the draft project, invite Jenna (she must accept) | Terry, Jenna | S1 |
