@@ -17,8 +17,8 @@ You don't need an account, an API key or a phone number. Nothing on this page as
 **Hosted web app:** <HOSTED_URL> <!-- VERIFY: final hosted URL; matches /version.json at <FINAL_TAG> -->
 
 - **Best experience:** Chrome on a Windows, macOS, Linux or Chromebook Plus computer.
-- Chrome on Android also works, but Chrome can't run its on-device model on phones, so every
-  answer there comes from the cloud or says it can't run.
+- Chrome on Android hasn't been checked with this build. Chrome can't run its on-device model
+  on phones, so there every answer would come from the cloud or say it can't run.
 - Firefox and Safari are not supported.
 - The app signs you in anonymously. Your cooking session is saved to Firestore so a reload
   doesn't lose your place.
@@ -40,8 +40,8 @@ what's happening rather than failing quietly.
 - **Features that stay on the device by design** (the camera watch, Coach Lite, label check)
   say on-device AI isn't available here and how to set it up. They don't switch to the cloud
   on their own. The on-device watch only sends a frame to the cloud if you tap
-  *Ask the cloud about this photo* and then **Allow once** for that exact frame. (If the Live
-  coach is on, *Watch my food* uses the Live coach's cloud watch instead; see section 5.)
+  *Ask the cloud about this photo* and then **Allow once** for that exact frame. (In a build
+  with the Live coach, while it is on, *Watch my food* uses its cloud watch instead; see section 5.)
 - If you turn on **Keep on this device** for a feature in the *On-device AI* sheet, that
   feature never uses the cloud, whatever else happens.
 
@@ -71,8 +71,9 @@ Steps:
 ## 4. A five-minute path through the app
 
 1. **Scan.** Type `canned chickpeas, mayonnaise, lemon, celery, red onion, tortillas` and tap
-   **Find my meal**. Tap the items to confirm them. Look at the badge: **On this device · Gemini Nano** (or **Cloud · Gemini**
-   if your Chrome has no model). <!-- VERIFY: exact badge model label shown on the hosted build -->
+   **Find my meal**. Tap the items to confirm them. Look at the badge: **On this device** (or **Cloud · Gemini**
+   if your Chrome has no model). The web SDK doesn't report a model name, so the badge doesn't
+   name one. <!-- VERIFY: badge text on the hosted build (gate #143 recorded "On this device" with no model label) -->
 2. **Cook.** Open the *Smashed Chickpea Salad Wrap*, or tap *Make a meal from these
    ingredients* for a draft recipe.
 3. **Watch.** On the *Mash the chickpeas* step, tap **Watch my food** and allow the camera. You'll get a
@@ -80,7 +81,7 @@ Steps:
    frame, and it asks for a better view instead of guessing. <!-- VERIFY: SS-075 evidence; watch runs through the production path on the hosted build -->
 4. **Go offline.** Turn off Wi-Fi, or open DevTools → Network → **Offline**. Type a question
    such as "How smooth should the mash be?" Coach Lite answers on the device with a small
-   panel. If it suggests a timer, tap **Start timer**. <!-- VERIFY: SS-072 scope; Coach Lite answer offline on the hosted build -->
+   panel. If it suggests a timer, tap **Start timer**. <!-- VERIFY: SS-072 (#203) merged and a Coach Lite answer seen offline on the hosted build; otherwise drop the offline part of this step and ask the question online -->
 5. **Read the ledger.** Tap the **What was sent** button. The sheet, *What left this device*,
    lists AI requests only. The watch and Coach Lite rows are under *Stayed on this device*, and
    *Reported as sent* is empty unless you used a cloud feature. Its last section, *What this
@@ -112,7 +113,8 @@ Steps:
   the cloud, and a watch frame you send with *Ask the cloud about this photo*, each ask first
   with **Allow once** / **Don't send**, name the data and the recipient, and cover that one
   payload only.
-- **The Live coach is different.** If this build has it, tapping **Start** (tooltip
+- **The Live coach is different.** The judged build doesn't include it (see section 7). In a
+  build that has it, tapping **Start** (tooltip
   *Cook with me*) opens a continuous camera and microphone stream to Gemini Live through
   Firebase AI Logic. There is no per-frame prompt; the stream runs until you tap **Stop**, the
   coach says it is cloud, and the ledger records the connect. While Live is on, *Watch my food*
@@ -138,7 +140,7 @@ Steps:
   `flutter build ios` from the tag `<FINAL_TAG>`. You'll need your own Firebase iOS app
   configuration.
 - On iOS the local model (Apple Foundation Models) is text only. The camera watch says the
-  on-device model can't look at photos and points to the Live coach's watch, which is labelled
+  on-device model can't look at photos and points to the Live coach's watch (in builds that have it), which is labelled
   as cloud vision.
 
 ## 7. What is simulated
@@ -146,13 +148,14 @@ Steps:
 - **Dinner texts.** The judged build never sends an SMS. The review sheet goes to a fictional
   "Demo household", has no phone number field, and every status starts with
   "Simulated — no SMS sent." The real SMS path stays in the code for other builds and is
-  disabled on the server for this one.
+  disabled on the server for this one. <!-- VERIFY: deployed ENABLE_DINNER_MESSAGES is false (last read Nov 8) -->
 - **Nothing else in the judged build is simulated.** AI answers are real model output, on the
   device or in the cloud as the badge says. (Rehearsal mode, where every AI answer is canned and
   labelled *Simulated*, is a separate developer build and is not the hosted app.)
-- **The live voice coach** is <!-- VERIFY: gate G3 --> available through Firebase AI Logic if
-  the cooking screen shows a **Start** button (tooltip *Cook with me*). If it doesn't, this
-  build has no Live coach, and typed questions go to Coach Lite.
+- **No live voice coach in this build.** The Live coach through Firebase AI Logic is in the
+  code, but the judged build has `LIVE_BACKEND=none`, so the cooking screen has no **Start**
+  button and typed questions go to Coach Lite. Google Maps–grounded nearby food help is also
+  off (`CLOUD_ROUTES=hybridFallback,research`). <!-- VERIFY: gate G3. If it passes and the judged build turns Live on, say: "If the cooking screen shows a Start button (tooltip Cook with me), the Live coach is available through Firebase AI Logic." -->
 
 ## 8. Building from source
 
