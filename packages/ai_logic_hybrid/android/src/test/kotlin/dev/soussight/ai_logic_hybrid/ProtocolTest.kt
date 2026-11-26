@@ -32,7 +32,7 @@ internal class ProtocolTest {
             HybridMode.entries.map { it.wire },
         )
         assertEquals(
-            listOf("preview", "previewFast", "stable"),
+            listOf("deviceList", "preview", "previewFast", "stable"),
             AndroidModelOption.entries.map { it.wire },
         )
         assertEquals(
@@ -58,12 +58,11 @@ internal class ProtocolTest {
     }
 
     @Test
-    fun configureDefaultsToStable() {
+    fun configureDefaultsToDeviceList() {
         assertEquals(
-            HybridConfig("m", AndroidModelOption.STABLE, listOf("en")),
+            HybridConfig("m", AndroidModelOption.DEVICE_LIST, listOf("en")),
             Protocol.parseConfig(mapOf("cloudModel" to "m")),
         )
-        // auto is gone: an unknown option fails rather than guessing.
         assertEquals(
             HybridErrorCode.FAILED,
             assertFailsWith<HybridError> { Protocol.parseConfig(mapOf("cloudModel" to "m", "androidModel" to "auto")) }.code,
@@ -186,7 +185,7 @@ internal class ProtocolTest {
         )
         assertEquals(
             setOf(
-                "modelFamily", "modelOption", "supportsImage", "supportsJsonSchema", "maxTotalTokens",
+                "modelFamily", "modelOption", "modelChoice", "supportsImage", "supportsJsonSchema", "maxTotalTokens",
                 "defaultOutputReserve", "imageTokenEstimate", "validatedLanguages",
             ),
             local.keys,
@@ -204,11 +203,11 @@ internal class ProtocolTest {
             Protocol.resultMap("r9", GenerateResult("ok", InferenceSourceWire.ON_DEVICE, null)),
         )
         assertEquals(
-            mapOf("status" to "unavailable", "reason" to "not_enrolled", "modelLabel" to null, "modelOption" to null),
+            mapOf("status" to "unavailable", "reason" to "not_enrolled", "modelLabel" to null, "modelOption" to null, "modelChoice" to null),
             Protocol.availabilityMap(AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.NOT_ENROLLED)),
         )
         assertEquals(
-            mapOf("status" to "available", "reason" to null, "modelLabel" to "nano-v3", "modelOption" to "stable"),
+            mapOf("status" to "available", "reason" to null, "modelLabel" to "nano-v3", "modelOption" to "stable", "modelChoice" to null),
             Protocol.availabilityMap(
                 AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v3", modelOption = AndroidModelOption.STABLE),
             ),

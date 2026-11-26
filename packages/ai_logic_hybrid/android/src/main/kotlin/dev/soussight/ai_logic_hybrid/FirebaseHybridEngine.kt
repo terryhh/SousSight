@@ -34,6 +34,9 @@ object SdkMapping {
         AndroidModelOption.PREVIEW -> OnDeviceModelOption.PREVIEW
         AndroidModelOption.PREVIEW_FAST -> OnDeviceModelOption.PREVIEW_FAST
         AndroidModelOption.STABLE -> OnDeviceModelOption.STABLE
+        // Resolved to preview or stable at configure; reaching the SDK with it is a bug.
+        AndroidModelOption.DEVICE_LIST ->
+            throw HybridError(HybridErrorCode.FAILED, "androidModel deviceList must be resolved first")
     }
 
     /** The SDK's own report. Anything else is not inferred: the call fails. */
