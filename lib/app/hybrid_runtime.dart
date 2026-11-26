@@ -14,7 +14,9 @@ import 'package:flutter/material.dart';
 import '../ai/cooking_research_client.dart';
 import '../ai/hybrid/hybrid_dispatcher.dart';
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart';
 import '../ai/hybrid/inference_ledger.dart';
+import '../config/remote_policy.dart';
 import '../core/cloud_send.dart';
 import '../label/household_allergens.dart';
 import '../label/label_check_controller.dart';
@@ -43,10 +45,18 @@ const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 /// [capabilities] at most [configureWait] (on web, configure includes an
 /// unbounded `import()`). Past that they throw
 /// `HybridException(HybridErrorCode.timeout)`; nothing is forwarded.
+///
+/// Routing waits for configuration too ([capabilities] awaits it), so a
+/// decision is made against the policy as it is once the backend is ready.
+/// [mayForward], when given, is checked again after the wait, immediately
+/// before a request that may upload is forwarded: a late change (the
+/// Remote Config kill switch, local-only) refuses it with
+/// [HybridErrorCode.blocked] instead of sending.
 class ConfiguredHybridInference implements HybridInference {
   ConfiguredHybridInference(
     this.inner,
     HybridConfig config, {
+    this.mayForward,
     this.configureWait = const Duration(seconds: 10),
   }) : _configured = inner
            .configure(config)
@@ -58,6 +68,7 @@ class ConfiguredHybridInference implements HybridInference {
 
   final HybridInference inner;
   final Future<void> _configured;
+  final bool Function(HybridRequest request)? mayForward;
 
   /// The longest [capabilities] waits for the startup configure.
   final Duration configureWait;
@@ -94,6 +105,15 @@ class ConfiguredHybridInference implements HybridInference {
   @override
   Future<HybridResult> generate(HybridRequest request) async {
     await _awaitConfigured(request.task.timeout);
+    final check = mayForward;
+    if (request.mode != HybridMode.onlyOnDevice &&
+        check != null &&
+        !check(request)) {
+      throw const HybridException(
+        HybridErrorCode.blocked,
+        'Cloud help was turned off before this request was sent.',
+      );
+    }
     return inner.generate(request);
   }
 
@@ -309,6 +329,11 @@ class HybridRuntime {
 
   /// Production wiring. [inference] defaults to the platform backend,
   /// configured once with [cloudModel].
+  ///
+  /// [remote] (SS-076) supplies the cloud model chosen at startup, the
+  /// per-feature routing overrides (read at every decision) and the
+  /// `hybrid_enabled` kill switch, applied on top of [cloudRoutes]. It can
+  /// only tighten them.
   factory HybridRuntime.create({
     HybridInference? inference,
     CloudRoutes? cloudRoutes,
@@ -317,14 +342,21 @@ class HybridRuntime {
     bool Function()? isOnline,
     String cloudModel = kHybridCloudModel,
     GlobalKey<NavigatorState>? navigatorKey,
+    RemotePolicy? remote,
   }) {
+    if (remote != null) cloudModel = remote.cloudModel;
     final key = navigatorKey ?? GlobalKey<NavigatorState>();
+    final prefs = privacy ?? InMemoryPrivacyPreferences();
+    final compiledRoutes = cloudRoutes ?? CloudRoutes.fromEnvironment();
+    final routes = remote?.gate(compiledRoutes) ?? compiledRoutes;
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
       HybridConfig(cloudModel: cloudModel),
+      // The same checks the dispatcher made, read again after the wait.
+      mayForward: (request) =>
+          routes.allows(CloudRoute.hybridFallback) &&
+          !localOnlyFor(prefs, request.task.feature),
     );
-    final prefs = privacy ?? InMemoryPrivacyPreferences();
-    final routes = cloudRoutes ?? CloudRoutes.fromEnvironment();
     final online = isOnline ?? deviceOnline;
     final ledger = InferenceLedger(sessionId: _newRunId());
     final consent = DialogConsentGate(
@@ -349,6 +381,7 @@ class HybridRuntime {
         cloudFallback:
             cloudFallback ?? FirebaseAiCloudSender(model: cloudModel),
         isOnline: online,
+        remoteRouting: remote?.routing,
       ),
     );
   }

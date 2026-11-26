@@ -8,15 +8,19 @@ import 'package:url_launcher/url_launcher.dart';
 import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart';
 import '../app/cloud_send_recorder.dart';
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
 import '../app/services_scope.dart';
 import '../coach_lite/coach_lite.dart';
 import '../coach_lite/coach_lite_answer_card.dart';
+import '../coach_lite/tts.dart';
+import '../coach_lite/tts_toggle.dart';
 import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
+import '../data/offline_ops_banner.dart';
 import '../genui/cooking_ui.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
@@ -135,9 +139,13 @@ class CookingScreen extends StatefulWidget {
     this.recipe,
     this.onBackToPantry,
     this.hybrid,
+    this.textToSpeech,
   });
   final AppServices services;
   final bool isDemo;
+
+  /// Coach Lite read-aloud voice; defaults to the device's (SS-077).
+  final TextToSpeech Function()? textToSpeech;
 
   /// Shared hybrid inference services. Null in rehearsal and in tests that
   /// build their own coordinator.
@@ -257,6 +265,7 @@ class _CookingScreenState extends State<CookingScreen> {
       researchAllowed: hybrid == null
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
+      isOnline: hybrid?.isOnline,
     );
   }
 
@@ -343,6 +352,7 @@ class _CookingScreenState extends State<CookingScreen> {
     sendDinner: widget.sendDinner,
     dinnerStatus: widget.dinnerStatus,
     hybrid: widget.isDemo ? null : widget.hybrid,
+    textToSpeech: widget.textToSpeech,
   );
 
   @override
@@ -365,8 +375,10 @@ class _CookingSessionScreen extends StatefulWidget {
     required this.sendDinner,
     required this.dinnerStatus,
     this.hybrid,
+    this.textToSpeech,
   });
   final HybridRuntime? hybrid;
+  final TextToSpeech Function()? textToSpeech;
   final AppServices services;
   final bool isDemo;
   final CookingCoordinator cook;
@@ -416,17 +428,36 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   String? _announcedAlert;
   bool _messagePending = false;
 
+  /// Coach Lite read-aloud; only where Coach Lite exists (SS-077).
+  CoachLiteSpeaker? _speaker;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     cook = widget.cook;
+    if (cook.coachLite != null) {
+      final privacy = widget.hybrid?.privacy;
+      _speaker = CoachLiteSpeaker(
+        (widget.textToSpeech ?? deviceTextToSpeech)(),
+        // Read at every speak: local-only allows only a local voice.
+        localOnly: () =>
+            privacy != null && localOnlyFor(privacy, coachLiteFeature),
+      );
+      unawaited(_speaker!.init());
+    }
     cook.addListener(_onChange);
     if (!widget.initialized) unawaited(cook.initialize());
   }
 
   void _onChange() {
     if (!mounted) return;
+    _speaker?.sync(
+      answer: cook.coachLiteAnswer,
+      busy: cook.coachLiteBusy,
+      liveActive: cook.live.isActive,
+      stepId: cook.step.id,
+    );
     if (cook.session?.id case final id?) _label?.setSession(id);
     if (cook.alert == null) _announcedAlert = null;
     if (cook.alert != null && cook.alert != _announcedAlert) {
@@ -464,14 +495,19 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         state == AppLifecycleState.paused) {
       unawaited(cook.live.stop());
       cook.watchService?.onBackgrounded();
+      _speaker?.setForeground(false);
     }
-    if (state == AppLifecycleState.resumed) cook.ui.refreshTimers();
+    if (state == AppLifecycleState.resumed) {
+      cook.ui.refreshTimers();
+      _speaker?.setForeground(true);
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _speaker?.dispose();
     _message.dispose();
     unawaited(_fakeDinner.dispose());
     super.dispose();
@@ -1114,6 +1150,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         minHeight: 5,
       ),
       const SizedBox(height: 16),
+      if (cook.offline) OfflineBanner(pendingSteps: cook.pendingStepSaves),
       if (cook.error case final error?)
         _inlineNotice(error, Icons.error_outline),
       if (cook.alert case final alert?)
@@ -1148,6 +1185,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       CookingSurface(controller: cook.ui),
+      if (cook.coachLiteAnswer != null)
+        if (_speaker case final speaker?)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: CoachLiteSpeakerToggle(speaker: speaker),
+          ),
       if (cook.coachLiteAnswer case final answer?)
         CoachLiteAnswerFooter(
           answer: answer,
