@@ -98,6 +98,9 @@ class CoachLiteSpeaker extends ChangeNotifier {
   bool _enabled = false;
   bool _disposed = false;
 
+  /// False while the app is hidden or paused: nothing new is spoken.
+  bool _foreground = true;
+
   /// Bumped by every speak and stop; a pending speak checks it after each
   /// await so a stop, a newer answer or disposal always wins.
   int _generation = 0;
@@ -136,11 +139,23 @@ class CoachLiteSpeaker extends ChangeNotifier {
     if (on) {
       // The browser's voice list may have loaded since the first probe.
       unawaited(_probe());
-      if (_current case final answer?) unawaited(_speak(answer));
+      if (_current case final answer? when _foreground) {
+        unawaited(_speak(answer));
+      }
     } else {
       stop();
     }
     notifyListeners();
+  }
+
+  /// The app was backgrounded (false) or resumed (true). Backgrounding stops
+  /// speech, and nothing is spoken until resume, including an answer that
+  /// arrives meanwhile: it is not read late on resume (the cook can replay it
+  /// with the toggle). The toggle setting itself is kept.
+  void setForeground(bool foreground) {
+    if (_disposed || foreground == _foreground) return;
+    _foreground = foreground;
+    if (!foreground) stop();
   }
 
   /// Call on every coordinator change with its current state.
@@ -166,7 +181,7 @@ class CoachLiteSpeaker extends ChangeNotifier {
     _current = answer;
     if (answer.stamp == _seen) return;
     _seen = answer.stamp;
-    if (_enabled) unawaited(_speak(answer));
+    if (_enabled && _foreground) unawaited(_speak(answer));
   }
 
   /// Stops speech now (and any speak still starting). Keeps the toggle.
@@ -184,7 +199,9 @@ class CoachLiteSpeaker extends ChangeNotifier {
     _mayBeSpeaking = true;
     try {
       await _tts.stop();
-      if (_disposed || generation != _generation || !_enabled) return;
+      if (_disposed || generation != _generation || !_enabled || !_foreground) {
+        return;
+      }
       await _tts.speak(text);
     } catch (e) {
       debugPrint('Read aloud failed (${e.runtimeType}).');

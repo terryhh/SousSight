@@ -82,6 +82,16 @@ RouteInput _input(
   remote: remote,
 );
 
+/// configure() completes only when the test says so (a slow bridge).
+class _SlowConfigure extends FakeHybridInference {
+  final gate = Completer<void>();
+  @override
+  Future<void> configure(HybridConfig config) async {
+    await gate.future;
+    this.config = config;
+  }
+}
+
 class _Privacy implements PrivacySettings {
   final Set<String> local = {};
   @override
@@ -388,5 +398,107 @@ void main() {
       expect(hybrid.consent.cloudModel, 'gemini-x');
       expect(hybrid.cloudRoutes, isA<RemoteGatedCloudRoutes>());
     });
+  });
+
+  group('a late kill switch while the backend is still configuring', () {
+    HybridTask draft() => HybridTask(
+      feature: 'recipe_draft',
+      parts: const [HybridText('Draft a recipe')],
+      maxOutputTokens: 64,
+      timeout: const Duration(seconds: 5),
+    );
+
+    test('routing waits for configuration, so the decision sees it', () async {
+      final activation = Completer<void>();
+      final source = _FakeSource(
+        remote: {RemoteKeys.hybridEnabled: 'false'},
+        fetch: () => activation.future,
+      );
+      final policy = await RemotePolicy.load(
+        source,
+        compiledCloudModel: 'm',
+        timeout: const Duration(milliseconds: 10),
+      );
+      final inference = _SlowConfigure()..enqueueText('ok');
+      final hybrid = HybridRuntime.create(
+        inference: inference,
+        cloudRoutes: const CloudRoutes({CloudRoute.hybridFallback}),
+        isOnline: () => true,
+        remote: policy,
+      );
+      final op = hybrid.dispatcher.start(draft(), sessionId: 's');
+      await Future<void>.delayed(Duration.zero);
+      expect(inference.requests, isEmpty);
+      // Remote Config activates late, while the backend is still starting.
+      activation.complete();
+      await Future<void>.delayed(Duration.zero);
+      inference.gate.complete();
+      final result = await op.result;
+      expect(inference.requests.single.mode, HybridMode.onlyOnDevice);
+      expect(result.legs.every((leg) => !leg.transferPermitted), isTrue);
+    });
+
+    test('a request that may upload is re-checked after the wait and '
+        'refused, never forwarded', () async {
+      var allowed = true;
+      final inner = _SlowConfigure()..enqueueText('local');
+      final configured = ConfiguredHybridInference(
+        inner,
+        const HybridConfig(cloudModel: 'm'),
+        mayForward: (_) => allowed,
+      );
+      final cloud = configured.generate(
+        HybridRequest(
+          requestId: 'r1',
+          mode: HybridMode.preferOnDevice,
+          task: draft(),
+        ),
+      );
+      final local = configured.generate(
+        HybridRequest(
+          requestId: 'r2',
+          mode: HybridMode.onlyOnDevice,
+          task: draft(),
+        ),
+      );
+      allowed = false;
+      inner.gate.complete();
+      await expectLater(
+        cloud,
+        throwsA(
+          isA<HybridException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.blocked,
+          ),
+        ),
+      );
+      // On-device requests never needed the cloud route.
+      expect((await local).text, 'local');
+      expect(inner.requests.map((r) => r.requestId), ['r2']);
+    });
+
+    test(
+      'the runtime re-checks local-only as well as the kill switch',
+      () async {
+        final inner = _SlowConfigure()..enqueueText('x');
+        final hybrid = HybridRuntime.create(
+          inference: inner,
+          cloudRoutes: const CloudRoutes({CloudRoute.hybridFallback}),
+          isOnline: () => true,
+        );
+        final configured = hybrid.inference as ConfiguredHybridInference;
+        final request = HybridRequest(
+          requestId: 'r',
+          mode: HybridMode.onlyInCloud,
+          task: draft(),
+        );
+        inner.gate.complete();
+        await configured.configured;
+        expect(configured.mayForward!(request), isTrue);
+        hybrid.privacy.setLocalOnly('recipe_draft', true);
+        expect(configured.mayForward!(request), isFalse);
+      },
+    );
   });
 }

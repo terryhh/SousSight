@@ -39,8 +39,15 @@ const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 /// Delegates to [inner], but every call that needs the configuration waits
 /// for the one [HybridInference.configure] call made at startup. A failed
 /// configure is not retried here; `generate` then fails as the bridge says.
+///
+/// Routing waits for configuration too ([capabilities] awaits it), so a
+/// decision is made against the policy as it is once the backend is ready.
+/// [mayForward], when given, is checked again after the wait, immediately
+/// before a request that may upload is forwarded: a late change (the
+/// Remote Config kill switch, local-only) refuses it with
+/// [HybridErrorCode.blocked] instead of sending.
 class ConfiguredHybridInference implements HybridInference {
-  ConfiguredHybridInference(this.inner, HybridConfig config)
+  ConfiguredHybridInference(this.inner, HybridConfig config, {this.mayForward})
     : _configured = inner
           .configure(config)
           .then<void>(
@@ -51,6 +58,7 @@ class ConfiguredHybridInference implements HybridInference {
 
   final HybridInference inner;
   final Future<void> _configured;
+  final bool Function(HybridRequest request)? mayForward;
 
   /// Completes when the startup configure has settled (either way).
   Future<void> get configured => _configured;
@@ -59,7 +67,10 @@ class ConfiguredHybridInference implements HybridInference {
   Future<void> configure(HybridConfig config) => inner.configure(config);
 
   @override
-  Future<HybridCapabilities> capabilities() => inner.capabilities();
+  Future<HybridCapabilities> capabilities() async {
+    await _configured;
+    return inner.capabilities();
+  }
 
   @override
   Future<HybridAvailability> availability({required bool withImage}) =>
@@ -73,6 +84,15 @@ class ConfiguredHybridInference implements HybridInference {
   @override
   Future<HybridResult> generate(HybridRequest request) async {
     await _configured;
+    final check = mayForward;
+    if (request.mode != HybridMode.onlyOnDevice &&
+        check != null &&
+        !check(request)) {
+      throw const HybridException(
+        HybridErrorCode.blocked,
+        'Cloud help was turned off before this request was sent.',
+      );
+    }
     return inner.generate(request);
   }
 
@@ -305,13 +325,17 @@ class HybridRuntime {
   }) {
     if (remote != null) cloudModel = remote.cloudModel;
     final key = navigatorKey ?? GlobalKey<NavigatorState>();
-    final configured = ConfiguredHybridInference(
-      inference ?? defaultHybridInference(),
-      HybridConfig(cloudModel: cloudModel),
-    );
     final prefs = privacy ?? InMemoryPrivacyPreferences();
     final compiledRoutes = cloudRoutes ?? CloudRoutes.fromEnvironment();
     final routes = remote?.gate(compiledRoutes) ?? compiledRoutes;
+    final configured = ConfiguredHybridInference(
+      inference ?? defaultHybridInference(),
+      HybridConfig(cloudModel: cloudModel),
+      // The same checks the dispatcher made, read again after the wait.
+      mayForward: (request) =>
+          routes.allows(CloudRoute.hybridFallback) &&
+          !prefs.localOnly(request.task.feature),
+    );
     final online = isOnline ?? deviceOnline;
     final ledger = InferenceLedger(sessionId: _newRunId());
     final consent = DialogConsentGate(

@@ -486,9 +486,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         state == AppLifecycleState.paused) {
       unawaited(cook.live.stop());
       cook.watchService?.onBackgrounded();
-      _speaker?.stop();
+      _speaker?.setForeground(false);
     }
-    if (state == AppLifecycleState.resumed) cook.ui.refreshTimers();
+    if (state == AppLifecycleState.resumed) {
+      cook.ui.refreshTimers();
+      _speaker?.setForeground(true);
+    }
   }
 
   @override

@@ -340,6 +340,42 @@ void main() {
       disposed = true;
     });
 
+    test('backgrounded: speech stops and nothing new is spoken until '
+        'resume', () async {
+      speaker.setEnabled(true);
+      sync(_answer());
+      await _settle();
+      final stopsBefore = tts.stops;
+      speaker.setForeground(false);
+      expect(tts.stops, stopsBefore + 1);
+      // An answer completing while paused is not spoken, now or on resume.
+      sync(_answer(sequence: 2));
+      speaker.setEnabled(false);
+      speaker.setEnabled(true);
+      await _settle();
+      expect(tts.spoken, hasLength(1));
+      speaker.setForeground(true);
+      await _settle();
+      expect(tts.spoken, hasLength(1));
+      expect(speaker.enabled, isTrue, reason: 'the toggle is kept');
+      // After resume, the next answer is read again.
+      sync(_answer(sequence: 3));
+      await _settle();
+      expect(tts.spoken.last, 'Low and slow 3. Stir often.');
+    });
+
+    test('backgrounding cancels a speak that is still starting', () async {
+      speaker.setEnabled(true);
+      tts.stopGate = Completer<void>();
+      sync(_answer());
+      await _settle();
+      speaker.setForeground(false);
+      tts.stopGate!.complete();
+      tts.stopGate = null;
+      await _settle();
+      expect(tts.spoken, isEmpty);
+    });
+
     test('a platform speak error is contained', () async {
       tts.speakError = StateError('engine gone');
       speaker.setEnabled(true);
