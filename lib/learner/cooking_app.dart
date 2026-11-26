@@ -13,6 +13,8 @@ import '../app/hybrid_runtime.dart';
 import '../app/services_scope.dart';
 import '../coach_lite/coach_lite.dart';
 import '../coach_lite/timer_suggestion_card.dart';
+import '../coach_lite/tts.dart';
+import '../coach_lite/tts_toggle.dart';
 import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
@@ -131,9 +133,13 @@ class CookingScreen extends StatefulWidget {
     this.recipe,
     this.onBackToPantry,
     this.hybrid,
+    this.textToSpeech,
   });
   final AppServices services;
   final bool isDemo;
+
+  /// Coach Lite read-aloud voice; defaults to the device's (SS-077).
+  final TextToSpeech Function()? textToSpeech;
 
   /// Shared hybrid inference services. Null in rehearsal and in tests that
   /// build their own coordinator.
@@ -308,6 +314,7 @@ class _CookingScreenState extends State<CookingScreen> {
     sendDinner: widget.sendDinner,
     dinnerStatus: widget.dinnerStatus,
     hybrid: widget.isDemo ? null : widget.hybrid,
+    textToSpeech: widget.textToSpeech,
   );
 
   @override
@@ -330,8 +337,10 @@ class _CookingSessionScreen extends StatefulWidget {
     required this.sendDinner,
     required this.dinnerStatus,
     this.hybrid,
+    this.textToSpeech,
   });
   final HybridRuntime? hybrid;
+  final TextToSpeech Function()? textToSpeech;
   final AppServices services;
   final bool isDemo;
   final CookingCoordinator cook;
@@ -381,17 +390,32 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   String? _announcedAlert;
   bool _messagePending = false;
 
+  /// Coach Lite read-aloud; only where Coach Lite exists (SS-077).
+  CoachLiteSpeaker? _speaker;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     cook = widget.cook;
+    if (cook.coachLite != null) {
+      _speaker = CoachLiteSpeaker(
+        (widget.textToSpeech ?? deviceTextToSpeech)(),
+      );
+      unawaited(_speaker!.init());
+    }
     cook.addListener(_onChange);
     if (!widget.initialized) unawaited(cook.initialize());
   }
 
   void _onChange() {
     if (!mounted) return;
+    _speaker?.sync(
+      answer: cook.coachLiteAnswer,
+      busy: cook.coachLiteBusy,
+      liveActive: cook.live.isActive,
+      stepId: cook.step.id,
+    );
     if (cook.session?.id case final id?) _label?.setSession(id);
     if (cook.alert == null) _announcedAlert = null;
     if (cook.alert != null && cook.alert != _announcedAlert) {
@@ -429,6 +453,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         state == AppLifecycleState.paused) {
       unawaited(cook.live.stop());
       cook.watchService?.onBackgrounded();
+      _speaker?.stop();
     }
     if (state == AppLifecycleState.resumed) cook.ui.refreshTimers();
   }
@@ -437,6 +462,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _speaker?.dispose();
     _message.dispose();
     unawaited(_fakeDinner.dispose());
     super.dispose();
@@ -1078,6 +1104,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         ),
       CookingSurface(controller: cook.ui),
       if (cook.coachLiteAnswer case final answer?) ...[
+        if (_speaker case final speaker?)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: CoachLiteSpeakerToggle(speaker: speaker),
+          ),
         if (answer.legs.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 8),
