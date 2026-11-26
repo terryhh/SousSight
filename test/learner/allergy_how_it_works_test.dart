@@ -187,7 +187,9 @@ void main() {
       () => loadBundledRecipe('peanut_butter_sandwich_v1'),
     ))!;
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: AllergenChip(recipe: sandwich))),
+      MaterialApp(
+        home: Scaffold(body: AllergenChip(recipe: sandwich)),
+      ),
     );
     final node = tester.getSemantics(
       find.bySemanticsLabel(RegExp('Allergens. Contains: wheat, peanut')),

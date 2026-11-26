@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {
   cleanTemplateText, composeDinnerMessage, createDinnerLedger, createDinnerReadyHandler,
   createDinnerService, nextSendLimit, providerConfigProblem, sendVonageDinner,
-  SEND_LIMIT_PER_HOUR, validateDinnerRequest,
+  legacyFingerprints, requestFingerprint, SEND_LIMIT_PER_HOUR, validateDinnerRequest,
 } from '../src/dinner-ready.js';
 import { createDeliveryStatusStore, providerIndexId } from '../src/vonage-status.js';
+import { readFileSync } from 'node:fs';
 import { fakeFirestore } from './fake-firestore.js';
 
 const input = (overrides = {}) => ({ sessionId: 'meal-1', notificationId: 'notice-123',
@@ -54,10 +55,12 @@ test('server templates compose started and ready messages from validated slots o
   assert.equal(request.recipeTitle, 'Mac & cheese! visit evil example');
 });
 
-test('every template is GSM-7 only, so one SMS stays one segment', () => {
-  // GSM 03.38 basic set: no em dash or curly quotes (they force UCS-2).
-  const gsm7 = new Set([...'@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?' +
-    '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà']);
+// GSM 03.38 basic set: no em dash or curly quotes (they force UCS-2).
+const GSM7 = new Set([...'@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?' +
+  '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà']);
+const outsideGsm7 = (text) => [...text].filter((c) => !GSM7.has(c));
+
+test('the fixed template text is GSM-7 only; with ASCII slots one message is one segment', () => {
   const messages = [composeDinnerMessage({ kind: 'ready', recipeTitle: 'Soup' })];
   for (const minutes of [null, 1, 25, 120]) {
     for (const cookName of [null, 'Terry']) {
@@ -65,9 +68,25 @@ test('every template is GSM-7 only, so one SMS stays one segment', () => {
     }
   }
   for (const message of messages) {
-    assert.deepEqual([...message].filter((c) => !gsm7.has(c)), [], message);
+    assert.deepEqual(outsideGsm7(message), [], message);
     assert.ok(message.length <= 160, message);
   }
+});
+
+test('Unicode names and titles pass through; only the fixed text is guaranteed GSM-7', () => {
+  // Same fixture as test/data/dinner_messages_test.dart.
+  const cookName = '豆腐'.repeat(15);
+  const request = validateDinnerRequest(started({ recipeTitle: '豆腐汤', cookName, minutes: 120 }),
+    settings.allowedRecipients);
+  assert.equal(request.message,
+    `SousSight: Dinner's started, about 120 minutes to go. ${cookName} is making 豆腐汤.`);
+  // The template around the slots stays GSM-7...
+  const fixed = request.message.replace(cookName, '').replace('豆腐汤', '');
+  assert.deepEqual(outsideGsm7(fixed), []);
+  // ...but a Unicode slot makes the whole SMS UCS-2: past 70 characters it is
+  // more than one segment. The claim is narrowed to the fixed text.
+  assert.ok(outsideGsm7(request.message).length > 0);
+  assert.ok(request.message.length > 70);
 });
 
 test('rejects free-form messages, bad kinds, minutes and recipients', () => {
@@ -87,6 +106,39 @@ test('rejects free-form messages, bad kinds, minutes and recipients', () => {
   }
   assert.throws(() => validateDinnerRequest(input({ recipient: '4075550100 ext123' }), settings.allowedRecipients),
     { code: 'invalid-recipient' });
+});
+
+test('a replay of a request claimed before the template change returns the original outcome', async () => {
+  const legacy = JSON.parse(readFileSync(new URL('./fixtures/legacy-started-claim.json', import.meta.url), 'utf8'));
+  // State written by the pre-change deployment (commit 1e4cb4c) for this request.
+  const { service, sent, db } = harness();
+  db.docs.clear();
+  for (const [path, data] of legacy.docs) db.docs.set(path, data);
+  const replay = await service('cook-1', legacy.request);
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.status, legacy.result.status);
+  assert.equal(replay.channel, legacy.result.channel);
+  assert.equal(sent.length, 0);
+  // The recognised record is the legacy one, not a fresh v2 claim.
+  const [, record] = legacy.docs.find(([path]) => path.startsWith('_dinnerNotifications/'));
+  const request = validateDinnerRequest(legacy.request, settings.allowedRecipients);
+  assert.ok(legacyFingerprints(request, 'whatsapp').includes(record.fingerprint));
+  assert.notEqual(requestFingerprint(request, 'whatsapp'), record.fingerprint);
+  // Changed content under the same ID is still a conflict.
+  await assert.rejects(service('cook-1', { ...legacy.request, minutes: 30 }),
+    { code: 'idempotency-conflict', status: 409 });
+  assert.equal(sent.length, 0);
+});
+
+test('fingerprints ignore the rendered message but not the slots', () => {
+  const request = validateDinnerRequest(started(), settings.allowedRecipients);
+  const fingerprint = requestFingerprint(request, 'sms');
+  assert.match(fingerprint, /^v2:[0-9a-f]{64}$/);
+  assert.equal(requestFingerprint({ ...request, message: 'any other template' }, 'sms'), fingerprint);
+  assert.notEqual(requestFingerprint({ ...request, minutes: 26 }, 'sms'), fingerprint);
+  assert.notEqual(requestFingerprint(request, 'whatsapp'), fingerprint);
+  // Ready messages had no template change: one legacy form.
+  assert.equal(legacyFingerprints(validateDinnerRequest(input(), settings.allowedRecipients), 'sms').length, 1);
 });
 
 test('session ownership is verified in claim transaction before any provider call', async () => {

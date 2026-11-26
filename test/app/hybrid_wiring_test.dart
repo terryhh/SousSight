@@ -319,9 +319,9 @@ void main() {
 
     test('says which data goes to whom, in plain words', () {
       final copy = consentCopy(ask);
-      expect(copy.title, 'Send this photo to Google?');
+      expect(copy.title, 'Send this photo to Google if needed?');
       expect(copy.body, contains("to Google's servers"));
-      expect(copy.body, contains('nothing is sent'));
+      expect(copy.body, contains('nothing from this request is sent'));
     });
 
     test('no navigator means no grant', () async {

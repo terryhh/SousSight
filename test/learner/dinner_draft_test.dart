@@ -63,7 +63,10 @@ void main() {
       expect(draft('serve').kind, DinnerKind.ready);
       expect(draft('serve').minutes, isNull);
       expect(draft('prep', complete: true).kind, DinnerKind.ready);
-      expect(draft(null, recipe: const []).kind, DinnerKind.ready);
+      expect(
+        draft(null, recipe: const [], complete: true).kind,
+        DinnerKind.ready,
+      );
     });
 
     test('an unknown step is never "ready" and gives no time', () {
@@ -97,6 +100,97 @@ void main() {
       expect(result.minutes, 5);
     });
 
+    test('a dismissed step timer keeps its step finished', () {
+      // Dismissed after it ran out: no longer running, but the step's time
+      // is used up, so simmer's 20 minutes are not added back.
+      final dismissed = _timer('step-simmer-1-0', const Duration(minutes: -2));
+      expect(draft('simmer').minutes, 25);
+      final result = dinnerDraftFor(
+        steps: steps,
+        currentStepId: 'simmer',
+        complete: false,
+        now: _now,
+        pastTimers: [dismissed],
+      );
+      expect(result.minutes, 5);
+      // A dismissed non-step timer is not "running" any more.
+      final lite = dinnerDraftFor(
+        steps: steps,
+        currentStepId: 'prep',
+        complete: false,
+        now: _now,
+        pastTimers: [_timer('lite-1-0', const Duration(minutes: 30))],
+      );
+      expect(lite.minutes, 25);
+    });
+
+    test('a restarted step timer: the latest one counts', () {
+      final old = CookingTimerState(
+        id: 'step-simmer-1-0',
+        label: 'simmer',
+        startedAt: _now.subtract(const Duration(minutes: 30)),
+        deadline: _now.subtract(const Duration(minutes: 10)),
+      );
+      final result = dinnerDraftFor(
+        steps: steps,
+        currentStepId: 'simmer',
+        complete: false,
+        now: _now,
+        timers: [_timer('step-simmer-2-1', const Duration(minutes: 7))],
+        pastTimers: [old],
+      );
+      expect(result.minutes, 7 + 5);
+    });
+
+    test('timers match the exact step ID, not a prefix', () {
+      final prefixed = [
+        _step('prep', 600),
+        _step('prep-sauce', 300),
+        _step('serve'),
+      ];
+      final result = draft(
+        'prep',
+        recipe: prefixed,
+        timers: [_timer('step-prep-sauce-123-0', Duration.zero)],
+      );
+      expect(result.minutes, 15);
+      expect(isStepTimerFor('step-prep', 'prep'), isTrue);
+      expect(isStepTimerFor('step-prep-1700000000000-3', 'prep'), isTrue);
+      expect(isStepTimerFor('step-prep-sauce-123-0', 'prep'), isFalse);
+      expect(isStepTimerFor('step-prep-sauce', 'prep'), isFalse);
+      expect(isStepTimerFor('step-prep-sauce-123-0', 'prep-sauce'), isTrue);
+      expect(isStepTimerFor('lite-1-0', 'prep'), isFalse);
+    });
+
+    test('remaining time is summed at full precision, rounded up once', () {
+      final result = draft(
+        'rest',
+        recipe: [_step('rest'), _step('serve')],
+        timers: [
+          _timer('lite-1-0', const Duration(seconds: 60, milliseconds: 500)),
+        ],
+      );
+      expect(result.minutes, 2);
+      final twoParts = dinnerDraftFor(
+        steps: [_step('a'), _step('b', 30), _step('c')],
+        currentStepId: 'a',
+        complete: false,
+        now: _now,
+        timers: [
+          _timer('lite-1-0', const Duration(seconds: 30, milliseconds: 1)),
+        ],
+      );
+      // 30.001 s + 30 s is just over a minute: 2, not 1.
+      expect(twoParts.minutes, 2);
+    });
+
+    test('an empty recipe that is not complete is started, no estimate', () {
+      final empty = draft(null, recipe: const []);
+      expect(empty.kind, DinnerKind.started);
+      expect(empty.minutes, isNull);
+      expect(draft('x', recipe: const []).kind, DinnerKind.started);
+    });
+
     test('the longest running timer bounds the current step', () {
       // Prep has no duration, but a 12-minute oven timer is running.
       final result = draft(
@@ -111,7 +205,7 @@ void main() {
       final longer = draft(
         'simmer',
         timers: [
-          _timer('step-simmer-1', const Duration(minutes: 2)),
+          _timer('step-simmer-1-0', const Duration(minutes: 2)),
           _timer('lite-9', const Duration(minutes: 10)),
         ],
       );
@@ -121,7 +215,7 @@ void main() {
     test('a timer for another step does not count as this step\'s', () {
       final result = draft(
         'rest',
-        timers: [_timer('step-simmer-1', Duration.zero)],
+        timers: [_timer('step-simmer-1-0', Duration.zero)],
       );
       expect(result.minutes, 5);
     });
@@ -139,6 +233,39 @@ void main() {
       final odd = [_step('a', 0), _step('b', -30), _step('c')];
       expect(draft('a', recipe: odd).minutes, isNull);
     });
+  });
+
+  testWidgets('DinnerTimerMemory keeps dismissed timers as past timers', (
+    tester,
+  ) async {
+    var now = _now;
+    final ui = CookingUiController(clock: () => now);
+    final memory = DinnerTimerMemory()..attach(ui);
+    final timer = ui.startTimer(
+      id: 'step-simmer-1-0',
+      label: 'Simmer',
+      seconds: 60,
+    );
+    expect(memory.pastTimers, isEmpty);
+    now = now.add(const Duration(minutes: 2));
+    ui.dismissTimer(timer.id);
+    expect(memory.pastTimers.single.id, 'step-simmer-1-0');
+    expect(
+      dinnerDraftFor(
+        steps: steps,
+        currentStepId: 'simmer',
+        complete: false,
+        now: now,
+        timers: ui.timers,
+        pastTimers: memory.pastTimers,
+      ).minutes,
+      5,
+    );
+    // Detached, it no longer follows the controller.
+    memory.detach();
+    ui.startTimer(id: 'lite-1-0', label: 'Oven', seconds: 600);
+    expect(memory.pastTimers.map((t) => t.id), ['step-simmer-1-0']);
+    ui.dispose(); // stops the ticker before the test ends
   });
 
   group('review dialog', () {

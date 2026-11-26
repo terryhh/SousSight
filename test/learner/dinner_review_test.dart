@@ -35,8 +35,16 @@ void main() {
   String readyText() =>
       'SousSight: Dinner is ready! ${cook.recipe.title} is on the table.';
 
-  Future<void> pumpScreen(WidgetTester tester) async {
-    final services = (await tester.runAsync(fakeServices))!;
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    AppServices Function(AppServices)? adapt,
+    String? recipeId,
+  }) async {
+    final loaded = (await tester.runAsync(
+      () =>
+          recipeId == null ? fakeServices() : fakeServices(recipeId: recipeId),
+    ))!;
+    final services = adapt?.call(loaded) ?? loaded;
     transport = _DraftTransport();
     submissions = [];
     response = Completer<DinnerMessageResult>();
@@ -450,6 +458,59 @@ void main() {
       expect(find.text(readyText()), findsNothing);
       await tester.tap(find.widgetWithText(TextButton, 'Close'));
       await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('a finished, dismissed step timer does not add its time back', (
+      tester,
+    ) async {
+      var now = DateTime(2026, 11, 26, 18);
+      await pumpScreen(
+        tester,
+        recipeId: 'chickpea_wrap_v1',
+        adapt: (s) => AppServices(
+          auth: s.auth,
+          recipes: s.recipes,
+          sessions: s.sessions,
+          bundledRecipe: s.bundledRecipe,
+          clock: () => now,
+        ),
+      );
+      final steps = cook.recipe.steps;
+      expect(cook.step.timerSeconds, 300);
+      int laterMinutes() {
+        final seconds = steps
+            .skip(1)
+            .fold<int>(0, (sum, step) => sum + (step.timerSeconds ?? 0));
+        return (seconds / 60).ceil();
+      }
+
+      Future<String> openedMinutes() async {
+        await open(tester, 'Review dinner message');
+        final text = tester
+            .widget<TextField>(field('Minutes until dinner'))
+            .controller!
+            .text;
+        await tester.tap(find.widgetWithText(TextButton, 'Close'));
+        await tester.pumpAndSettle();
+        return text;
+      }
+
+      // Before the onion timer starts, its five minutes count.
+      expect(await openedMinutes(), '${5 + laterMinutes()}');
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      final timer = cook.ui.timers.single;
+      // The five minutes pass; the cook dismisses the finished timer.
+      now = now.add(const Duration(minutes: 6));
+      await tester.pump(const Duration(seconds: 2));
+      cook.ui.dismissTimer(timer.id);
+      await tester.pumpAndSettle();
+      expect(cook.ui.timers, isEmpty);
+      expect(cook.step.id, steps.first.id);
+      final after = await openedMinutes();
+      expect(after, laterMinutes() == 0 ? '' : '${laterMinutes()}');
       expect(submissions, isEmpty);
       await tester.pumpWidget(const SizedBox());
     });

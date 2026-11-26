@@ -397,6 +397,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   late final CookingCoordinator cook;
   final _message = TextEditingController();
   final _dinnerAttempts = DinnerAttemptMemory();
+  final _dinnerTimers = DinnerTimerMemory();
   final _fakeDinner = FakeDinnerBackend();
   late final DinnerMessageSender _deliverDinner =
       widget.sendDinner ??
@@ -435,6 +436,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     cook = widget.cook;
+    _dinnerTimers.attach(cook.ui);
     if (cook.coachLite != null) {
       final privacy = widget.hybrid?.privacy;
       _speaker = CoachLiteSpeaker(
@@ -506,6 +508,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _dinnerTimers.detach();
     _speaker?.dispose();
     _message.dispose();
     unawaited(_fakeDinner.dispose());
@@ -1317,6 +1320,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     complete: cook.complete,
     now: cook.services.clock(),
     timers: cook.ui.timers,
+    pastTimers: _dinnerTimers.pastTimers,
   );
 
   Future<void> _reviewDinner() {

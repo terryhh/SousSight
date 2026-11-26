@@ -8,7 +8,8 @@ import '../core/models.dart';
 import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
-import '../genui/cooking_ui_controller.dart' show CookingTimerState;
+import '../genui/cooking_ui_controller.dart'
+    show CookingTimerState, CookingUiController;
 
 /// Which household message fits where the cook is (SS-100), and a suggested
 /// "minutes to go" for it. The cook still reviews and edits it; nothing here
@@ -24,60 +25,107 @@ class DinnerDraft {
 /// The longest estimate the message template accepts (server: 1-120).
 const kMaxDinnerMinutes = 120;
 
+/// Whether [timerId] is [stepId]'s step timer. Step timers are named
+/// `step-<stepId>` (a restored timer) or `step-<stepId>-<millis>-<seq>` (see
+/// `CookingCoordinator.startStepTimer`); the step ID must match exactly, so
+/// `step-prep-sauce-…` never counts as step `prep`'s timer.
+bool isStepTimerFor(String timerId, String stepId) {
+  final prefix = 'step-$stepId';
+  if (timerId == prefix) return true;
+  if (!timerId.startsWith('$prefix-')) return false;
+  return RegExp(r'^\d+-\d+$').hasMatch(timerId.substring(prefix.length + 1));
+}
+
 /// Picks the message from the cook's step: before the final step it is
 /// "Dinner's started" with an estimate; on the final step, or once the
 /// recipe is complete, it is "Dinner is ready!".
 ///
 /// The estimate is the time left on the current step plus the timer
-/// durations of the steps after it. The current step's time is its running
-/// step timer's remaining time (zero once it has finished; its own timer
-/// duration if it has not started), and never less than the longest running
-/// timer. Steps with no
-/// duration add nothing; if nothing is known at all, or the total is beyond
-/// [kMaxDinnerMinutes], [DinnerDraft.minutes] is null rather than a guess.
-/// An unknown [currentStepId] is treated as "started", never as "ready".
+/// durations of the steps after it. The current step's time is its step
+/// timer's remaining time (zero once it has finished, even if the cook has
+/// since dismissed it: pass dismissed timers in [pastTimers]; its own timer
+/// duration if it never started), and never less than the longest running
+/// timer. Durations are summed at full precision and rounded up to whole
+/// minutes once. Steps with no duration add nothing; if nothing is known at
+/// all, or the total is beyond [kMaxDinnerMinutes], [DinnerDraft.minutes] is
+/// null rather than a guess. An unknown [currentStepId], or a recipe with no
+/// steps that is not complete, is "started" with no estimate, never "ready".
 DinnerDraft dinnerDraftFor({
   required List<RecipeStep> steps,
   required String? currentStepId,
   required bool complete,
   required DateTime now,
   Iterable<CookingTimerState> timers = const [],
+  Iterable<CookingTimerState> pastTimers = const [],
 }) {
-  if (complete || steps.isEmpty) return const DinnerDraft(DinnerKind.ready);
+  if (complete) return const DinnerDraft(DinnerKind.ready);
   final index = steps.indexWhere((s) => s.id == currentStepId);
-  if (index == steps.length - 1) return const DinnerDraft(DinnerKind.ready);
   if (index < 0) return const DinnerDraft(DinnerKind.started);
+  if (index == steps.length - 1) return const DinnerDraft(DinnerKind.ready);
 
   final current = steps[index];
-  final stepPrefix = 'step-${current.id}';
-  Duration? stepTimer;
   var longestRunning = Duration.zero;
   for (final timer in timers) {
     final left = timer.remaining(now);
-    // A finished step timer still counts: that step has no time left.
-    if (timer.id == stepPrefix || timer.id.startsWith('$stepPrefix-')) {
-      if (stepTimer == null || left > stepTimer) stepTimer = left;
-    }
     if (left > longestRunning) longestRunning = left;
   }
-  // Every known duration is positive, so a known total is at least 1 s.
-  final currentSeconds =
-      stepTimer?.inSeconds ?? _positive(current.timerSeconds) ?? 0;
-  var seconds = currentSeconds > longestRunning.inSeconds
-      ? currentSeconds
-      : longestRunning.inSeconds;
-  for (final step in steps.skip(index + 1)) {
-    seconds += _positive(step.timerSeconds) ?? 0;
+  // The step's own timer: the latest started one, running or dismissed.
+  CookingTimerState? stepTimer;
+  for (final timer in [...timers, ...pastTimers]) {
+    if (!isStepTimerFor(timer.id, current.id)) continue;
+    if (stepTimer == null || timer.startedAt.isAfter(stepTimer.startedAt)) {
+      stepTimer = timer;
+    }
   }
-  if (seconds <= 0) return const DinnerDraft(DinnerKind.started);
-  final minutes = (seconds / 60).ceil();
+  final currentLeft =
+      stepTimer?.remaining(now) ?? _duration(current.timerSeconds);
+  var total = currentLeft > longestRunning ? currentLeft : longestRunning;
+  for (final step in steps.skip(index + 1)) {
+    total += _duration(step.timerSeconds);
+  }
+  if (total <= Duration.zero) return const DinnerDraft(DinnerKind.started);
+  final minutes = (total.inMicroseconds / Duration.microsecondsPerMinute)
+      .ceil();
   return DinnerDraft(
     DinnerKind.started,
     minutes: minutes > kMaxDinnerMinutes ? null : minutes,
   );
 }
 
-int? _positive(int? seconds) => seconds != null && seconds > 0 ? seconds : null;
+Duration _duration(int? seconds) =>
+    seconds != null && seconds > 0 ? Duration(seconds: seconds) : Duration.zero;
+
+/// Remembers every timer [CookingUiController] has shown, so a step timer the
+/// cook dismissed after it finished still tells [dinnerDraftFor] that the
+/// step's time is used up. Attach it when the cooking screen starts.
+class DinnerTimerMemory {
+  final Map<String, CookingTimerState> _seen = {};
+  CookingUiController? _ui;
+
+  /// Timers seen so far that are no longer running (dismissed).
+  Iterable<CookingTimerState> get pastTimers {
+    final running = {for (final t in _ui?.timers ?? const []) t.id};
+    return _seen.values.where((t) => !running.contains(t.id));
+  }
+
+  void attach(CookingUiController ui) {
+    detach();
+    _ui = ui;
+    ui.addListener(_observe);
+    _observe();
+  }
+
+  void detach() {
+    _ui?.removeListener(_observe);
+    _ui = null;
+  }
+
+  void _observe() {
+    for (final timer in _ui?.timers ?? const <CookingTimerState>[]) {
+      _seen[timer.id] = timer;
+    }
+  }
+}
 
 /// The latest cook-confirmed attempt of each kind. Reopening the review shows
 /// that attempt's live status instead of minting a stale or duplicate send.

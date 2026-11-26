@@ -136,31 +136,63 @@ void main() {
     );
   });
 
-  test('every template is GSM-7 only, so one SMS stays one segment', () {
-    // The GSM 03.38 basic character set (no extension table, no em dash or
-    // curly quotes, which would force UCS-2 and 70-character segments).
+  test(
+    'the fixed template text is GSM-7 only; ASCII slots fit one segment',
+    () {
+      // The GSM 03.38 basic character set (no extension table, no em dash or
+      // curly quotes, which would force UCS-2 and 70-character segments).
+      const gsm7 =
+          '@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?'
+          '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+      final messages = [
+        composeDinnerMessage(kind: DinnerKind.ready, recipeTitle: 'Soup'),
+        for (final minutes in [null, 1, 25, 120])
+          for (final cookName in [null, 'Terry'])
+            composeDinnerMessage(
+              kind: DinnerKind.started,
+              recipeTitle: 'Chickpea wraps',
+              minutes: minutes,
+              cookName: cookName,
+            ),
+      ];
+      for (final message in messages) {
+        final outside = message.runes
+            .map(String.fromCharCode)
+            .where((c) => !gsm7.contains(c))
+            .toList();
+        expect(outside, isEmpty, reason: message);
+        expect(message.length, lessThanOrEqualTo(160), reason: message);
+      }
+    },
+  );
+
+  test('Unicode names and titles pass through; only fixed text is GSM-7', () {
+    // Same fixture as functions/test/dinner-ready.test.js.
     const gsm7 =
         '@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?'
         '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
-    final messages = [
-      composeDinnerMessage(kind: DinnerKind.ready, recipeTitle: 'Soup'),
-      for (final minutes in [null, 1, 25, 120])
-        for (final cookName in [null, 'Terry'])
-          composeDinnerMessage(
-            kind: DinnerKind.started,
-            recipeTitle: 'Chickpea wraps',
-            minutes: minutes,
-            cookName: cookName,
-          ),
-    ];
-    for (final message in messages) {
-      final outside = message.runes
-          .map(String.fromCharCode)
-          .where((c) => !gsm7.contains(c))
-          .toList();
-      expect(outside, isEmpty, reason: message);
-      expect(message.length, lessThanOrEqualTo(160), reason: message);
-    }
+    List<String> outside(String text) => text.runes
+        .map(String.fromCharCode)
+        .where((c) => !gsm7.contains(c))
+        .toList();
+    final cookName = '豆腐' * 15;
+    final message = composeDinnerMessage(
+      kind: DinnerKind.started,
+      recipeTitle: '豆腐汤',
+      minutes: 120,
+      cookName: cookName,
+    );
+    expect(
+      message,
+      "SousSight: Dinner's started, about 120 minutes to go. "
+      '$cookName is making 豆腐汤.',
+    );
+    final fixed = message.replaceFirst(cookName, '').replaceFirst('豆腐汤', '');
+    expect(outside(fixed), isEmpty);
+    // A Unicode slot makes the SMS UCS-2 (70 characters a segment): the
+    // one-segment claim covers only the fixed text and ASCII slots.
+    expect(outside(message), isNotEmpty);
+    expect(message.length, greaterThan(70));
   });
 
   test('a started request without an estimate leaves minutes out', () {

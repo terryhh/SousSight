@@ -56,6 +56,30 @@ export function composeDinnerMessage({ kind, recipeTitle, minutes, cookName }) {
   return `SousSight: Dinner is ready! ${recipeTitle} is on the table.`;
 }
 
+/** The started template before SS-100. Ledger records written then hash the
+ * request with this text, so a replay must still recognise them. */
+function legacyDinnerMessage({ kind, recipeTitle, minutes, cookName }) {
+  if (kind === 'started' && minutes != null) {
+    return `SousSight: ${cookName || 'Your cook'} started ${recipeTitle}. Dinner in about ${minutes} min.`;
+  }
+  return null;
+}
+
+/** Idempotency fingerprint from the stable request fields only. The rendered
+ * `message` is left out, so a template change never turns a replay of the
+ * same slots into a conflict. */
+export function requestFingerprint(request, channel) {
+  const { message, ...fields } = request;
+  return `v2:${sha256(JSON.stringify({ ...fields, channel }))}`;
+}
+
+/** Fingerprints that earlier deployments wrote for this same request: the
+ * whole request, including the message their template rendered. */
+export function legacyFingerprints(request, channel) {
+  const messages = new Set([request.message, legacyDinnerMessage(request)].filter(Boolean));
+  return [...messages].map((message) => sha256(JSON.stringify({ ...request, message, channel })));
+}
+
 function invalid() {
   return new HttpError('invalid-request', 400,
     'Provide the session, notification ID, recipient, message kind, and recipe title.');
@@ -120,7 +144,8 @@ export function createDinnerLedger(db) {
   return {
     async claim({ uid, request, channel, nowMs }) {
       const key = sha256(`${uid}\n${request.notificationId}`);
-      const fingerprint = sha256(JSON.stringify({ ...request, channel }));
+      const fingerprint = requestFingerprint(request, channel);
+      const accepted = new Set([fingerprint, ...legacyFingerprints(request, channel)]);
       const ref = db.collection('_dinnerNotifications').doc(key);
       const sessionRef = db.collection('sessions').doc(request.sessionId);
       // One message of each kind per session/recipient prevents a fresh ID from
@@ -139,7 +164,7 @@ export function createDinnerLedger(db) {
         }
         if (existing.exists) {
           const record = existing.data();
-          if (record.fingerprint !== fingerprint) {
+          if (!accepted.has(record.fingerprint)) {
             throw new HttpError('idempotency-conflict', 409, 'This notification ID already belongs to a different message.');
           }
           return { key, claimed: false, record };

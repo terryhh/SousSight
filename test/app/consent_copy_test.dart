@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
+import 'package:soussight/core/models.dart';
+import 'package:soussight/pantry/pantry_client.dart';
 
 ConsentAsk _ask(String feature, Set<DataKind> kinds) => ConsentAsk(
   feature: feature,
@@ -39,7 +41,8 @@ class _CountingCloud implements CloudFallbackSender {
 void main() {
   group('consent wording', () {
     for (final (feature, kinds, subject) in [
-      ('coach_lite', {DataKind.text}, 'this question'),
+      ('nearby', {DataKind.text}, 'this question'),
+      ('coach_lite', {DataKind.text}, 'your question'),
       ('label_check', {DataKind.image, DataKind.text}, 'this photo'),
       ('pantry_voice', {DataKind.audio, DataKind.text}, 'this voice clip'),
       ('nearby', {DataKind.location, DataKind.text}, 'your location'),
@@ -53,44 +56,101 @@ void main() {
         {DataKind.image, DataKind.audio, DataKind.location},
         'this photo, this voice clip and your location',
       ),
-      ('recipe_draft', {DataKind.text}, 'this pantry list'),
-      ('pantry_scan', {DataKind.text}, 'this pantry list'),
+      (
+        'recipe_draft',
+        {DataKind.text},
+        'your pantry list and any note you added',
+      ),
+      ('pantry_scan', {DataKind.text}, 'the list you typed or said'),
       ('pantry_voice', {DataKind.text}, 'what you said'),
+      ('label_check', {DataKind.text}, 'the label text you typed'),
     ]) {
       test('$feature $kinds says "$subject"', () {
         final ask = _ask(feature, kinds);
         expect(consentSubject(ask), subject);
         final copy = consentCopy(ask);
-        expect(copy.title, 'Send $subject to Google?');
+        expect(copy.title, 'Send $subject to Google if needed?');
         expect(copy.body, contains('sends $subject'));
         expect(copy.body, contains("to Google's servers to answer"));
-        expect(copy.body, contains("SousSight doesn't save it."));
-        expect(copy.body, contains('"Keep it on my phone", nothing is sent'));
+        expect(
+          copy.body,
+          contains('"Keep it on my phone", nothing from this request is sent'),
+        );
         expect(copy.allow, 'Send this once');
         expect(copy.decline, 'Keep it on my phone');
       });
     }
 
-    test('a photo with text mentions the written request; text alone not', () {
+    test('names everything that goes with a photo', () {
       expect(
         consentCopy(_ask('label_check', {DataKind.image, DataKind.text})).body,
-        contains('sends this photo, with a short written request, to Google'),
+        contains(
+          "sends this photo, with SousSight's short instructions, to Google",
+        ),
+      );
+      expect(
+        consentCopy(_ask('pantry_scan', {DataKind.image, DataKind.text})).body,
+        contains(
+          'sends this photo, with anything you typed, any items picked out '
+          "from your voice note and SousSight's recipe list, to Google",
+        ),
+      );
+      expect(
+        consentCopy(_ask('coach_lite', {DataKind.image, DataKind.text})).body,
+        contains('with your question and the recipe step you are on'),
       );
       expect(
         consentCopy(_ask('label_check', {DataKind.image})).body,
         contains('sends this photo to Google'),
       );
-      expect(
-        consentCopy(_ask('coach_lite', {DataKind.text})).body,
-        isNot(contains('written request')),
+      expect(consentCompanion(_ask('coach_lite', {DataKind.text})), isEmpty);
+    });
+
+    test('says Google may receive it, never that it was sent', () {
+      final copy = consentCopy(
+        _ask('pantry_scan', {DataKind.image, DataKind.text}),
       );
+      expect(copy.title, endsWith('if needed?'));
+      expect(copy.body, startsWith('Pantry scan may need help from Google.'));
+      expect(
+        copy.body,
+        contains("If you say yes and this device can't answer"),
+      );
+      expect(copy.body, contains('Your yes covers this one request only.'));
+      for (final claim in [
+        'It goes',
+        'is sent to',
+        'will be sent',
+        'needs help',
+      ]) {
+        expect(copy.body, isNot(contains(claim)));
+      }
+    });
+
+    test('storage: no saved media, stated apart from in-memory retention', () {
+      final photo = consentCopy(
+        _ask('label_check', {DataKind.image, DataKind.text}),
+      ).body;
+      expect(
+        photo,
+        contains(
+          "SousSight doesn't save photos or voice clips on this device or "
+          'online. The app may keep them in memory until you leave this '
+          'screen.',
+        ),
+      );
+      expect(photo, isNot(contains('only in memory for')));
+      expect(photo, isNot(contains('this one time only')));
+      // Text alone: no storage claim is made either way.
+      final text = consentCopy(_ask('coach_lite', {DataKind.text})).body;
+      expect(text, isNot(contains('save')));
     });
 
     test('names the feature and uses no technical jargon', () {
       final copy = consentCopy(
         _ask('label_check', {DataKind.image, DataKind.text}),
       );
-      expect(copy.body, startsWith('Label check needs help from Google.'));
+      expect(copy.body, startsWith('Label check may need help from Google.'));
       for (final jargon in [
         'Firebase',
         'AI Logic',
@@ -130,7 +190,10 @@ void main() {
       final ask = _ask('pantry_voice', {DataKind.audio, DataKind.text});
       unawaited(gate.request(ask));
       await tester.pumpAndSettle();
-      expect(find.text('Send this voice clip to Google?'), findsOneWidget);
+      expect(
+        find.text('Send this voice clip to Google if needed?'),
+        findsOneWidget,
+      );
       expect(find.text(consentCopy(ask).body), findsOneWidget);
       expect(find.text('Send this once'), findsOneWidget);
       expect(find.text('Keep it on my phone'), findsOneWidget);
@@ -218,7 +281,7 @@ void main() {
             .then((g) => grant = g),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Send this photo to Google?'), findsOneWidget);
+      expect(find.text('Send this photo to Google if needed?'), findsOneWidget);
       expect(find.byKey(const ValueKey('consent-preview')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('consent-allow')));
       await tester.pumpAndSettle();
@@ -306,7 +369,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('consent-dialog')), findsOneWidget);
-      expect(find.text('Send this photo to Google?'), findsOneWidget);
+      expect(find.text('Send this photo to Google if needed?'), findsOneWidget);
       if (closeInstead) {
         hybrid.navigatorKey.currentState!.pop();
       } else {
@@ -361,6 +424,130 @@ void main() {
       expect(declined.ok, isFalse);
       expect(cloud.sends, 0);
       expect(inference.requests, isEmpty);
+    });
+  });
+
+  group('a real mixed-input pantry scan', () {
+    // The task the pantry client really builds: the cook's typed list, the
+    // items picked out of their voice note and their photo.
+    HybridTask pantryTask() => buildPantryScanTask(
+      typedText: 'two cans of chickpeas',
+      spokenItems: const ['tomatoes', 'bread'],
+      photoJpeg: Uint8List.fromList(const [1, 2, 3]),
+      recipes: const [
+        Recipe(
+          id: 'wrap',
+          version: 1,
+          title: 'Chickpea wrap',
+          summary: 'A wrap.',
+          ingredients: [
+            Ingredient(id: 'chickpeas', name: 'Chickpeas', qty: '1 can'),
+          ],
+          equipment: [],
+          steps: [
+            RecipeStep(
+              id: 'mash',
+              title: 'Mash',
+              instruction: 'Mash.',
+              cue: 'Done.',
+            ),
+          ],
+          checkpoints: [],
+          reviewedSubstitutions: [],
+          adjustmentLabels: {},
+        ),
+      ],
+    );
+
+    Future<
+      ({
+        HybridRuntime hybrid,
+        FakeHybridInference inference,
+        _CountingCloud cloud,
+      })
+    >
+    pump(WidgetTester tester, FakeHybridInference inference) async {
+      final cloud = _CountingCloud();
+      final hybrid = HybridRuntime.create(
+        inference: inference,
+        cloudRoutes: CloudRoutes.parse('hybridFallback'),
+        cloudFallback: cloud,
+        isOnline: () => true,
+        cloudModel: 'test-cloud-model',
+      );
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: hybrid.navigatorKey, home: const SizedBox()),
+      );
+      return (hybrid: hybrid, inference: inference, cloud: cloud);
+    }
+
+    testWidgets('the prompt names the typed list and the voice items', (
+      tester,
+    ) async {
+      final task = pantryTask();
+      // The text part really carries the cook's own words.
+      final text = (task.parts.first as HybridText).text;
+      expect(text, contains('"typedByCook":"two cans of chickpeas"'));
+      expect(text, contains('"saidByCook":["tomatoes","bread"]'));
+
+      final (:hybrid, :inference, :cloud) = await pump(
+        tester,
+        FakeHybridInference(
+          capabilities: const HybridCapabilities.none(),
+          imageAvailability: const HybridAvailability(
+            status: OnDeviceStatus.unavailable,
+          ),
+        ),
+      );
+      DispatchResult? result;
+      unawaited(
+        hybrid.dispatcher
+            .start(task, sessionId: hybrid.sessionId)
+            .result
+            .then((r) => result = r),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Send this photo to Google if needed?'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'sends this photo, with anything you typed, any items picked out '
+          'from your voice note',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('consent-decline')));
+      await tester.pumpAndSettle();
+      expect(result?.blocked, RouteReason.consentDeclined);
+      expect(cloud.sends, 0);
+      expect(inference.requests, isEmpty);
+    });
+
+    testWidgets('a yes may still finish on the device: nothing is sent', (
+      tester,
+    ) async {
+      // A capable device: the scan may upload (preferOnDevice), so it asks,
+      // but the on-device model answers and nothing leaves.
+      final inference = FakeHybridInference()
+        ..enqueueText('{"items":[],"meals":[]}');
+      final (:hybrid, inference: _, :cloud) = await pump(tester, inference);
+      DispatchResult? result;
+      unawaited(
+        hybrid.dispatcher
+            .start(pantryTask(), sessionId: hybrid.sessionId)
+            .result
+            .then((r) => result = r),
+      );
+      await tester.pumpAndSettle();
+      final dialog = find.byKey(const ValueKey('consent-dialog'));
+      expect(dialog, findsOneWidget);
+      // The copy only says Google may receive it, if needed.
+      expect(find.textContaining('if needed?'), findsOneWidget);
+      expect(find.textContaining("this device can't answer"), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('consent-allow')));
+      await tester.pumpAndSettle();
+      expect(result, isNotNull);
+      expect(result!.legs.single.provenance, Provenance.sdkOnDevice);
+      expect(cloud.sends, 0);
     });
   });
 }
