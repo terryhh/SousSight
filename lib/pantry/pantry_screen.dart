@@ -424,6 +424,16 @@ class _PantryScreenState extends State<PantryScreen> {
                 if (_result case final result?) ...[
                   const SizedBox(height: 28),
                   _resultsHeader(result),
+                  const SizedBox(height: 8),
+                  PantryLegList(legs: result.legs),
+                  if (result.notice case final notice?) ...[
+                    const SizedBox(height: 8),
+                    _notice(
+                      notice,
+                      Icons.mic_off_outlined,
+                      color: const Color(0xFFFFF1CC),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   if (result.question case final question?) ...[
                     _questionCard(question),
