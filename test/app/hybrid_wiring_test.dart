@@ -317,11 +317,10 @@ void main() {
       sessionId: 's',
     );
 
-    test('says which data goes to whom', () {
-      final copy = consentCopy(ask, cloudModel: 'm-1');
-      expect(copy.body, contains('photo and text'));
-      expect(copy.body, contains(kCloudRecipient));
-      expect(copy.body, contains('m-1'));
+    test('says which data goes to whom, in plain words', () {
+      final copy = consentCopy(ask);
+      expect(copy.title, 'Send this photo to Google?');
+      expect(copy.body, contains("to Google's servers"));
       expect(copy.body, contains('nothing is sent'));
     });
 
@@ -353,8 +352,8 @@ void main() {
               .then((g) => (grant, done) = (g, true)),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Allow once'), findsOneWidget);
-        expect(find.text("Don't send"), findsOneWidget);
+        expect(find.text('Send this once'), findsOneWidget);
+        expect(find.text('Keep it on my phone'), findsOneWidget);
         await tester.tap(find.byKey(ValueKey(button)));
         await tester.pumpAndSettle();
         expect(done, isTrue);
