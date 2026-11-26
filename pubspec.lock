@@ -17,6 +17,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.1"
+  ai_logic_hybrid:
+    dependency: "direct main"
+    description:
+      path: "packages/ai_logic_hybrid"
+      relative: true
+    source: path
+    version: "0.1.0"
   archive:
     dependency: transitive
     description:
