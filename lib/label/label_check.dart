@@ -26,9 +26,13 @@ const kUnreadableWording =
     '— read the label yourself.';
 const kMentionsPrefix = 'The label mentions: ';
 const kReadItYourselfWording = 'Read the label yourself before serving.';
+
+/// Where the household list lives (SS-099): saved in this app on this device
+/// (it may be included in the device's own backups), never sent to a model.
 const kHouseholdStaysHereWording =
-    'Your household list stays on this device. Allergy answers you give the '
-    'cooking coach are part of the saved cooking session.';
+    'Your household list is saved in this app on this device. It is never '
+    'sent to a model. Allergy answers you give the cooking coach are part of '
+    'the saved cooking session.';
 
 // ---- the request ------------------------------------------------------------
 

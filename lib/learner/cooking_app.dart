@@ -110,6 +110,7 @@ class CookingApp extends StatelessWidget {
             isDemo: isDemo,
             initialRecipeId: initialRecipeId,
             hybrid: hybrid,
+            previewBeforeCooking: true,
           )
         : CookingScreen(services: services, isDemo: isDemo, hybrid: hybrid),
   );

@@ -8,6 +8,8 @@ import '../app/services_scope.dart';
 import '../core/analytics.dart';
 import '../core/models.dart';
 import '../learner/cooking_app.dart';
+import '../learner/recipe_preview.dart';
+import '../learner/recipe_preview_swap.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_types.dart';
 import 'pantry_client.dart';
@@ -36,6 +38,7 @@ class PantryFlow extends StatefulWidget {
     this.loadRecipes = loadRecipeCatalog,
     this.cookingBuilder,
     this.hybrid,
+    this.previewBeforeCooking = false,
   });
 
   final AppServices services;
@@ -52,6 +55,9 @@ class PantryFlow extends StatefulWidget {
   /// Shared hybrid inference services. Null in rehearsal (everything is
   /// simulated) and in tests that supply their own clients.
   final HybridRuntime? hybrid;
+
+  /// Shows the recipe preview (SS-099) before cooking opens.
+  final bool previewBeforeCooking;
 
   @override
   State<PantryFlow> createState() => _PantryFlowState();
@@ -121,6 +127,22 @@ class _PantryFlowState extends State<PantryFlow> {
   Future<void> _open(Recipe recipe, PantryHandoff handoff) async {
     if (_opening) return;
     _opening = true;
+    if (widget.previewBeforeCooking) {
+      final hybrid = widget.isDemo ? null : widget.hybrid;
+      final start = await showRecipePreview(
+        context,
+        recipe: recipe,
+        confirmedItems: handoff.confirmedItems,
+        pantryChecked: !handoff.skipped,
+        draftLegs: handoff.draftLegs,
+        household: widget.hybrid?.household,
+        swapCoach: hybrid == null ? null : RecipeSwapCoach.forRuntime(hybrid),
+      );
+      if (!start || !mounted) {
+        _opening = false;
+        return;
+      }
+    }
     if (!widget.isDemo) {
       widget.services.analytics.log(AnalyticsEvents.recipeChosen, {
         'recipe_id': isDraftRecipe(recipe) ? 'ai_draft' : recipe.id,
@@ -143,12 +165,15 @@ class _PantryFlowState extends State<PantryFlow> {
     }
     if (!mounted) return;
     unawaited(
-      navigator.push(
-        MaterialPageRoute<void>(
-          builder: (context) =>
-              _cooking(recipe, () => Navigator.of(context).maybePop()),
-        ),
-      ),
+      navigator
+          .push(
+            MaterialPageRoute<void>(
+              builder: (context) =>
+                  _cooking(recipe, () => Navigator.of(context).maybePop()),
+            ),
+          )
+          // Back at the pantry: a new visit scope for the next meal.
+          .whenComplete(() => widget.hybrid?.startPantryVisit()),
     );
   }
 
