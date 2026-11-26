@@ -11,6 +11,7 @@ import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/app/rehearsal_runtime.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/services_scope.dart';
+import 'package:soussight/coach_lite/tts.dart';
 import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
@@ -35,6 +36,27 @@ class _SlowResearch implements CookingResearchClient {
   @override
   Future<CookingResearchResult> research(CookingResearchQuery query) =>
       pending.future;
+}
+
+/// A browser voice with no local voice: only an online one exists.
+class _OnlineOnlyTts implements TextToSpeech {
+  final spoken = <String>[];
+  final localOnlyRequests = <bool>[];
+  @override
+  Future<TtsSupport> probe() async => const TtsSupport(
+    available: true,
+    locality: VoiceLocality.browserMayUseNetwork,
+  );
+  @override
+  Future<bool> speak(String text, {bool localVoiceOnly = false}) async {
+    localOnlyRequests.add(localVoiceOnly);
+    if (localVoiceOnly) return false; // no voice on this device
+    spoken.add(text); // would go to an online voice service
+    return true;
+  }
+
+  @override
+  Future<void> stop() async {}
 }
 
 void main() {
@@ -432,5 +454,54 @@ void main() {
     expect(find.text('CAMERA OFF'), findsOneWidget);
     expect(find.text('Watch my food'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('practice mode never reads aloud with an online voice '
+      '(Codex #221)', (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final services = (await tester.runAsync(fakeServices))!;
+    final tts = _OnlineOnlyTts();
+    final runtime = RehearsalHybridRuntime.create(
+      inference: RehearsalHybridInference(answerDelay: Duration.zero),
+    );
+    // Privacy preferences default to "not local-only" in practice mode.
+    expect(runtime.privacy.localOnly('coach_lite'), isFalse);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: cookingTheme,
+        home: CookingScreen(
+          services: services,
+          isDemo: true,
+          hybrid: runtime,
+          textToSpeech: () => tts,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('cooking-message-input')),
+      'Secret family question?',
+    );
+    await tester.tap(find.byKey(const ValueKey('send-message')));
+    await tester.pumpAndSettle();
+    final toggle = find.byTooltip('Read answers aloud');
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    // Before turning it on, the caption already says nothing is sent.
+    expect(
+      find.textContaining('Nothing is sent to an online voice'),
+      findsOneWidget,
+    );
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tts.localOnlyRequests, isNotEmpty);
+    expect(tts.localOnlyRequests.every((local) => local), isTrue);
+    expect(tts.spoken, isEmpty, reason: 'nothing reached an online voice');
+    expect(
+      find.textContaining('Nothing is sent to an online voice'),
+      findsOneWidget,
+    );
   });
 }
