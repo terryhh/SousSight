@@ -37,7 +37,7 @@ if [ -n "$FAIL_PATTERN" ] && printf '%s %s' "$name" "$*" | grep -Eq "$FAIL_PATTE
   echo "stub $name failing on purpose"
   exit 3
 fi
-if [ "$name" = flutter ] && [ "$1" = test ]; then
+if [ "$name" = flutter ] && [ "$1" = test ] && ! { [ -n "$NO_LCOV_PATTERN" ] && printf '%s' "$*" | grep -Eq "$NO_LCOV_PATTERN"; }; then
   while [ $# -gt 0 ]; do
     if [ "$1" = --coverage-path ]; then
       printf 'SF:lib/a.dart\\nDA:1,1\\nend_of_record\\n' > "$2"
@@ -58,13 +58,14 @@ function stubs(names = ['flutter', 'node', 'npm', 'python3']) {
   return dir;
 }
 
-function verify(args, { env = {}, stubNames } = {}) {
+function verify(args, { env = {}, stubNames, cwd, outDir, scriptPath = script } = {}) {
   const bin = stubs(stubNames);
-  const out = tempDir();
+  const out = outDir ?? tempDir();
   const home = tempDir();
-  const log = path.join(out, 'calls.log');
-  const result = spawnSync(script, args, {
+  const log = path.join(tempDir(), 'calls.log');
+  const result = spawnSync(scriptPath, args, {
     encoding: 'utf8',
+    cwd,
     env: {
       PATH: `${bin}:/usr/bin:/bin`,
       HOME: home,
@@ -75,13 +76,13 @@ function verify(args, { env = {}, stubNames } = {}) {
     },
   });
   const read = (name) => {
-    const file = path.join(out, name);
+    const file = path.isAbsolute(name) ? name : path.resolve(cwd ?? process.cwd(), out, name);
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
   };
   return {
     code: result.status,
     out: `${result.stdout}${result.stderr}`,
-    calls: read('calls.log'),
+    calls: read(log),
     summary: read('summary.txt'),
     markdown: read('summary.md'),
     outDir: out,
@@ -177,12 +178,48 @@ test('a failing step is reported, later steps still run, and the exit is 1', () 
   assert.match(r.calls, /npm --prefix functions test/);
 });
 
-test('the coverage gate is skipped, not run on stale data, when a test step fails', () => {
+test('the coverage gate never runs on stale data when a test step fails', () => {
   const r = verify(['--quick'], { env: { FAIL_PATTERN: '^flutter test --no-pub --coverage --coverage-path [^ ]*app' } });
   assert.equal(r.code, 1, r.out);
   assert.match(row(r.summary, 'flutter test --coverage (app)'), /FAIL/);
-  assert.match(row(r.summary, 'coverage gate'), /SKIP .*no fresh lcov/);
+  assert.match(row(r.summary, 'coverage gate'), /FAIL .*no fresh lcov/);
   assert.doesNotMatch(r.calls, /coverage_gate\.py/);
+});
+
+test('missing lcov after passing tests fails the run instead of going GREEN', () => {
+  const r = verify(['--quick'], { env: { NO_LCOV_PATTERN: 'plugin\\.lcov' } });
+  assert.equal(r.code, 1, r.out);
+  assert.match(row(r.summary, 'flutter test --coverage (plugin)'), /PASS/);
+  assert.match(row(r.summary, 'coverage gate'), /FAIL .*no fresh lcov; gate not run/);
+  assert.match(r.out, /RESULT: RED/);
+  assert.doesNotMatch(r.out, /RESULT: GREEN/);
+});
+
+test('--allow-coverage-skip turns a missing lcov into an explicit skip', () => {
+  const r = verify(['--quick', '--allow-coverage-skip'], { env: { NO_LCOV_PATTERN: 'plugin\\.lcov' } });
+  assert.equal(r.code, 0, r.out);
+  assert.match(row(r.summary, 'coverage gate'), /SKIP .*allowed by --allow-coverage-skip/);
+  assert.match(r.out, /RESULT: GREEN \(with \d+ skipped/);
+});
+
+test('a relative VERIFY_OUT_DIR resolves against the caller, so plugin lcov is gated', () => {
+  const cwd = tempDir();
+  const r = verify(['--quick'], { cwd, outDir: 'rel-out' });
+  assert.equal(r.code, 0, r.out);
+  const abs = fs.realpathSync(path.join(cwd, 'rel-out'));
+  assert.match(row(r.summary, 'coverage gate'), /PASS/);
+  assert.ok(r.calls.includes(`--coverage-path ${abs}/app.lcov.info`), r.calls);
+  assert.ok(r.calls.includes(`--coverage-path ${abs}/plugin.lcov.info`), r.calls);
+  assert.ok(r.calls.includes(`--plugin-lcov ${abs}/plugin.lcov.info`), r.calls);
+  assert.ok(fs.existsSync(path.join(abs, 'plugin.lcov.info')));
+});
+
+test('--e2e-base-url needs a URL', () => {
+  for (const args of [['--e2e-base-url'], ['--e2e-base-url', 'build/web']]) {
+    const r = verify(args);
+    assert.equal(r.code, 2, r.out);
+    assert.match(r.out, /--e2e-base-url needs an http\(s\) URL/);
+  }
 });
 
 test('--update-baseline is passed to the coverage gate', () => {
@@ -205,4 +242,103 @@ test('warnings from a passing step are surfaced in the summary', () => {
   assert.equal(r.code, 0, r.out);
   assert.match(row(r.summary, 'flutter analyze (app)'), /PASS .*1 ::warning:: line\(s\); see .*flutter-analyze-app\.log/);
   assert.doesNotMatch(row(r.summary, 'flutter test --coverage (app)'), /warning/);
+});
+
+// A throwaway repository: a copy of verify_all.sh plus stub tool scripts, so
+// the full (non-quick) flow including the browser journey runs in seconds.
+function fakeRepo() {
+  const repo = tempDir();
+  const write = (rel, body, mode = 0o755) => {
+    const file = path.join(repo, rel);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, body);
+    fs.chmodSync(file, mode);
+  };
+  write('tool/verify_all.sh', fs.readFileSync(script, 'utf8'));
+  fs.mkdirSync(path.join(repo, 'packages/ai_logic_hybrid'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'functions/node_modules'), { recursive: true });
+  // The rehearsal and judged builds leave different index.html files in build/web.
+  write('tool/build_web.sh', `#!/bin/sh
+mkdir -p build/web
+case "$*" in
+  *FAKE_BACKEND=true*) echo rehearsal-build > build/web/index.html ;;
+  *) echo judged-build > build/web/index.html ;;
+esac
+`);
+  write('tool/check_build_config.sh', '#!/bin/sh\nexit 0\n');
+  write('tool/check_web_bundle.sh', '#!/bin/sh\nexit 0\n');
+  write('tool/e2e/run.sh', `#!/bin/sh
+{
+  echo "args=$*"
+  echo "E2E_BASE_URL=\${E2E_BASE_URL-<unset>}"
+  echo "E2E_ALLOW_AI=\${E2E_ALLOW_AI-<unset>}"
+  echo "E2E_MODE=\${E2E_MODE-<unset>}"
+  if [ -n "$1" ] && [ -f "$1/index.html" ]; then echo "index=$(cat "$1/index.html")"; fi
+  echo ---
+} >> "$E2E_LOG"
+`);
+  write('bin/chrome', '#!/bin/sh\nexit 0\n');
+  write('bin/gitleaks', '#!/bin/sh\necho 8.30.1\n');
+  return repo;
+}
+
+function e2eRun(extraArgs = [], env = {}) {
+  const repo = fakeRepo();
+  const e2eLog = path.join(tempDir(), 'e2e.log');
+  const r = verify(['--no-native', ...extraArgs], {
+    scriptPath: path.join(repo, 'tool/verify_all.sh'),
+    env: {
+      CHROME_EXECUTABLE: path.join(repo, 'bin/chrome'),
+      GITLEAKS: path.join(repo, 'bin/gitleaks'),
+      E2E_LOG: e2eLog,
+      // A caller's environment must not leak into the default journey.
+      E2E_BASE_URL: 'https://example.invalid/',
+      E2E_ALLOW_AI: '1',
+      ...env,
+    },
+  });
+  const e2e = fs.existsSync(e2eLog) ? fs.readFileSync(e2eLog, 'utf8') : '';
+  return { ...r, e2e, repo };
+}
+
+test('the default journey runs the rehearsal artifact with AI and URLs forced off', () => {
+  const r = e2eRun();
+  assert.equal(r.code, 0, r.out);
+  assert.match(row(r.summary, 'browser journey (e2e)'), /PASS/);
+  assert.doesNotMatch(r.summary, /hosted URL/);
+  const runs = r.e2e.split('---\n').filter(Boolean);
+  assert.equal(runs.length, 1, r.e2e);
+  assert.match(runs[0], /args=.*e2e-rehearsal-web/);
+  assert.match(runs[0], /E2E_BASE_URL=<unset>/);
+  assert.match(runs[0], /E2E_ALLOW_AI=0/);
+  assert.match(runs[0], /E2E_MODE=rehearsal/);
+  // build/web holds the judged build by then; the journey saw the rehearsal.
+  assert.match(runs[0], /index=rehearsal-build/);
+  assert.equal(fs.readFileSync(path.join(r.repo, 'build/web/index.html'), 'utf8').trim(), 'judged-build');
+});
+
+test('without a rehearsal artifact the journey is skipped, never pointed at build/web', () => {
+  const repo = fakeRepo();
+  fs.writeFileSync(path.join(repo, 'tool/build_web.sh'), '#!/bin/sh\nexit 1\n');
+  const e2eLog = path.join(tempDir(), 'e2e.log');
+  const failed = verify(['--no-native'], {
+    scriptPath: path.join(repo, 'tool/verify_all.sh'),
+    env: { CHROME_EXECUTABLE: path.join(repo, 'bin/chrome'), GITLEAKS: path.join(repo, 'bin/gitleaks'), E2E_LOG: e2eLog },
+  });
+  assert.equal(failed.code, 1, failed.out);
+  assert.match(row(failed.summary, 'web build (rehearsal)'), /FAIL/);
+  assert.match(row(failed.summary, 'browser journey (e2e)'), /SKIP .*no rehearsal artifact/);
+  assert.ok(!fs.existsSync(e2eLog), 'run.sh must not be called');
+});
+
+test('--e2e-base-url adds a separate hosted journey that still blocks AI', () => {
+  const r = e2eRun(['--e2e-base-url', 'https://soussight.example.test/']);
+  assert.equal(r.code, 0, r.out);
+  assert.match(row(r.summary, 'browser journey (e2e)'), /PASS/);
+  assert.match(row(r.summary, 'browser journey (hosted URL)'), /PASS/);
+  const runs = r.e2e.split('---\n').filter(Boolean);
+  assert.equal(runs.length, 2, r.e2e);
+  assert.match(runs[1], /E2E_BASE_URL=https:\/\/soussight\.example\.test\//);
+  assert.match(runs[1], /E2E_ALLOW_AI=0/);
+  assert.match(runs[1], /E2E_MODE=auto/);
 });

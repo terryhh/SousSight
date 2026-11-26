@@ -16,6 +16,17 @@
 #   --dry-run          print the plan (run/skip per step) without running it
 #   --verbose          stream each step's output instead of only logging it
 #   --update-baseline  let the coverage gate raise tool/coverage/baseline.json
+#   --allow-coverage-skip
+#                      report a missing lcov as SKIP instead of FAIL (the gate
+#                      otherwise never lets a run end GREEN without running)
+#   --e2e-base-url URL also run the browser journey against an already
+#                      deployed build at URL (intentional, separate step; AI
+#                      requests stay blocked: E2E_ALLOW_AI=0)
+#
+# The default browser journey runs tool/e2e/run.sh against a copy of the
+# rehearsal build in VERIFY_OUT_DIR/e2e-rehearsal-web, with E2E_BASE_URL unset,
+# E2E_MODE=rehearsal and E2E_ALLOW_AI=0. It never uses build/web (which ends
+# up holding the judged build) and never a hosted URL.
 #
 # Environment: FLUTTER_ROOT or flutter on PATH (default $HOME/dev/flutter/bin is
 # added when present); ANDROID_HOME (default $HOME/Library/Android/sdk);
@@ -33,6 +44,7 @@
 set -o pipefail
 
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+invoked_from="$PWD"
 cd "$root" || exit 2
 
 quick=false
@@ -41,6 +53,8 @@ e2e=true
 dry_run=false
 verbose=false
 update_baseline=false
+allow_coverage_skip=false
+e2e_base_url=''
 while (($#)); do
   case "$1" in
     --quick) quick=true ;;
@@ -49,6 +63,15 @@ while (($#)); do
     --dry-run) dry_run=true ;;
     --verbose) verbose=true ;;
     --update-baseline) update_baseline=true ;;
+    --allow-coverage-skip) allow_coverage_skip=true ;;
+    --e2e-base-url)
+      if [[ $# -lt 2 || "$2" != http*://* ]]; then
+        printf -- '--e2e-base-url needs an http(s) URL\n' >&2
+        exit 2
+      fi
+      e2e_base_url=$2
+      shift
+      ;;
     -h | --help)
       awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
       exit 0
@@ -63,9 +86,14 @@ done
 
 GITLEAKS_VERSION=8.30.1
 plugin_dir=packages/ai_logic_hybrid
+# Resolve the output directory to an absolute path (a relative override is
+# relative to where the script was invoked), because steps run in other
+# directories (the plugin's tests write their lcov here too).
 out_dir="${VERIFY_OUT_DIR:-$root/build/verify}"
+case "$out_dir" in /*) ;; *) out_dir="$invoked_from/$out_dir" ;; esac
+mkdir -p "$out_dir/logs" || exit 2
+out_dir="$(cd -- "$out_dir" && pwd)"
 log_dir="$out_dir/logs"
-mkdir -p "$log_dir"
 rm -f "$log_dir"/*.log
 
 if ! command -v flutter >/dev/null 2>&1 && [[ -x "$HOME/dev/flutter/bin/flutter" ]]; then
@@ -101,6 +129,12 @@ record() { # name result seconds note
   results+=("$2")
   times+=("$3")
   notes+=("$4")
+}
+
+fail_step() { # name reason: a check that could not run but must not count as a skip
+  step_no=$((step_no + 1))
+  printf '\n[%02d] %s: FAIL (%s)\n' "$step_no" "$1" "$2"
+  record "$1" FAIL 0 "$2"
 }
 
 skip() { # name reason
@@ -290,6 +324,27 @@ with open(sys.argv[1], 'w', encoding='utf-8') as handle:
 PY
 }
 
+# The rehearsal build is copied to its own directory so the browser journey
+# runs against it; build/web is overwritten by the judged build afterwards.
+rehearsal_dir="$out_dir/e2e-rehearsal-web"
+rehearsal_build() {
+  rm -rf "$rehearsal_dir"
+  ./tool/build_web.sh --no-pub --dart-define=FAKE_BACKEND=true &&
+    cp -R build/web "$rehearsal_dir"
+}
+
+# Default journey: the local rehearsal artifact, never a URL, AI requests
+# aborted (the harness only lets them through when E2E_ALLOW_AI=1).
+e2e_rehearsal() {
+  env -u E2E_BASE_URL E2E_ALLOW_AI=0 E2E_MODE=rehearsal ./tool/e2e/run.sh "$rehearsal_dir"
+}
+
+# Opt-in journey against an already deployed build (--e2e-base-url). The
+# harness still aborts model/Live/dinner requests: verify_all never spends.
+e2e_hosted() {
+  E2E_BASE_URL="$e2e_base_url" E2E_ALLOW_AI=0 E2E_MODE=auto ./tool/e2e/run.sh
+}
+
 coverage_gate() {
   local extra=''
   $update_baseline && extra=--update-baseline
@@ -321,8 +376,11 @@ run 'flutter test --coverage (plugin)' -C "$root/$plugin_dir" -- \
   flutter test --no-pub --coverage --coverage-path "$plugin_lcov"
 if $dry_run || [[ -f "$app_lcov" && -f "$plugin_lcov" ]]; then
   run 'coverage gate' -- coverage_gate
+elif $allow_coverage_skip; then
+  skip 'coverage gate' 'no fresh lcov (allowed by --allow-coverage-skip)'
 else
-  skip 'coverage gate' 'no fresh lcov: a coverage test step failed'
+  # Never GREEN without the gate: a missing lcov is a failure unless allowed.
+  fail_step 'coverage gate' 'no fresh lcov; gate not run (--allow-coverage-skip to permit)'
 fi
 
 if $quick; then
@@ -394,7 +452,7 @@ if $quick; then
   skip 'web build (judged)' '--quick'
   skip 'judged bundle check' '--quick'
 else
-  run 'web build (rehearsal)' -- ./tool/build_web.sh --no-pub --dart-define=FAKE_BACKEND=true
+  run 'web build (rehearsal)' -- rehearsal_build
   defines="$out_dir/judged_defines.json"
   $dry_run || write_judged_defines
   run 'judged build config check' -- ./tool/check_build_config.sh --judged "$defines"
@@ -461,8 +519,19 @@ elif [[ ! -x tool/e2e/run.sh ]]; then
   skip 'browser journey (e2e)' 'tool/e2e/run.sh not on this branch'
 elif [[ -z "$chrome" ]]; then
   skip 'browser journey (e2e)' 'Chrome not found'
+elif ! $dry_run && [[ ! -f "$rehearsal_dir/index.html" ]]; then
+  skip 'browser journey (e2e)' 'no rehearsal artifact (rehearsal build failed)'
 else
-  run 'browser journey (e2e)' -- ./tool/e2e/run.sh
+  run 'browser journey (e2e)' -- e2e_rehearsal
+fi
+if [[ -n "$e2e_base_url" ]]; then
+  if [[ ! -x tool/e2e/run.sh ]]; then
+    skip 'browser journey (hosted URL)' 'tool/e2e/run.sh not on this branch'
+  elif [[ -z "$chrome" ]]; then
+    skip 'browser journey (hosted URL)' 'Chrome not found'
+  else
+    run 'browser journey (hosted URL)' -- e2e_hosted
+  fi
 fi
 
 # ---- summary ------------------------------------------------------------------
