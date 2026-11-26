@@ -50,9 +50,7 @@ void main() {
       research: FakeCookingResearchClient(),
       transportFactory: null,
       media: DemoLiveMedia(),
-      onSessionReady: hybrid == null
-          ? null
-          : bindMealSession(hybrid, () => cook),
+      onSessionReady: hybrid == null ? null : bindMealSession(hybrid),
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -258,7 +256,7 @@ Future<void> _newCookRun(WidgetTester tester, {required bool probe}) async {
     final cooks = <CookingCoordinator>[];
     CookingCoordinator create() {
       late final CookingCoordinator cook;
-      final bind = bindMealSession(hybrid, () => cook);
+      final bind = bindMealSession(hybrid);
       cook = CookingCoordinator(
         services: services,
         research: FakeCookingResearchClient(),
