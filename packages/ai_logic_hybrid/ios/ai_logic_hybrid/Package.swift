@@ -3,6 +3,11 @@
 
 import PackageDescription
 
+// Must equal the firebase-ios-sdk version that firebase_core pins in its own
+// SPM manifest (firebase_core 5.1.0: exactly 13.1.1), so SPM resolves one
+// graph. Bump both together.
+let firebaseSdkVersion: Version = "13.1.1"
+
 let package = Package(
     name: "ai_logic_hybrid",
     platforms: [
@@ -12,24 +17,20 @@ let package = Package(
         .library(name: "ai-logic-hybrid", targets: ["ai_logic_hybrid"])
     ],
     dependencies: [
-        .package(name: "FlutterFramework", path: "../FlutterFramework")
+        .package(url: "https://github.com/firebase/firebase-ios-sdk", exact: firebaseSdkVersion),
+        .package(name: "FlutterFramework", path: "../FlutterFramework"),
     ],
     targets: [
         .target(
             name: "ai_logic_hybrid",
             dependencies: [
-                .product(name: "FlutterFramework", package: "FlutterFramework")
+                .product(name: "FirebaseAILogic", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
+                .product(name: "FlutterFramework", package: "FlutterFramework"),
             ],
             resources: [
-                // If your plugin requires a privacy manifest, for example if it uses any required
-                // reason APIs, update the PrivacyInfo.xcprivacy file to describe your plugin's
-                // privacy impact, and then uncomment these lines. For more information, see
-                // https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+                // The plugin uses no required-reason APIs; enable this if it ever does.
                 // .process("PrivacyInfo.xcprivacy"),
-
-                // If you have other resources that need to be bundled with your plugin, refer to
-                // the following instructions to add them:
-                // https://developer.apple.com/documentation/xcode/bundling-resources-with-a-swift-package
             ]
         )
     ]

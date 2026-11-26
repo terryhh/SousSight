@@ -39,7 +39,11 @@ class _FakeMedia implements LiveMedia {
   @override
   Stream<String> get errors => const Stream.empty();
   @override
+  Stream<CapturedFrame> get timedFrames => const Stream.empty();
+  @override
   Future<void> start() async => started = true;
+  @override
+  Future<void> startCameraOnly() async => started = true;
   @override
   Future<void> stop() async => stopped = true;
   @override
