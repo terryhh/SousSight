@@ -50,6 +50,19 @@ const _blocked = [
   'Serve once it is white.',
   'Golden brown through.',
   'Keep\u00A0it\u00A0at\u00A0165\u00A0F.',
+  // Final round.
+  'The thermometer should say 165.',
+  'A reading of 74 is fine.',
+  'Take it out at 63 on the thermometer.',
+  'Cook it medium rare.',
+  'Leave it rare.',
+  'Make it medium.',
+  'Well done, please.',
+  'Déjalo al punto.',
+  'Término medio.',
+  "There isn't a trace of nuts.",
+  'Not a trace of gluten.',
+  'No trace of dairy.',
 ];
 
 /// Visual-only coaching stays allowed.

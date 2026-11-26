@@ -83,6 +83,14 @@ final _vocabulary = _words([
       r"(?:is|are|was|were)(?:n't|\s+not)\s+any|no\s+trace\s+of)\s+\p{L}+",
   r'none',
   r'contains?\s+none',
+  // "isn't a trace of", "not a trace of" before any noun.
+  r"(?:(?:is|are|was|were)n't|not)\s+a\s+trace\s+of\s+\p{L}+",
+  // Doneness grades.
+  r'rare',
+  r'medium(?:\s+(?:rare|well))?',
+  r'well[- ]done',
+  r'al\s+punto',
+  r't[ée]rmino',
   // Appearance offered as a doneness test, wherever it is placed.
   r'(?:white|pink|opaque|clear|brown|golden)(?![\p{L}])[^.;!?]{0,40}'
       r'(?<![\p{L}])(?:in\s+the\s+(?:middle|center|centre)|inside|through)',
@@ -106,6 +114,14 @@ final _vocabulary = _words([
 /// Temperature symbols, and a number written as a temperature without one
 /// ("165F", "74 C").
 final _symbols = RegExp('[°º℉℃]');
+
+/// Any number in the same sentence as a thermometer or a reading.
+final _reading = RegExp(
+  r'\d[^.;!?]{0,60}(?<![\p{L}])(?:thermometers?|readings?)(?![\p{L}])|'
+  r'(?<![\p{L}])(?:thermometers?|readings?)(?![\p{L}])[^.;!?]{0,60}\d',
+  caseSensitive: false,
+  unicode: true,
+);
 final _bareTemperature = RegExp(
   r'\d+(?:[.,]\d+)?\s*(?:[°º]\s*)?'
   r'(?:[FC]|degrees?|fahrenheit|celsius|grados?)(?![\p{L}])',
@@ -119,6 +135,7 @@ final _bareTemperature = RegExp(
 bool touchesFoodSafety(String text) {
   final t = normalizeCookText(text);
   return _symbols.hasMatch(t) ||
+      _reading.hasMatch(t) ||
       _bareTemperature.hasMatch(t) ||
       _vocabulary.hasMatch(t);
 }
