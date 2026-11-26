@@ -41,6 +41,55 @@ Recipe _recipe({List<ReviewedSubstitution> swaps = const []}) => Recipe(
 );
 
 void main() {
+  test('Codex #221: an AI-drafted recipe is never labelled "not AI"', () {
+    final draft = Recipe(
+      id: 'draft_abc',
+      version: 1,
+      title: 'Draft',
+      summary: '',
+      ingredients: const [],
+      equipment: const [],
+      steps: const [_step],
+      checkpoints: const [],
+      reviewedSubstitutions: const [],
+      adjustmentLabels: const {},
+    );
+    expect(recipeNotesLabel(draft), contains('AI-drafted'));
+    expect(recipeNotesLabel(draft), isNot(contains('not an AI')));
+    expect(recipeNotesLabel(_recipe()), contains('reviewed recipe'));
+  });
+
+  testWidgets('the footer shows the draft caption it is given', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CoachLiteAnswerFooter(
+            answer: const CoachLiteAnswer(
+              stamp: CoachLiteStamp(
+                sessionId: 's',
+                epoch: 1,
+                stepId: 's1',
+                sequence: 1,
+              ),
+              status: CoachLiteStatus.failed,
+              kind: CoachLiteQuestionKind.stepHelp,
+              components: [],
+            ),
+            recipeNotes: const ['This step — look for: x'],
+            recipeNotesLabel:
+                'From your AI-drafted recipe · not reviewed by a person',
+            onStartTimer: (_, _) {},
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.text('From your AI-drafted recipe · not reviewed by a person'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('not an AI answer'), findsNothing);
+  });
+
   group('recipe notes when no AI can answer', () {
     test('names the ingredients asked about, swaps, then the cue', () {
       final notes = recipeNotesFor(
@@ -122,7 +171,7 @@ void main() {
         );
         final shown = status == CoachLiteStatus.blocked;
         expect(
-          find.text('From the recipe (not AI)'),
+          find.text('From the reviewed recipe · not an AI answer'),
           shown ? findsOneWidget : findsNothing,
         );
         expect(

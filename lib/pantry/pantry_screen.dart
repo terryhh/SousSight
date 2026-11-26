@@ -29,7 +29,21 @@ typedef PantryRecipeChosen = void Function(
 /// result's badge says where it actually ran.
 const pantryPrivacyLine =
     "Each result shows whether it was worked out on this device or sent "
-    "online to Google's AI. Nothing you show or type here is stored.";
+    "online to Google's AI. Photos and voice clips aren't stored; your "
+    'cooking session is saved so you can come back.';
+
+/// Items found that no suggested meal uses, so nothing the cook typed is
+/// silently dropped (SS-089). Empty when there are no meals.
+List<String> pantryUnusedItems(PantryResult result) {
+  if (result.meals.isEmpty) return const [];
+  return [
+    for (final item in result.items)
+      if (!result.meals.any(
+        (meal) => meal.matched.any((m) => pantryNamesMatch(item.name, m)),
+      ))
+        item.name,
+  ];
+}
 
 /// The catch-all when matching failed without a reason of its own.
 const pantryUnavailableMessage =
@@ -535,6 +549,18 @@ class _PantryScreenState extends State<PantryScreen> {
                     ),
                   ],
                   const SizedBox(height: 14),
+                  if (pantryUnusedItems(result) case final unused
+                      when unused.isNotEmpty) ...[
+                    Text(
+                      'Not used in these recipes: ${unused.join(', ')}',
+                      key: const ValueKey('pantry-unused'),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF5C4A2E),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (result.question case final question?) ...[
                     _questionCard(question),
                     const SizedBox(height: 18),

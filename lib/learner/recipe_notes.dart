@@ -5,6 +5,13 @@
 
 import '../core/models.dart';
 import '../pantry/pantry_ui.dart' show pantryNamesMatch;
+import '../pantry/recipe_draft.dart' show isDraftRecipe;
+
+/// The caption for [recipeNotesFor] lines: an AI-drafted recipe is never
+/// presented as reviewed or non-AI.
+String recipeNotesLabel(Recipe recipe) => isDraftRecipe(recipe)
+    ? 'From your AI-drafted recipe · not reviewed by a person'
+    : 'From the reviewed recipe · not an AI answer';
 
 /// Up to [limit] plain lines from [recipe] relevant to [question].
 List<String> recipeNotesFor(

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show OnDeviceStatus;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -225,8 +226,14 @@ WatchService buildWatchService(
     local: local,
     startLiveWatch: live.startWatch,
     stopLiveWatch: live.stopWatch,
-    localVisionSupported: () async =>
-        (await hybrid.inference.capabilities()).local?.supportsImage ?? false,
+    // Decide before any "watching" state (SS-089): the model must take
+    // photos and be ready now, or the watch is refused up front.
+    localVisionSupported: () async {
+      final local = (await hybrid.inference.capabilities()).local;
+      if (local == null || !local.supportsImage) return false;
+      final image = await hybrid.inference.availability(withImage: true);
+      return image.status == OnDeviceStatus.available;
+    },
   );
 }
 
@@ -435,7 +442,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         isDemo: widget.isDemo,
         fake: _fakeDinner,
       );
-  String _prediction = 'Not sure';
+
+  /// Nothing is preselected: the cook says how it looks (SS-089).
+  String? _prediction;
   String? _announcedAlert;
   bool _messagePending = false;
 
@@ -935,8 +944,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                         widget.isDemo
                             ? 'Practice mode: no real camera. Tap Watch my '
                                   'food to try a pretend watch.'
-                            : 'Connect your camera and microphone\nso we can '
-                                  'cook together.',
+                            : cook.liveEnabled
+                            ? 'Connect your camera and microphone\nso we can '
+                                  'cook together.'
+                            : 'Your camera stays off until you tap Watch my '
+                                  'food.',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Color(0xffc8d8c9),
@@ -1287,8 +1299,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         ),
       const SizedBox(height: 10),
       // The reply region: a typed question's "thinking" line, then why it
-      // ran where it did (or why there is no answer), then the workspace the
-      // answer fills. [_reveal] scrolls here when it changes.
+      // ran where it did (or why there is no answer); the workspace the
+      // answer fills follows. [_reveal] scrolls to the region's top, which is
+      // kept short so it always lands in view.
       KeyedSubtree(
         key: _replyKey,
         child: Column(
@@ -1314,14 +1327,15 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                     cook.recipe,
                     cook.step,
                   ),
+                  recipeNotesLabel: recipeNotesLabel(cook.recipe),
                   onStartTimer: (label, seconds) =>
                       unawaited(cook.startSuggestedTimer(label, seconds)),
                 ),
               ),
-            CookingSurface(controller: cook.ui),
           ],
         ),
       ),
+      CookingSurface(controller: cook.ui),
       const SizedBox(height: 16),
       const Text(
         'How does your food look?',
@@ -1345,7 +1359,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         runSpacing: 10,
         children: [
           FilledButton.icon(
-            onPressed: () => cook.checkNow(_prediction),
+            onPressed: () => cook.checkNow(_prediction ?? 'Not sure'),
             icon: const Icon(Icons.auto_awesome),
             label: const Text('Check my food'),
           ),

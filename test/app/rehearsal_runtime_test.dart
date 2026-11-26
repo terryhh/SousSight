@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
@@ -350,25 +351,29 @@ void main() {
   });
 
   group('practice camera', () {
-    test('frames flow only during a camera-only capture', () async {
-      final media = RehearsalLiveMedia(
-        interval: const Duration(milliseconds: 5),
-      );
-      final frames = <CapturedFrame>[];
-      final sub = media.timedFrames.listen(frames.add);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(frames, isEmpty);
-      await media.startCameraOnly();
-      expect(media.capturing, isTrue);
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      expect(frames.length, greaterThanOrEqualTo(2));
-      expect(frames[0].bytes, isNot(equals(frames[1].bytes)));
-      await media.stop();
-      expect(media.capturing, isFalse);
-      final count = frames.length;
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(frames.length, count);
-      await sub.cancel();
+    test('frames flow only during a camera-only capture', () {
+      fakeAsync((async) {
+        final media = RehearsalLiveMedia(
+          interval: const Duration(milliseconds: 5),
+          now: () => DateTime(2026),
+        );
+        final frames = <CapturedFrame>[];
+        final sub = media.timedFrames.listen(frames.add);
+        async.elapse(const Duration(milliseconds: 20));
+        expect(frames, isEmpty);
+        media.startCameraOnly();
+        async.flushMicrotasks();
+        expect(media.capturing, isTrue);
+        async.elapse(const Duration(milliseconds: 12));
+        expect(frames, hasLength(2));
+        expect(frames[0].bytes, isNot(equals(frames[1].bytes)));
+        media.stop();
+        async.flushMicrotasks();
+        expect(media.capturing, isFalse);
+        async.elapse(const Duration(milliseconds: 20));
+        expect(frames, hasLength(2));
+        sub.cancel();
+      });
     });
 
     test('the frame is a valid PNG the engine can decode', () async {

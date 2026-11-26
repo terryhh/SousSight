@@ -484,8 +484,9 @@ class LocalWatchController extends ChangeNotifier {
         liveAvailable
             ? 'This device\'s on-device model can\'t look at photos. Connect '
                   'the Live coach to watch with cloud vision.'
-            : "This device can't look at photos on its own. Keep an eye on the "
-                  'food yourself — the step says what to look for.',
+            : "This device can't check photos yet — \"On this device\" "
+                  'shows how to set it up. Meanwhile, look for: '
+                  '${watchCue(token.step)}',
       RouteReason.consentDeclined => 'OK — that photo stays on this device.',
       RouteReason.localOnlySetting =>
         'Your privacy setting keeps watch photos on this device.',

@@ -157,6 +157,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('Practice answer for'), findsOneWidget);
+    // The reply keeps the ingredients card (SS-089).
+    expect(find.text('On your counter'), findsOneWidget);
     expect(find.text('Practice mode (pretend answers)'), findsWidgets);
     expect(find.textContaining('On this device ·'), findsNothing);
     // Scrolled into view, above the dock.
@@ -345,6 +347,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Type a question below.'), findsOneWidget);
     expect(find.textContaining('Coach Lite'), findsNothing);
+    // No Live coach: the camera card never asks to connect one.
+    expect(
+      find.text('Your camera stays off until you tap Watch my food.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('so we can cook together'), findsNothing);
+    // Nothing preselected.
+    for (final chip in tester.widgetList<ChoiceChip>(find.byType(ChoiceChip))) {
+      expect(chip.selected, isFalse);
+    }
     await tester.ensureVisible(find.text('Check my food'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Ready'));
@@ -387,5 +399,38 @@ void main() {
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('readiness-line')), findsOneWidget);
+  });
+
+  testWidgets('no photo model: the watch is refused up front, with one '
+      'honest line and the cue (production QA 1)', (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final services = (await tester.runAsync(fakeServices))!;
+    final runtime = HybridRuntime.create(
+      inference: FakeHybridInference(
+        imageAvailability: const HybridAvailability(
+          status: OnDeviceStatus.unavailable,
+        ),
+      ),
+      cloudRoutes: const CloudRoutes({}),
+      cloudFallback: const NoCloudInPracticeMode(),
+      isOnline: () => true,
+    );
+    await tester.pumpWidget(
+      CookingApp(services: services, isDemo: false, hybrid: runtime),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('watch-toggle')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('watch-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining("can't check photos yet"), findsWidgets);
+    expect(find.textContaining('Meanwhile, look for:'), findsWidgets);
+    expect(find.text('WATCHING WITH YOU'), findsNothing);
+    expect(find.textContaining('Connect the Live coach'), findsNothing);
+    expect(find.text('CAMERA OFF'), findsOneWidget);
+    expect(find.text('Watch my food'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
 }

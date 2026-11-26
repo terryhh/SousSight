@@ -41,7 +41,9 @@ void main() {
       media.emit(t0.add(async.elapsed));
       async.flushMicrotasks();
       expect(local.isActive, isFalse);
-      expect(local.notice, startsWith("This device can't look at photos"));
+      expect(local.notice, startsWith("This device can't check photos yet"));
+      expect(local.notice, contains('"On this device"'));
+      expect(local.notice, contains('look for: ${stepA.cue}'));
       expect(local.notice, isNot(contains('Live')));
     });
   });
@@ -79,6 +81,10 @@ void main() {
     );
     expect(start.started, isFalse);
     expect(start.message, isNot(contains('Live')));
+    expect(start.message, contains('look for: ${stepA.cue}'));
+    // Refused before any watch started: no "watching" state at all.
+    expect(local.isActive, isFalse);
+    expect(service.activeRoute, isNull);
     expect(service.statusText, start.message);
   });
 

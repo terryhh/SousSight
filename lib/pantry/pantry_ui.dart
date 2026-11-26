@@ -83,9 +83,12 @@ class PantryUiController extends ChangeNotifier {
     ];
     _items = [for (final item in result.items) item.name];
     _confirmed.clear();
+    // Only an item that IS what the cook typed (same food after plain
+    // normalisation) starts confirmed; a shared word is not enough
+    // ("sunflower seed butter" never confirms "peanut butter").
     final typedEntries = pantryTypedEntries(typed);
     for (var i = 0; i < _items.length; i++) {
-      if (typedEntries.any((entry) => pantryNamesMatch(entry, _items[i]))) {
+      if (typedEntries.any((entry) => pantrySameItem(entry, _items[i]))) {
         _confirmed.add(i);
       }
     }
@@ -162,6 +165,59 @@ List<String> pantryTypedEntries(String typed) => [
       entry,
 ];
 
+/// Packaging and amount words dropped before comparing a typed entry with an
+/// item name. Colours and varieties are kept: "white beans" is not "black
+/// beans".
+const _packagingWords = {
+  'canned',
+  'can',
+  'cans',
+  'tin',
+  'tins',
+  'jar',
+  'jars',
+  'bag',
+  'bags',
+  'box',
+  'boxes',
+  'pack',
+  'packet',
+  'of',
+  'a',
+  'an',
+  'some',
+  'fresh',
+  'frozen',
+};
+
+String _singular(String word) {
+  if (word.length > 4 && word.endsWith('ies')) {
+    return '${word.substring(0, word.length - 3)}y';
+  }
+  if (word.length > 4 && word.endsWith('oes')) {
+    return word.substring(0, word.length - 2);
+  }
+  if (word.length > 3 && word.endsWith('s') && !word.endsWith('ss')) {
+    return word.substring(0, word.length - 1);
+  }
+  return word;
+}
+
+/// [name] normalised for identity: lower case, letters only, packaging
+/// words dropped, each word singular.
+String pantryItemKey(String name) => [
+  for (final w in name.toLowerCase().split(RegExp(r'[^a-z]+')))
+    if (w.isNotEmpty && !_packagingWords.contains(w)) _singular(w),
+].join(' ');
+
+/// Whether a typed entry names exactly this item, so it may start confirmed.
+/// Conservative on purpose: "2 tomatoes" = "tomato" and "canned black beans"
+/// = "black beans", but "oat milk" ≠ "milk" and "eggplant" ≠ "egg".
+bool pantrySameItem(String typed, String item) {
+  final a = pantryItemKey(typed);
+  return a.isNotEmpty && a == pantryItemKey(item);
+}
+
 /// Describing words that never make two foods the same ("canned corn" is
 /// not "canned beans").
 const _notFoodWords = {
@@ -192,9 +248,9 @@ const _notFoodWords = {
   'pre',
 };
 
-/// Whether a typed entry and an item name are the same food: one contains
-/// the other, or (ignoring a plural "s") they share a food word of 3+
-/// letters.
+/// A loose "same food" match for display only (unused items, recipe notes,
+/// practice answers): one contains the other, or they share a food word of
+/// 3+ letters. Never use it to confirm an ingredient; see [pantrySameItem].
 bool pantryNamesMatch(String typed, String item) {
   final a = typed.toLowerCase().trim();
   final b = item.toLowerCase().trim();

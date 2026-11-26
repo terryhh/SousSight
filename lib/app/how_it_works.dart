@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_policy.dart';
+import '../data/dinner_mode.dart';
 import '../live/live_backend.dart';
 import 'centered_scroll.dart';
 
@@ -36,6 +37,33 @@ const howItWorksTechnologies = [
   'Firebase Hosting',
   'Firebase AI Logic hybrid inference (on-device Gemini Nano in Chrome, Gemini in the cloud)',
   'Vonage Messages API with signed status webhooks',
+];
+
+/// [howItWorksSteps] for this build: without a Live coach the cooking step
+/// never promises one (SS-089).
+List<(String, String)> howItWorksStepsFor({required bool live}) => [
+  for (final step in howItWorksSteps)
+    if (!live && step.$1 == 'Cook with a live coach')
+      (
+        'Cook step by step',
+        'Follow each step with real timers and type a question any time; '
+            'where this device supports it, the camera can watch for a '
+            "step's visible cue.",
+      )
+    else
+      step,
+];
+
+/// [howItWorksTechnologies] actually in this build: Gemini Live only with a
+/// Live backend, Vonage only when DINNER_MODE is real (SS-089).
+List<String> howItWorksTechnologiesFor({
+  required bool live,
+  required bool vonage,
+}) => [
+  for (final tech in howItWorksTechnologies)
+    if ((live || !tech.startsWith('Gemini Live API')) &&
+        (vonage || !tech.startsWith('Vonage')))
+      tech,
 ];
 
 /// Small info button that opens the How it works sheet.
@@ -77,7 +105,11 @@ class HowItWorksSheet extends StatelessWidget {
     this.controller,
     this.cloudRoutes,
     this.liveBackend,
+    this.dinnerMode,
   });
+
+  /// Defaults to this build's DINNER_MODE.
+  final DinnerMode? dinnerMode;
 
   final bool isDemo;
   final ScrollController? controller;
@@ -155,7 +187,9 @@ class HowItWorksSheet extends StatelessWidget {
           ),
         ],
         heading('From pantry to plate'),
-        for (final (index, (title, body)) in howItWorksSteps.indexed)
+        for (final (index, (title, body)) in howItWorksStepsFor(
+          live: (liveBackend ?? configuredLiveBackend) != LiveBackend.none,
+        ).indexed)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Row(
@@ -188,7 +222,12 @@ class HowItWorksSheet extends StatelessWidget {
             ),
           ),
         heading('Built with'),
-        for (final tech in howItWorksTechnologies)
+        for (final tech in howItWorksTechnologiesFor(
+          live: (liveBackend ?? configuredLiveBackend) != LiveBackend.none,
+          vonage:
+              !isDemo &&
+              (dinnerMode ?? configuredDinnerMode) == DinnerMode.real,
+        ))
           bullet(tech, icon: Icons.build_circle_outlined),
         heading('Your privacy'),
         bullet(

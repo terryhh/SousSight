@@ -227,6 +227,8 @@ void main() {
         find.textContaining('Items you typed are already ticked'),
         findsOneWidget,
       );
+      // Nothing typed is dropped silently.
+      expect(find.text('Not used in these recipes: banana'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('cook-peanut_butter_sandwich_v1')),
         findsOneWidget,

@@ -140,8 +140,8 @@ class WatchService extends ChangeNotifier {
           message: liveAvailable
               ? 'The on-device model here can\'t look at photos. Connect the '
                     'Live coach to watch with cloud vision.'
-              : "This device can't look at photos on its own. Keep an eye on "
-                    'the food yourself — the step says what to look for.',
+              : "This device can't check photos yet — \"On this device\" "
+                    'shows how to set it up. Meanwhile, look for: $cue',
         ),
       );
     }

@@ -271,21 +271,42 @@ $cookingUiInstructions
         'component': 'CookingColumn',
         'children': ['ingredients', 'step'],
       },
-      {
-        'id': 'ingredients',
-        'component': 'ingredientChecklist',
-        'title': 'On your counter',
-        'items': [
-          for (final ingredient in recipe.ingredients)
-            {
-              'id': ingredient.id,
-              'label': '${ingredient.qty} ${ingredient.name}',
-            },
-        ],
-      },
+      _ingredientsPanel,
       _stepPanel,
     ],
   });
+
+  Map<String, dynamic> get _ingredientsPanel => {
+    'id': 'ingredients',
+    'component': 'ingredientChecklist',
+    'title': 'On your counter',
+    'items': [
+      for (final ingredient in recipe.ingredients)
+        {'id': ingredient.id, 'label': '${ingredient.qty} ${ingredient.name}'},
+    ],
+  };
+
+  /// A Coach Lite workspace with the ingredients card kept below it, so a
+  /// typed question never hides the counter checklist (SS-089). The lite
+  /// components are already validated; only the app's own card is added.
+  Map<String, dynamic> _withIngredients(Map<String, dynamic> payload) {
+    final components = [
+      for (final c in payload['components'] as List) c as Map<String, dynamic>,
+    ];
+    if (components.any((c) => c['id'] == 'ingredients')) return payload;
+    return {
+      'components': [
+        for (final c in components)
+          c['id'] == 'root'
+              ? {
+                  ...c,
+                  'children': [...(c['children'] as List), 'ingredients'],
+                }
+              : c,
+        _ingredientsPanel,
+      ],
+    };
+  }
 
   Map<String, dynamic> get _stepPanel => {
     'id': 'step',
@@ -391,7 +412,7 @@ $cookingUiInstructions
     }
     coachLiteBusy = false;
     coachLiteAnswer = answer;
-    ui.applyToolPayload(answer.payload); // already lite-validated
+    ui.applyToolPayload(_withIngredients(answer.payload)); // lite-validated
     // handOffToResearch is a hint, not an authorization. Re-check privacy,
     // CloudRoutes.research and connectivity immediately before the send.
     if (answer.handOffToResearch && lite.researchBlocker() == null) {

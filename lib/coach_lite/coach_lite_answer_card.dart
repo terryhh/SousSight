@@ -48,11 +48,15 @@ class CoachLiteAnswerFooter extends StatelessWidget {
     this.localModelFamily,
     this.question,
     this.recipeNotes = const [],
+    this.recipeNotesLabel = 'From the reviewed recipe · not an AI answer',
   });
 
-  /// App-authored lines from the reviewed recipe, shown when there is no
-  /// model answer (never with one). Labelled "From the recipe (not AI)".
+  /// App-authored lines from the recipe, shown when there is no model
+  /// answer (never with one), under [recipeNotesLabel].
   final List<String> recipeNotes;
+
+  /// Says where the notes come from. An AI-drafted recipe must say so.
+  final String recipeNotesLabel;
 
   /// The cook's typed question, echoed so the reply reads as a reply.
 
@@ -127,7 +131,7 @@ class CoachLiteAnswerFooter extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'From the recipe (not AI)',
+                    recipeNotesLabel,
                     style: theme.textTheme.labelMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
