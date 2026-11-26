@@ -54,6 +54,39 @@ void main() {
       expect(summary.simulated, hasLength(1));
     });
 
+    // Regression (Codex review of #180): failed local-only attempts are not
+    // possible uploads.
+    test('a failed local-only leg is not counted as possibly sent', () {
+      final summary = LedgerSummary.of([
+        leg(
+          Provenance.unknown,
+          feature: 'local_watch',
+          mode: HybridMode.onlyOnDevice,
+          transferPermitted: false,
+          kinds: {DataKind.image},
+          error: HybridErrorCode.timeout,
+        ),
+        leg(
+          Provenance.unknown,
+          feature: 'coach_lite',
+          mode: HybridMode.preferOnDevice,
+          transferPermitted: true,
+          error: HybridErrorCode.network,
+        ),
+      ]);
+      expect([for (final r in summary.maybeSent) r.feature], ['coach_lite']);
+      expect(
+        [for (final r in summary.notFinishedLocal) r.feature],
+        ['local_watch'],
+      );
+      expect(
+        [for (final r in summary.allowedToLeave) r.feature],
+        ['coach_lite'],
+      );
+      expect(summary.reportedSent, isEmpty);
+      expect(summary.stayedLocal, isEmpty);
+    });
+
     test('groups repeats of the same feature, kinds and route', () {
       final summary = LedgerSummary.of([
         for (var i = 0; i < 3; i++)
@@ -134,6 +167,36 @@ void main() {
     expect(liveCoachNote, contains('facts you confirmed'));
     expect(liveCoachNote, contains('allergy context'));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('sheet lists a failed local-only leg under Didn\'t finish', (
+    tester,
+  ) async {
+    final ledger = ListLedgerSource([
+      leg(
+        Provenance.unknown,
+        feature: 'local_watch',
+        mode: HybridMode.onlyOnDevice,
+        transferPermitted: false,
+        kinds: {DataKind.image},
+        error: HybridErrorCode.timeout,
+      ),
+    ]);
+    await pumpPhone(tester, LedgerView(ledger: ledger));
+    expect(find.text('May have been sent'), findsNothing);
+    expect(find.byKey(const ValueKey('ledger-maybe')), findsNothing);
+    expect(find.byKey(const ValueKey('ledger-allowed-empty')), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('ledger-not-finished')),
+      200,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('ledger-not-finished')),
+        matching: find.text("photo · Didn't finish · nothing left this device"),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('updates when the ledger records a leg', (tester) async {

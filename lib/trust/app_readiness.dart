@@ -82,13 +82,15 @@ class ReadinessInput {
   /// `CloudRoutes.allows(CloudRoute.hybridFallback)`.
   final bool cloudApproved;
 
-  /// The last cloud call failed with `HybridErrorCode.attestation`.
+  /// The latest cloud call failed with `HybridErrorCode.attestation`.
   final bool attestationFailed;
 
-  /// The last cloud call failed with `HybridErrorCode.quota`.
+  /// The latest cloud call failed with `HybridErrorCode.quota`.
   final bool quotaReached;
 
-  /// Sets [attestationFailed] / [quotaReached] from a cloud error code.
+  /// Sets [attestationFailed] / [quotaReached] from the LATEST cloud call's
+  /// outcome. Pass null after a successful call: earlier errors are cleared,
+  /// never carried forward.
   ReadinessInput withCloudError(HybridErrorCode? code) => ReadinessInput(
     capabilities: capabilities,
     text: text,
@@ -96,8 +98,8 @@ class ReadinessInput {
     camera: camera,
     online: online,
     cloudApproved: cloudApproved,
-    attestationFailed: attestationFailed || code == HybridErrorCode.attestation,
-    quotaReached: quotaReached || code == HybridErrorCode.quota,
+    attestationFailed: code == HybridErrorCode.attestation,
+    quotaReached: code == HybridErrorCode.quota,
   );
 }
 

@@ -28,10 +28,7 @@ class InferenceSourceBadge extends StatelessWidget {
   final RouteReason? reason;
 
   String _label(InferenceLeg leg) {
-    final base = provenanceLabel(
-      leg.provenance,
-      localModel: leg.modelLabel ?? localModelFamily,
-    );
+    final base = legLabel(leg, localModel: localModelFamily);
     final error = leg.error;
     return error == null ? base : '$base (${errorLabel(error)})';
   }
@@ -59,7 +56,7 @@ class InferenceSourceBadge extends StatelessWidget {
           for (var i = 0; i < legs.length; i++)
             _LegChip(
               key: ValueKey('inference-leg-$i'),
-              provenance: legs[i].provenance,
+              outcome: legOutcome(legs[i]),
               label: labels[i],
               onTap: open,
             ),
@@ -72,18 +69,18 @@ class InferenceSourceBadge extends StatelessWidget {
 class _LegChip extends StatelessWidget {
   const _LegChip({
     super.key,
-    required this.provenance,
+    required this.outcome,
     required this.label,
     required this.onTap,
   });
 
-  final Provenance provenance;
+  final LegOutcome outcome;
   final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final colors = provenanceColors(provenance);
+    final colors = outcomeColors(outcome);
     return Material(
       color: colors.background,
       shape: RoundedRectangleBorder(
@@ -100,11 +97,7 @@ class _LegChip extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  provenanceIcon(provenance),
-                  size: 16,
-                  color: colors.foreground,
-                ),
+                Icon(outcomeIcon(outcome), size: 16, color: colors.foreground),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
@@ -214,11 +207,9 @@ class _LegDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = provenanceColors(leg.provenance);
-    final where = provenanceLabel(
-      leg.provenance,
-      localModel: leg.modelLabel ?? localModelFamily,
-    );
+    final outcome = legOutcome(leg);
+    final colors = outcomeColors(outcome);
+    final where = legLabel(leg, localModel: localModelFamily);
     final kinds = dataKindsPhrase(leg.kinds);
     final permission = leg.transferPermitted
         ? 'Allowed to leave this device: $kinds.'
@@ -235,7 +226,7 @@ class _LegDetail extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(provenanceIcon(leg.provenance), color: colors.foreground),
+              Icon(outcomeIcon(outcome), color: colors.foreground),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -256,7 +247,7 @@ class _LegDetail extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(provenanceExplanation(leg.provenance)),
+                    Text(outcomeExplanation(outcome)),
                     Text('Used: $kinds. $permission'),
                     if (leg.error case final error?)
                       Text("This attempt didn't finish: ${errorLabel(error)}."),

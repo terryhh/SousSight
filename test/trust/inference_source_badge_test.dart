@@ -9,16 +9,64 @@ import 'package:soussight/trust/trust_labels.dart';
 import 'trust_test_helpers.dart';
 
 void main() {
-  test('every provenance has its own label', () {
+  test('each leg gets a label from its provenance and permission', () {
     expect(
-      provenanceLabel(Provenance.sdkOnDevice, localModel: 'Gemini Nano'),
+      legLabel(leg(Provenance.sdkOnDevice), localModel: 'Gemini Nano'),
       'On this device · Gemini Nano',
     );
-    expect(provenanceLabel(Provenance.sdkOnDevice), 'On this device');
-    expect(provenanceLabel(Provenance.sdkCloud), 'Cloud · Gemini');
-    expect(provenanceLabel(Provenance.cloudAdapter), 'Cloud');
-    expect(provenanceLabel(Provenance.simulated), 'Simulated');
-    expect(provenanceLabel(Provenance.unknown), 'May have been sent');
+    expect(legLabel(leg(Provenance.sdkOnDevice)), 'On this device');
+    expect(legLabel(leg(Provenance.sdkCloud)), 'Cloud · Gemini');
+    expect(legLabel(leg(Provenance.cloudAdapter)), 'Cloud');
+    expect(legLabel(leg(Provenance.simulated)), 'Simulated');
+    expect(
+      legLabel(leg(Provenance.unknown, transferPermitted: true)),
+      'May have been sent',
+    );
+    expect(
+      legLabel(leg(Provenance.unknown, transferPermitted: false)),
+      "Didn't finish · nothing left this device",
+    );
+  });
+
+  // Regression (Codex review of #180): a failed onlyOnDevice leg is
+  // provenance `unknown` with transferPermitted=false. It must not be shown
+  // as a possible upload or as "allowed to leave".
+  testWidgets('a failed local-only leg never says it may have been sent', (
+    tester,
+  ) async {
+    await pumpPhone(
+      tester,
+      InferenceSourceBadge(
+        legs: [
+          leg(
+            Provenance.unknown,
+            feature: 'local_watch',
+            mode: HybridMode.onlyOnDevice,
+            transferPermitted: false,
+            kinds: {DataKind.image},
+            error: HybridErrorCode.timeout,
+          ),
+        ],
+      ),
+    );
+    expect(
+      find.text("Didn't finish · nothing left this device (took too long)"),
+      findsOneWidget,
+    );
+    expect(find.textContaining('May have been sent'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('inference-leg-0')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(outcomeExplanation(LegOutcome.notFinishedLocal)),
+      findsOneWidget,
+    );
+    expect(
+      find.text('Used: photo. Not allowed to leave this device.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('allowed to leave, then'), findsNothing);
+    expect(find.textContaining('May have been sent'), findsNothing);
   });
 
   testWidgets('a two-leg result shows both legs, not one merged badge', (

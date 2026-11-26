@@ -286,6 +286,28 @@ void main() {
       );
     });
 
+    // Regression (Codex review of #180): a recovered cloud call clears the
+    // earlier error instead of latching it.
+    test('withCloudError reflects only the latest call', () {
+      final failed = input()
+          .withCloudError(HybridErrorCode.attestation)
+          .withCloudError(HybridErrorCode.quota);
+      expect(failed.attestationFailed, isFalse);
+      expect(failed.quotaReached, isTrue);
+
+      final recovered = failed.withCloudError(null);
+      expect(recovered.attestationFailed, isFalse);
+      expect(recovered.quotaReached, isFalse);
+      final r = eval(recovered);
+      expect(r.cloudUsable, isTrue);
+      expect(r.states, {ReadinessState.ready});
+
+      final afterAttestation = input()
+          .withCloudError(HybridErrorCode.attestation)
+          .withCloudError(null);
+      expect(eval(afterAttestation).states, {ReadinessState.ready});
+    });
+
     test('several problems are ordered most serious first', () {
       final r = eval(
         input(

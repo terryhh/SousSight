@@ -48,17 +48,17 @@ Future<void> showLedgerSheet(
   ),
 );
 
-/// One grouped row: same feature, kinds and provenance, with a count.
+/// One grouped row: same feature, kinds and outcome, with a count.
 class LedgerRow {
   const LedgerRow({
     required this.feature,
     required this.kinds,
-    required this.provenance,
+    required this.outcome,
     required this.count,
   });
   final String feature;
   final Set<DataKind> kinds;
-  final Provenance provenance;
+  final LegOutcome outcome;
   final int count;
 }
 
@@ -70,6 +70,7 @@ class LedgerSummary {
     this.reportedSent,
     this.maybeSent,
     this.stayedLocal,
+    this.notFinishedLocal,
     this.simulated,
   );
 
@@ -82,12 +83,12 @@ class LedgerSummary {
             if (leg.kinds.contains(k)) k,
         };
         final key =
-            '${leg.feature}|${kinds.map((k) => k.name).join(',')}|${leg.provenance.name}';
+            '${leg.feature}|${kinds.map((k) => k.name).join(',')}|${legOutcome(leg).name}';
         final prior = rows[key];
         rows[key] = LedgerRow(
           feature: leg.feature,
           kinds: kinds,
-          provenance: leg.provenance,
+          outcome: legOutcome(leg),
           count: (prior?.count ?? 0) + 1,
         );
       }
@@ -97,10 +98,11 @@ class LedgerSummary {
     return LedgerSummary._(
       legs.length,
       group(legs.where((l) => l.transferPermitted)),
-      group(legs.where((l) => reportedAsSent(l.provenance))),
-      group(legs.where((l) => l.provenance == Provenance.unknown)),
-      group(legs.where((l) => l.provenance == Provenance.sdkOnDevice)),
-      group(legs.where((l) => l.provenance == Provenance.simulated)),
+      group(legs.where((l) => reportedAsSent(legOutcome(l)))),
+      group(legs.where((l) => legOutcome(l) == LegOutcome.maybeSent)),
+      group(legs.where((l) => legOutcome(l) == LegOutcome.onDevice)),
+      group(legs.where((l) => legOutcome(l) == LegOutcome.notFinishedLocal)),
+      group(legs.where((l) => legOutcome(l) == LegOutcome.simulated)),
     );
   }
 
@@ -109,6 +111,9 @@ class LedgerSummary {
   final List<LedgerRow> reportedSent;
   final List<LedgerRow> maybeSent;
   final List<LedgerRow> stayedLocal;
+
+  /// Failed or blocked attempts that were never allowed to leave.
+  final List<LedgerRow> notFinishedLocal;
   final List<LedgerRow> simulated;
 }
 
@@ -218,6 +223,14 @@ class LedgerView extends StatelessWidget {
         ],
         heading('Stayed on this device'),
         rows(summary.stayedLocal, 'Nothing ran on this device yet.', 'local'),
+        if (summary.notFinishedLocal.isNotEmpty) ...[
+          heading("Didn't finish"),
+          note(
+            "These stopped before giving an answer. They weren't allowed to "
+            'leave, so nothing left this device.',
+          ),
+          rows(summary.notFinishedLocal, '', 'not-finished'),
+        ],
         if (summary.simulated.isNotEmpty) ...[
           heading('Simulated'),
           note('Rehearsal only. No model ran and nothing was sent.'),
@@ -245,8 +258,8 @@ class _LedgerRowTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = provenanceColors(row.provenance);
-    final where = provenanceLabel(row.provenance, localModel: localModelFamily);
+    final colors = outcomeColors(row.outcome);
+    final where = outcomeLabel(row.outcome, localModel: localModelFamily);
     final times = row.count == 1 ? '' : ' · ${row.count} times';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -265,7 +278,7 @@ class _LedgerRowTile extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  provenanceIcon(row.provenance),
+                  outcomeIcon(row.outcome),
                   size: 20,
                   color: colors.foreground,
                 ),
