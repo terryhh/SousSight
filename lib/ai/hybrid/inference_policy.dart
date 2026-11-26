@@ -147,6 +147,16 @@ const featureRoutes = <String, FeatureRoute>{
     consent: UploadConsent.always,
     cloudOnlyWithImage: true,
   ),
+  // Recipe text into the cook's language (SS-106). On-device first; the
+  // cloud only through the hybridFallback route, when nothing restricts it:
+  // a language or size the local model cannot handle, a model that is not
+  // ready, or one retry when the on-device answer is malformed. Text only,
+  // so the default media consent asks for no prompt; every leg is ledgered.
+  'recipe_translate': FeatureRoute(
+    HybridMode.preferOnDevice,
+    cloudWhenLocalCannot: true,
+    semanticRetry: true,
+  ),
 };
 
 const _unknownFeature = FeatureRoute(

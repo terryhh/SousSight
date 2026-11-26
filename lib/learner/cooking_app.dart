@@ -28,6 +28,8 @@ import '../live/live_controller.dart';
 import '../live/live_types.dart';
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
+import '../translate/recipe_language_view.dart';
+import '../translate/translation_runtime.dart';
 import '../trust/inference_source_badge.dart';
 import '../watch/capture_owner.dart';
 import '../watch/local_watch_controller.dart';
@@ -680,6 +682,14 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       ),
       DraftRecipeChip(recipe: cook.recipe),
       AllergenChip(recipe: cook.recipe),
+      // SS-106: recipe content and AI answers in the cook's language.
+      if (widget.hybrid case final hybrid?)
+        CookLanguageButton(
+          controller: translationFor(hybrid),
+          recipe: cook.recipe,
+          sessionId: () => hybrid.sessionId,
+          currentStepId: cook.session?.currentStepId,
+        ),
       if (widget.hybrid case final hybrid?)
         HybridHeaderButtons(
           hybrid: hybrid,
