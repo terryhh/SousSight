@@ -49,7 +49,8 @@ app.*.map.json
 
 # Local secrets (App Check debug token)
 dart_defines.local.json
-.claude/
+.claude/*
+!.claude/agents/
 
 # Isolated local agent checkouts
 .worktrees/
