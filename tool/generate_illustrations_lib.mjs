@@ -2,13 +2,17 @@
 // tests can import them without launching a browser or a server.
 import { execFileSync } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /// Whether [child] is [parent] or inside it, by path components (not a
 /// string prefix, so `/a/build2` is not inside `/a/build`).
 export function within(parent, child) {
   const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  if (rel === '') return true;
+  if (isAbsolute(rel)) return false;
+  // Outside only when the first component is exactly "..": a directory
+  // literally named "..cache" is still inside.
+  return rel !== '..' && !rel.startsWith(`..${sep}`);
 }
 
 /// The file to serve for [urlPath] from the canonical [build] directory, or

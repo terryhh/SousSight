@@ -18,8 +18,8 @@ import '../app/consent_copy.dart' show kConsentAllowLabel, kConsentDeclineLabel;
   body:
       'Drawing an illustration needs Google: this device cannot make '
       'one. If you say yes, SousSight sends the recipe text for this '
-      "picture (the step's cue and ingredients, or the dish's name and "
-      "ingredients) to Google's servers ($model) to draw one "
+      "picture (the step's visible cue and the ingredients it names, or "
+      "the dish's ingredient list) to Google's servers ($model) to draw one "
       'illustration. No photo, voice or location is sent. Your yes '
       "covers this one picture only. Google's own privacy terms cover "
       'what Google does with anything it receives. If you choose '

@@ -14,6 +14,7 @@ import '../pantry/recipe_draft.dart' show isDraftRecipe;
 import '../trust/trust_labels.dart' show errorLabel;
 import 'illustration_controller.dart';
 import 'illustration_prompts.dart';
+import 'on_demand_allowlist.dart';
 import 'premade_illustrations.dart';
 
 class StepIllustrations extends StatefulWidget {

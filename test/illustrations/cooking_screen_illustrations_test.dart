@@ -68,7 +68,7 @@ const _draft = Recipe(
   title: 'Cucumber Dip',
   summary: 'AI-drafted.',
   ingredients: [
-    Ingredient(id: 'y', name: 'Yogurt', qty: '1 cup'),
+    Ingredient(id: 'y', name: 'Lemon juice', qty: '1 tbsp'),
     Ingredient(id: 'c', name: 'Cucumber', qty: '1'),
   ],
   equipment: ['bowl'],
@@ -76,8 +76,8 @@ const _draft = Recipe(
     RecipeStep(
       id: 'stir',
       title: 'Stir',
-      instruction: 'Stir the cucumber into the yogurt.',
-      cue: 'Pale green flecks through white yogurt.',
+      instruction: 'Stir the lemon juice into the cucumber.',
+      cue: 'Pale green shreds, evenly wet.',
     ),
     RecipeStep(
       id: 'serve',

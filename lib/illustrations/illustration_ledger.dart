@@ -33,6 +33,10 @@ abstract class IllustrationSend {
   /// which case nothing may claim the send.
   IllustrationReceipt? confirmed(String modelLabel);
 
+  /// The settled leg is still in the active ledger. False after a
+  /// rotation: the image must not then be shown under a missing record.
+  bool get recorded;
+
   /// The send failed after dispatch: it may have been sent.
   void failed(HybridErrorCode code);
 
@@ -41,6 +45,10 @@ abstract class IllustrationSend {
 }
 
 abstract class IllustrationLedger {
+  /// Which ledger is active (its session). A request is bound to the
+  /// generation it started in; a rotation in between voids it.
+  String get generation;
+
   /// Admits one pending text-to-image leg. Call before dispatch.
   IllustrationSend begin();
 }
@@ -49,6 +57,9 @@ class InferenceLedgerIllustrations implements IllustrationLedger {
   InferenceLedgerIllustrations(this.ledger);
   final InferenceLedger ledger;
   int _seq = 0;
+
+  @override
+  String get generation => ledger.sessionId;
 
   @override
   IllustrationSend begin() => _Send(
@@ -77,6 +88,9 @@ class _Send implements IllustrationSend {
 
   @override
   bool get admitted => _open;
+
+  @override
+  bool get recorded => _ledger.entries.contains(_entry) && !_entry.pending;
 
   @override
   IllustrationReceipt? confirmed(String modelLabel) {

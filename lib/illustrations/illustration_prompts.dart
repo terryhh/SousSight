@@ -155,7 +155,7 @@ final _doneness = RegExp(
 );
 
 /// Allergen tags that mean fish, shellfish or eggs.
-const _proteinAllergens = {
+const proteinAllergenTags = {
   'fish',
   'shellfish',
   'crustacean',
@@ -201,7 +201,7 @@ final _shelfStableProduct = RegExp(
 bool isAnimalProtein(Ingredient ingredient) =>
     mentionsAnimalProtein(ingredient.name) ||
     (ingredient.allergens.any(
-          (a) => _proteinAllergens.contains(a.trim().toLowerCase()),
+          (a) => proteinAllergenTags.contains(a.trim().toLowerCase()),
         ) &&
         !_shelfStableProduct.hasMatch(ingredient.name.trim()));
 
@@ -449,98 +449,3 @@ String illustrationRevision(Recipe recipe) => sha256Hex(
     }),
   ),
 );
-
-/// Shown wherever an AI-drafted recipe gets no on-demand picture.
-const kIllustrationNotOfferedCopy =
-    "No picture for this step: looks can't tell you if food is safe.";
-
-// Anything that may involve heat, broadly. Over-blocking only costs a
-// picture.
-final _anyHeat = RegExp(
-  r'\b(?:cook\w*|bak\w*|roast\w*|fr(?:y|ies|ied|ying)|saut\w*|simmer\w*|'
-  r'boil\w*|grill\w*|toast\w*|warm\w*|heat\w*|hot|microwav\w*|oven\w*|'
-  r'pans?|skillet\w*|stove\w*|hob|burners?|steam\w*|poach\w*|broil\w*|'
-  r'sear\w*|char\w*|smok\w*|brais\w*|stew\w*|blanch\w*|caramel\w*|'
-  r'barbecue\w*|bbq|griddle\w*|wok|melt\w*|scald\w*|reheat\w*|'
-  r'air[- ]?fr\w*|torch\w*|flame\w*|bring to)\b',
-  caseSensitive: false,
-);
-
-/// The allowlist's protein test for AI drafts: any meat, poultry, fish,
-/// shellfish, egg or game word in an ingredient or step, any fish,
-/// shellfish or egg allergen tag (no exemptions), or the drafter's
-/// thermometer note.
-bool draftHasAnimalProtein(Recipe recipe) =>
-    recipe.ingredients.any(
-      (i) =>
-          mentionsAnimalProtein(i.name) ||
-          i.allergens.any(
-            (a) => _proteinAllergens.contains(a.trim().toLowerCase()),
-          ),
-    ) ||
-    recipe.steps.any(
-      (s) =>
-          mentionsAnimalProtein(_stepText(s)) ||
-          s.cue.contains(kThermometerDisclaimer),
-    );
-
-bool _mayHeat(RecipeStep s) =>
-    _anyHeat.hasMatch(_stepText(s)) ||
-    s.cue.contains(kHeatDisclaimer) ||
-    s.cue.contains(kThermometerDisclaimer);
-
-/// The on-demand prompt for an AI-drafted recipe, by allowlist: a picture
-/// is offered only when nothing about it could be read as doneness or
-/// safety.
-///
-/// - Step: the step involves no heat, makes no doneness, temperature or
-///   safety claim, and the whole recipe has no animal protein. The prompt
-///   carries only the step's visible cue and the ingredients that step
-///   names.
-/// - Plate: the whole recipe is no-cook, makes no such claim, and has no
-///   animal protein. The prompt carries the dish's name and ingredients.
-///
-/// Anything else returns null: the cook sees [kIllustrationNotOfferedCopy].
-IllustrationPrompt? onDemandIllustrationPrompt(
-  Recipe recipe,
-  IllustrationTarget target,
-) {
-  if (draftHasAnimalProtein(recipe)) return null;
-  switch (target) {
-    case PlateTarget():
-      if (_anyHeat.hasMatch(recipe.title) ||
-          recipe.steps.any(_mayHeat) ||
-          recipe.steps.any((s) => assertsDoneness(_stepText(s)))) {
-        return null;
-      }
-      return IllustrationPrompt(
-        target: target,
-        subject: IllustrationSubject.finishedPlate,
-        heated: false,
-        text:
-            'Show the finished dish, "${recipe.title}", served on a plate or '
-            'in a bowl and ready to eat. Ingredients: '
-            '${_ingredients(recipe.ingredients)}. $kIllustrationStyle',
-      );
-    case StepTarget(:final stepId):
-      final index = recipe.steps.indexWhere((s) => s.id == stepId);
-      if (index < 0) return null;
-      final step = recipe.steps[index];
-      if (_mayHeat(step) || assertsDoneness(_stepText(step))) return null;
-      final cue = visibleCue(step.cue);
-      if (cue.isEmpty) return null;
-      final now = _ingredients([
-        for (final i in recipe.ingredients)
-          if (_named(i, step)) i,
-      ]);
-      return IllustrationPrompt(
-        target: target,
-        subject: IllustrationSubject.stepLook,
-        heated: false,
-        text:
-            'Show what the food should look like at this point: $cue'
-            '${now.isEmpty ? '' : ' Ingredients in this step: $now.'}'
-            ' Show nothing from other steps. $kIllustrationStyle',
-      );
-  }
-}

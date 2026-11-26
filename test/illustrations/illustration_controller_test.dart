@@ -12,6 +12,7 @@ import 'package:soussight/trust/privacy_preferences.dart';
 import 'package:soussight/illustrations/illustration_controller.dart';
 import 'package:soussight/illustrations/illustration_generator.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
+import 'package:soussight/illustrations/on_demand_allowlist.dart';
 
 import 'fakes.dart';
 
@@ -184,49 +185,41 @@ void main() {
       await expectBlocked(h, IllustrationBlock.consentDeclined, asked: true);
     });
 
-    test('when the grant is for another payload, session or feature', () async {
-      for (final forged in [
-        const ConsentAsk(
-          feature: kIllustrationFeature,
-          kinds: {DataKind.text},
-          payloadDigest: 'other',
-          sessionId: 's1',
-        ),
-        ConsentAsk(
-          feature: kIllustrationFeature,
-          kinds: const {DataKind.audio},
-          payloadDigest: sha256Hex(
-            utf8.encode(illustrationPrompt(recipe, grate)!.text),
-          ),
-          sessionId: 's1',
-        ),
-        ConsentAsk(
-          feature: kIllustrationFeature,
-          kinds: const {DataKind.text, DataKind.image},
-          payloadDigest: sha256Hex(
-            utf8.encode(illustrationPrompt(recipe, grate)!.text),
-          ),
-          sessionId: 's1',
-        ),
-        ConsentAsk(
-          feature: 'research',
-          kinds: const {DataKind.text},
-          payloadDigest: sha256Hex(utf8.encode('x')),
-          sessionId: 's1',
-        ),
-      ]) {
-        final h = bound()..consent.forge = forged;
-        await expectBlocked(h, IllustrationBlock.consentDeclined, asked: true);
-      }
-      final h = bound();
-      h.consent.whileOpen = () => h.consent.forge = ConsentAsk(
-        feature: kIllustrationFeature,
-        kinds: const {DataKind.text},
-        payloadDigest: h.consent.asks.single.payloadDigest,
-        sessionId: 'other-session',
-      );
-      await expectBlocked(h, IllustrationBlock.consentDeclined, asked: true);
-    });
+    test(
+      'when the grant differs from the real ask in exactly one field',
+      () async {
+        ConsentAsk copy(
+          ConsentAsk a, {
+          String? feature,
+          Set<DataKind>? kinds,
+          String? digest,
+          String? session,
+        }) => ConsentAsk(
+          feature: feature ?? a.feature,
+          kinds: kinds ?? a.kinds,
+          payloadDigest: digest ?? a.payloadDigest,
+          sessionId: session ?? a.sessionId,
+        );
+        for (final change in <ConsentAsk Function(ConsentAsk)>[
+          (a) => copy(a, feature: 'research'),
+          (a) => copy(a, kinds: const {DataKind.audio}),
+          (a) => copy(a, kinds: const {DataKind.text, DataKind.image}),
+          (a) => copy(a, digest: '${a.payloadDigest}0'),
+          (a) => copy(a, session: 'other-session'),
+        ]) {
+          final h = bound()..consent.mutate = change;
+          await expectBlocked(
+            h,
+            IllustrationBlock.consentDeclined,
+            asked: true,
+          );
+        }
+        // The unchanged copy is accepted (the cases above are not vacuous).
+        final ok = bound()..consent.mutate = (a) => copy(a);
+        await ok.controller.request(recipe, grate);
+        expect(ok.generator.prompts, hasLength(1));
+      },
+    );
 
     test('when a recipe step has no picture', () async {
       final h = bound();
@@ -499,7 +492,7 @@ void main() {
       receipt: ready.source.receipt,
       target: const PlateTarget(),
     );
-    expect(plate.describe(), contains("the dish's name and ingredients"));
+    expect(plate.describe(), contains("the dish's ingredient list"));
     expect(
       const IllustrationSource(
         receipt: IllustrationReceipt(
@@ -807,6 +800,73 @@ void main() {
       expect(native.connectivityKnown, isFalse);
       native.dispose();
     });
+  });
+
+  group('codex round 5', () {
+    test(
+      'a grant held across a ledger rotation is refused, not charged',
+      () async {
+        final h = bound()..consent.gate = Completer<void>();
+        final pending = h.controller.request(recipe, grate);
+        await pumpEventQueue();
+        h.ledger.startSession('session-B'); // rotated while consent is open
+        h.consent.gate!.complete();
+        await pending;
+        expect(h.generator.prompts, isEmpty);
+        expect(h.ledger.entries, isEmpty);
+        expect(h.controller.remaining, 4);
+        expect(
+          (h.controller.stateFor(grate) as IllustrationFailed).code,
+          HybridErrorCode.cancelled,
+        );
+      },
+    );
+
+    test('a ledger rotated while decoding: the image is not shown', () async {
+      final decoding = Completer<bool>();
+      final h = Harness();
+      final controller = IllustrationController(
+        cloudRoutes: h.routes,
+        privacy: h.privacy,
+        isOnline: () => true,
+        consent: h.consent,
+        ledger: InferenceLedgerIllustrations(h.ledger),
+        generator: h.generator,
+        decodes: (_) => decoding.future,
+      )..bind(sessionId: 's1', recipe: recipe, stepId: 'grate');
+      final pending = controller.request(recipe, grate);
+      await pumpEventQueue();
+      h.ledger.startSession('session-B');
+      decoding.complete(true);
+      await pending;
+      expect(h.ledger.entries, isEmpty);
+      expect(controller.stateFor(grate), isA<IllustrationFailed>());
+      controller.dispose();
+    });
+
+    test(
+      'a grant is used once: a gate that returns it again is refused',
+      () async {
+        final h = bound()..consent.reuse = true;
+        h.generator.error = const IllustrationException(
+          HybridErrorCode.network,
+          'n',
+        );
+        await h.controller.request(recipe, grate); // spends the grant
+        expect(h.generator.prompts, hasLength(1));
+        h.generator.error = null;
+        await h.controller.request(recipe, grate); // retry: same grant back
+        expect(h.generator.prompts, hasLength(1), reason: 'not sent again');
+        expect(
+          (h.controller.stateFor(grate) as IllustrationBlocked).reason,
+          IllustrationBlock.consentDeclined,
+        );
+        // A fresh grant works.
+        h.consent.reuse = false;
+        await h.controller.request(recipe, grate);
+        expect(h.generator.prompts, hasLength(2));
+      },
+    );
   });
 }
 

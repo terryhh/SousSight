@@ -68,6 +68,13 @@ class FakeConsent implements ConsentGate {
   /// Answer with a grant for some other ask.
   ConsentAsk? forge;
 
+  /// Answer with the real ask changed by this (exactly one field per case).
+  ConsentAsk Function(ConsentAsk ask)? mutate;
+
+  /// Hand back the same grant object every time (a misbehaving gate).
+  bool reuse = false;
+  ConsentGrant? _last;
+
   @override
   Future<ConsentGrant?> request(ConsentAsk ask) async {
     asks.add(ask);
@@ -75,7 +82,8 @@ class FakeConsent implements ConsentGate {
     whileOpen?.call();
     if (error case final e?) throw e;
     if (!allow) return null;
-    return ConsentGrant(forge ?? ask);
+    if (reuse && _last != null) return _last;
+    return _last = ConsentGrant(forge ?? mutate?.call(ask) ?? ask);
   }
 }
 
@@ -128,7 +136,7 @@ Recipe draftRecipe({
   ingredients:
       ingredients ??
       const [
-        Ingredient(id: 'y', name: 'Yogurt', qty: '1 cup'),
+        Ingredient(id: 'y', name: 'Lemon juice', qty: '1 tbsp'),
         Ingredient(id: 'c', name: 'Cucumber', qty: '1'),
       ],
   equipment: const [],
@@ -144,8 +152,8 @@ Recipe draftRecipe({
         RecipeStep(
           id: 'stir',
           title: 'Stir',
-          instruction: 'Stir the cucumber into the yogurt.',
-          cue: 'Pale green flecks through white yogurt.',
+          instruction: 'Stir the lemon juice into the cucumber.',
+          cue: 'Pale green shreds, evenly wet.',
         ),
       ],
   checkpoints: const [],

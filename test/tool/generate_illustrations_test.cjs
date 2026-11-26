@@ -77,6 +77,10 @@ test('within compares path components, not prefixes', async () => {
   assert.equal(within('/a/build', '/a/build2/x'), false);
   assert.equal(within('/a/build', '/a'), false);
   assert.equal(within('/a/build', '/b/build'), false);
+  // A literal "..cache" directory is inside, not a parent step.
+  assert.equal(within('/a', '/a/..cache'), true);
+  assert.equal(within('/a', '/a/..cache/build'), true);
+  assert.equal(within('/a/b', '/a/b/../c'), false);
 });
 
 test('fileToServe picks the final file, then canonicalizes it', async () => {
@@ -172,6 +176,7 @@ test('every checkout counts: a linked worktree refuses the primary build/web', a
   assert.match(refusedBuild('/src/SousSight/.worktrees/other/build', roots), /Refusing a build/);
   assert.match(refusedBuild('/src', roots), /Refusing a build/);
   assert.equal(refusedBuild('/tmp/illus/build', roots), null);
+  assert.match(refusedBuild('/src/SousSight/..cache/build', roots), /Refusing a build/);
 });
 
 test('from this checkout, the primary checkout\'s build/web is refused', () => {

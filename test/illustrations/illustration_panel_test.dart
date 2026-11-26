@@ -9,6 +9,7 @@ import 'package:soussight/illustrations/illustration_controller.dart';
 import 'package:soussight/illustrations/illustration_generator.dart';
 import 'package:soussight/illustrations/illustration_panel.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
+import 'package:soussight/illustrations/on_demand_allowlist.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
 import 'package:soussight/illustrations/illustration_ledger.dart';
 import 'package:soussight/trust/privacy_preferences.dart';
@@ -105,8 +106,8 @@ void main() {
     expect(find.text(kPremadeSourceCopy), findsNothing);
     expect(
       find.text(
-        "Made just now in Google's cloud from this step's cue and "
-        'ingredients, sent with your OK. Configured model: '
+        "Made just now in Google's cloud from this step's cue and the "
+        'ingredients it names, sent with your OK. Configured model: '
         'fake-image-model (text→image).',
       ),
       findsOneWidget,

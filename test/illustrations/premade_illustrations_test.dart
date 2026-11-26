@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soussight/ai/hybrid/payload_digest.dart' show sha256Hex;
 import 'package:soussight/core/models.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
 import 'package:soussight/illustrations/premade_illustrations.dart';
@@ -108,6 +109,9 @@ void main() {
         final entry = entries['$recipeId/$key'];
         expect(entry, isNotNull, reason: '$recipeId/$key not in manifest');
         expect(entry!['file'], '$recipeId/$key.jpg');
+        // The shipped bytes are exactly the reviewed image: swapping two
+        // files fails here.
+        expect(sha256Hex(bytes), entry['sha256'], reason: path);
         expect(entry['model'], isNotEmpty);
         expect(DateTime.tryParse(entry['generatedAt'] as String), isNotNull);
         // 'prompt' records what was actually sent. If it was hand-tightened,

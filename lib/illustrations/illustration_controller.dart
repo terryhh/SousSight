@@ -10,6 +10,7 @@
 // image out). A result that arrives after the step, recipe or session
 // changed, or after dispose, is dropped.
 
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -23,6 +24,7 @@ import '../core/models.dart';
 import 'illustration_generator.dart';
 import 'illustration_ledger.dart';
 import 'illustration_prompts.dart';
+import 'on_demand_allowlist.dart';
 
 /// Why no illustration was made.
 enum IllustrationBlock {
@@ -99,8 +101,8 @@ class IllustrationSource {
   /// so the model is the configured one.
   String describe() {
     final from = switch (target) {
-      PlateTarget() => "the dish's name and ingredients",
-      StepTarget() => "this step's cue and ingredients",
+      PlateTarget() => "the dish's ingredient list",
+      StepTarget() => "this step's cue and the ingredients it names",
     };
     return switch (receipt.provenance) {
       Provenance.sdkCloud || Provenance.cloudAdapter =>
@@ -183,6 +185,10 @@ class IllustrationController extends ChangeNotifier {
   String? _stepId;
   int _epoch = 0;
   bool _disposed = false;
+
+  /// Grants already spent on a dispatch. A grant is used once (DESIGN.md
+  /// §5); a gate that hands the same grant back is refused.
+  final Set<ConsentGrant> _spentGrants = HashSet.identity();
 
   /// This binding's images, by target key.
   final Map<String, IllustrationReady> _cache = {};
@@ -296,6 +302,8 @@ class IllustrationController extends ChangeNotifier {
       return;
     }
     final epoch = _epoch;
+    // The request belongs to the ledger it started under.
+    final generation = _ledger.generation;
     _set(key, const IllustrationLoading());
     final digest = sha256Hex(utf8.encode(prompt.text));
     final ConsentGrant? grant;
@@ -319,8 +327,15 @@ class IllustrationController extends ChangeNotifier {
         grant.ask.sessionId != session ||
         grant.ask.feature != kIllustrationFeature ||
         grant.ask.payloadDigest != digest ||
-        !setEquals(grant.ask.kinds, const {DataKind.text})) {
+        !setEquals(grant.ask.kinds, const {DataKind.text}) ||
+        _spentGrants.contains(grant)) {
       _set(key, const IllustrationBlocked(IllustrationBlock.consentDeclined));
+      return;
+    }
+    // A grant held across a ledger rotation is void: nothing is sent or
+    // charged under a session the cook did not consent in.
+    if (_ledger.generation != generation) {
+      _set(key, const IllustrationFailed(HybridErrorCode.cancelled));
       return;
     }
     // Send time: read every setting again; the prompt may have been open
@@ -349,6 +364,7 @@ class IllustrationController extends ChangeNotifier {
       if (late != null && _current(epoch)) _set(key, IllustrationBlocked(late));
       return;
     }
+    _spentGrants.add(grant);
     _usage.charge(session);
     Future<GeneratedIllustration> pending;
     try {
@@ -363,9 +379,9 @@ class IllustrationController extends ChangeNotifier {
       // A valid signature over garbage must not show as a blank "ready".
       final decodes = await _decodes(image.bytes);
       if (!_current(epoch)) return;
-      // No settled leg (the ledger moved to a new session): nothing may
-      // claim this send, so the image is not shown.
-      if (!decodes || receipt == null) {
+      // No settled leg, or it left the active ledger while decoding (a new
+      // session): nothing may claim this send, so the image is not shown.
+      if (!decodes || receipt == null || !send.recorded) {
         _set(key, const IllustrationFailed(HybridErrorCode.failed));
         return;
       }
