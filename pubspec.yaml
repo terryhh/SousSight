@@ -79,6 +79,10 @@ flutter:
   assets:
     - assets/recipes/
     - assets/recipes/chickpea_wrap_v1/
+    # SS-098 pre-made AI illustrations (provenance in manifest.json).
+    - assets/illustrations/peanut_butter_sandwich_v1/
+    - assets/illustrations/chickpea_wrap_v1/
+    - assets/illustrations/black_bean_corn_salsa_v1/
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

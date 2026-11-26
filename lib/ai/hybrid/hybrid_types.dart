@@ -7,7 +7,9 @@ import 'dart:async';
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 
 /// Cloud routes G1 approved for this build. Compiled in; default is none.
-enum CloudRoute { hybridFallback, research, nearby, live }
+/// `images` (SS-098) is cloud-only by nature: no on-device model generates
+/// images.
+enum CloudRoute { hybridFallback, research, nearby, live, images }
 
 class CloudRoutes {
   const CloudRoutes(this.approved);

@@ -22,6 +22,8 @@ import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../data/offline_ops_banner.dart';
 import '../genui/cooking_ui.dart';
+import '../illustrations/illustration_panel.dart';
+import '../illustrations/illustration_wiring.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
 import '../live/live_controller.dart';
@@ -1180,6 +1182,19 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       CookingSurface(controller: cook.ui),
+      // SS-098: "what it should look like" for this step and the plate.
+      StepIllustrations(
+        key: const ValueKey('step-illustrations'),
+        recipe: cook.recipe,
+        step: cook.step,
+        sessionId: cook.session?.id,
+        showPlate:
+            cook.complete || cook.stepIndex == cook.recipe.steps.length - 1,
+        createController: switch (widget.hybrid) {
+          final hybrid? => () => illustrationControllerFor(hybrid),
+          null => null,
+        },
+      ),
       if (cook.coachLiteAnswer != null)
         if (_speaker case final speaker?)
           Padding(
