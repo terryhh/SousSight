@@ -93,15 +93,14 @@ class FakeSessionRepository implements SessionRepository {
   }
 
   @override
-  Stream<CookingSession> watch(String sessionId) => _sessions
-      .watch()
-      .map((m) => m[sessionId])
-      .where((s) => s != null)
-      .cast();
+  Stream<CookingSession> watch(String sessionId) =>
+      _sessions.watch().map((m) => m[sessionId]).where((s) => s != null).cast();
 
   @override
-  Future<CookingSession> update(String sessionId,
-      CookingSession Function(CookingSession current) mutate) async {
+  Future<CookingSession> update(
+    String sessionId,
+    CookingSession Function(CookingSession current) mutate,
+  ) async {
     final next = mutate(_sessions.items[sessionId]!);
     _sessions.put(sessionId, next);
     return next;

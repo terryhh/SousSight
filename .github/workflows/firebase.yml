@@ -145,7 +145,9 @@ jobs:
       RECAPTCHA_SITE_KEY: ${{ vars.RECAPTCHA_SITE_KEY }}
       WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
-      LIVE_MODEL: ${{ vars.LIVE_MODEL || 'gemini-3.8-live' }}
+      # One Live model for the server and the AI Logic client (DESIGN.md §7);
+      # it is also compiled in as GEMINI_LIVE_MODEL below.
+      LIVE_MODEL: ${{ vars.LIVE_MODEL || 'gemini-3.1-flash-live-preview' }}
       LIVE_API_VERSION: ${{ vars.LIVE_API_VERSION || 'v1beta' }}
       RESEARCH_MODEL: ${{ vars.RESEARCH_MODEL || 'gemini-3.8-flash' }}
       DINNER_SERVICE_READY: ${{ vars.DINNER_SERVICE_READY || 'false' }}
@@ -220,6 +222,7 @@ jobs:
               'DINNER_MODE': os.environ['DINNER_MODE'],
               'LIVE_BACKEND': os.environ['LIVE_BACKEND'],
               'CLOUD_ROUTES': os.environ['CLOUD_ROUTES'],
+              'GEMINI_LIVE_MODEL': os.environ['LIVE_MODEL'],
           }
           Path('dart_defines.local.json').write_text(json.dumps(build))
           # Package main is used by Firebase discovery AND the uploaded runtime.
@@ -234,7 +237,11 @@ jobs:
                              else 'src/live-dinner-index.js' if dinner_ready
                              else 'src/live-index.js')
           package_path.write_text(json.dumps(package, indent=2) + '\n')
-          removed = set()
+          # The judged build never uses the ephemeral transport (SS-074), so
+          # /api/live-token is never served; /api/live-session only with aiLogic.
+          removed = {'/api/live-token'}
+          if os.environ['LIVE_BACKEND'] != 'aiLogic':
+              removed.add('/api/live-session')
           if not dinner_ready:
               removed.add('/api/dinner-ready')
           if not status_ready:
@@ -284,13 +291,20 @@ jobs:
       - name: Deploy reviewed production resources
         run: |
           # Auth provider provisioning is a one-time setup prerequisite.
-          targets=firestore,functions:liveToken,hosting
+          # The judged build never deploys liveToken (ephemeral Live, SS-074);
+          # liveSession is the AI Logic Live reservation and ships with aiLogic.
+          targets=firestore
+          if [[ "$LIVE_BACKEND" == aiLogic ]]; then
+            targets+=,functions:liveSession
+          fi
           if [[ "$DINNER_SERVICE_READY" == true ]]; then
-            targets=firestore,functions:liveToken,functions:dinnerReady,hosting
+            targets+=,functions:dinnerReady
             if [[ "$DINNER_STATUS_READY" == true ]]; then
-              targets=firestore,functions:liveToken,functions:dinnerReady,functions:vonageStatus,hosting
+              targets+=,functions:vonageStatus
             fi
           fi
+          targets+=,hosting
+          echo "Deploy targets: $targets"
           firebase deploy --project "$FIREBASE_PROJECT" --only "$targets" --non-interactive
       - name: Check Hosting response
         run: curl --fail --silent --show-error --retry 3 --retry-delay 5 https://devfest-flutter-a59e8.web.app/ --output /dev/null

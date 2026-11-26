@@ -25,7 +25,9 @@ typedef PantryRecipeChosen = void Function(
 );
 
 const pantryPrivacyLine =
-    'Photos and audio go to Google Gemini to identify ingredients; nothing is stored.';
+    'On-device AI reads typed lists and photos when it is ready. Voice clips, '
+    'and anything this device cannot handle, may go to Google cloud AI; each '
+    'result shows where it ran. Nothing is stored.';
 
 /// "What did you get from the pantry?" The cook shows, says, or types their
 /// haul; one Gemini call suggests bundled recipes; the cook confirms and picks.
@@ -42,6 +44,8 @@ class PantryScreen extends StatefulWidget {
     this.nearbyClient,
     this.locate,
     this.openLink,
+    this.header,
+    this.headerActions,
   });
 
   final List<Recipe> recipes;
@@ -65,6 +69,12 @@ class PantryScreen extends StatefulWidget {
   /// or a simulated Orlando position (rehearsal mode).
   final NearbyLocator? locate;
   final NearbyLinkOpener? openLink;
+
+  /// Shown under the brand row (for example the readiness panel).
+  final Widget? header;
+
+  /// Extra buttons beside "How it works" (On-device AI, ledger, label check).
+  final Widget? headerActions;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
@@ -391,6 +401,7 @@ class _PantryScreenState extends State<PantryScreen> {
               children: [
                 _brand(),
                 const SizedBox(height: 18),
+                ?widget.header,
                 if (widget.isDemo) ...[
                   _notice(
                     'Rehearsal mode · Camera, microphone, and Gemini are not used. Results are simulated.',
@@ -511,6 +522,7 @@ class _PantryScreenState extends State<PantryScreen> {
           ],
         ),
       ),
+      ?widget.headerActions,
       HowItWorksButton(isDemo: widget.isDemo),
     ],
   );

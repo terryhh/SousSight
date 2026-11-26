@@ -2,7 +2,11 @@
 // https://ai.google.dev/api/live#AuthToken
 // liveConnectConstraints is an SDK option, not the REST AuthToken schema.
 // Only the constrained, short-lived token crosses into the browser.
-export const LIVE_MODEL = 'gemini-3.8-live';
+// One Live model for client and server (DESIGN.md §7). Firebase AI Logic lists
+// gemini-3.1-flash-live-preview for the Gemini Developer API (checked
+// 2026-11-25: https://firebase.google.com/docs/ai-logic/live-api); the client
+// default is the same (lib/live/live_tools.dart, GEMINI_LIVE_MODEL).
+export const LIVE_MODEL = 'gemini-3.1-flash-live-preview';
 export const LIVE_API_VERSION = 'v1beta';
 export const TOKEN_ENDPOINT =
   `https://generativelanguage.googleapis.com/${LIVE_API_VERSION}/auth_tokens`;
