@@ -1,0 +1,10 @@
+firebase-ai-13.1.0.js is an unmodified copy of
+https://www.gstatic.com/firebasejs/13.1.0/firebase-ai.js
+(SHA-256 683abbb67b55e6d22dcedc5ac91c2dd5276b4629175905b7df2ad2f0f874bce8),
+part of the Firebase JavaScript SDK, Copyright Google LLC, licensed under the
+Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+
+It is test data only. test/hybrid/web_bridge_sdk_test.cjs evaluates it offline
+(stubbed firebase-app imports and a stubbed fetch) to prove that the web bridge
+never lets a local-only request reach the cloud path. It is not shipped in any
+build; the app loads the SDK from gstatic at runtime.
