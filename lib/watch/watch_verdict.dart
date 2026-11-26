@@ -132,8 +132,10 @@ class WatchVerdict {
             'check temperature or food safety.',
       WatchState.notYet => switch (direction) {
         WatchDirection.more => 'Not at the cue yet — keep going$where.$seen',
+        // Food keeps cooking while the cook looks, so heat comes off first.
         WatchDirection.less =>
-          'It may be past the cue — have a look$where.$seen',
+          "It may be past the cue$where. If it's on the heat, slide the pan "
+              'off the heat, then look.$seen',
         WatchDirection.none => 'Not at the cue yet$where.$seen',
       },
       WatchState.unsure =>

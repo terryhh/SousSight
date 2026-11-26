@@ -9,7 +9,7 @@
     {"id": "tomato", "name": "Tomato, diced", "qty": "1 large or 2 small", "allergens": []},
     {"id": "red_onion", "name": "Red onion, finely diced", "qty": "1/4 cup", "allergens": []},
     {"id": "lime", "name": "Lime juice", "qty": "1 lime (about 2 tbsp)", "allergens": []},
-    {"id": "cilantro", "name": "Cilantro, chopped, only if the cook likes it", "qty": "2 tbsp, optional", "optional": true, "allergens": []},
+    {"id": "cilantro", "name": "Cilantro, chopped", "qty": "2 tbsp", "optional": true, "allergens": []},
     {"id": "salt", "name": "Salt", "qty": "a pinch, to taste", "allergens": []},
     {"id": "tortillas", "name": "Tortilla chips or tortillas, for serving (flour tortillas contain wheat; check labels)", "qty": "a handful of chips or 2 tortillas", "allergens": ["wheat"]}
   ],
@@ -24,7 +24,7 @@
     {
       "id": "dice",
       "title": "Dice the tomato and onion",
-      "instruction": "Cut the tomato and red onion into small, even pieces, about the size of a corn kernel. Add them to the bowl. Chop the cilantro too if you are using it.",
+      "instruction": "Cut the tomato and red onion into small, even pieces, about the size of a corn kernel. Curl the fingertips of your holding hand under, like a claw, so the side of the knife rests against your knuckles. Add the pieces to the bowl. Chop the cilantro too if you are using it.",
       "cue": "Tomato and onion pieces are evenly diced, about the size of a corn kernel, with no large chunks.",
       "checkpointId": "cp_dice"
     },
@@ -58,7 +58,10 @@
       "allowedAdjustments": ["dice_smaller", "even_out_pieces", "fine_as_is"]
     }
   ],
-  "reviewedSubstitutions": [],
+  "reviewedSubstitutions": [
+    {"ingredientId": "lime", "substitute": "Bottled lime juice", "note": "About 2 tbsp. Add a little at a time and taste.", "approvedBy": "Recipe reviewer"},
+    {"ingredientId": "tomato", "substitute": "Canned diced tomatoes, drained", "note": "One 14.5 oz can. Drain well so the salsa is not watery; no dicing needed.", "approvedBy": "Recipe reviewer"}
+  ],
   "adjustmentLabels": {
     "dice_smaller": "Cut the larger pieces once or twice more",
     "even_out_pieces": "Pick out the big chunks and dice them to match the rest",

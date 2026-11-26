@@ -41,6 +41,13 @@ const kThermometerDisclaimer =
 const kHeatDisclaimer =
     "Judge this yourself; the camera can't confirm doneness or food safety.";
 
+/// Opens every thermometer note on a heated meat, poultry, fish or egg step:
+/// colour is never the doneness test, whatever the model's cue said.
+const kColourNotDoneness = "Colour and clear juices don't show doneness.";
+
+/// Shown when a drafted timer was longer than the app allows.
+const kTimerCapNote = 'Timer capped at 60 minutes — check the recipe.';
+
 const _minIngredients = 2;
 const _maxIngredients = 12;
 const _minSteps = 3;
@@ -78,6 +85,10 @@ Write 3 to 7 steps. Each step has a short title, a short instruction, and a
 VISIBLE cue the cook can judge by eye (texture, color, coverage, bubbling).
 Cues describe what to look for; never certify doneness, internal
 temperature, or food safety, and never say the camera can confirm it.
+For meat, poultry, fish and eggs, never use colour or 'juices run clear' as
+the doneness test; the cue says to check with a thermometer — poultry
+165°F/74°C, ground meat 160°F/71°C, fish 145°F/63°C, egg dishes 160°F/71°C.
+Dried beans: soak, drain, then boil in fresh water.
 Use timerSeconds (60 to 3600) only for real waiting or heating; omit it
 otherwise. For each ingredient list allergens only from: milk, egg, fish,
 shellfish, tree nut, peanut, wheat, soy, sesame (lowercase). Never claim an
@@ -618,8 +629,14 @@ Recipe buildDraftRecipe(
   final parsed = <Map<String, Object?>>[];
   for (final raw in rawSteps) {
     if (raw is! Map) continue;
-    final instruction = _clip(_str(raw['instruction']), 400);
+    final capped = _timerCapped(raw['timerSeconds']);
+    var instruction = _clip(
+      _str(raw['instruction']),
+      capped ? 400 - kTimerCapNote.length - 1 : 400,
+    );
     if (instruction.isEmpty) continue;
+    // Say so when the app shortened the model's timer; never cap silently.
+    if (capped) instruction = '$instruction $kTimerCapNote';
     final stepTitle = _clip(_str(raw['title']), 80);
     parsed.add({
       'title': stepTitle.isEmpty ? 'Step ${parsed.length + 1}' : stepTitle,
@@ -632,7 +649,8 @@ Recipe buildDraftRecipe(
     throw FormatException('step count ${parsed.length} outside 3..7');
   }
 
-  final riskyRecipe = ingredients.any((i) => _risky.hasMatch(i.name));
+  final recipeProteins = ingredients.map((i) => i.name).join(' ');
+  final riskyRecipe = _risky.hasMatch(_normalizeShapes(recipeProteins));
   final steps = <RecipeStep>[
     for (var i = 0; i < parsed.length; i++)
       RecipeStep(
@@ -645,6 +663,7 @@ Recipe buildDraftRecipe(
               '${parsed[i]['title']} ${parsed[i]['instruction']} '
               '${parsed[i]['cue']}',
           riskyRecipe: riskyRecipe,
+          recipeProteins: recipeProteins,
         ),
         timerSeconds: parsed[i]['timerSeconds'] as int?,
       ),
@@ -673,15 +692,25 @@ Recipe buildDraftRecipe(
   );
 }
 
+// Raw animal foods that need a thermometer when heated. "ground" alone is not
+// here: "ground black pepper" or "ground cumin" is a spice, while "ground
+// beef", "ground turkey" and "ground meat" still match by their meat word.
 final _risky = RegExp(
-  r'\b(raw|meat|meats|poultry|chicken|turkey|beef|pork|bacon|ham|sausages?|'
-  r'ground|mince|fish|salmon|tuna|seafood|shrimp|prawns?|eggs?)\b',
+  r'\b(raw|meat|meats|poultry|chicken|turkey|duck|beef|pork|lamb|veal|bacon|'
+  r'ham|sausages?|hamburgers?|burgers?|patty|patties|meatballs?|meatloaf|'
+  r'mince|fish|salmon|'
+  r'tuna|cod|tilapia|trout|halibut|catfish|pollock|sardines?|seafood|shrimp|'
+  r'prawns?|crab|lobster|scallops?|clams?|mussels?|oysters?|eggs?)\b',
   caseSensitive: false,
 );
 final _heat = RegExp(
   r'\b(cook|cooks|cooked|cooking|bake|baked|baking|fry|fried|frying|'
-  r'heat|heated|heating|oven|pan|skillet|boil|boiling|simmer|simmering|'
-  r'roast|roasting|grill|grilling|microwave|saute|sauté|scramble|scrambled)\b',
+  r'heat|heated|heating|oven|pan|pans|skillet|boil|boiling|simmer|simmering|'
+  r'roast|roasting|grill|grilling|microwave|saute|sauté|scramble|scrambled|'
+  r'brown|browned|browning|sear|seared|searing|toast|toasted|toasting|'
+  r'broil|broiled|broiling|poach|poached|poaching|steam|steamed|steaming|'
+  r'warm|warmed|warming|melt|melted|melting|stove|stovetop|burner|burners|'
+  r'pot|pots|saucepan|saucepans)\b',
   caseSensitive: false,
 );
 final _certainty = RegExp(
@@ -690,26 +719,206 @@ final _certainty = RegExp(
   caseSensitive: false,
 );
 
+// Safe minimum internal temperatures (FoodSafety.gov chart), checked with a
+// thermometer. These are the app's own claims, so a number is named only
+// when the food and its state are clear; otherwise the general line is used.
+final _poultry = RegExp(
+  r'\b(poultry|chicken|turkey|duck)\b',
+  caseSensitive: false,
+);
+// Ground red meat named as such: a red-meat word right before the shape.
+// A hamburger is a shape like a burger, not a meat: "turkey hamburgers"
+// are poultry.
+final _groundRedMeat = RegExp(
+  r'\b(ground|minced?)\s+(beef|pork|lamb|veal)\b|'
+  r'\b(beef|pork|lamb|veal)\s+(hamburgers?|burgers?|sausages?|patty|patties|'
+  r'meatballs?|meatloaf)\b',
+  caseSensitive: false,
+);
+// "Ground meat" or "minced meat" without the animal. The chart's own
+// wording for 160°F, unless the recipe says the meat is poultry. "Mince"
+// alone is not here: it is also a verb ("mince the garlic").
+final _groundGeneric = RegExp(
+  r'\b(ground|minced?)\s+meat\b',
+  caseSensitive: false,
+);
+// Burgers, hamburgers, patties, sausages and meatballs whose meat is not
+// named right before them. Their target depends on what the recipe names
+// elsewhere, and they get no number when it names neither or both kinds.
+final _groundUnnamed = RegExp(
+  r'(?<!\b(?:beef|pork|lamb|veal|chicken|turkey|duck|poultry)\s)'
+  r'\b(hamburgers?|burgers?|patty|patties|meatballs?|meatloaf|sausages?)\b',
+  caseSensitive: false,
+);
+final _redMeat = RegExp(r'\b(beef|pork|lamb|veal)\b', caseSensitive: false);
+final _finFish = RegExp(
+  r'\b(fish|salmon|tuna|cod|tilapia|trout|halibut|catfish|pollock|'
+  r'sardines?)\b',
+  caseSensitive: false,
+);
+final _egg = RegExp(r'\beggs?\b', caseSensitive: false);
+
+/// Food that was cooked before: leftovers and reheated food are 165°F
+/// whatever the protein.
+final _reheated = RegExp(
+  r'\b(leftovers?|reheat\w*|re-heat\w*|rewarm\w*|precooked|pre-cooked|'
+  r'already cooked|cooked earlier|rotisserie)\b|'
+  r'\bwarm\w*\s+(?:\w+\s+){0,4}up\b|'
+  r'\bcooked\s+(poultry|chicken|turkey|duck|meat|beef|pork|lamb|fish|'
+  r'salmon|tuna|eggs?)\b',
+  caseSensitive: false,
+);
+
+/// Heat words that warm or finish food rather than cook it from raw. When a
+/// step's only heat words are these and the food's state is not stated, the
+/// note names no number.
+const _warmOnly = {
+  'warm',
+  'warmed',
+  'warming',
+  'melt',
+  'melted',
+  'melting',
+  'toast',
+  'toasted',
+  'toasting',
+};
+
+const _reheatedTarget = 'leftovers and reheated food 165°F (74°C)';
+
+// A meat, cheese or plant word joined to a burger-style shape, with or
+// without a space or hyphen ("turkeyburgers", "turkey-burgers").
+final _joinedShape = RegExp(
+  r'\b(beef|pork|lamb|veal|chicken|turkey|duck|cheese|veggie|vegan|bean|tofu)'
+  r'[\s-]*'
+  r'(hamburgers?|burgers?|patty|patties|sausages?|meatballs?|meatloaf)\b',
+  caseSensitive: false,
+);
+// Plant-based burgers, patties and sausages: not meat.
+final _plantShape = RegExp(
+  r'\b(veggie|vegetable|vegan|vegetarian|plant[\s-]*based|meatless|bean|'
+  r'black\s+bean|lentil|chickpea|mushroom|tofu|tempeh|quinoa|falafel)\s+'
+  r'(hamburgers?|burgers?|patty|patties|sausages?|meatballs?|meatloaf)\b',
+  caseSensitive: false,
+);
+final _burgerBuns = RegExp(
+  r'\b(hamburgers?|burgers?)\s+(buns?|rolls?|bread)\b',
+  caseSensitive: false,
+);
+
+/// Spells burger-style foods the same way before they are classified:
+/// "turkeyburgers", "turkey-burgers" and "turkey  burgers" become
+/// "turkey burgers", "cheeseburger" becomes "cheese burger", and a
+/// plant-based burger or sausage ("veggie burgers", "black bean patties")
+/// and burger buns lose their meat shape word, so none of them is read as
+/// meat of unknown kind.
+String _normalizeShapes(String text) => text
+    .replaceAllMapped(_joinedShape, (m) => '${m[1]} ${m[2]}')
+    .replaceAll(_plantShape, 'plant-based food')
+    .replaceAll(_burgerBuns, 'buns');
+
+/// The thermometer note for a heated step with animal food. [proteins] is
+/// the text that names the food (the step, or the recipe's ingredients when
+/// the step names none); [step] is the step's own text and defaults to
+/// [proteins]; [recipe] is the recipe's ingredient names.
+///
+/// Rules, conservative because these numbers are the app's own claims:
+/// reheated or leftover food is 165°F; a step that only warms, melts or
+/// toasts food of unknown state names no number; an unnamed burger,
+/// hamburger, patty, sausage or meatball takes poultry's 165°F when the
+/// recipe names only poultry, ground meat's 160°F when it names only red
+/// meat, and no number when the recipe names both or neither; "ground meat"
+/// without the animal is 160°F unless the recipe names poultry; plant-based
+/// burgers and sausages get no number. It never says the food reached a
+/// temperature.
+String draftThermometerNote(
+  String proteins, {
+  String? step,
+  String recipe = '',
+}) {
+  proteins = _normalizeShapes(proteins);
+  recipe = _normalizeShapes(recipe);
+  final stepText = _normalizeShapes(step ?? proteins);
+  final both = '$stepText $proteins $recipe';
+  const general = '$kColourNotDoneness $kThermometerDisclaimer';
+  final List<String> targets;
+  if (_reheated.hasMatch(both)) {
+    targets = const [_reheatedTarget];
+  } else {
+    final heatWords = [
+      for (final m in _heat.allMatches(stepText)) m.group(0)!.toLowerCase(),
+    ];
+    if (heatWords.isNotEmpty && heatWords.every(_warmOnly.contains)) {
+      return general;
+    }
+    var poultry = _poultry.hasMatch(proteins);
+    var groundMeat = _groundRedMeat.hasMatch(proteins);
+    final unnamedShape = _groundUnnamed.hasMatch(proteins);
+    final unnamedGround = _groundGeneric.hasMatch(proteins);
+    if (unnamedShape || unnamedGround) {
+      // Poultry is resolved first: a shape or "ground meat" never lowers an
+      // identified poultry ingredient to 160°F.
+      final context = '$proteins $recipe';
+      final namesPoultry = _poultry.hasMatch(context);
+      final namesRed = _redMeat.hasMatch(context);
+      if (namesPoultry && namesRed) return general;
+      if (namesPoultry) {
+        poultry = true;
+      } else if (namesRed || (unnamedGround && !unnamedShape)) {
+        groundMeat = true;
+      } else {
+        return general;
+      }
+    }
+    targets = [
+      if (poultry) 'poultry 165°F (74°C)',
+      if (groundMeat) 'ground meat 160°F (71°C)',
+      if (_finFish.hasMatch(proteins)) 'fish 145°F (63°C)',
+      if (_egg.hasMatch(proteins)) 'egg dishes 160°F (71°C)',
+    ];
+  }
+  if (targets.isEmpty) return general;
+  return '$kColourNotDoneness Check with a food thermometer: '
+      "${targets.join(', ')}. The camera can't confirm it's safe.";
+}
+
 String _safeCue(
   String cue, {
   required String stepText,
   required bool riskyRecipe,
+  required String recipeProteins,
 }) {
   final heated = _heat.hasMatch(stepText);
-  final risky = _risky.hasMatch(stepText) || riskyRecipe;
+  final riskyStep = _risky.hasMatch(_normalizeShapes(stepText));
   final String disclaimer;
-  if (heated && risky) {
-    disclaimer = kThermometerDisclaimer;
+  if (heated && (riskyStep || riskyRecipe)) {
+    // Enforced here whatever the model wrote: a heated meat, poultry, fish
+    // or egg step always ends with the thermometer note. Temperatures come
+    // from this step's proteins, or the recipe's when the step names none.
+    disclaimer = draftThermometerNote(
+      riskyStep ? stepText : recipeProteins,
+      step: stepText,
+      recipe: recipeProteins,
+    );
   } else if (heated || _certainty.hasMatch(stepText)) {
     disclaimer = kHeatDisclaimer;
   } else {
     return _clip(cue, 240);
   }
+  // A cue that itself certifies ("fully cooked", "safe to eat") is dropped:
+  // the app's note replaces it rather than sitting beside it.
+  final kept = _certainty.hasMatch(cue) ? '' : cue;
   // Leave room so the disclaimer is never clipped away.
-  var base = _clip(cue, 240 - disclaimer.length - 1).trimRight();
+  final room = 240 - disclaimer.length - 1;
+  var base = _clip(kept, room < 80 ? 80 : room).trimRight();
   if (base.endsWith(disclaimer)) return base;
   if (base.isNotEmpty && !RegExp(r'[.!?]$').hasMatch(base)) base = '$base.';
   return base.isEmpty ? disclaimer : '$base $disclaimer';
+}
+
+bool _timerCapped(Object? v) {
+  final n = v is num ? v : (v is String ? num.tryParse(v.trim()) : null);
+  return n != null && n.isFinite && n.round() > _maxTimer;
 }
 
 int? _timer(Object? v) {

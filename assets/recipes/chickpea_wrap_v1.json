@@ -7,14 +7,14 @@
     {"id": "chickpeas", "name": "Canned chickpeas, drained and rinsed", "qty": "1 can (15 oz)", "allergens": []},
     {"id": "mayo", "name": "Mayonnaise", "qty": "2 tbsp", "allergens": ["egg"]},
     {"id": "mustard", "name": "Dijon mustard", "qty": "1 tsp", "allergens": ["mustard"]},
-    {"id": "lemon", "name": "Lemon juice", "qty": "1 tbsp + 1 tbsp for the onion", "allergens": []},
+    {"id": "lemon", "name": "Lemon juice, fresh or bottled", "qty": "1 tbsp + 1 tbsp for the onion", "allergens": []},
     {"id": "red_onion", "name": "Red onion, thinly sliced (pre-sliced)", "qty": "2 tbsp", "optional": true, "allergens": []},
-    {"id": "celery", "name": "Celery, diced (pre-diced)", "qty": "1/4 cup", "allergens": []},
-    {"id": "bell_pepper", "name": "Red bell pepper, diced (pre-diced)", "qty": "1/4 cup", "allergens": []},
+    {"id": "celery", "name": "Celery, diced", "qty": "1/4 cup", "optional": true, "allergens": []},
+    {"id": "bell_pepper", "name": "Red bell pepper, diced", "qty": "1/4 cup", "optional": true, "allergens": []},
     {"id": "salt_pepper", "name": "Salt and black pepper", "qty": "to taste", "allergens": []},
     {"id": "tortillas", "name": "Flour tortillas (10 inch)", "qty": "2", "allergens": ["wheat"]}
   ],
-  "equipment": ["Bowl (dark, wide)", "Potato masher or fork", "Spoon or spatula", "Small cup for the onion"],
+  "equipment": ["Bowl (dark, wide)", "Potato masher or fork", "Spoon or spatula", "Small cup for the onion", "Knife and cutting board, if your vegetables are not pre-cut", "Microwave or a dry pan, to warm the tortillas"],
   "steps": [
     {
       "id": "pickle_onion",
@@ -33,14 +33,14 @@
     {
       "id": "mix",
       "title": "Dress and fold",
-      "instruction": "Add mayo, mustard, 1 tbsp lemon juice, celery, bell pepper, the drained onion, salt and pepper. Fold from the bottom up until evenly mixed.",
-      "cue": "Red and green pieces spread through the whole bowl, everything lightly coated, no white streaks of dressing.",
+      "instruction": "Add mayo, mustard, 1 tbsp lemon juice, the drained onion, salt and pepper, plus whichever vegetables you have: celery, red bell pepper, drained canned corn or shredded carrot. Fold from the bottom up until evenly mixed.",
+      "cue": "Vegetable pieces spread through the whole bowl, everything lightly coated, no white streaks of dressing.",
       "checkpointId": "cp_mix"
     },
     {
       "id": "roll",
       "title": "Fill and roll",
-      "instruction": "Spoon about half the filling in a line across the lower third of a tortilla. Fold in the sides, then roll away from you.",
+      "instruction": "Warm the tortilla 15–20 seconds in the microwave or a dry pan so it bends without cracking. Spoon about half the filling in a line across the lower third of the tortilla. Fold in the sides, then roll away from you.",
       "cue": "A spoonful holds its shape. If it slumps or pools, it is too wet to roll."
     }
   ],
@@ -56,7 +56,7 @@
     {
       "id": "cp_mix",
       "stepId": "mix",
-      "target": "Red pepper and celery pieces are spread across the whole bowl, everything is lightly coated, and there are no white streaks or pools of dressing.",
+      "target": "Vegetable pieces (such as red pepper and celery) are spread across the whole bowl, everything is lightly coated, and there are no white streaks or pools of dressing.",
       "cues": ["vegetables spread evenly", "no dressing streaks", "no pooled liquid"],
       "targetImageAsset": "assets/recipes/chickpea_wrap_v1/target_mix.jpg",
       "allowedAdjustments": ["fold_more", "fold_from_bottom", "add_chickpeas_if_wet"]
@@ -64,7 +64,9 @@
   ],
   "reviewedSubstitutions": [
     {"ingredientId": "mayo", "substitute": "Plain Greek yogurt", "note": "Same amount. Tangier. Contains dairy.", "approvedBy": "Recipe reviewer"},
-    {"ingredientId": "tortillas", "substitute": "Bread or a lettuce wrap", "note": "Lettuce leaves make it gluten-free; check bread labels.", "approvedBy": "Recipe reviewer"}
+    {"ingredientId": "tortillas", "substitute": "Large lettuce leaves", "note": "Lettuce leaves replace the wheat tortilla. If you avoid gluten, check every label, including mustard and mayo.", "approvedBy": "Recipe reviewer"},
+    {"ingredientId": "celery", "substitute": "Shredded carrot", "note": "Same amount. Adds crunch and a little sweetness.", "approvedBy": "Recipe reviewer"},
+    {"ingredientId": "bell_pepper", "substitute": "Canned corn, drained", "note": "Same amount. Drain well so the filling is not wet.", "approvedBy": "Recipe reviewer"}
   ],
   "adjustmentLabels": {
     "mash_more": "Mash 15-20 more presses",
