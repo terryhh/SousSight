@@ -91,6 +91,26 @@ class InferenceLedger extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Settles a leg written with [begin] as never sent: a last check right
+  /// before transmission refused it, so nothing left this device.
+  void withdraw(LedgerEntry entry, {required HybridErrorCode error}) {
+    if (!_entries.contains(entry) || !entry.pending) return;
+    final leg = entry.leg;
+    entry
+      ..leg = InferenceLeg(
+        requestId: leg.requestId,
+        feature: leg.feature,
+        mode: leg.mode,
+        kinds: leg.kinds,
+        transferPermitted: false,
+        provenance: Provenance.unknown,
+        modelLabel: leg.modelLabel,
+        error: error,
+      )
+      ..completedAt = _clock();
+    notifyListeners();
+  }
+
   /// Writes a finished leg in one step: a blocked fallback, or a send by
   /// another cloud sender (Live connect and each resume, grounded research,
   /// nearby lookups) that reports its own outcome.

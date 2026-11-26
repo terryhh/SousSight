@@ -261,6 +261,28 @@ void main() {
       sends = 0;
     });
 
+    // Codex P3: the claim is narrowed, not widened. A blank area is the
+    // sheet's own form error: no search starts, so nothing is recorded.
+    testWidgets('a blank area submitted from the keyboard is a form error, '
+        'not a search attempt', (tester) async {
+      await setUp360(tester);
+      await tester.pumpWidget(
+        screen(
+          nearby: gated(),
+          isDemo: false,
+          locate: () => Future.error(const LocationUnavailable()),
+          opened: [],
+        ),
+      );
+      await tapVisible(tester, find.byKey(const ValueKey('nearby-food-help')));
+      await tester.enterText(find.byKey(const ValueKey('nearby-area')), '   ');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(find.text(nearbyAreaRequired), findsOneWidget);
+      expect(sends, 0);
+      expect(ledger.entries, isEmpty);
+    });
+
     testWidgets('kept on this device: no location prompt and no send', (
       tester,
     ) async {

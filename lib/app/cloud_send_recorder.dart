@@ -74,6 +74,9 @@ class _LedgerSend implements CloudSend {
   @override
   void failed(HybridErrorCode code) =>
       _ledger.complete(_entry, provenance: Provenance.unknown, error: code);
+
+  @override
+  void notSent(HybridErrorCode code) => _ledger.withdraw(_entry, error: code);
 }
 
 /// One Live transport's ledger legs. A leg opens when a socket is about to

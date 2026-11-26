@@ -118,14 +118,17 @@ class FakeConsentGate extends ConsentGate {
   Completer<ConsentGrant?>? reply;
 
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) {
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
+
+  @override
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) {
     asks.add(ask);
     reply = Completer<ConsentGrant?>();
     return reply!.future;
   }
 
-  void grant() => reply!.complete(issue(asks.last));
-  void grantFor(ConsentAsk ask) => reply!.complete(issue(ask));
+  void grant() => reply!.complete(super.request(asks.last));
+  void grantFor(ConsentAsk ask) => reply!.complete(super.request(ask));
   void decline() => reply!.complete(null);
 }
 

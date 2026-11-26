@@ -4,6 +4,7 @@
 // Maps or network call is made.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:firebase_ai/firebase_ai.dart';
@@ -16,6 +17,9 @@ import 'package:soussight/ai/hybrid/inference_ledger.dart';
 import 'package:soussight/app/cloud_send_recorder.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/nearby/nearby_client.dart';
+import 'package:soussight/nearby/network_reachability.dart';
+import 'package:soussight/nearby/network_reachability_io.dart'
+    show reachableVia;
 import 'package:soussight/trust/privacy_preferences.dart';
 
 GenerateContentResponse _grounded({bool places = true}) =>
@@ -52,6 +56,7 @@ class _Harness {
   final ledger = InferenceLedger(sessionId: 's1');
   final privacy = InMemoryPrivacyPreferences();
   var online = true;
+  var reachable = true;
   final requests = <NearbyGenerationRequest>[];
   Future<GenerateContentResponse> Function() reply = () async => _grounded();
 
@@ -60,6 +65,7 @@ class _Harness {
     privacy: privacy,
     isOnline: () => online,
     recorder: LedgerCloudSendRecorder(ledger),
+    reachable: () async => reachable,
   );
 
   late final client = GeminiNearbyClient(
@@ -174,6 +180,47 @@ void main() {
     expect(h.ledger.entries.single.leg.error, HybridErrorCode.network);
   });
 
+  // Codex P2: on Android and iOS `isOnline` has no signal; the native probe
+  // is what sees airplane mode.
+  test(
+    'no reachable network (native probe): nothing sent, an unsent leg',
+    () async {
+      final h = _Harness()..reachable = false;
+      await expectLater(
+        h.client.find(_area),
+        _fails(NearbyFailure.offline, nearbyOfflineMessage),
+      );
+      expect(h.requests, isEmpty);
+      final entry = h.ledger.entries.single;
+      expect(entry.leg.transferPermitted, isFalse);
+      expect(entry.leg.error, HybridErrorCode.network);
+      expect(entry.reportedSent, isFalse);
+    },
+  );
+
+  // Codex P2: begin() notifies ledger listeners synchronously; a listener
+  // that turns on local-only must still stop the send.
+  test('local-only turned on by a ledger listener during begin: not sent, '
+      'and the pending leg is settled unsent', () async {
+    final h = _Harness();
+    h.ledger.addListener(() {
+      if (h.ledger.entries.any((e) => e.pending)) {
+        h.privacy.setLocalOnly(kNearbyFeature, true);
+      }
+    });
+    await expectLater(
+      h.client.find(_area),
+      _fails(NearbyFailure.blocked, nearbyKeptOnDeviceMessage),
+    );
+    expect(h.requests, isEmpty, reason: 'the ZIP never reached Gemini');
+    final entry = h.ledger.entries.single;
+    expect(entry.pending, isFalse);
+    expect(entry.leg.transferPermitted, isFalse);
+    expect(entry.leg.error, HybridErrorCode.blocked);
+    expect(entry.reportedSent, isFalse);
+    expect(entry.uploadUnknown, isFalse);
+  });
+
   test('an invalid query is refused locally and recorded unsent', () async {
     final h = _Harness();
     await expectLater(
@@ -191,7 +238,9 @@ void main() {
     final reply = Completer<GenerateContentResponse>();
     h.reply = () => reply.future;
     final result = h.client.find(_area);
+    await pumpEventQueue(); // past the reachability probe
     // The leg exists while the request is in flight.
+    expect(h.requests, hasLength(1));
     final pending = h.ledger.entries.single;
     expect(pending.pending, isTrue);
     expect(pending.leg.transferPermitted, isTrue);
@@ -253,6 +302,47 @@ void main() {
       expect(hybrid.ledger.legs.single.transferPermitted, isFalse);
     });
 
+    test('production wiring uses the platform network probe', () {
+      final gate = NearbyGate.forRuntime(runtime('nearby'));
+      expect(identical(gate.reachable, networkReachable), isTrue);
+    });
+
+    test(
+      'the native probe: a routable address is reachable; none, or only '
+      'loopback and link-local, is not; an error is unknown (reachable)',
+      () async {
+        Future<List<NetworkInterface>> Function() with_(
+          List<List<String>> addresses,
+        ) =>
+            () async => [
+              for (final (i, list) in addresses.indexed)
+                _Interface('if$i', [for (final a in list) _Address(a)]),
+            ];
+        expect(await reachableVia(with_([])), isFalse);
+        expect(
+          await reachableVia(
+            with_([
+              ['127.0.0.1'],
+              ['fe80::1', '169.254.3.4'],
+            ]),
+          ),
+          isFalse,
+        );
+        expect(
+          await reachableVia(
+            with_([
+              ['fe80::1'],
+              ['192.168.1.20'],
+            ]),
+          ),
+          isTrue,
+        );
+        expect(await reachableVia(() => Future.error(StateError('x'))), isTrue);
+        // On the test VM the platform probe really runs against the host.
+        expect(await networkReachable(), isA<bool>());
+      },
+    );
+
     test('route off in the runtime: the client is not offered', () {
       expect(
         nearbyOffered(nearbyClientFor(isDemo: false, hybrid: runtime(''))),
@@ -267,4 +357,29 @@ void main() {
       expect(nearbyOffered(null), isFalse);
     });
   });
+}
+
+class _Interface implements NetworkInterface {
+  _Interface(this.name, this.addresses);
+  @override
+  final String name;
+  @override
+  final List<InterfaceAddress> addresses;
+  @override
+  int get index => 0;
+}
+
+class _Address implements InterfaceAddress {
+  _Address(String address) : _address = InternetAddress(address);
+  final InternetAddress _address;
+  @override
+  bool get isLoopback => _address.isLoopback;
+  @override
+  bool get isLinkLocal => _address.isLinkLocal;
+  @override
+  int get prefixLength => 0;
+  @override
+  InternetAddress? get broadcast => null;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

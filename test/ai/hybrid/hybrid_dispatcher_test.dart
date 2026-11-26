@@ -20,13 +20,18 @@ class _Consent extends ConsentGate {
   final List<ConsentAsk> asks = [];
   Future<ConsentGrant?> Function(ConsentAsk ask)? answer;
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) {
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
+
+  @override
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) {
     asks.add(ask);
-    return answer?.call(ask) ?? Future.value(issue(ask));
+    return answer?.call(ask) ?? super.request(ask);
   }
 
-  /// A grant for any ask, including one the cook never saw (tests only).
-  ConsentGrant grantFor(ConsentAsk ask) => issue(ask);
+  /// A grant from this gate for any ask, including one the cook never saw
+  /// (tests only). It goes through the base request, the only mint path.
+  Future<ConsentGrant> grantFor(ConsentAsk ask) async =>
+      (await super.request(ask))!;
 }
 
 class _Adapter implements CloudFallbackSender {
@@ -357,7 +362,7 @@ void main() {
     test('a grant is used once: the retry needs a fresh one', () async {
       final h = _Harness();
       ConsentGrant? first;
-      h.consent.answer = (ask) async => first ??= h.consent.grantFor(ask);
+      h.consent.answer = (ask) async => first ??= await h.consent.grantFor(ask);
       h.bridge.enqueueText('bad');
       final r = await h.run(_photo('pantry_scan'), validate: _rejectAll);
       expect(h.consent.asks, hasLength(2));
@@ -492,7 +497,7 @@ void main() {
       () async {
         final h = _Harness();
         final task = _photo('local_watch_cloud_check');
-        final grant = h.consent.grantFor(
+        final grant = await h.consent.grantFor(
           ConsentAsk(
             feature: 'local_watch',
             kinds: const {DataKind.image},
@@ -528,7 +533,7 @@ void main() {
         final h = _Harness();
         final task = _photo('local_watch_cloud_check');
         h.consent.answer = (_) async => null;
-        for (final g in [
+        for (final g in await Future.wait([
           h.consent.grantFor(
             ConsentAsk(
               feature: 'local_watch',
@@ -547,7 +552,7 @@ void main() {
               sessionId: 'other',
             ),
           ),
-        ]) {
+        ])) {
           final r = await h.dispatcher
               .start(task, sessionId: 's1', grant: g)
               .result;
@@ -570,7 +575,7 @@ void main() {
       );
       // Right digest, right session, never used, but issued by a gate the
       // dispatcher does not trust.
-      final foreign = _Consent().grantFor(ask);
+      final foreign = await _Consent().grantFor(ask);
       expect(h.consent.issued(foreign), isFalse);
       h.consent.answer = (_) async => null;
       final declined = await h.dispatcher

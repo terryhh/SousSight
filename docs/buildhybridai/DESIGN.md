@@ -388,9 +388,17 @@ A sub-step's `parentFeature` local-only setting applies to it (`localOnlyFor`): 
 cloud check follows "Keep Watch my food on this device", and the pantry voice clip follows
 "Keep Pantry scan on this device" (the clip then never uploads and the scan says so).
 
-`ConfiguredHybridInference` waits for the startup `configure` (on web, an unbounded `import()`)
-at most `task.timeout` in `generate` and `configureWait` in `capabilities`, then throws
-`HybridException(timeout)` without forwarding the request.
+`ConfiguredHybridInference` bounds the wait for the startup `configure` (on web, an unbounded
+`import()`) in two separate ways:
+- **Generation.** One deadline, `task.timeout`, covers configure plus generation. The backend
+  gets only the remaining budget. A request whose deadline passes during configure is never
+  forwarded, and the outcome is accepted only while the deadline holds (checked against a
+  monotonic clock). Otherwise `generate` throws `HybridException(timeout)` and cancels the
+  request. A request cancelled while it waits for configure is never forwarded.
+- **Discovery.** `capabilities()` and `availability()` are each bounded as a whole by
+  `configureWait` (10 s by default). Past that they **do not throw**: they report what a
+  missing bridge reports, `HybridCapabilities.none()` and `unavailable`
+  (`bridge_unavailable`), so routing falls back and the trust controls still open.
 
 `InferenceLedger` is session-scoped, in memory, and holds legs. Other cloud senders also check
 `CloudRoutes` and write a leg (`cloudAdapter`): Live connect **and each resume**, grounded

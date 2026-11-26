@@ -10,6 +10,7 @@ import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_policy.dart' show localOnlyFor;
 import '../app/hybrid_runtime.dart';
 import '../core/cloud_send.dart';
+import 'network_reachability.dart';
 
 /// Ledger and privacy feature key for nearby lookups.
 const kNearbyFeature = 'nearby';
@@ -147,8 +148,8 @@ abstract interface class GatedNearbyClient implements NearbyClient {
   NearbyException? precheck();
 
   /// [precheck] for a cook's tap: when blocked, the refused attempt is
-  /// written to the session ledger as one unsent leg (every attempt is
-  /// accounted for), and the reason is returned. Nothing is sent and no
+  /// written to the session ledger as one unsent leg, and the reason is
+  /// returned. Nothing is sent and no
   /// location is requested.
   NearbyException? refuseIfBlocked();
 }
@@ -163,13 +164,17 @@ bool nearbyOffered(NearbyClient? client) => switch (client) {
 /// What a [GeminiNearbyClient] reads immediately before every send, never
 /// from a value captured earlier: the `nearby` cloud route, the cook's
 /// "Keep Find food help on this device" switch, and connectivity. Every
-/// attempt is written to the session ledger through [recorder].
+/// search the client is asked to make, and every tap the gate refuses, is
+/// written to the session ledger through [recorder]. A blank area is caught
+/// by the sheet's own form check before any search starts and is not
+/// recorded: it is not a search attempt, and nothing could have been sent.
 class NearbyGate {
   const NearbyGate({
     required this.cloudRoutes,
     required this.privacy,
     required this.isOnline,
     required this.recorder,
+    this.reachable = _assumeReachable,
   });
 
   /// The app's shared settings and ledger.
@@ -179,6 +184,7 @@ class NearbyGate {
         privacy: hybrid.privacy,
         isOnline: hybrid.isOnline,
         recorder: hybrid.cloudSends,
+        reachable: networkReachable,
       );
 
   final CloudRoutes cloudRoutes;
@@ -186,10 +192,18 @@ class NearbyGate {
   final bool Function() isOnline;
   final CloudSendRecorder recorder;
 
+  /// The platform's network probe, awaited before every send. On Android
+  /// and iOS [isOnline] has no signal, so this is what sees airplane mode
+  /// ([networkReachable]); on web [isOnline] already does.
+  final Future<bool> Function() reachable;
+
+  static Future<bool> _assumeReachable() async => true;
+
   bool get routeApproved => cloudRoutes.allows(CloudRoute.nearby);
 
-  /// Null when a search may be sent now.
-  NearbyException? check() {
+  /// Null when a search may be sent now. [reachable] is the latest
+  /// [NearbyGate.reachable] probe, when one was taken.
+  NearbyException? check({bool reachable = true}) {
     if (!routeApproved) {
       return const NearbyException(
         NearbyFailure.blocked,
@@ -202,7 +216,7 @@ class NearbyGate {
         nearbyKeptOnDeviceMessage,
       );
     }
-    if (!isOnline()) {
+    if (!isOnline() || !reachable) {
       return const NearbyException(NearbyFailure.offline, nearbyOfflineMessage);
     }
     return null;
@@ -355,10 +369,13 @@ class GeminiNearbyClient implements GatedNearbyClient {
   void _recordRefused(NearbyException blocked) => gate.recorder.rejectedLocally(
     kNearbyFeature,
     kNearbyKinds,
-    blocked.reason == NearbyFailure.offline
-        ? HybridErrorCode.network
-        : HybridErrorCode.blocked,
+    _refusalCode(blocked),
   );
+
+  static HybridErrorCode _refusalCode(NearbyException blocked) =>
+      blocked.reason == NearbyFailure.offline
+      ? HybridErrorCode.network
+      : HybridErrorCode.blocked;
 
   @override
   Future<NearbyResult> find(NearbyQuery query) async {
@@ -366,8 +383,9 @@ class GeminiNearbyClient implements GatedNearbyClient {
       _recordRefused(blocked);
       throw blocked;
     }
+    final NearbyQuery cleaned;
     try {
-      return await _send(_validated(query));
+      cleaned = _validated(query);
     } on _Invalid catch (invalid) {
       gate.recorder.rejectedLocally(
         kNearbyFeature,
@@ -376,6 +394,13 @@ class GeminiNearbyClient implements GatedNearbyClient {
       );
       throw invalid.error;
     }
+    final reachable = await gate.reachable();
+    // Read again after the probe: the settings may have changed meanwhile.
+    if (gate.check(reachable: reachable) case final blocked?) {
+      _recordRefused(blocked);
+      throw blocked;
+    }
+    return _send(cleaned, reachable: reachable);
   }
 
   NearbyQuery _validated(NearbyQuery query) {
@@ -422,8 +447,17 @@ class GeminiNearbyClient implements GatedNearbyClient {
   }
 
   /// No await between [gate]'s check in [find] and the pending leg here.
-  Future<NearbyResult> _send(NearbyQuery cleaned) async {
+  Future<NearbyResult> _send(
+    NearbyQuery cleaned, {
+    required bool reachable,
+  }) async {
     final send = gate.recorder.begin(kNearbyFeature, kNearbyKinds);
+    // begin() notifies ledger listeners synchronously, and a listener may
+    // change a setting: check once more immediately before transmitting.
+    if (gate.check(reachable: reachable) case final blocked?) {
+      send.notSent(_refusalCode(blocked));
+      throw blocked;
+    }
     final GenerateContentResponse response;
     try {
       response = await _generate(

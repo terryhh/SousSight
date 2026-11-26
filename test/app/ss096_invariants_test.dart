@@ -50,6 +50,37 @@ class _FakeStopwatch implements Stopwatch {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// Startup is immediate; generate keeps the isolate busy for [work] (fake
+/// time passes without timers firing) and returns an already-completed
+/// future, as a synchronous backend would.
+class _BusyBackend extends FakeHybridInference {
+  _BusyBackend(this.async, this.work, {this.fail = false});
+  final FakeAsync async;
+  final Duration work;
+  final bool fail;
+
+  @override
+  Future<void> configure(HybridConfig config) async {}
+
+  @override
+  Future<HybridResult> generate(HybridRequest request) {
+    requests.add(request);
+    async.elapseBlocking(work);
+    if (fail) {
+      return Future.error(
+        const HybridException(HybridErrorCode.failed, 'busy failure'),
+      );
+    }
+    return Future.value(
+      HybridResult(
+        requestId: request.requestId,
+        text: 'busy',
+        source: InferenceSource.onDevice,
+      ),
+    );
+  }
+}
+
 /// Configure settles after [startup]; generation takes [work] and, unless
 /// [ignoresDeadline], honours the timeout it is handed (as the contract
 /// requires of every backend).
@@ -141,8 +172,8 @@ class _CountingCloud implements CloudFallbackSender {
 
 class _Gate extends ConsentGate {
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) async => issue(ask);
-  ConsentGrant grantFor(ConsentAsk ask) => issue(ask);
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
+  Future<ConsentGrant> grantFor(ConsentAsk ask) async => (await request(ask))!;
 }
 
 String _scan() => jsonEncode({
@@ -283,6 +314,88 @@ void main() {
   });
 
   group('one deadline covers configure plus generation (Codex P2)', () {
+    // Codex P2 (77/100): a busy isolate can run the completion microtask
+    // before the deadline timer. The monotonic clock must still decide.
+    test('an answer delivered after the deadline by a busy isolate is '
+        'refused', () {
+      fakeAsync((async) {
+        final inner = _BusyBackend(async, const Duration(milliseconds: 60));
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          stopwatch: () => _FakeStopwatch(async),
+        );
+        async.flushMicrotasks(); // startup done
+        HybridResult? result;
+        Object? error;
+        configured
+            .generate(_request(const Duration(milliseconds: 20)))
+            .then<void>(
+              (r) => result = r,
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.flushMicrotasks();
+        expect(result, isNull, reason: 'the 60ms answer missed a 20ms budget');
+        expect(
+          error,
+          isA<HybridException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.timeout,
+          ),
+        );
+        async.elapse(const Duration(milliseconds: 100));
+        expect(result, isNull);
+      });
+    });
+
+    test('a busy backend error after the deadline is reported as timeout', () {
+      fakeAsync((async) {
+        final inner = _BusyBackend(
+          async,
+          const Duration(milliseconds: 60),
+          fail: true,
+        );
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          stopwatch: () => _FakeStopwatch(async),
+        );
+        async.flushMicrotasks();
+        Object? error;
+        configured
+            .generate(_request(const Duration(milliseconds: 20)))
+            .then<void>(
+              (_) {},
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.flushMicrotasks();
+        expect((error as HybridException?)?.code, HybridErrorCode.timeout);
+      });
+    });
+
+    test('an answer inside the budget from a fast backend is used', () {
+      fakeAsync((async) {
+        final inner = _BusyBackend(async, const Duration(milliseconds: 5));
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          stopwatch: () => _FakeStopwatch(async),
+        );
+        async.flushMicrotasks();
+        HybridResult? result;
+        configured
+            .generate(_request(const Duration(milliseconds: 20)))
+            .then<void>((r) => result = r);
+        async.flushMicrotasks();
+        expect(result?.text, 'busy');
+      });
+    });
+
     // Codex's repro: a 100ms task, configure finishing at 90ms and a backend
     // that needs 90ms. Before the fix the backend was handed the full 100ms
     // and the call could succeed at 180ms.
@@ -747,25 +860,67 @@ void main() {
     expect(_Gate().issued(grant), isFalse, reason: 'bound to its issuer');
   });
 
-  test(
-    'the frame preview gate vouches for grants from the dialog it shows',
-    () {
-      final dialog = _VouchingDialog();
-      final preview = FramePreviewConsentGate(dialog, () => null);
-      const ask = ConsentAsk(
-        feature: 'local_watch_cloud_check',
-        kinds: {DataKind.image},
-        payloadDigest: 'd',
-        sessionId: 's1',
-      );
-      expect(preview.issued(dialog.grantFor(ask)), isTrue);
-      expect(preview.issued(_Gate().grantFor(ask)), isFalse);
-    },
-  );
+  test('the frame preview gate asks its dialog, with the frame, and the '
+      'grant is the dialog\'s', () async {
+    final frame = Uint8List.fromList([1, 2, 3]);
+    final dialog = _AllowingDialog();
+    final preview = FramePreviewConsentGate(dialog, () => frame);
+    const ask = ConsentAsk(
+      feature: 'local_watch_cloud_check',
+      kinds: {DataKind.image},
+      payloadDigest: 'd',
+      sessionId: 's1',
+    );
+    final grant = await preview.request(ask);
+    expect(dialog.previews, [same(frame)]);
+    expect(grant!.ask, same(ask));
+    expect(dialog.issued(grant), isTrue);
+    expect(preview.issued(grant), isTrue);
+    expect(preview.issued(await _Gate().grantFor(ask)), isFalse);
+  });
+
+  // Codex P1 (77/100): there is no public mint. Feature code holding the
+  // runtime's gate gets a grant only by showing the cook the dialog.
+  testWidgets('the runtime gate grants nothing without its dialog', (
+    tester,
+  ) async {
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: CloudRoutes.parse('hybridFallback'),
+      cloudFallback: _CountingCloud(),
+      isOnline: () => true,
+      cloudModel: 'm',
+    );
+    const ask = ConsentAsk(
+      feature: 'label_check',
+      kinds: {DataKind.image},
+      payloadDigest: 'd',
+      sessionId: 's1',
+    );
+    // No navigator is mounted, so no dialog can be shown: no grant.
+    expect(await hybrid.consent.request(ask), isNull);
+
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: hybrid.navigatorKey, home: const SizedBox()),
+    );
+    ConsentGrant? grant;
+    unawaited(hybrid.consent.request(ask).then((g) => grant = g));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('consent-dialog')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('consent-allow')));
+    await tester.pumpAndSettle();
+    expect(hybrid.consent.issued(grant!), isTrue);
+  });
 }
 
-class _VouchingDialog extends DialogConsentGate {
-  _VouchingDialog()
+class _AllowingDialog extends DialogConsentGate {
+  _AllowingDialog()
     : super(navigatorKey: GlobalKey<NavigatorState>(), cloudModel: 'm');
-  ConsentGrant grantFor(ConsentAsk ask) => issue(ask);
+  final previews = <Uint8List?>[];
+
+  @override
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async {
+    previews.add(preview);
+    return true;
+  }
 }

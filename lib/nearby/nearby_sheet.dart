@@ -138,7 +138,8 @@ class _NearbyPanelState extends State<NearbyPanel> {
   Future<void> _useArea() async {
     if (_busy) return;
     final typed = _area.text.trim();
-    // Never search an implied place: the hint is only an example.
+    // Never search an implied place: the hint is only an example. A blank
+    // area is a form error, not a search attempt, so no ledger leg.
     if (typed.isEmpty) {
       setState(() => _error = nearbyAreaRequired);
       _areaFocus.requestFocus();

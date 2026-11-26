@@ -152,7 +152,17 @@ class ConfiguredHybridInference implements HybridInference {
       }
       sent = true;
       // Only what is left of the one budget; startup already spent the rest.
-      return inner.generate(_withTimeout(request, remaining));
+      final HybridResult result;
+      try {
+        result = await inner.generate(_withTimeout(request, remaining));
+      } catch (_) {
+        if (clock.elapsed >= budget) throw _expired;
+        rethrow;
+      }
+      // A busy isolate can deliver the outcome before the deadline timer
+      // runs; the monotonic clock decides, so a late answer is never used.
+      if (clock.elapsed >= budget) throw _expired;
+      return result;
     }
 
     return run().timeout(
@@ -232,17 +242,13 @@ class DialogConsentGate extends ConsentGate {
   final GlobalKey<NavigatorState> navigatorKey;
   final String cloudModel;
 
+  /// The prompt; [preview] is the exact photo that would be sent.
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) =>
-      requestWithPreview(ask, null);
-
-  /// The same prompt, showing the exact photo that would be sent.
-  Future<ConsentGrant?> requestWithPreview(
-    ConsentAsk ask,
-    Uint8List? image,
-  ) async {
+  @protected
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async {
+    final image = preview;
     final context = navigatorKey.currentContext;
-    if (context == null || !context.mounted) return null;
+    if (context == null || !context.mounted) return false;
     final copy = consentCopy(ask, cloudModel: cloudModel);
     final allowed = await showDialog<bool>(
       context: context,
@@ -286,19 +292,25 @@ class DialogConsentGate extends ConsentGate {
         ],
       ),
     );
-    return allowed == true ? issue(ask) : null;
+    return allowed == true;
   }
 }
 
-/// Shows [frame] (the exact photo) in the [DialogConsentGate] prompt.
+/// Shows [frame] (the exact photo) in the [DialogConsentGate] prompt. The
+/// grant comes from [gate] itself, so it is [gate]'s.
 class FramePreviewConsentGate extends ConsentGate {
   FramePreviewConsentGate(this.gate, this.frame);
   final DialogConsentGate gate;
   final Uint8List? Function() frame;
 
+  /// Never used: [request] asks [gate].
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) =>
-      gate.requestWithPreview(ask, frame());
+  @protected
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => false;
+
+  @override
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) =>
+      gate.request(ask, preview: preview ?? frame());
 
   /// The prompt is [gate]'s, so its grants are [gate]'s.
   @override

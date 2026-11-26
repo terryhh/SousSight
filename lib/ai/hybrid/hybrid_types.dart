@@ -3,9 +3,10 @@
 // [HybridDispatcher] and test with [FakeHybridDispatcher].
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
-import 'package:flutter/foundation.dart' show nonVirtual, protected;
+import 'package:flutter/foundation.dart' show protected;
 
 /// Cloud routes G1 approved for this build. Compiled in; default is none.
 enum CloudRoute { hybridFallback, research, nearby, live }
@@ -48,11 +49,12 @@ class ConsentAsk {
   final String sessionId;
 }
 
-/// The cook's "allow once" for one [ConsentAsk]. Only a [ConsentGate] can
-/// issue one (through [ConsentGate.issue]); feature code cannot make, extend
-/// or implement its own. Each grant remembers the gate that issued it, and
-/// the dispatcher accepts only grants its own gate issued
-/// ([ConsentGate.issued]).
+/// The cook's "allow once" for one [ConsentAsk]. The only way to obtain one
+/// is [ConsentGate.request], which asks the cook through
+/// [ConsentGate.confirm]; feature code cannot make, extend or implement its
+/// own, and there is no other minting call. Each grant remembers the gate
+/// that issued it, and the dispatcher accepts only grants its own gate
+/// issued ([ConsentGate.issued]).
 final class ConsentGrant {
   const ConsentGrant._(this.ask, this._issuer);
   final ConsentAsk ask;
@@ -62,14 +64,23 @@ final class ConsentGrant {
 abstract class ConsentGate {
   const ConsentGate();
 
-  /// Null when the cook declines.
-  Future<ConsentGrant?> request(ConsentAsk ask);
-
-  /// The grant for [ask], for a gate to return once the cook has allowed it.
-  /// Only a [ConsentGate] subclass may call this.
+  /// Shows the cook [ask] (with [preview], the exact photo, when given) and
+  /// completes true only for "Allow once". It returns no grant, so calling
+  /// it directly authorizes nothing.
   @protected
-  @nonVirtual
-  ConsentGrant issue(ConsentAsk ask) => ConsentGrant._(ask, this);
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview});
+
+  /// Asks the cook; a grant for exactly [ask], issued by this gate, when
+  /// they allow it, else null. Any error is a decline.
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) async {
+    try {
+      return await confirm(ask, preview: preview)
+          ? ConsentGrant._(ask, this)
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// True when [grant] came from this gate's prompt. A gate that shows its
   /// prompt through another gate overrides this to ask that gate.

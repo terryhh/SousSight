@@ -2,6 +2,7 @@
 // network call is made; these tests do not show a live Remote Config fetch.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:fake_async/fake_async.dart';
@@ -100,7 +101,7 @@ class _Privacy implements PrivacySettings {
 
 class _AllowConsent extends ConsentGate {
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) async => issue(ask);
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
 }
 
 void main() {

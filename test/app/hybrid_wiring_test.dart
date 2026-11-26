@@ -347,11 +347,7 @@ void main() {
         final gate = DialogConsentGate(navigatorKey: key, cloudModel: 'm');
         ConsentGrant? grant;
         var done = false;
-        unawaited(
-          gate
-              .requestWithPreview(ask, null)
-              .then((g) => (grant, done) = (g, true)),
-        );
+        unawaited(gate.request(ask).then((g) => (grant, done) = (g, true)));
         await tester.pumpAndSettle();
         expect(find.text('Allow once'), findsOneWidget);
         expect(find.text("Don't send"), findsOneWidget);
