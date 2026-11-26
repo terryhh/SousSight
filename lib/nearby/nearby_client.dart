@@ -10,7 +10,7 @@ import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_policy.dart' show localOnlyFor;
 import '../app/hybrid_runtime.dart';
 import '../core/cloud_send.dart';
-import 'network_reachability.dart';
+import '../app/network_reachability.dart';
 
 /// Ledger and privacy feature key for nearby lookups.
 const kNearbyFeature = 'nearby';
@@ -121,6 +121,11 @@ const nearbyKeptOnDeviceMessage =
     'Searching Google Maps needs the cloud; turn that switch off in On-device '
     'AI to search.';
 
+/// The cook started another meal (or went back to the pantry) while the
+/// search was starting; it belonged to the previous session.
+const nearbySessionChangedMessage =
+    'Your cooking session changed, so I stopped that search. Please try again.';
+
 const nearbyOfflineMessage =
     'You look offline, so nothing was sent. Try again when you are connected.';
 
@@ -175,6 +180,7 @@ class NearbyGate {
     required this.isOnline,
     required this.recorder,
     this.reachable = _assumeReachable,
+    this.generation = _noGeneration,
   });
 
   /// The app's shared settings and ledger.
@@ -184,7 +190,8 @@ class NearbyGate {
         privacy: hybrid.privacy,
         isOnline: hybrid.isOnline,
         recorder: hybrid.cloudSends,
-        reachable: networkReachable,
+        reachable: hybrid.reachable ?? _assumeReachable,
+        generation: () => hybrid.ledger.generation,
       );
 
   final CloudRoutes cloudRoutes;
@@ -198,6 +205,12 @@ class NearbyGate {
   final Future<bool> Function() reachable;
 
   static Future<bool> _assumeReachable() async => true;
+
+  /// The session ledger's generation; a search is bound to the one it
+  /// started under and never sends under the next session's ledger.
+  final int Function() generation;
+
+  static int _noGeneration() => 0;
 
   bool get routeApproved => cloudRoutes.allows(CloudRoute.nearby);
 
@@ -394,13 +407,24 @@ class GeminiNearbyClient implements GatedNearbyClient {
       );
       throw invalid.error;
     }
+    final started = gate.generation();
     final reachable = await gate.reachable();
+    // The session may have changed during the probe: this search belonged to
+    // the previous one, so it stops here, recorded as not sent.
+    if (gate.generation() != started) {
+      gate.recorder.rejectedLocally(
+        kNearbyFeature,
+        kNearbyKinds,
+        HybridErrorCode.cancelled,
+      );
+      throw _sessionChanged;
+    }
     // Read again after the probe: the settings may have changed meanwhile.
     if (gate.check(reachable: reachable) case final blocked?) {
       _recordRefused(blocked);
       throw blocked;
     }
-    return _send(cleaned, reachable: reachable);
+    return _send(cleaned, reachable: reachable, generation: started);
   }
 
   NearbyQuery _validated(NearbyQuery query) {
@@ -447,13 +471,23 @@ class GeminiNearbyClient implements GatedNearbyClient {
   }
 
   /// No await between [gate]'s check in [find] and the pending leg here.
+  static const _sessionChanged = NearbyException(
+    NearbyFailure.blocked,
+    nearbySessionChangedMessage,
+  );
+
   Future<NearbyResult> _send(
     NearbyQuery cleaned, {
     required bool reachable,
+    required int generation,
   }) async {
     final send = gate.recorder.begin(kNearbyFeature, kNearbyKinds);
     // begin() notifies ledger listeners synchronously, and a listener may
     // change a setting: check once more immediately before transmitting.
+    if (gate.generation() != generation) {
+      send.notSent(HybridErrorCode.cancelled);
+      throw _sessionChanged;
+    }
     if (gate.check(reachable: reachable) case final blocked?) {
       send.notSent(_refusalCode(blocked));
       throw blocked;

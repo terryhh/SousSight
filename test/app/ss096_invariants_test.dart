@@ -648,6 +648,88 @@ void main() {
     });
   });
 
+  // Codex #224 (71/100) P1: the final check runs after the backend's startup
+  // wait, immediately before the send, not only in the dispatcher.
+  group('the last check runs after the startup wait', () {
+    HybridTask text(String feature) => HybridTask(
+      feature: feature,
+      parts: const [HybridText('eggs, rice')],
+      maxOutputTokens: 16,
+      timeout: const Duration(seconds: 5),
+    );
+
+    test('going offline in a microtask queued at admission: nothing sent, '
+        'the leg unsent', () async {
+      var online = true;
+      final inference = FakeHybridInference(
+        textAvailability: const HybridAvailability(
+          status: OnDeviceStatus.unavailable,
+        ),
+      )..enqueueText('{}', source: InferenceSource.cloud);
+      final hybrid = HybridRuntime.create(
+        inference: inference,
+        cloudRoutes: CloudRoutes.parse('hybridFallback'),
+        cloudFallback: _CountingCloud(),
+        isOnline: () => online,
+        cloudModel: 'm',
+      );
+      hybrid.ledger.addListener(() {
+        if (hybrid.ledger.entries.any((e) => e.pending)) {
+          scheduleMicrotask(() => online = false);
+        }
+      });
+      final r = await hybrid.dispatcher
+          .start(text('recipe_draft'), sessionId: hybrid.sessionId)
+          .result;
+      expect(inference.requests, isEmpty);
+      expect(r.text, isNull);
+      final entry = hybrid.ledger.entries.first;
+      expect(entry.pending, isFalse);
+      expect(entry.leg.transferPermitted, isFalse);
+      expect(entry.uploadUnknown, isFalse);
+    });
+
+    test('a new pantry flow in a microtask queued at admission: nothing '
+        'sent, no answer accepted', () async {
+      final inference = FakeHybridInference()..enqueueText('answer');
+      final hybrid = HybridRuntime.create(
+        inference: inference,
+        cloudRoutes: const CloudRoutes({}),
+        cloudFallback: _CountingCloud(),
+        isOnline: () => true,
+        cloudModel: 'm',
+      );
+      hybrid.bindCookingSession('meal-a');
+      hybrid.ledger.addListener(() {
+        if (hybrid.ledger.entries.any((e) => e.pending)) {
+          scheduleMicrotask(hybrid.beginPantry);
+        }
+      });
+      final r = await hybrid.dispatcher
+          .start(text('coach_lite'), sessionId: 'meal-a')
+          .result;
+      expect(inference.requests, isEmpty);
+      expect(r.text, isNull);
+      expect(hybrid.ledger.entries, isEmpty, reason: 'new ledger untouched');
+    });
+
+    test('stillWanted false: refused after configure as not sent', () async {
+      final inner = _SlowStart()..enqueueText('x');
+      final configured = ConfiguredHybridInference(
+        inner,
+        const HybridConfig(cloudModel: 'm'),
+        stillWanted: (_) => false,
+      );
+      final pending = expectLater(
+        configured.generate(_request(const Duration(seconds: 5))),
+        throwsA(isA<NotSentException>()),
+      );
+      inner.release();
+      await pending;
+      expect(inner.requests, isEmpty);
+    });
+  });
+
   group('runtime plumbing around the bounded wait', () {
     test('a failed configure still settles; calls are forwarded', () async {
       final inner = _FailingStart()..enqueueText('ok');
@@ -743,7 +825,7 @@ void main() {
       expect(find.byKey(const ValueKey('consent-preview')), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('consent-allow')));
       await tester.pumpAndSettle();
-      expect(grant?.ask, same(ask));
+      expect(grant?.ask, _sameAskAs(ask));
     });
 
     test('label check controllers share the runtime', () {
@@ -922,7 +1004,7 @@ void main() {
     );
     final gate = _Gate();
     final grant = await gate.request(ask);
-    expect(grant!.ask, same(ask));
+    expect(grant!.ask, _sameAskAs(ask));
     expect(gate.issued(grant), isTrue);
     expect(_Gate().issued(grant), isFalse, reason: 'bound to its issuer');
   });
@@ -940,7 +1022,7 @@ void main() {
     );
     final grant = await preview.request(ask);
     expect(dialog.previews, [same(frame)]);
-    expect(grant!.ask, same(ask));
+    expect(grant!.ask, _sameAskAs(ask));
     expect(dialog.issued(grant), isTrue);
     expect(preview.issued(grant), isTrue);
     expect(preview.issued(await _Gate().grantFor(ask)), isFalse);
@@ -991,3 +1073,10 @@ class _AllowingDialog extends DialogConsentGate {
     return true;
   }
 }
+
+/// The gate grants a frozen copy of the ask: equal fields, not the instance.
+Matcher _sameAskAs(ConsentAsk a) => isA<ConsentAsk>()
+    .having((x) => x.feature, 'feature', a.feature)
+    .having((x) => x.kinds, 'kinds', a.kinds)
+    .having((x) => x.payloadDigest, 'payloadDigest', a.payloadDigest)
+    .having((x) => x.sessionId, 'sessionId', a.sessionId);

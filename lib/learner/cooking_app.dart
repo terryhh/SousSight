@@ -263,7 +263,9 @@ class _CookingScreenState extends State<CookingScreen> {
       watchServiceFactory: hybrid == null
           ? null
           : (live) => buildWatchService(hybrid, live),
-      onSessionReady: hybrid?.bindCookingSession,
+      // Bound to this screen's pantry flow: a late load after the cook
+      // went back to the pantry is ignored (SS-096 / Codex #224).
+      onSessionReady: hybrid?.cookingSessionBinder(),
       researchAllowed: hybrid == null
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),

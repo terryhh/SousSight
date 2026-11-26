@@ -353,7 +353,7 @@ void main() {
         await tester.tap(find.byKey(ValueKey(button)));
         await tester.pumpAndSettle();
         expect(done, isTrue);
-        expect(grant?.ask, granted ? same(ask) : isNull);
+        expect(grant?.ask, granted ? _sameAskAs(ask) : isNull);
       });
     }
   });
@@ -575,3 +575,10 @@ void main() {
     });
   });
 }
+
+/// The gate grants a frozen copy of the ask: equal fields, not the instance.
+Matcher _sameAskAs(ConsentAsk a) => isA<ConsentAsk>()
+    .having((x) => x.feature, 'feature', a.feature)
+    .having((x) => x.kinds, 'kinds', a.kinds)
+    .having((x) => x.payloadDigest, 'payloadDigest', a.payloadDigest)
+    .having((x) => x.sessionId, 'sessionId', a.sessionId);

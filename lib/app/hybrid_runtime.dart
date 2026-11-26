@@ -23,6 +23,7 @@ import '../label/label_check_controller.dart';
 import '../trust/ledger_source.dart';
 import '../trust/privacy_preferences.dart';
 import 'cloud_send_recorder.dart';
+import 'network_reachability.dart';
 import 'consent_copy.dart';
 import 'online_status.dart';
 
@@ -64,6 +65,7 @@ class ConfiguredHybridInference implements HybridInference {
     this.inner,
     HybridConfig config, {
     this.mayForward,
+    this.stillWanted,
     this.configureWait = const Duration(seconds: 10),
     this._stopwatch = Stopwatch.new,
   }) : _configured = inner
@@ -77,6 +79,11 @@ class ConfiguredHybridInference implements HybridInference {
   final HybridInference inner;
   final Future<void> _configured;
   final bool Function(HybridRequest request)? mayForward;
+
+  /// Read after the startup wait for every request, any mode: false when the
+  /// caller no longer wants it sent (the dispatcher's run was cancelled, its
+  /// session ended, or its privacy or connectivity checks now refuse).
+  final bool Function(HybridRequest request)? stillWanted;
 
   /// Measures how much of a request's budget startup spent. Injectable so
   /// fake-time tests can observe the remaining budget handed to [inner].
@@ -149,22 +156,32 @@ class ConfiguredHybridInference implements HybridInference {
       // Cancelled while waiting for configure: the backend never had this
       // request, so it is never forwarded.
       if (cancelled.isCompleted) {
-        throw const HybridException(
+        throw const NotSentException(
           HybridErrorCode.cancelled,
           'Cancelled before it was sent.',
         );
       }
       // The deadline may have passed while configure was running; a request
       // that timed out during startup is never forwarded.
-      if (expired) throw _expired;
+      if (expired) throw _expiredUnsent;
       final remaining = budget - clock.elapsed;
       // The bridge carries whole milliseconds; under 1ms nothing can run.
-      if (remaining.inMilliseconds <= 0) throw _expired;
+      if (remaining.inMilliseconds <= 0) throw _expiredUnsent;
+      // The final check, after the wait and immediately before the send:
+      // the caller's run must still be current (its session, cancellation,
+      // privacy and connectivity), for every mode.
+      final current = stillWanted;
+      if (current != null && !current(request)) {
+        throw const NotSentException(
+          HybridErrorCode.cancelled,
+          'The request was no longer wanted when startup finished.',
+        );
+      }
       final check = mayForward;
       if (request.mode != HybridMode.onlyOnDevice &&
           check != null &&
           !check(request)) {
-        throw const HybridException(
+        throw const NotSentException(
           HybridErrorCode.blocked,
           'Cloud help was turned off before this request was sent.',
         );
@@ -191,12 +208,11 @@ class ConfiguredHybridInference implements HybridInference {
         if (identical(_waiting[id], cancelled)) _waiting.remove(id);
         // A backend that overruns is stopped; its late answer or error is
         // dropped by the abandoned future.
-        if (sent) {
-          unawaited(
-            Future.sync(() => inner.cancel(request.requestId))
-                .catchError((Object _) {}),
-          );
-        }
+        if (!sent) throw _expiredUnsent;
+        unawaited(
+          Future.sync(() => inner.cancel(request.requestId))
+              .catchError((Object _) {}),
+        );
         throw _expired;
       },
     );
@@ -215,6 +231,11 @@ class ConfiguredHybridInference implements HybridInference {
           timeout: timeout,
         ),
       );
+
+  static const _expiredUnsent = NotSentException(
+    HybridErrorCode.timeout,
+    'Hybrid inference was still starting up at the request deadline.',
+  );
 
   static const _expired = HybridException(
     HybridErrorCode.timeout,
@@ -461,6 +482,7 @@ class HybridRuntime {
     required this.navigatorKey,
     required this.isOnline,
     this.cloudModel = kHybridCloudModel,
+    this.reachable,
   }) : ledgerSource = InferenceLedgerSource(ledger);
 
   /// Production wiring. [inference] defaults to the platform backend,
@@ -479,21 +501,30 @@ class HybridRuntime {
     String cloudModel = kHybridCloudModel,
     GlobalKey<NavigatorState>? navigatorKey,
     RemotePolicy? remote,
+    Future<bool> Function()? reachable,
   }) {
     if (remote != null) cloudModel = remote.cloudModel;
     final key = navigatorKey ?? GlobalKey<NavigatorState>();
     final prefs = privacy ?? InMemoryPrivacyPreferences();
     final compiledRoutes = cloudRoutes ?? CloudRoutes.fromEnvironment();
     final routes = remote?.gate(compiledRoutes) ?? compiledRoutes;
+    final online = isOnline ?? deviceOnline;
+    // On Android and iOS `deviceOnline` has no signal; production asks the
+    // OS (best effort). A caller that injects [isOnline] owns connectivity.
+    final probe = reachable ?? (isOnline == null ? networkReachable : null);
+    late final DefaultHybridDispatcher dispatcher;
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
       HybridConfig(cloudModel: cloudModel),
       // The same checks the dispatcher made, read again after the wait.
       mayForward: (request) =>
           routes.allows(CloudRoute.hybridFallback) &&
-          !localOnlyFor(prefs, request.task.feature),
+          !localOnlyFor(prefs, request.task.feature) &&
+          online(),
+      // The dispatcher's own run checks (cancelled, session, privacy,
+      // connectivity), read again immediately before the send.
+      stillWanted: (request) => dispatcher.stillAllowed(request.requestId),
     );
-    final online = isOnline ?? deviceOnline;
     final ledger = InferenceLedger(sessionId: _newRunId());
     final consent = DialogConsentGate(
       navigatorKey: key,
@@ -510,7 +541,8 @@ class HybridRuntime {
       navigatorKey: key,
       isOnline: online,
       cloudModel: cloudModel,
-      dispatcher: DefaultHybridDispatcher(
+      reachable: probe,
+      dispatcher: dispatcher = DefaultHybridDispatcher(
         inference: configured,
         privacy: prefs,
         cloudRoutes: routes,
@@ -519,6 +551,7 @@ class HybridRuntime {
         cloudFallback:
             cloudFallback ?? FirebaseAiCloudSender(model: cloudModel),
         isOnline: online,
+        reachable: probe,
         remoteRouting: remote?.routing,
         // A pending prompt or retry for meal A never sends once meal B (or
         // a new pantry flow) is the session.
@@ -537,6 +570,10 @@ class HybridRuntime {
   final GlobalKey<NavigatorState> navigatorKey;
   final bool Function() isOnline;
   final String cloudModel;
+
+  /// The native connectivity probe (Android/iOS, best effort), or null when
+  /// [isOnline] alone decides (web, or a caller that injected it).
+  final Future<bool> Function()? reachable;
 
   /// The household's allergens for label check. On this device only.
   final HouseholdAllergens household = InMemoryHouseholdAllergens();
@@ -574,9 +611,25 @@ class HybridRuntime {
   /// these legs ([bindCookingSession]). Work still running for the previous
   /// meal ends with that meal's ledger and does not send.
   void beginPantry() {
+    // Every return to the pantry ends the cooking screen's right to bind,
+    // even one whose session is still loading.
+    _pantryEpoch++;
     if (_cookingSessionId == null) return; // already in a pantry flow
     _cookingSessionId = null;
     ledger.startSession(_newRunId());
+  }
+
+  int _pantryEpoch = 0;
+
+  /// A [bindCookingSession] for one cooking screen, valid until the cook
+  /// goes back to the pantry ([beginPantry]). A session load that finishes
+  /// after that (the route was popped during initialization) is ignored, so
+  /// it cannot undo the pantry reset.
+  void Function(String sessionId) cookingSessionBinder() {
+    final epoch = _pantryEpoch;
+    return (id) {
+      if (epoch == _pantryEpoch) bindCookingSession(id);
+    };
   }
 
   /// Ledger hook for cloud senders outside the dispatcher (grounded

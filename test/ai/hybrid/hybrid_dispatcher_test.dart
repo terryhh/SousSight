@@ -77,6 +77,7 @@ class _Harness {
       cloudFallback: adapter,
       remoteRouting: () => remote,
       isOnline: () => online,
+      reachable: () async => reachable,
       currentSession: () => current,
       newId: () => 'id-${++seq}',
     );
@@ -87,6 +88,7 @@ class _Harness {
   final privacy = _Privacy();
   final consent = _Consent();
   var online = true;
+  var reachable = true;
   var current = 's1';
   final ledger = InferenceLedger(
     sessionId: 's1',
@@ -666,6 +668,70 @@ void main() {
     expect(h.bridge.requests, isEmpty);
     expect(h.consent.asks, isEmpty);
     expect(h.ledger.entries, isEmpty);
+  });
+
+  // Codex #224 (71/100) P1: the gate grants a frozen copy of the ask, so
+  // widening `kinds` after approval cannot widen the grant.
+  test('mutating an ask after approval does not widen the grant', () async {
+    final h = _Harness();
+    final task = _photo('local_watch_cloud_check');
+    final kinds = <DataKind>{DataKind.text};
+    final ask = ConsentAsk(
+      feature: 'local_watch_cloud_check',
+      kinds: kinds,
+      payloadDigest: hybridPayloadDigest(task),
+      sessionId: 's1',
+    );
+    final grant = await h.consent.grantFor(ask);
+    kinds.add(DataKind.image);
+    expect(grant.ask.kinds, {DataKind.text});
+    expect(() => grant.ask.kinds.add(DataKind.audio), throwsUnsupportedError);
+    h.consent.answer = (_) async => null;
+    final r = await h.dispatcher
+        .start(task, sessionId: 's1', grant: grant)
+        .result;
+    expect(r.blocked, RouteReason.consentDeclined);
+    expect(h.bridge.requests, isEmpty);
+  });
+
+  test('the dispatcher tells the prompt which route a yes takes', () async {
+    final h = _Harness();
+    h.consent.answer = (_) async => null;
+    await h.run(_photo('local_watch_cloud_check'));
+    expect(h.consent.asks.single.mode, isNotNull);
+  });
+
+  // Codex #224 pre-existing: native connectivity reaches the dispatcher.
+  test('the native reachability reader blocks cloud sends offline; '
+      'on-device still runs', () async {
+    final h = _Harness()..reachable = false;
+    final r = await h.run(_photo('local_watch_cloud_check'));
+    expect(r.blocked, RouteReason.offline);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.consent.asks, isEmpty);
+
+    h.bridge.enqueueText('{"state":"not_yet"}');
+    final local = await h.run(_photo('local_watch'));
+    expect(local.text, isNotNull);
+    expect(h.bridge.requests.single.mode, HybridMode.onlyOnDevice);
+  });
+
+  test('a reader that throws counts as unknown (reachable)', () async {
+    final h = _Harness();
+    final d = DefaultHybridDispatcher(
+      inference: h.bridge,
+      privacy: h.privacy,
+      cloudRoutes: CloudRoutes.parse('hybridFallback'),
+      consent: h.consent,
+      ledger: h.ledger,
+      reachable: () => Future.error(StateError('probe')),
+    );
+    h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+    final r = await d
+        .start(_photo('local_watch_cloud_check'), sessionId: 's1')
+        .result;
+    expect(r.text, isNotNull);
   });
 
   test('remote routing cannot widen local_watch to preferOnDevice', () async {

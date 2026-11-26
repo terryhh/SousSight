@@ -319,8 +319,13 @@ RouteDecision decideRoute(RouteInput input);    // pure, table-tested
 
 /// Consent is for one exact payload in one session, and is used once.
 class ConsentAsk { final String feature; final Set<DataKind> kinds;
-                   final String payloadDigest; final String sessionId; }
-abstract class ConsentGate { Future<ConsentGrant?> request(ConsentAsk ask); }
+                   final String payloadDigest; final String sessionId;
+                   final HybridMode? mode; }  // the route a yes takes
+abstract class ConsentGate {
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}); // issues
+  @protected Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}); // prompt
+  bool issued(ConsentGrant grant);
+}
 enum DataKind { text, image, audio, location }
 
 enum Provenance { sdkOnDevice, sdkCloud, cloudAdapter, simulated, unknown }
@@ -352,9 +357,13 @@ image where the local model has none, token budget, language, `supportedModes`) 
 
 `HybridDispatcher.start(task, {validate})` returns a `HybridOperation` and is the only sender.
 Before **every** send (first attempt, Dart cloud fallback, semantic retry) it checks, in order:
-the operation is not cancelled; `PrivacySettings.localOnly` as it is **now**; `CloudRoutes`; and,
-when the send may upload and consent is needed, a `ConsentGrant` matching this payload digest
-and session. Then:
+the operation is not cancelled and its session (and ledger generation) is still current;
+`PrivacySettings.localOnly` as it is **now**; `CloudRoutes`; connectivity (on Android and iOS
+also a best-effort native reachability probe); and, when the send may upload and consent is
+needed, a `ConsentGrant` from the dispatcher's own gate matching this feature, the exact data
+kinds, the payload digest and the session. The checks run again after the consent prompt, after
+the ledger admission, and inside `ConfiguredHybridInference` after its startup wait, immediately
+before the send; a refusal at any of these points is recorded as not sent. Then:
 1. Decide. `mode == null` → return `blocked`; nothing is sent.
 2. Write the leg to the ledger (kinds, `transferPermitted`), then call the plugin.
 3. Record the outcome: SDK source → `sdkOnDevice` / `sdkCloud`; an error on a send that was
@@ -381,8 +390,12 @@ the digested bytes. `onlyInCloud` sends the original bytes (`inlineData`). There
   allowed picture. The consent prompt and ledger describe the picture and its kinds, which stay
   true; nothing else is added. The web bridge hands the JS SDK the original bytes; whether the
   SDK re-encodes them on its own fallback has not been verified.
-- Only a `ConsentGate` can issue a `ConsentGrant` (`ConsentGate.issue`, `@protected`); feature
-  code cannot construct one.
+- `ConsentGrant` is a `final` class with a private constructor. The only issuance path is
+  `ConsentGate.request`: it freezes the ask (an unmodifiable copy of `kinds`), calls the
+  `@protected` `confirm` callback that shows the cook the prompt and returns a `bool`, and issues
+  a grant for that frozen ask, bound to the issuing gate. There is no other minting call, and a
+  grant from any gate other than the dispatcher's own makes the dispatcher ask the cook. A grant
+  is spent once a request is dispatched and is never refunded.
 
 A sub-step's `parentFeature` local-only setting applies to it (`localOnlyFor`): the watch's
 cloud check follows "Keep Watch my food on this device", and the pantry voice clip follows

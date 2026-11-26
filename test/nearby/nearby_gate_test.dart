@@ -18,9 +18,8 @@ import 'package:soussight/ai/hybrid/inference_ledger.dart';
 import 'package:soussight/app/cloud_send_recorder.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/nearby/nearby_client.dart';
-import 'package:soussight/nearby/network_reachability.dart';
-import 'package:soussight/nearby/network_reachability_io.dart'
-    show reachableVia;
+import 'package:soussight/app/network_reachability.dart';
+import 'package:soussight/app/network_reachability_io.dart' show reachableVia;
 import 'package:soussight/trust/privacy_preferences.dart';
 
 GenerateContentResponse _grounded({bool places = true}) =>
@@ -58,6 +57,7 @@ class _Harness {
   final privacy = InMemoryPrivacyPreferences();
   var online = true;
   var reachable = true;
+  Future<bool> Function()? probe;
   final requests = <NearbyGenerationRequest>[];
   Future<GenerateContentResponse> Function() reply = () async => _grounded();
 
@@ -66,7 +66,8 @@ class _Harness {
     privacy: privacy,
     isOnline: () => online,
     recorder: LedgerCloudSendRecorder(ledger),
-    reachable: () async => reachable,
+    reachable: () => probe?.call() ?? Future.value(reachable),
+    generation: () => ledger.generation,
   );
 
   late final client = GeminiNearbyClient(
@@ -254,6 +255,45 @@ void main() {
     );
   });
 
+  // Codex #224 (71/100) P2: a session reset while reachable() is pending.
+  test('a session change during the reachability probe: the old search is '
+      'not sent and is recorded unsent', () async {
+    final h = _Harness();
+    final gateOpen = Completer<bool>();
+    h.probe = () => gateOpen.future;
+    final search = expectLater(
+      h.client.find(_area),
+      _fails(NearbyFailure.blocked, nearbySessionChangedMessage),
+    );
+    await pumpEventQueue();
+    h.ledger.startSession('meal-b');
+    gateOpen.complete(true);
+    await search;
+    expect(h.requests, isEmpty, reason: "meal A's ZIP never left");
+    final entry = h.ledger.entries.single;
+    expect(entry.leg.transferPermitted, isFalse);
+    expect(entry.leg.error, HybridErrorCode.cancelled);
+  });
+
+  test(
+    'a session change from a ledger listener during begin: not sent',
+    () async {
+      final h = _Harness();
+      var reset = false;
+      h.ledger.addListener(() {
+        if (!reset && h.ledger.entries.any((e) => e.pending)) {
+          reset = true;
+          h.ledger.startSession('meal-b');
+        }
+      });
+      await expectLater(
+        h.client.find(_area),
+        _fails(NearbyFailure.blocked, nearbySessionChangedMessage),
+      );
+      expect(h.requests, isEmpty);
+    },
+  );
+
   test('an invalid query is refused locally and recorded unsent', () async {
     final h = _Harness();
     await expectLater(
@@ -335,9 +375,19 @@ void main() {
       expect(hybrid.ledger.legs.single.transferPermitted, isFalse);
     });
 
-    test('production wiring uses the platform network probe', () {
-      final gate = NearbyGate.forRuntime(runtime('nearby'));
+    test('production wiring uses the platform network probe, the same '
+        'reader as the dispatcher', () {
+      // Production: no injected isOnline, so the OS probe is the reader.
+      final hybrid = HybridRuntime.create(
+        inference: FakeHybridInference(),
+        cloudRoutes: CloudRoutes.parse('nearby'),
+        cloudModel: 'test-model',
+      );
+      expect(identical(hybrid.reachable, networkReachable), isTrue);
+      final gate = NearbyGate.forRuntime(hybrid);
       expect(identical(gate.reachable, networkReachable), isTrue);
+      // A caller that injects isOnline owns connectivity: no probe.
+      expect(runtime('nearby').reachable, isNull);
     });
 
     test(

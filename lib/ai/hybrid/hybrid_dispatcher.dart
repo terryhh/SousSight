@@ -40,6 +40,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     required this._ledger,
     CloudFallbackSender? cloudFallback,
     bool Function()? isOnline,
+    this._reachable,
     RemoteRouting? Function()? remoteRouting,
     String Function()? languageTag,
     String Function()? newId,
@@ -58,6 +59,15 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   final InferenceLedger _ledger;
   final CloudFallbackSender? _adapter;
 
+  /// Live send checks for requests handed to the backend, by request id.
+  final Map<String, bool Function()> _sendChecks = {};
+
+  /// Whether the request [requestId] may still be sent now: its run is not
+  /// cancelled or stale and its privacy, route and connectivity checks pass.
+  /// For a backend that waits (startup configure) before it sends. Unknown
+  /// ids (not from this dispatcher) are not this dispatcher's to refuse.
+  bool stillAllowed(String requestId) => _sendChecks[requestId]?.call() ?? true;
+
   /// The app's current session (meal or pantry flow), when known. A run for
   /// any other session is stale: it never sends, and a grant for it is void.
   final String Function()? _currentSession;
@@ -68,6 +78,22 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       _ledger.generation != run.ledgerGeneration ||
       (_currentSession != null && _currentSession() != run.sessionId);
   final bool Function() _isOnline;
+
+  /// A native connectivity probe (Android/iOS), awaited before routing and
+  /// before every attempt that may upload. Null: [_isOnline] alone decides.
+  final Future<bool> Function()? _reachable;
+
+  Future<void> _probe(_Run run) async {
+    final probe = _reachable;
+    if (probe == null) return;
+    try {
+      run.reachable = await probe();
+    } catch (_) {
+      run.reachable = true; // unknown: let the request decide
+    }
+  }
+
+  bool _online(_Run run) => _isOnline() && run.reachable;
   final RemoteRouting? Function() _remote;
   final String Function() _language;
   final String Function() _newId;
@@ -110,6 +136,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       _inference.capabilities,
       const HybridCapabilities.none(),
     );
+    await _probe(run);
     if (op.cancelled || _stale(run)) return run.cancelled();
     final availability = await _safe(
       () => _inference.availability(withImage: run.hasImage),
@@ -129,7 +156,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
         ),
         languageTag: _language(),
         localOnly: localOnlyFor(_privacy, task.feature),
-        online: _isOnline(),
+        online: _online(run),
         cloudApproved: _routes.allows(CloudRoute.hybridFallback),
         capabilities: caps,
         status: availability.status,
@@ -219,6 +246,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     required RouteReason reason,
     required bool viaAdapter,
   }) async {
+    await _probe(run);
     if (op.cancelled || _stale(run)) {
       return const _Blocked(RouteReason.cancelled);
     }
@@ -227,7 +255,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       kinds: run.kinds,
       localOnly: localOnlyFor(_privacy, run.task.feature),
       cloudApproved: _routes.allows(CloudRoute.hybridFallback),
-      online: _isOnline(),
+      online: _online(run),
       reason: reason,
     );
     if (decision.blocked) {
@@ -287,7 +315,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       }
       // Connectivity too: the device may have gone offline while the consent
       // prompt was open. An offline refusal sends nothing.
-      if (!_isOnline()) return RouteReason.offline;
+      if (!_online(run)) return RouteReason.offline;
       return null;
     }
 
@@ -301,7 +329,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       final offered = run.suppliedGrant;
       grant = offered != null && _grantFits(offered, run)
           ? offered
-          : await _askConsent(run);
+          : await _askConsent(run, mode);
       // The cook may have changed a setting or cancelled while the prompt
       // was open.
       final late = liveCheck();
@@ -325,7 +353,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     // begin() notifies ledger listeners synchronously, and one may cancel,
     // switch on local-only or go offline: check again immediately before
     // the send. A refusal here sends nothing and settles the leg unsent.
-    if (liveCheck() case final refused?) {
+    _Blocked unsent(RouteReason refused) {
       final error = switch (refused) {
         RouteReason.cancelled => HybridErrorCode.cancelled,
         RouteReason.offline => HybridErrorCode.network,
@@ -345,6 +373,8 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       );
       return _Blocked(refused, recorded: true);
     }
+
+    if (liveCheck() case final refused?) return unsent(refused);
     op.inFlight = requestId;
     op.cancelInFlight = viaAdapter ? _adapter!.cancel : _inference.cancel;
 
@@ -373,6 +403,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       return leg;
     }
 
+    // A backend that waits before sending (startup configure) asks again
+    // through [stillAllowed] immediately before it sends.
+    _sendChecks[requestId] = () => liveCheck() == null;
     try {
       final request = HybridRequest(
         requestId: requestId,
@@ -382,6 +415,11 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       final result = viaAdapter
           ? await _adapter!.send(request)
           : await _inference.generate(request);
+      // An answer for a run whose session ended is recorded but never used.
+      if (_stale(run)) {
+        finish(Provenance.unknown, error: HybridErrorCode.cancelled);
+        return const _Blocked(RouteReason.cancelled);
+      }
       final provenance = viaAdapter
           ? Provenance.cloudAdapter
           : result.source == InferenceSource.onDevice
@@ -401,6 +439,25 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       finish(provenance, label: result.modelLabel);
       if (op.cancelled) return const _Blocked(RouteReason.cancelled);
       return _Ok(result.text, provenance);
+    } on NotSentException catch (e) {
+      // Refused before anything was sent (after the backend's startup wait).
+      final reason =
+          liveCheck() ??
+          (e.code == HybridErrorCode.cancelled ? RouteReason.cancelled : null);
+      if (reason != null) return unsent(reason);
+      _ledger.withdraw(entry, error: e.code);
+      run.legs.add(
+        InferenceLeg(
+          requestId: requestId,
+          feature: feature,
+          mode: mode,
+          kinds: run.kinds,
+          transferPermitted: false,
+          provenance: Provenance.unknown,
+          error: e.code,
+        ),
+      );
+      return _Failed(e.code, sent: true);
     } on HybridException catch (e) {
       // Whether data left on a send allowed to upload is not known.
       finish(Provenance.unknown, error: e.code);
@@ -417,12 +474,15 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       if (op.cancelled) return const _Blocked(RouteReason.cancelled);
       return const _Failed(HybridErrorCode.failed, sent: true);
     } finally {
+      _sendChecks.remove(requestId);
       op.inFlight = null;
       op.cancelInFlight = null;
     }
   }
 
-  Future<ConsentGrant?> _askConsent(_Run run) async {
+  /// Asks for [mode], the route this attempt takes, so the prompt says
+  /// plainly when a yes sends at once.
+  Future<ConsentGrant?> _askConsent(_Run run, HybridMode mode) async {
     try {
       return await _consent.request(
         ConsentAsk(
@@ -430,6 +490,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
           kinds: run.kinds,
           payloadDigest: run.digest,
           sessionId: run.sessionId,
+          mode: mode,
         ),
       );
     } catch (_) {
@@ -524,6 +585,9 @@ class _Run {
   final Set<DataKind> kinds;
   final ConsentGrant? suppliedGrant;
   final List<InferenceLeg> legs = [];
+
+  /// The latest native connectivity probe for this run (true when none).
+  bool reachable = true;
 
   bool get hasImage => task.hasImage;
 

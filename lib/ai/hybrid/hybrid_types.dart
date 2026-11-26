@@ -8,6 +8,13 @@ import 'dart:typed_data';
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/foundation.dart' show protected;
 
+/// A [HybridException] for a request that was refused before anything was
+/// sent (for example, a check after the startup wait). The dispatcher records
+/// its leg as not sent rather than "may have been sent".
+class NotSentException extends HybridException {
+  const NotSentException(super.code, super.message);
+}
+
 /// Cloud routes G1 approved for this build. Compiled in; default is none.
 enum CloudRoute { hybridFallback, research, nearby, live }
 
@@ -42,11 +49,26 @@ class ConsentAsk {
     required this.kinds,
     required this.payloadDigest,
     required this.sessionId,
+    this.mode,
   });
   final String feature;
   final Set<DataKind> kinds;
   final String payloadDigest;
   final String sessionId;
+
+  /// The route a yes takes, when the asker knows it (the dispatcher does):
+  /// `onlyInCloud` sends at once; a `prefer…` mode may still finish on the
+  /// device. Null: the feature's default route decides the wording.
+  final HybridMode? mode;
+
+  /// A copy the caller cannot change: [kinds] is an unmodifiable copy.
+  ConsentAsk frozen() => ConsentAsk(
+    feature: feature,
+    kinds: Set.unmodifiable(kinds),
+    payloadDigest: payloadDigest,
+    sessionId: sessionId,
+    mode: mode,
+  );
 }
 
 /// The cook's "allow once" for one [ConsentAsk]. The only way to obtain one
@@ -73,9 +95,12 @@ abstract class ConsentGate {
   /// Asks the cook; a grant for exactly [ask], issued by this gate, when
   /// they allow it, else null. Any error is a decline.
   Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) async {
+    // The gate owns what the cook sees and what the grant covers: one frozen
+    // snapshot, taken before the prompt, so the caller cannot widen it later.
+    final shown = ask.frozen();
     try {
-      return await confirm(ask, preview: preview)
-          ? ConsentGrant._(ask, this)
+      return await confirm(shown, preview: preview)
+          ? ConsentGrant._(shown, this)
           : null;
     } catch (_) {
       return null;

@@ -80,6 +80,27 @@ void main() {
     );
   });
 
+  // Codex #224 (71/100) P2: a pop during session initialization must not
+  // undo the pantry reset.
+  test('a session load finishing after the pop is ignored', () {
+    final hybrid = _runtime();
+    _scanLeg(hybrid);
+    hybrid.bindCookingSession('meal-a');
+    hybrid.beginPantry(); // back to the pantry
+    final pantryId = hybrid.sessionId;
+    // Meal B's screen opens; its session is still loading when it is popped.
+    final bindB = hybrid.cookingSessionBinder();
+    hybrid.beginPantry();
+    _scanLeg(hybrid); // a scan in the new pantry flow
+    bindB('meal-b'); // the load finishes late
+    expect(hybrid.sessionId, pantryId, reason: 'still the pantry flow');
+    expect(hybrid.ledgerSource.legs, hasLength(1));
+    // A binder from a screen opened after the reset still works.
+    hybrid.cookingSessionBinder()('meal-c');
+    expect(hybrid.sessionId, 'meal-c');
+    expect(hybrid.ledgerSource.legs, hasLength(1), reason: 'carried');
+  });
+
   testWidgets('back to the pantry, scan, choose meal B: the scan is in meal '
       'B\'s ledger, not lost with meal A\'s', (tester) async {
     tester.view.devicePixelRatio = 1;
