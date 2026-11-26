@@ -130,11 +130,11 @@ void main() {
             maxOutputTokens: 10,
             timeout: const Duration(seconds: 1),
           );
-      final base = taskDigest(t());
-      expect(taskDigest(t()), base);
-      expect(taskDigest(t(text: 'hj')), isNot(base));
-      expect(taskDigest(t(byte: 2)), isNot(base));
-      expect(taskDigest(t(si: 'x')), isNot(base));
+      final base = hybridPayloadDigest(t());
+      expect(hybridPayloadDigest(t()), base);
+      expect(hybridPayloadDigest(t(text: 'hj')), isNot(base));
+      expect(hybridPayloadDigest(t(byte: 2)), isNot(base));
+      expect(hybridPayloadDigest(t(si: 'x')), isNot(base));
     });
 
     test('data kinds come from parts', () {
@@ -142,7 +142,7 @@ void main() {
         feature: 'pantry_voice',
         parts: [
           HybridInlineData(Uint8List(1), 'audio/webm'),
-          HybridInlineData(Uint8List(1), 'IMAGE/PNG'),
+          HybridInlineData(Uint8List(1), 'image/png'),
         ],
         maxOutputTokens: 1,
         timeout: const Duration(seconds: 1),

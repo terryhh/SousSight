@@ -348,6 +348,67 @@ void main() {
       RouteReason.onDevice,
       true,
     ),
+    // A watch frame's explicit cloud check: cloud only, consent always.
+    (
+      'cloud check, ready',
+      _in('local_watch_cloud_check', image: true),
+      _cloud,
+      RouteReason.cloudRetryAfterCheck,
+      true,
+    ),
+    (
+      'cloud check, downloading',
+      _in(
+        'local_watch_cloud_check',
+        image: true,
+        status: OnDeviceStatus.downloading,
+      ),
+      _cloud,
+      RouteReason.cloudRetryAfterCheck,
+      true,
+    ),
+    (
+      'cloud check, iOS',
+      _in('local_watch_cloud_check', image: true, caps: fakeIosCapabilities),
+      _cloud,
+      RouteReason.cloudRetryAfterCheck,
+      true,
+    ),
+    (
+      'cloud check, text still needs consent',
+      _in('local_watch_cloud_check'),
+      _cloud,
+      RouteReason.cloudRetryAfterCheck,
+      true,
+    ),
+    (
+      'cloud check, localOnly is not run locally',
+      _in('local_watch_cloud_check', image: true, localOnly: true),
+      null,
+      RouteReason.localOnlySetting,
+      false,
+    ),
+    (
+      'cloud check, unapproved',
+      _in('local_watch_cloud_check', image: true, cloud: false),
+      null,
+      RouteReason.cloudNotApproved,
+      false,
+    ),
+    (
+      'cloud check, offline',
+      _in('local_watch_cloud_check', image: true, online: false),
+      null,
+      RouteReason.offline,
+      false,
+    ),
+    (
+      'voice clip needs no per-clip consent',
+      _in('pantry_voice', audio: true, status: OnDeviceStatus.downloading),
+      _cloud,
+      RouteReason.audioNeedsCloud,
+      false,
+    ),
     // Feature defaults.
     (
       'pantry photo, ready',

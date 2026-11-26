@@ -31,12 +31,28 @@ class RemoteRouting {
   }
 }
 
+/// When an upload of this feature's payload needs a per-payload
+/// [ConsentGrant].
+enum UploadConsent {
+  /// When it carries an image, audio or location.
+  media,
+
+  /// Always, whatever it carries.
+  always,
+
+  /// Never: the feature is labelled as cloud before the cook acts, so the
+  /// action itself is the consent.
+  none,
+}
+
 /// A feature's built-in route (PLAN.md §4).
 class FeatureRoute {
   const FeatureRoute(
     this.defaultMode, {
     required this.cloudWhenLocalCannot,
     required this.semanticRetry,
+    this.consent = UploadConsent.media,
+    this.cloudReason = RouteReason.noLocalModel,
   });
 
   /// The mode used when nothing above it in the precedence applies.
@@ -50,10 +66,13 @@ class FeatureRoute {
   /// One `onlyInCloud` retry when the caller's validator rejects an on-device
   /// answer.
   final bool semanticRetry;
+  final UploadConsent consent;
 
-  bool get cloudFirst =>
-      defaultMode == HybridMode.onlyInCloud ||
-      defaultMode == HybridMode.preferInCloud;
+  /// The reason given when a cloud-first default is what sends it to the
+  /// cloud (no hard limit or availability reason applies).
+  final RouteReason cloudReason;
+
+  bool get cloudOnly => defaultMode == HybridMode.onlyInCloud;
 }
 
 /// Feature defaults. Unknown features fail closed to on-device only.
@@ -70,6 +89,8 @@ const featureRoutes = <String, FeatureRoute>{
     HybridMode.onlyInCloud,
     cloudWhenLocalCannot: true,
     semanticRetry: false,
+    consent: UploadConsent.none,
+    cloudReason: RouteReason.audioNeedsCloud,
   ),
   // On-device first; one cloud retry on semantic rejection, but not when the
   // SDK already answered from the cloud.
@@ -84,6 +105,15 @@ const featureRoutes = <String, FeatureRoute>{
     HybridMode.onlyOnDevice,
     cloudWhenLocalCannot: false,
     semanticRetry: false,
+  ),
+  // That separate action: one "unsure" frame checked in the cloud, only with
+  // a grant for that frame's digest.
+  'local_watch_cloud_check': FeatureRoute(
+    HybridMode.onlyInCloud,
+    cloudWhenLocalCannot: true,
+    semanticRetry: false,
+    consent: UploadConsent.always,
+    cloudReason: RouteReason.cloudRetryAfterCheck,
   ),
   // On-device; cloud only if the panel fails validation and the cook is
   // online.
@@ -205,14 +235,22 @@ RouteDecision decideRoute(RouteInput input) {
     // A hard limit means the request needs the cloud, and the restriction is
     // what the cook can change. A not-ready model is the better explanation
     // when the request would otherwise run locally.
-    if (hardLimit != null) return RouteDecision.blocked(restriction);
+    // A cloud-only feature (the cook asked for a cloud check) is not quietly
+    // run on-device instead.
+    if (hardLimit != null || route.cloudOnly) {
+      return RouteDecision.blocked(restriction);
+    }
     if (notReady != null) return RouteDecision.blocked(notReady);
     return _local(HybridMode.onlyOnDevice, RouteReason.onDevice);
   }
 
   if (hardLimit != null) {
     return route.cloudWhenLocalCannot
-        ? _cloud(input, HybridMode.onlyInCloud, hardLimit)
+        ? _cloud(
+            input,
+            HybridMode.onlyInCloud,
+            route.cloudOnly ? route.cloudReason : hardLimit,
+          )
         : RouteDecision.blocked(hardLimit);
   }
 
@@ -227,7 +265,8 @@ RouteDecision decideRoute(RouteInput input) {
     }
     if (wanted == HybridMode.onlyInCloud ||
         wanted == HybridMode.preferInCloud) {
-      return _cloud(input, HybridMode.onlyInCloud, notReady);
+      // Availability of the local model does not matter to a cloud send.
+      return _cloud(input, HybridMode.onlyInCloud, route.cloudReason);
     }
     return RouteDecision.blocked(notReady);
   }
@@ -244,13 +283,8 @@ RouteDecision decideRoute(RouteInput input) {
           : _local(HybridMode.onlyOnDevice, RouteReason.onDevice);
     case HybridMode.preferInCloud:
     case HybridMode.onlyInCloud:
-      // Only reachable for a cloud-first feature with no hard limit. Its
-      // reason is the modality that makes it cloud-first.
-      return _cloud(
-        input,
-        HybridMode.onlyInCloud,
-        input.hasAudio ? RouteReason.audioNeedsCloud : RouteReason.noLocalModel,
-      );
+      // Only reachable for a cloud-first feature with no hard limit.
+      return _cloud(input, HybridMode.onlyInCloud, route.cloudReason);
   }
 }
 
@@ -279,17 +313,20 @@ RouteDecision decideCloudRetry({
   );
 }
 
-/// Consent is asked, per payload, before media (image, audio, location) from
-/// an on-device-first feature may leave the device. Cloud-first features
-/// (the pantry voice clip) are labelled as cloud before the cook records, so
-/// the action itself is the consent. Text from on-device-first features may
-/// fall back without a prompt and is still recorded in the ledger.
-bool consentRequired(String feature, Set<DataKind> kinds) {
-  if (featureRouteFor(feature).cloudFirst) return false;
-  return kinds.contains(DataKind.image) ||
-      kinds.contains(DataKind.audio) ||
-      kinds.contains(DataKind.location);
-}
+/// Whether an upload of this payload needs a per-payload grant, per the
+/// feature's [UploadConsent]. By default media (image, audio, location) needs
+/// one; text may fall back without a prompt and is still recorded in the
+/// ledger. The pantry voice clip is labelled as cloud before the cook records
+/// (none); a watch frame's cloud check always needs one (always).
+bool consentRequired(String feature, Set<DataKind> kinds) =>
+    switch (featureRouteFor(feature).consent) {
+      UploadConsent.none => false,
+      UploadConsent.always => true,
+      UploadConsent.media =>
+        kinds.contains(DataKind.image) ||
+            kinds.contains(DataKind.audio) ||
+            kinds.contains(DataKind.location),
+    };
 
 /// §4 token budget for a local run: (system instruction + all text parts +
 /// serialized schema) characters / 4, plus `imageTokenEstimate` per image,

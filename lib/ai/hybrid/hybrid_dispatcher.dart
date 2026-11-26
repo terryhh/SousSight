@@ -67,12 +67,14 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   }) {
     final op = _Operation();
     final run = _Run(
       task: task,
       sessionId: sessionId,
       kinds: taskDataKinds(task),
+      suppliedGrant: grant,
     );
     return HybridOperation(_newId(), _dispatch(op, run, validate), op.cancel);
   }
@@ -98,7 +100,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       RouteInput(
         feature: task.feature,
         hasImage: run.hasImage,
-        hasAudio: run.kinds.contains(DataKind.audio),
+        hasAudio: task.hasAudio,
         estimatedTokens: estimateLocalTokens(
           task,
           imageTokenEstimate:
@@ -272,8 +274,11 @@ class DefaultHybridDispatcher implements HybridDispatcher {
 
     ConsentGrant? grant;
     if (mayUpload && needsConsent) {
-      grant = carriedGrant != null && _grantFits(carriedGrant, run)
-          ? carriedGrant
+      // A grant the feature supplied, or one an unsent attempt did not spend,
+      // is used if it fits; otherwise the cook is asked.
+      final offered = carriedGrant ?? run.suppliedGrant;
+      grant = offered != null && _grantFits(offered, run)
+          ? offered
           : await _askConsent(run);
       // The cook may have changed a setting or cancelled while the prompt
       // was open.
@@ -388,12 +393,12 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     }
   }
 
+  /// The digest covers the feature and every byte that could leave, so a
+  /// digest and session match is the whole test (plus "not yet used").
   bool _grantFits(ConsentGrant grant, _Run run) =>
       !_spent.contains(grant) &&
       grant.ask.payloadDigest == run.digest &&
-      grant.ask.sessionId == run.sessionId &&
-      grant.ask.feature == run.task.feature &&
-      grant.ask.kinds.containsAll(run.kinds);
+      grant.ask.sessionId == run.sessionId;
 
   /// A fallback or retry that the checks stopped. Nothing was sent. When no
   /// earlier leg exists (the bridge was never reached) this is the first
@@ -445,17 +450,23 @@ class _Operation {
 }
 
 class _Run {
-  _Run({required this.task, required this.sessionId, required this.kinds});
+  _Run({
+    required this.task,
+    required this.sessionId,
+    required this.kinds,
+    this.suppliedGrant,
+  });
 
   final HybridTask task;
   final String sessionId;
 
   /// SHA-256 of the serialized task; computed only when consent is needed.
-  late final String digest = taskDigest(task);
+  late final String digest = hybridPayloadDigest(task);
   final Set<DataKind> kinds;
+  final ConsentGrant? suppliedGrant;
   final List<InferenceLeg> legs = [];
 
-  bool get hasImage => kinds.contains(DataKind.image);
+  bool get hasImage => task.hasImage;
 
   DispatchResult result({String? text, RouteReason? blocked}) => DispatchResult(
     text: text,

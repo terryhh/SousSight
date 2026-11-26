@@ -16,8 +16,14 @@ void registerHybridInferenceBackend(HybridInference Function() factory) {
 
 /// The process-wide backend. Configure it once with [HybridInference.configure].
 ///
-/// Android and iOS: [MethodChannelHybridInference]. Web: whatever the web
-/// plugin registered; until SS-062 lands that is also the method channel,
-/// which on web reports `platform: 'none'` and `bridge_unavailable`.
+/// Android and iOS: [MethodChannelHybridInference]. Web: the backend
+/// registered with [registerHybridInferenceBackend].
+///
+/// HOOK for SS-062 (#182): once `src/web/web_hybrid_inference.dart` is on the
+/// trunk, import it here and make the factory
+/// `webHybridInference() ?? MethodChannelHybridInference()`; the
+/// registration hook can then go. Until then, web without a registered
+/// backend gets the method channel, which reports `platform: 'none'` and
+/// `bridge_unavailable` (never throws).
 HybridInference defaultHybridInference() =>
     _instance ??= (_backendFactory ?? MethodChannelHybridInference.new)();

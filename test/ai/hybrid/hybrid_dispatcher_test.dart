@@ -292,7 +292,7 @@ void main() {
       expect(h.bridge.requests, isEmpty);
       expect(h.adapter!.requests, isEmpty);
       final ask = h.consent.asks.single;
-      expect(ask.payloadDigest, taskDigest(task));
+      expect(ask.payloadDigest, hybridPayloadDigest(task));
       expect(ask.sessionId, 's1');
       expect(ask.kinds, {DataKind.text, DataKind.image});
     });
@@ -304,7 +304,7 @@ void main() {
         ConsentAsk(
           feature: ask.feature,
           kinds: ask.kinds,
-          payloadDigest: taskDigest(other),
+          payloadDigest: hybridPayloadDigest(other),
           sessionId: 's1',
         ),
       );
@@ -366,6 +366,95 @@ void main() {
       );
     });
   });
+
+  group('a grant supplied by the feature', () {
+    test(
+      'matching digest and session: used without asking the cook again',
+      () async {
+        final h = _Harness();
+        final task = _photo('local_watch_cloud_check');
+        final grant = ConsentGrant(
+          ConsentAsk(
+            feature: 'local_watch',
+            kinds: const {DataKind.image},
+            payloadDigest: hybridPayloadDigest(task),
+            sessionId: 's1',
+          ),
+        );
+        h.bridge.enqueueText(
+          '{"state":"ready"}',
+          source: InferenceSource.cloud,
+        );
+        final r = await h.dispatcher
+            .start(task, sessionId: 's1', grant: grant)
+            .result;
+        expect(r.text, isNotNull);
+        expect(h.consent.asks, isEmpty);
+        expect(h.bridge.requests.single.mode, HybridMode.onlyInCloud);
+
+        // Used once: the same grant on a second operation is not accepted.
+        h.consent.answer = (_) async => null;
+        final again = await h.dispatcher
+            .start(task, sessionId: 's1', grant: grant)
+            .result;
+        expect(again.blocked, RouteReason.consentDeclined);
+        expect(h.consent.asks, hasLength(1));
+        expect(h.bridge.requests, hasLength(1));
+      },
+    );
+
+    test(
+      'a grant for another frame or session is ignored and the gate asked',
+      () async {
+        final h = _Harness();
+        final task = _photo('local_watch_cloud_check');
+        h.consent.answer = (_) async => null;
+        for (final g in [
+          ConsentGrant(
+            ConsentAsk(
+              feature: 'local_watch',
+              kinds: const {DataKind.image},
+              payloadDigest: hybridPayloadDigest(
+                _photo('local_watch_cloud_check', 7),
+              ),
+              sessionId: 's1',
+            ),
+          ),
+          ConsentGrant(
+            ConsentAsk(
+              feature: 'local_watch',
+              kinds: const {DataKind.image},
+              payloadDigest: hybridPayloadDigest(task),
+              sessionId: 'other',
+            ),
+          ),
+        ]) {
+          final r = await h.dispatcher
+              .start(task, sessionId: 's1', grant: g)
+              .result;
+          expect(r.blocked, RouteReason.consentDeclined);
+        }
+        expect(h.consent.asks, hasLength(2));
+        expect(h.bridge.requests, isEmpty);
+      },
+    );
+  });
+
+  test(
+    'onlyOnDevice while the image model is only downloadable: not sent',
+    () async {
+      final h = _Harness();
+      h.bridge.imageAvailability = const HybridAvailability(
+        status: OnDeviceStatus.downloadable,
+      );
+      final r = await h.run(_photo('local_watch'));
+      expect(r.blocked, RouteReason.modelNotReady);
+      expect(h.bridge.requests, isEmpty);
+      // Availability is per modality: text is still ready and runs locally.
+      h.bridge.enqueueText('ok');
+      expect((await h.run(_text('coach_lite'))).text, 'ok');
+    },
+  );
 
   test(
     'localOnly with a remote override set to cloud stays on-device',

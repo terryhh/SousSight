@@ -11,8 +11,10 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 
 import 'hybrid_types.dart';
 
-/// Lowercase hex SHA-256 of [taskBytes].
-String taskDigest(HybridTask task) => sha256Hex(taskBytes(task));
+/// Lowercase hex SHA-256 of [taskBytes]. A [ConsentAsk.payloadDigest] for a
+/// task must be this value: features that obtain consent themselves (and pass
+/// the grant to `HybridDispatcher.start`) compute it here.
+String hybridPayloadDigest(HybridTask task) => sha256Hex(taskBytes(task));
 
 /// The canonical serialization the digest covers: everything that can leave
 /// the device (feature, instruction, every part including image bytes,
@@ -45,15 +47,13 @@ Set<DataKind> taskDataKinds(HybridTask task) => {
   if ((task.systemInstruction ?? '').isNotEmpty ||
       task.parts.any((p) => p is HybridText))
     DataKind.text,
-  if (task.parts.any(isImagePart)) DataKind.image,
-  if (task.parts.any(isAudioPart)) DataKind.audio,
+  if (task.hasImage) DataKind.image,
+  if (task.hasAudio) DataKind.audio,
 };
 
+/// Same test as [HybridTask.hasImage], per part.
 bool isImagePart(HybridPart p) =>
-    p is HybridInlineData && p.mimeType.toLowerCase().startsWith('image/');
-
-bool isAudioPart(HybridPart p) =>
-    p is HybridInlineData && p.mimeType.toLowerCase().startsWith('audio/');
+    p is HybridInlineData && p.mimeType.startsWith('image/');
 
 const _k = <int>[
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, //
