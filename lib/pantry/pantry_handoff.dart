@@ -1,5 +1,6 @@
 import '../app/services_scope.dart';
 import '../core/models.dart';
+import 'pantry_ui.dart' show pantryStatesAgree;
 
 /// What the cook confirmed on the pantry screen, carried into cooking.
 class PantryHandoff {
@@ -81,9 +82,36 @@ String? matchIngredientId(String item, Recipe recipe) {
       head,
       ...head.split(RegExp(r'\s+or\s+', caseSensitive: false)),
     ];
-    if (names.any((name) => same(_words(name)))) return ingredient.id;
+    if (names.any((name) => same(_words(name))) &&
+        pantryStatesAgree(item, head)) {
+      return ingredient.id;
+    }
   }
   return null;
+}
+
+/// Every recipe ingredient ID the cook's confirmed [items] account for: one
+/// item naming it, or (for "X and Y" ingredients such as "Salt and black
+/// pepper") separate items covering every part (Codex #221).
+Set<String> matchIngredientIds(List<String> items, Recipe recipe) {
+  final ids = {for (final item in items) ?matchIngredientId(item, recipe)};
+  for (final ingredient in recipe.ingredients) {
+    final head = ingredient.name.split(',').first;
+    final parts = head.split(RegExp(r'\s+and\s+', caseSensitive: false));
+    if (parts.length < 2) continue;
+    bool covered(String part) {
+      final want = _words(part);
+      return items.any((item) {
+        final have = _words(item);
+        return want.isNotEmpty &&
+            have.length == want.length &&
+            have.containsAll(want);
+      });
+    }
+
+    if (parts.every(covered)) ids.add(ingredient.id);
+  }
+  return ids;
 }
 
 /// Writes pantry context into the cook's session before the cooking screen
@@ -100,9 +128,7 @@ Future<void> applyPantryHandoff(
   // A pantry scan is a new meal: start a fresh session (earlier sessions are
   // preserved) that the coordinator then resumes as the newest one.
   final session = await services.sessions.createNew(uid, recipe);
-  final matched = {
-    for (final item in handoff.confirmedItems) ?matchIngredientId(item, recipe),
-  };
+  final matched = matchIngredientIds(handoff.confirmedItems, recipe);
   final facts = [
     if (handoff.confirmedItems.isNotEmpty)
       'Pantry has (confirmed by the cook): ${handoff.confirmedItems.join(', ')}.',

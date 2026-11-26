@@ -651,8 +651,12 @@ String? readinessCalmLine(
     return pantryLocalOnly
         ? "You chose to keep pantry scans on this device, and it can't run "
               'them here. Pick a recipe below to start cooking.'
-        : "Type what you have, or pick a recipe below. Your list is sent "
-              "online to Google's AI, and each answer says so.";
+        // No definite transfer claim here: whether a request goes online is
+        // decided per request (policy, settings) and each answer says where
+        // it ran (Codex #221).
+        : 'Type what you have, or pick a recipe below. This device may not '
+              "answer on its own; if a request goes online to Google's AI, "
+              'its answer says so.';
   }
   return 'Type what you have, or pick a recipe below.';
 }

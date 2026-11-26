@@ -48,8 +48,7 @@ class _DeniedMedia extends DemoLiveMedia {
   @override
   Future<void> start() async => throw StateError('NotAllowedError');
   @override
-  Future<void> startCameraOnly() async =>
-      throw StateError('NotAllowedError');
+  Future<void> startCameraOnly() async => throw StateError('NotAllowedError');
 }
 
 void main() {
@@ -71,10 +70,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining("sent online to Google's AI"), findsOneWidget);
+      expect(find.textContaining('if a request goes online'), findsOneWidget);
       hybrid.privacy.setLocalOnly('pantry_scan', true);
       await tester.pump();
-      expect(find.textContaining("sent online to Google's AI"), findsNothing);
+      expect(find.textContaining('if a request goes online'), findsNothing);
       expect(
         find.textContaining('You chose to keep pantry scans on this device'),
         findsOneWidget,

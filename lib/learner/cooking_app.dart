@@ -275,7 +275,14 @@ class _CookingScreenState extends State<CookingScreen> {
             : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
       ),
       transportFactory: transport,
-      media: widget.isDemo ? RehearsalLiveMedia() : createLiveMedia(),
+      media: widget.isDemo
+          ? RehearsalLiveMedia(
+              onCameraStart: switch (hybrid?.inference) {
+                final RehearsalHybridInference practice => practice.newWatch,
+                _ => null,
+              },
+            )
+          : createLiveMedia(),
       coachLite: hybrid == null
           ? null
           : CoachLite(
@@ -510,7 +517,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   final _errorKey = GlobalKey(debugLabel: 'cooking-error');
   final _researchKey = GlobalKey(debugLabel: 'research-panel');
   final _transcriptKey = GlobalKey(debugLabel: 'live-transcript');
-  String _shownTranscript = '';
+  int _shownTurns = 0;
   Object? _shownReply;
   String? _shownError;
   Object? _shownResearch;
@@ -551,13 +558,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       _reveal(_researchKey);
     }
     _shownResearch = panel;
-    // A finished Live reply, once per turn (Codex #221).
-    final transcript = cook.live.coachTranscript;
-    if (transcript.isNotEmpty &&
-        transcript != _shownTranscript &&
-        cook.live.status != LiveCookingStatus.speaking) {
-      _shownTranscript = transcript;
-      _reveal(_transcriptKey);
+    // A finished Live reply, once per completed turn (typed or spoken),
+    // never on a partial transcript (Codex #221).
+    if (cook.live.completedTurns != _shownTurns) {
+      _shownTurns = cook.live.completedTurns;
+      if (cook.live.coachTranscript.isNotEmpty) _reveal(_transcriptKey);
     }
     _wasResearching = cook.researching;
   }
@@ -633,8 +638,6 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     if (_messagePending || _message.text.trim().isEmpty) return;
     setState(() => _messagePending = true);
     final text = _message.text;
-    // A new turn: its Live reply is revealed even if it repeats the last one.
-    _shownTranscript = '';
     try {
       final accepted = await cook.say(text);
       if (accepted && mounted) _message.clear();

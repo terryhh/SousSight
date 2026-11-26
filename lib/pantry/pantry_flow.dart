@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../ai/hybrid/hybrid_types.dart' show CloudRoute;
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
 import '../app/rehearsal_runtime.dart';
@@ -119,6 +120,7 @@ class _PantryFlowState extends State<PantryFlow> {
       (false, final hybrid?) => hybridNearbyClient(hybrid),
       _ => null,
     },
+    voiceOnline: widget.hybrid?.cloudRoutes.allows(CloudRoute.hybridFallback),
     unavailableReason: switch (widget.hybrid) {
       final hybrid? => () => hybridUnavailableReason(hybrid),
       null => null,

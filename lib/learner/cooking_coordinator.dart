@@ -96,6 +96,8 @@ class CookingCoordinator extends ChangeNotifier {
       media: media,
       onToolCall: _onTool,
       clock: services.clock,
+      watchLocalOnly: () =>
+          watchService?.local.privacy?.localOnly(kLocalWatchFeature) ?? false,
     );
     live.addListener(_onLiveChanged);
     watchService = watchServiceFactory?.call(live);
@@ -831,13 +833,44 @@ $cookingUiInstructions
   /// replaced (and orphaned) by it (Codex #221).
   static const watchPanelId = 'app_watch';
 
-  void _watchPanel(String status, String title, String body) => ui.upsertPanel({
-    'id': watchPanelId,
-    'component': 'watchStatus',
-    'status': status,
-    'title': title,
-    'body': body,
-  });
+  /// Never throws on a full layout (Codex #221): a watch-status leaf the
+  /// layout already has is updated in place (a leaf can't orphan anything);
+  /// otherwise the app panel is added, and at the 16-component budget the
+  /// workspace becomes the watch panel and the current step.
+  void _watchPanel(String status, String title, String body) {
+    final components = ui.components;
+    final leaf = components
+        .where(
+          (c) =>
+              c['component'] == 'watchStatus' &&
+              c['id'] != watchPanelId &&
+              c['children'] == null,
+        )
+        .firstOrNull;
+    final panel = {
+      'id': leaf?['id'] ?? watchPanelId,
+      'component': 'watchStatus',
+      'status': status,
+      'title': title,
+      'body': body,
+    };
+    final exists = components.any((c) => c['id'] == panel['id']);
+    if (exists || components.length < 16) {
+      ui.upsertPanel(panel);
+      return;
+    }
+    ui.applyToolPayload({
+      'components': [
+        {
+          'id': 'root',
+          'component': 'CookingColumn',
+          'children': [watchPanelId, 'step'],
+        },
+        {...panel, 'id': watchPanelId},
+        _stepPanel,
+      ],
+    });
+  }
 
   void _onWatchChanged() {
     if (_disposed) return;
@@ -1073,6 +1106,10 @@ $cookingUiInstructions
           (a['seconds'] as num).toInt(),
         );
       case 'watch_cooking':
+        if (live.watchId == null) {
+          // Refused (e.g. Watch is kept on this device): nothing to show.
+          return {'ok': false, 'error': kLiveWatchLocalOnlyNotice};
+        }
         _watchPanel('watching', 'Watching your food', a['goal'] as String);
         // LiveCookingController started the watch before dispatching here.
         if (live.watchId case final id?) {

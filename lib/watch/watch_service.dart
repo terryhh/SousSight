@@ -16,6 +16,10 @@ enum WatchRoute {
   live,
 }
 
+const _liveLocalOnlyMessage =
+    'You chose to keep Watch my food on this device. Tap Stop to end the '
+    'Live coach, then start the watch.';
+
 /// The outcome of [WatchService.startWatch]. [message] is cook-facing and
 /// always states which route was chosen, or why none could start.
 @immutable
@@ -122,16 +126,15 @@ class WatchService extends ChangeNotifier {
       // "Keep Watch my food on this device" never becomes a cloud watch
       // through Live: ask the cook to stop Live first (Codex #221).
       if (local.privacy?.localOnly(kLocalWatchFeature) ?? false) {
-        return _result(
-          const WatchStart(
-            message:
-                'You chose to keep Watch my food on this device. Tap Stop to '
-                'end the Live coach, then start the watch.',
-          ),
-        );
+        return _result(const WatchStart(message: _liveLocalOnlyMessage));
       }
       await local.stop();
       if (!current()) return superseded;
+      // Re-read right before the Live watch starts: the setting may have
+      // changed while the local watch stopped (Codex #221).
+      if (local.privacy?.localOnly(kLocalWatchFeature) ?? false) {
+        return _result(const WatchStart(message: _liveLocalOnlyMessage));
+      }
       final id = startLiveWatch(cue);
       _liveWatchId = id;
       return _result(

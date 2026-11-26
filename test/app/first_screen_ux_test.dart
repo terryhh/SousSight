@@ -79,11 +79,12 @@ void main() {
       );
     });
 
-    test('cloud is the chosen path: says answers are sent online', () {
-      expect(
-        readinessCalmLine(_readiness(text: _unavailable, cloud: true)),
-        contains("sent online to Google's AI"),
-      );
+    test('cloud is the chosen path: no definite transfer claim', () {
+      final line = readinessCalmLine(
+        _readiness(text: _unavailable, cloud: true),
+      )!;
+      expect(line, contains("if a request goes online to Google's AI"));
+      expect(line, isNot(contains('is sent online')));
     });
 
     test('limited but usable: the plain invitation', () {

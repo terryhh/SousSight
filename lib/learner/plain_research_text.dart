@@ -41,8 +41,9 @@ class PlainTextResearchClient implements CookingResearchClient {
   Future<CookingResearchResult> research(CookingResearchQuery query) async {
     final result = await inner.research(query);
     final answer = plainResearchText(result.answer);
-    // Nothing left once the Markdown is gone is no answer (Codex #221).
-    if (answer.isEmpty) {
+    // Nothing left once the Markdown and list markers are gone is no answer
+    // (Codex #221).
+    if (answer.replaceAll(RegExp(r'[\s•*_\-#>`]+'), '').isEmpty) {
       throw const CookingResearchException(
         CookingResearchFailure.empty,
         'The search did not return a usable answer. Try a more specific '

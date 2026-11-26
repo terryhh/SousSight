@@ -222,9 +222,26 @@ String pantryItemKey(String name) => [
 /// Whether a typed entry names exactly this item, so it may start confirmed.
 /// Conservative on purpose: "2 tomatoes" = "tomato" and "canned black beans"
 /// = "black beans", but "oat milk" ≠ "milk" and "eggplant" ≠ "egg".
+/// Explicitly different preparation states make different foods: "frozen
+/// corn" is not "canned corn" (Codex #221). A state on one side only
+/// ("corn" vs "canned corn") still matches.
 bool pantrySameItem(String typed, String item) {
   final a = pantryItemKey(typed);
-  return a.isNotEmpty && a == pantryItemKey(item);
+  if (a.isEmpty || a != pantryItemKey(item)) return false;
+  return pantryStatesAgree(typed, item);
+}
+
+/// Preparation states that change what a food is in a recipe.
+const pantryStates = {'canned', 'frozen', 'fresh', 'dried'};
+
+/// False only when both names state a preparation and the states differ.
+bool pantryStatesAgree(String a, String b) {
+  Set<String> states(String s) => {
+    for (final w in s.toLowerCase().split(RegExp(r'[^a-z]+')))
+      if (pantryStates.contains(w)) w,
+  };
+  final x = states(a), y = states(b);
+  return x.isEmpty || y.isEmpty || (x.length == y.length && x.containsAll(y));
 }
 
 /// Describing words that never make two foods the same ("canned corn" is

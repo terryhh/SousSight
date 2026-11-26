@@ -73,6 +73,10 @@ class RehearsalHybridInference extends FakeHybridInference {
 
   int _watchTurn = 0;
 
+  /// A new practice watch starts its verdicts from "not yet" (Codex #221).
+  /// Called when the practice camera starts a capture.
+  void newWatch() => _watchTurn = 0;
+
   @override
   Future<HybridResult> generate(HybridRequest request) {
     // Reserved synchronously by super.generate, so concurrent calls each get
@@ -102,7 +106,10 @@ class RehearsalHybridInference extends FakeHybridInference {
         text.isEmpty ? '' : text.first,
       ),
       'coach_lite' => practiceCoachAnswer(text.join('\n')),
-      kLocalWatchFeature => practiceWatchAnswer(_watchTurn++),
+      kLocalWatchFeature => practiceWatchAnswer(
+        _watchTurn++,
+        cue: _promptLine(text.join('\n'), 'Visible cue to look for'),
+      ),
       kLabelCheckFeature => practiceLabelAnswer(text.join('\n')),
       _ => null,
     };
@@ -146,6 +153,11 @@ List<String>? practiceIngredientMatch(List<String> typed, String ingredient) {
       .replaceAll(RegExp(r'\([^)]*\)'), ' ')
       .toLowerCase();
   for (final alternative in head.split(RegExp(r'\s+or\s+'))) {
+    // The whole name typed as one item ("salt and black pepper").
+    final whole = typed
+        .where((t) => pantrySameItem(t, alternative))
+        .firstOrNull;
+    if (whole != null) return [whole];
     final used = <String>[];
     var all = true;
     for (final part in alternative.split(RegExp(r'\s+and\s+'))) {
@@ -284,20 +296,29 @@ String practiceCoachAnswer(String prompt) {
 }
 
 /// Watch verdicts in a fixed cycle: not yet, unsure, then the visible cue.
-String practiceWatchAnswer(int turn) => jsonEncode(switch (turn % 3) {
-  0 => {
-    'state': 'not_yet',
-    'direction': 'more',
-    'whatISee':
-        'Practice camera: the bread is on the board, nothing spread yet.',
-  },
-  1 => {'state': 'unsure', 'direction': 'none', 'whatISee': ''},
-  _ => {
-    'state': 'ready',
-    'direction': 'none',
-    'whatISee': 'Practice camera: both slices lie flat with room to spread.',
-  },
-});
+/// Watch verdicts in a fixed cycle: not yet, unsure, then the visible cue.
+/// Observations name the current step's [cue] when known.
+String practiceWatchAnswer(int turn, {String? cue}) {
+  final target = cue == null || cue.trim().isEmpty ? null : cue.trim();
+  String short(String v) => v.length <= 120 ? v : '${v.substring(0, 119)}…';
+  return jsonEncode(switch (turn % 3) {
+    0 => {
+      'state': 'not_yet',
+      'direction': 'more',
+      'whatISee': target == null
+          ? 'Practice camera: not at the step yet.'
+          : 'Practice camera: not yet at "${short(target)}".',
+    },
+    1 => {'state': 'unsure', 'direction': 'none', 'whatISee': ''},
+    _ => {
+      'state': 'ready',
+      'direction': 'none',
+      'whatISee': target == null
+          ? 'Practice camera: this looks like the step.'
+          : 'Practice camera: looks like "${short(target)}".',
+    },
+  });
+}
 
 /// Label check: allergens a typed label names literally. A photo prompt has
 /// no typed text, so the practice answer is "couldn't read".
@@ -551,9 +572,13 @@ class RehearsalLiveMedia extends DemoLiveMedia {
   RehearsalLiveMedia({
     this.interval = const Duration(milliseconds: 700),
     DateTime Function()? now,
+    this.onCameraStart,
   }) : _now = now ?? DateTime.now;
 
   final Duration interval;
+
+  /// Called when a camera-only capture (a new practice watch) starts.
+  final void Function()? onCameraStart;
   final DateTime Function() _now;
   final _frames = StreamController<CapturedFrame>.broadcast();
   Timer? _timer;
@@ -566,6 +591,7 @@ class RehearsalLiveMedia extends DemoLiveMedia {
 
   @override
   Future<void> startCameraOnly() async {
+    onCameraStart?.call();
     _timer?.cancel();
     _timer = Timer.periodic(interval, (_) {
       if (_frames.isClosed) return;

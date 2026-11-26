@@ -48,10 +48,15 @@ List<String> pantryUnusedItems(PantryResult result) {
 }
 
 /// Shown beside Record: voice clips can't be understood on this device.
-/// Says only what Record does (Codex #221): no promise about other paths.
+/// Says only what Record needs (Codex #221): no promise about other paths.
 const pantryVoiceDisclosure =
-    "A voice clip is sent online to Google's AI to be understood when you "
-    'tap Find my meal. Leaving Say it deletes the clip.';
+    'Voice lists need online processing: when you tap Find my meal, the clip '
+    "is sent to Google's AI. Leaving Say it deletes the clip.";
+
+/// The same, in a build where online processing is off.
+const pantryVoiceUnavailable =
+    'Voice lists need online processing, which is off in this build. Type '
+    'your list instead.';
 
 /// The catch-all when matching failed without a reason of its own.
 const pantryUnavailableMessage =
@@ -76,7 +81,11 @@ class PantryScreen extends StatefulWidget {
     this.header,
     this.headerActions,
     this.unavailableReason,
+    this.voiceOnline,
   });
+
+  /// Whether this build can process a voice clip online. Null when unknown
+  /// (the disclosure then states what Record needs without availability).
 
   final List<Recipe> recipes;
   final PantryClient client;
@@ -110,6 +119,7 @@ class PantryScreen extends StatefulWidget {
   /// Why AI help can't run here, in plain words, or null when it can or
   /// nobody knows. Read when matching fails without a reason (SS-089).
   final Future<String?> Function()? unavailableReason;
+  final bool? voiceOnline;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
@@ -274,6 +284,7 @@ class _PantryScreenState extends State<PantryScreen> {
   }
 
   Future<void> _selectMode(PantryMode mode) async {
+    final changed = mode != _mode;
     setState(() {
       // A clip never rides along unseen: leaving Say it deletes it.
       if (mode != PantryMode.say) {
@@ -286,8 +297,10 @@ class _PantryScreenState extends State<PantryScreen> {
       _mode = mode;
       _error = null;
     });
-    // Release capture when leaving the mode that needed it (Codex #221).
-    if (mode != PantryMode.scan || _mediaHasMic) await _stopMedia();
+    // Release capture when the mode changes, including a start still waiting
+    // for permission: stopping bumps the epoch so it never activates
+    // (Codex #221).
+    if (changed) await _stopMedia();
     if (mode == PantryMode.scan && !widget.isDemo && _photo == null) {
       await _ensureMedia();
     }
@@ -310,6 +323,11 @@ class _PantryScreenState extends State<PantryScreen> {
       return;
     }
     if (!await _ensureMedia(microphone: true) || !mounted) return;
+    // The cook may have left Say it while permission was pending.
+    if (_mode != PantryMode.say) {
+      await _stopMedia();
+      return;
+    }
     _media?.setMicrophoneMuted(false);
     setState(() {
       _audio = null;
@@ -376,7 +394,12 @@ class _PantryScreenState extends State<PantryScreen> {
     final submitted = _text.text;
     try {
       final result = await widget.client.identify(
-        PantryInput(text: submitted, photoJpeg: _photo, audioWav: _audio),
+        PantryInput(
+          text: submitted,
+          photoJpeg: _photo,
+          // Audio is sent only from Say it, where the clip is shown.
+          audioWav: _mode == PantryMode.say ? _audio : null,
+        ),
         widget.recipes,
       );
       if (!mounted) return;
@@ -946,16 +969,25 @@ class _PantryScreenState extends State<PantryScreen> {
           const SizedBox(height: 10),
           // Said before the cook records (Codex #221): the voice task asks
           // no further consent because this line is the disclosure.
-          const Row(
-            key: ValueKey('voice-cloud-disclosure'),
+          Row(
+            key: const ValueKey('voice-cloud-disclosure'),
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.cloud_outlined, size: 18, color: Color(0xFF5C4A2E)),
-              SizedBox(width: 8),
+              const Icon(
+                Icons.cloud_outlined,
+                size: 18,
+                color: Color(0xFF5C4A2E),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  pantryVoiceDisclosure,
-                  style: TextStyle(fontSize: 14, color: Color(0xFF5C4A2E)),
+                  widget.voiceOnline == false
+                      ? pantryVoiceUnavailable
+                      : pantryVoiceDisclosure,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF5C4A2E),
+                  ),
                 ),
               ),
             ],

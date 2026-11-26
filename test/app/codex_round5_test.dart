@@ -95,7 +95,8 @@ void main() {
 
   group('#1 the voice clip never rides along unseen', () {
     test('the disclosure promises nothing about other paths', () {
-      expect(pantryVoiceDisclosure, contains("sent online to Google's AI"));
+      expect(pantryVoiceDisclosure, startsWith('Voice lists need online'));
+      expect(pantryVoiceUnavailable, contains('off in this build'));
       expect(pantryVoiceDisclosure, isNot(contains('keep everything')));
       expect(
         pantryVoiceDisclosure,
@@ -143,7 +144,8 @@ void main() {
   test('#2 the switch says what it guards', () {
     final coach = privacyFeatures.firstWhere((f) => f.feature == 'coach_lite');
     expect(coach.label, 'Questions to Coach Lite');
-    expect(coach.detail, contains('Live chat and the Research button'));
+    expect(coach.detail, contains("doesn't cover Live chat or the Research"));
+    expect(coach.detail, isNot(contains('go online')));
   });
 
   test('#2 a follow-up result is not forwarded to Live once blocked', () async {
