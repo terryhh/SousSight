@@ -399,8 +399,11 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   }
 
   /// The digest covers the feature and every byte that could leave, so a
-  /// digest and session match is the whole test (plus "not yet used").
+  /// digest and session match is the whole test (plus "not yet used" and
+  /// "issued by this dispatcher's own gate": a grant from any other gate is
+  /// not the cook's answer to this prompt, so the cook is asked).
   bool _grantFits(ConsentGrant grant, _Run run) =>
+      _consent.issued(grant) &&
       !_spent.contains(grant) &&
       grant.ask.payloadDigest == run.digest &&
       grant.ask.sessionId == run.sessionId;

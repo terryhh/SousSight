@@ -46,9 +46,10 @@ const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 /// handed only what remains of that budget, and when the budget runs out the
 /// request is cancelled and `generate` throws
 /// `HybridException(HybridErrorCode.timeout)`; a late answer is dropped.
-/// [capabilities] waits at most [configureWait] (on web, configure includes
-/// an unbounded `import()`). A request that times out during startup is
-/// never forwarded.
+/// [capabilities] and [availability] take at most [configureWait] in all (on
+/// web, configure includes an unbounded `import()`); past that they report
+/// no local model, as for a missing bridge. A request that times out during
+/// startup is never forwarded.
 ///
 /// Routing waits for configuration too ([capabilities] awaits it), so a
 /// decision is made against the policy as it is once the backend is ready.
@@ -85,26 +86,37 @@ class ConfiguredHybridInference implements HybridInference {
   /// Completes when the startup configure has settled (either way).
   Future<void> get configured => _configured;
 
-  Future<void> _awaitConfigured(Duration limit) => _configured.timeout(
-    limit,
-    onTimeout: () => throw const HybridException(
-      HybridErrorCode.timeout,
-      'Hybrid inference was still starting up.',
-    ),
-  );
-
   @override
   Future<void> configure(HybridConfig config) => inner.configure(config);
 
+  /// Discovery ([capabilities], [availability]) is bounded as a whole by
+  /// [configureWait]: the wait for configure plus the backend's own answer
+  /// (on web, `availability` awaits the same `import()` as configure). Past
+  /// that it reports what a missing bridge reports, so no caller hangs and
+  /// no caller has to survive an exception to show the trust controls.
+  Future<T> _discover<T>(Future<T> Function() call, T missing) => _configured
+      .then((_) => call())
+      .timeout(
+        configureWait,
+        onTimeout: () {
+          debugPrint('Hybrid startup still pending; reporting no local model.');
+          return missing;
+        },
+      );
+
   @override
-  Future<HybridCapabilities> capabilities() async {
-    await _awaitConfigured(configureWait);
-    return inner.capabilities();
-  }
+  Future<HybridCapabilities> capabilities() =>
+      _discover(inner.capabilities, const HybridCapabilities.none());
 
   @override
   Future<HybridAvailability> availability({required bool withImage}) =>
-      inner.availability(withImage: withImage);
+      _discover(
+        () => inner.availability(withImage: withImage),
+        const HybridAvailability(
+          status: OnDeviceStatus.unavailable,
+          reason: 'bridge_unavailable',
+        ),
+      );
 
   /// Not awaited: on web the download must start inside the cook's tap.
   @override
@@ -287,6 +299,10 @@ class FramePreviewConsentGate extends ConsentGate {
   @override
   Future<ConsentGrant?> request(ConsentAsk ask) =>
       gate.requestWithPreview(ask, frame());
+
+  /// The prompt is [gate]'s, so its grants are [gate]'s.
+  @override
+  bool issued(ConsentGrant grant) => gate.issued(grant);
 }
 
 /// The dispatcher's Dart cloud adapter (§5 step 4): a cloud-only request

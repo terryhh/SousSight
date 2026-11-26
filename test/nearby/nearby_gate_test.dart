@@ -104,6 +104,24 @@ void main() {
       expect(h.client.offered, isTrue);
       expect(h.client.precheck(), isNull);
     });
+
+    test('a refused tap records exactly one unsent leg; precheck records '
+        'nothing (Codex P2)', () {
+      final h = _Harness();
+      expect(h.client.refuseIfBlocked(), isNull);
+      expect(h.ledger.entries, isEmpty, reason: 'allowed: nothing to record');
+
+      h.privacy.setLocalOnly(kNearbyFeature, true);
+      expect(h.client.precheck()?.message, nearbyKeptOnDeviceMessage);
+      expect(h.ledger.entries, isEmpty);
+      expect(h.client.refuseIfBlocked()?.message, nearbyKeptOnDeviceMessage);
+      final entry = h.ledger.entries.single;
+      expect(entry.leg.feature, kNearbyFeature);
+      expect(entry.leg.transferPermitted, isFalse);
+      expect(entry.leg.error, HybridErrorCode.blocked);
+      expect(entry.reportedSent, isFalse);
+      expect(h.requests, isEmpty);
+    });
   });
 
   group('"Keep Find food help on this device"', () {

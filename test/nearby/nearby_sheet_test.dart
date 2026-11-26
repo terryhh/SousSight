@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
@@ -284,6 +285,8 @@ void main() {
       );
       expect(find.text(nearbyKeptOnDeviceMessage), findsOneWidget);
       expect(located, 0);
+      // Every attempt is accounted for: the refused tap is one unsent leg.
+      expect(ledger.entries, hasLength(1));
 
       await tester.enterText(
         find.byKey(const ValueKey('nearby-area')),
@@ -295,7 +298,15 @@ void main() {
       );
       expect(find.text(nearbyKeptOnDeviceMessage), findsOneWidget);
       expect(sends, 0);
-      expect(ledger.entries, isEmpty, reason: 'nothing reached the sender');
+      // Codex P2: the blocked Search records its own unsent leg too.
+      expect(ledger.entries, hasLength(2));
+      for (final entry in ledger.entries) {
+        expect(entry.leg.feature, kNearbyFeature);
+        expect(entry.leg.transferPermitted, isFalse);
+        expect(entry.leg.error, HybridErrorCode.blocked);
+        expect(entry.reportedSent, isFalse);
+        expect(entry.pending, isFalse);
+      }
     });
 
     testWidgets('switch turned on while locating: refused at send time', (

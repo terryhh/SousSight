@@ -557,6 +557,52 @@ void main() {
         expect(h.bridge.requests, isEmpty);
       },
     );
+
+    test('a fitting grant from another gate is not the cook\'s answer: the '
+        'dispatcher\'s own gate is asked (Codex P1)', () async {
+      final h = _Harness();
+      final task = _photo('local_watch_cloud_check');
+      final ask = ConsentAsk(
+        feature: 'local_watch',
+        kinds: const {DataKind.image},
+        payloadDigest: hybridPayloadDigest(task),
+        sessionId: 's1',
+      );
+      // Right digest, right session, never used, but issued by a gate the
+      // dispatcher does not trust.
+      final foreign = _Consent().grantFor(ask);
+      expect(h.consent.issued(foreign), isFalse);
+      h.consent.answer = (_) async => null;
+      final declined = await h.dispatcher
+          .start(task, sessionId: 's1', grant: foreign)
+          .result;
+      expect(declined.blocked, RouteReason.consentDeclined);
+      expect(h.consent.asks, hasLength(1), reason: 'the cook was prompted');
+      expect(h.bridge.requests, isEmpty);
+
+      // When the cook allows it, the send goes ahead on the trusted grant.
+      h.consent.answer = null;
+      h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+      final allowed = await h.dispatcher
+          .start(task, sessionId: 's1', grant: foreign)
+          .result;
+      expect(allowed.text, isNotNull);
+      expect(h.consent.asks, hasLength(2));
+      expect(h.bridge.requests, hasLength(1));
+    });
+
+    test(
+      'a gate that answers with another gate\'s grant is a decline',
+      () async {
+        final h = _Harness();
+        final task = _photo('local_watch_cloud_check');
+        final other = _Consent();
+        h.consent.answer = (ask) async => other.grantFor(ask);
+        final r = await h.run(task);
+        expect(r.blocked, RouteReason.consentDeclined);
+        expect(h.bridge.requests, isEmpty);
+      },
+    );
   });
 
   test(

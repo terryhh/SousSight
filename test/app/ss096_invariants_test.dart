@@ -99,6 +99,23 @@ HybridRequest _request(Duration timeout) => HybridRequest(
   ),
 );
 
+/// Web-shaped stall: configure, capabilities and availability all wait on
+/// one SDK `import()` that never resolves.
+class _SharedImport extends FakeHybridInference {
+  final _import = Completer<void>();
+
+  @override
+  Future<void> configure(HybridConfig config) => _import.future;
+
+  @override
+  Future<HybridCapabilities> capabilities() =>
+      _import.future.then((_) => capabilitiesValue);
+
+  @override
+  Future<HybridAvailability> availability({required bool withImage}) =>
+      _import.future.then((_) => textAvailability);
+}
+
 class _FailingStart extends FakeHybridInference {
   @override
   Future<void> configure(HybridConfig config) =>
@@ -125,6 +142,7 @@ class _CountingCloud implements CloudFallbackSender {
 class _Gate extends ConsentGate {
   @override
   Future<ConsentGrant?> request(ConsentAsk ask) async => issue(ask);
+  ConsentGrant grantFor(ConsentAsk ask) => issue(ask);
 }
 
 String _scan() => jsonEncode({
@@ -170,23 +188,53 @@ void main() {
       expect(inner.requests, isEmpty);
     });
 
-    test('capabilities throws timeout after configureWait', () async {
+    test('after configureWait, discovery reports no local model instead '
+        'of throwing (Codex P2)', () async {
       final inner = _SlowStart();
       final configured = ConfiguredHybridInference(
         inner,
         const HybridConfig(cloudModel: 'm'),
         configureWait: const Duration(milliseconds: 20),
       );
-      await expectLater(
-        configured.capabilities(),
-        throwsA(
-          isA<HybridException>().having(
-            (e) => e.code,
-            'code',
-            HybridErrorCode.timeout,
-          ),
-        ),
+      final caps = await configured.capabilities().timeout(
+        const Duration(seconds: 5),
       );
+      expect(caps.platform, 'none');
+      expect(caps.supportedModes, isEmpty);
+      final text = await configured
+          .availability(withImage: false)
+          .timeout(const Duration(seconds: 5));
+      expect(text.status, OnDeviceStatus.unavailable);
+    });
+
+    // Codex P2: on web, availability awaits the same import() as configure.
+    // Bounding only capabilities left the dispatcher hanging in availability.
+    test('a stalled import shared by configure and availability cannot hang '
+        'a dispatcher caller', () async {
+      final inner = _SharedImport();
+      final dispatcher = DefaultHybridDispatcher(
+        inference: ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          configureWait: const Duration(milliseconds: 10),
+        ),
+        privacy: InMemoryPrivacyPreferences(),
+        cloudRoutes: const CloudRoutes({}),
+        consent: _Gate(),
+        ledger: InferenceLedger(sessionId: 's'),
+      );
+      final watch = Stopwatch()..start();
+      final result = await dispatcher
+          .start(
+            _request(const Duration(milliseconds: 25)).task,
+            sessionId: 's',
+          )
+          .result
+          .timeout(const Duration(seconds: 2));
+      expect(watch.elapsed, lessThan(const Duration(milliseconds: 300)));
+      expect(result.ok, isFalse);
+      expect(result.blocked, RouteReason.cloudNotApproved);
+      expect(inner.requests, isEmpty);
     });
 
     test(
@@ -599,6 +647,66 @@ void main() {
       expect(w.cloud.sends, 0);
     });
 
+    // Codex P2: the switch turned on while the voice request was in flight.
+    // The bridge leg failed with an unknown upload; the adapter retry was
+    // then blocked by local-only. The clip may have left, so the cook must
+    // not be told it "stayed on this device".
+    ({
+      FakeHybridInference inference,
+      HybridPantryClient client,
+      _CountingCloud cloud,
+    })
+    flipMidFlight() {
+      final w = wired(keepLocal: false);
+      final prefs = w.hybrid.privacy as InMemoryPrivacyPreferences;
+      w.inference.script.add((HybridRequest r) {
+        prefs.setLocalOnly('pantry_scan', true);
+        return const HybridException(HybridErrorCode.unavailable, 'no bridge');
+      });
+      final client = HybridPantryClient(
+        dispatcher: w.hybrid.dispatcher,
+        sessionId: () => w.hybrid.sessionId,
+      );
+      return (inference: w.inference, client: client, cloud: w.cloud);
+    }
+
+    test('switch turned on mid-flight after an unknown upload: no '
+        '"stayed on this device" notice', () async {
+      final f = flipMidFlight();
+      f.inference.enqueueText(_scan());
+      final result = await f.client.identify(
+        PantryInput(text: 'black beans', audioWav: audio),
+        recipes,
+      );
+      expect(f.inference.requests.where(_hasAudio), hasLength(1));
+      expect(f.cloud.sends, 0, reason: 'the adapter retry was blocked');
+      final voiceLegs = result.legs.where(
+        (l) => l.feature == kPantryVoiceFeature,
+      );
+      expect(voiceLegs, isNotEmpty);
+      expect(result.notice, isNot(kPantryVoiceKeptLocalNotice));
+      expect(result.notice, kPantryVoiceMaybeSentNotice);
+    });
+
+    test('switch turned on mid-flight, voice only: the error does not claim '
+        'the clip stayed here', () async {
+      final f = flipMidFlight();
+      await expectLater(
+        f.client.identify(PantryInput(audioWav: audio), recipes),
+        throwsA(
+          isA<PantryException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              isNot(contains('stayed on this device')),
+              contains('may have reached Google cloud AI'),
+            ),
+          ),
+        ),
+      );
+      expect(f.cloud.sends, 0);
+    });
+
     test('switch off: the labelled clip goes to the cloud as before', () async {
       final w = wired(keepLocal: false);
       w.inference
@@ -632,7 +740,32 @@ void main() {
       payloadDigest: 'digest',
       sessionId: 's1',
     );
-    final grant = await _Gate().request(ask);
+    final gate = _Gate();
+    final grant = await gate.request(ask);
     expect(grant!.ask, same(ask));
+    expect(gate.issued(grant), isTrue);
+    expect(_Gate().issued(grant), isFalse, reason: 'bound to its issuer');
   });
+
+  test(
+    'the frame preview gate vouches for grants from the dialog it shows',
+    () {
+      final dialog = _VouchingDialog();
+      final preview = FramePreviewConsentGate(dialog, () => null);
+      const ask = ConsentAsk(
+        feature: 'local_watch_cloud_check',
+        kinds: {DataKind.image},
+        payloadDigest: 'd',
+        sessionId: 's1',
+      );
+      expect(preview.issued(dialog.grantFor(ask)), isTrue);
+      expect(preview.issued(_Gate().grantFor(ask)), isFalse);
+    },
+  );
+}
+
+class _VouchingDialog extends DialogConsentGate {
+  _VouchingDialog()
+    : super(navigatorKey: GlobalKey<NavigatorState>(), cloudModel: 'm');
+  ConsentGrant grantFor(ConsentAsk ask) => issue(ask);
 }

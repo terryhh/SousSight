@@ -49,10 +49,14 @@ class ConsentAsk {
 }
 
 /// The cook's "allow once" for one [ConsentAsk]. Only a [ConsentGate] can
-/// issue one (through [ConsentGate.issue]); feature code cannot make its own.
-class ConsentGrant {
-  const ConsentGrant._(this.ask);
+/// issue one (through [ConsentGate.issue]); feature code cannot make, extend
+/// or implement its own. Each grant remembers the gate that issued it, and
+/// the dispatcher accepts only grants its own gate issued
+/// ([ConsentGate.issued]).
+final class ConsentGrant {
+  const ConsentGrant._(this.ask, this._issuer);
   final ConsentAsk ask;
+  final ConsentGate _issuer;
 }
 
 abstract class ConsentGate {
@@ -65,7 +69,11 @@ abstract class ConsentGate {
   /// Only a [ConsentGate] subclass may call this.
   @protected
   @nonVirtual
-  ConsentGrant issue(ConsentAsk ask) => ConsentGrant._(ask);
+  ConsentGrant issue(ConsentAsk ask) => ConsentGrant._(ask, this);
+
+  /// True when [grant] came from this gate's prompt. A gate that shows its
+  /// prompt through another gate overrides this to ask that gate.
+  bool issued(ConsentGrant grant) => identical(grant._issuer, this);
 }
 
 enum Provenance { sdkOnDevice, sdkCloud, cloudAdapter, simulated, unknown }

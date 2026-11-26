@@ -142,8 +142,15 @@ abstract interface class GatedNearbyClient implements NearbyClient {
   /// Whether this build approves the nearby cloud route at all.
   bool get offered;
 
-  /// Why a search could not be sent right now, or null. Read live.
+  /// Why a search could not be sent right now, or null. Read live; records
+  /// nothing.
   NearbyException? precheck();
+
+  /// [precheck] for a cook's tap: when blocked, the refused attempt is
+  /// written to the session ledger as one unsent leg (every attempt is
+  /// accounted for), and the reason is returned. Nothing is sent and no
+  /// location is requested.
+  NearbyException? refuseIfBlocked();
 }
 
 /// Whether to show a nearby entry point for [client].
@@ -339,15 +346,24 @@ class GeminiNearbyClient implements GatedNearbyClient {
   NearbyException? precheck() => gate.check();
 
   @override
+  NearbyException? refuseIfBlocked() {
+    final blocked = gate.check();
+    if (blocked != null) _recordRefused(blocked);
+    return blocked;
+  }
+
+  void _recordRefused(NearbyException blocked) => gate.recorder.rejectedLocally(
+    kNearbyFeature,
+    kNearbyKinds,
+    blocked.reason == NearbyFailure.offline
+        ? HybridErrorCode.network
+        : HybridErrorCode.blocked,
+  );
+
+  @override
   Future<NearbyResult> find(NearbyQuery query) async {
     if (gate.check() case final blocked?) {
-      gate.recorder.rejectedLocally(
-        kNearbyFeature,
-        kNearbyKinds,
-        blocked.reason == NearbyFailure.offline
-            ? HybridErrorCode.network
-            : HybridErrorCode.blocked,
-      );
+      _recordRefused(blocked);
       throw blocked;
     }
     try {

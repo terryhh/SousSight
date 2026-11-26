@@ -89,10 +89,13 @@ class _NearbyPanelState extends State<NearbyPanel> {
   };
 
   /// Shows why a search cannot be sent now, before asking for location or
-  /// sending anything. The client checks again at send time.
+  /// sending anything; the refused tap is recorded as one unsent leg. The
+  /// client checks again at send time.
   bool _blocked() {
     final client = widget.client;
-    final blocked = client is GatedNearbyClient ? client.precheck() : null;
+    final blocked = client is GatedNearbyClient
+        ? client.refuseIfBlocked()
+        : null;
     if (blocked == null) return false;
     _request++;
     setState(() {

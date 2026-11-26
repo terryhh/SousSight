@@ -23,7 +23,7 @@ Future<void> openOnDeviceAi(BuildContext context, HybridRuntime hybrid) =>
     );
 
 Future<void> openLedger(BuildContext context, HybridRuntime hybrid) async {
-  final caps = await hybrid.inference.capabilities();
+  final caps = await safeCapabilities(hybrid.inference);
   if (!context.mounted) return;
   await showLedgerSheet(
     context,
@@ -113,9 +113,9 @@ class _HybridReadinessCardState extends State<HybridReadinessCard> {
   Future<void> _refresh() async {
     final load = ++_load;
     final inference = widget.hybrid.inference;
-    final caps = await inference.capabilities();
-    final text = await inference.availability(withImage: false);
-    final image = await inference.availability(withImage: true);
+    final (capabilities: caps, :text, :image) = await discoverOnDevice(
+      inference,
+    );
     if (!mounted || load != _load) return;
     setState(() {
       _input = ReadinessInput(
