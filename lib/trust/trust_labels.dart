@@ -75,11 +75,13 @@ String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
     'Simulated for this rehearsal. No model ran and nothing was sent.',
 };
 
+/// One icon per outcome. On-device uses the same chip glyph as the
+/// "On-device AI" button so the two read as one idea.
 IconData outcomeIcon(LegOutcome outcome) => switch (outcome) {
-  LegOutcome.onDevice => Icons.phone_android,
-  LegOutcome.cloudSdk || LegOutcome.cloudAdapter => Icons.cloud_outlined,
-  LegOutcome.maybeSent => Icons.help_outline,
-  LegOutcome.notFinishedLocal => Icons.do_not_disturb_on_outlined,
+  LegOutcome.onDevice => Icons.memory,
+  LegOutcome.cloudSdk || LegOutcome.cloudAdapter => Icons.cloud,
+  LegOutcome.maybeSent => Icons.question_mark,
+  LegOutcome.notFinishedLocal => Icons.block,
   LegOutcome.simulated => Icons.science_outlined,
 };
 
@@ -130,6 +132,12 @@ const _kindOrder = [
   DataKind.audio,
   DataKind.location,
   DataKind.text,
+];
+
+/// [kinds] in display order: photo, voice clip, location, text.
+List<DataKind> orderedDataKinds(Set<DataKind> kinds) => [
+  for (final k in _kindOrder)
+    if (kinds.contains(k)) k,
 ];
 
 /// "photo and text", "photo, voice clip and text".
