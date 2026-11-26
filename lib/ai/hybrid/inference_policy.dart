@@ -379,6 +379,11 @@ int estimateLocalTokens(HybridTask task, {required int imageTokenEstimate}) {
 /// Used when the bridge reports no local limits.
 const defaultImageTokenEstimate = 1000;
 
+/// Why [input] can never run on this device whatever the local model's
+/// status (audio, no local model, unsupported image, too large, language);
+/// null when it could. [decideRoute] ignores the status in these cases.
+RouteReason? localHardLimit(RouteInput input) => _localHardLimit(input);
+
 RouteReason? _localHardLimit(RouteInput input) {
   final local = input.capabilities.local;
   if (input.hasAudio) return RouteReason.audioNeedsCloud;

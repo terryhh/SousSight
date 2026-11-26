@@ -888,6 +888,107 @@ void main() {
       },
     );
   });
+
+  group('payloads that rule out a local run do not wait for availability', () {
+    DefaultHybridDispatcher dispatcher(
+      HybridInference bridge, {
+      _Privacy? privacy,
+      String routes = 'hybridFallback',
+    }) => DefaultHybridDispatcher(
+      inference: bridge,
+      privacy: privacy ?? _Privacy(),
+      cloudRoutes: CloudRoutes.parse(routes),
+      consent: _Consent(),
+      ledger: InferenceLedger(sessionId: 's1'),
+      newId: () => 'id-1',
+    );
+
+    HybridTask voice() => HybridTask(
+      feature: 'pantry_voice',
+      parts: [
+        const HybridText('What did I say?'),
+        HybridInlineData(Uint8List.fromList([1, 2, 3]), 'audio/wav'),
+      ],
+      maxOutputTokens: 256,
+      timeout: const Duration(seconds: 10),
+    );
+
+    test('audio goes to the cloud without asking for local status', () async {
+      final bridge = _StalledAvailability(
+        FakeHybridInference(capabilities: fakeIosCapabilities)
+          ..enqueueText('two eggs'),
+      );
+      final r = await dispatcher(bridge)
+          .start(voice(), sessionId: 's1')
+          .result
+          .timeout(const Duration(seconds: 2));
+      expect(bridge.asked, 0);
+      expect(r.text, 'two eggs');
+      expect(bridge.inner.requests.single.mode, HybridMode.onlyInCloud);
+    });
+
+    test('send-time privacy still blocks the audio send', () async {
+      final bridge = _StalledAvailability(
+        FakeHybridInference(capabilities: fakeIosCapabilities),
+      );
+      final privacy = _Privacy()..localOnlyFeatures.add('pantry_voice');
+      final r = await dispatcher(bridge, privacy: privacy)
+          .start(voice(), sessionId: 's1')
+          .result
+          .timeout(const Duration(seconds: 2));
+      expect(bridge.asked, 0);
+      expect(r.blocked, RouteReason.localOnlySetting);
+      expect(bridge.inner.requests, isEmpty);
+
+      final unapproved = await dispatcher(bridge, routes: '')
+          .start(voice(), sessionId: 's1')
+          .result
+          .timeout(const Duration(seconds: 2));
+      expect(unapproved.blocked, RouteReason.cloudNotApproved);
+      expect(bridge.inner.requests, isEmpty);
+    });
+
+    test('a text request that could run locally still waits for status', () {
+      final bridge = _StalledAvailability(
+        FakeHybridInference(capabilities: fakeIosCapabilities),
+      );
+      dispatcher(bridge).start(_text('recipe_draft'), sessionId: 's1');
+      return pumpEventQueue().then((_) {
+        expect(bridge.asked, 1);
+        expect(bridge.inner.requests, isEmpty);
+      });
+    });
+
+    test('localHardLimit matches the policy', () {
+      RouteInput input({bool audio = false}) => RouteInput(
+        feature: 'pantry_voice',
+        hasImage: false,
+        hasAudio: audio,
+        estimatedTokens: 10,
+        languageTag: 'en',
+        localOnly: false,
+        online: true,
+        cloudApproved: true,
+        capabilities: fakeIosCapabilities,
+        status: OnDeviceStatus.available,
+      );
+      expect(localHardLimit(input(audio: true)), RouteReason.audioNeedsCloud);
+      expect(localHardLimit(input()), isNull);
+    });
+  });
+}
+
+/// Availability never answers (a cold Android check stuck in its probe);
+/// counts how often it was asked.
+class _StalledAvailability extends _SlowBridge {
+  _StalledAvailability(FakeHybridInference inner)
+    : super(inner, Future<void>.value(), forwardCancel: true);
+  int asked = 0;
+  @override
+  Future<HybridAvailability> availability({required bool withImage}) {
+    asked++;
+    return Completer<HybridAvailability>().future;
+  }
 }
 
 /// Holds every generate until [gate] completes. Without [forwardCancel] it

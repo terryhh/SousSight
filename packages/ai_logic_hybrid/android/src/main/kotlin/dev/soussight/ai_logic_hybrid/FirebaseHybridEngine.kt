@@ -161,8 +161,18 @@ class FirebaseHybridEngine(
         }
     }
 
-    override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult {
+    /** [InputRules] plus the image header: decodable, within the pixel limit. No SDK call. */
+    override fun validate(request: GenerateRequest) {
         InputRules.validate(request)
+        for (image in request.images) {
+            val (w, h) = codec.bounds(image.bytes)
+                ?: throw HybridError(HybridErrorCode.UNSUPPORTED_INPUT, "Image could not be decoded")
+            InputRules.checkDimensions(w, h)
+        }
+    }
+
+    override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult {
+        validate(request)
         val schema = request.jsonSchema
         // Converted for every mode so an unsupported schema fails the same way everywhere; only
         // the cloud provider reads it (the on-device provider ignores generationConfig).
@@ -238,6 +248,8 @@ class FirebaseHybridEngine(
         return GenerateResult(text, source, response.modelVersion?.takeIf { it.isNotBlank() })
     }
 
+    // Synchronized: auto's model check calls this off the main thread.
+    @Synchronized
     private fun extension(config: HybridConfig, cache: Boolean = true): OnDeviceExtension? {
         val key = config.cloudModel to config.androidModel
         if (cache) statusModel?.takeIf { statusModelKey == key }?.let { return it.onDeviceExtension }

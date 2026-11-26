@@ -206,5 +206,10 @@ internal class PluginTest {
         val config = HybridConfig("m", AndroidModelOption.AUTO, listOf("en"))
         assertNull(plain.modelOption(config), "auto is never reported as a model")
         assertEquals(AndroidModelOption.PREVIEW_FAST, plain.modelOption(config.copy(androidModel = AndroidModelOption.PREVIEW_FAST)))
+        // The default validation is the decode-free input rules.
+        fun req(vararg parts: HybridPart) = GenerateRequest("r", HybridMode.ONLY_ON_DEVICE, "f", null, parts.toList(), null, 8, 1_000)
+        plain.validate(req(HybridPart.Text("hi")))
+        val audio = kotlin.test.assertFailsWith<HybridError> { plain.validate(req(HybridPart.InlineData(ByteArray(1), "audio/wav"))) }
+        assertEquals(HybridErrorCode.UNSUPPORTED_INPUT, audio.code)
     }
 }

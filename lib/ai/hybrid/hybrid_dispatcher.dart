@@ -95,31 +95,38 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       const HybridCapabilities.none(),
     );
     if (op.cancelled) return run.cancelled();
-    final availability = await _safe(
-      () => _inference.availability(withImage: run.hasImage),
-      const HybridAvailability(status: OnDeviceStatus.unavailable),
+    // Settings are read when called, so the input used for the decision is
+    // built after the availability wait, never from a snapshot taken before.
+    RouteInput input(OnDeviceStatus status) => RouteInput(
+      feature: task.feature,
+      hasImage: run.hasImage,
+      hasAudio: task.hasAudio,
+      estimatedTokens: estimateLocalTokens(
+        task,
+        imageTokenEstimate:
+            caps.local?.imageTokenEstimate ?? defaultImageTokenEstimate,
+      ),
+      languageTag: _language(),
+      localOnly: localOnlyFor(_privacy, task.feature),
+      online: _isOnline(),
+      cloudApproved: _routes.allows(CloudRoute.hybridFallback),
+      capabilities: caps,
+      status: status,
+      remote: _remote(),
     );
+    // When the payload itself rules out a local run (audio, too large, ...),
+    // the local model's status cannot change the route: don't wait for it
+    // (on Android a cold check can take seconds).
+    const notChecked = OnDeviceStatus.unavailable;
+    final status = localHardLimit(input(notChecked)) != null
+        ? notChecked
+        : (await _safe(
+            () => _inference.availability(withImage: run.hasImage),
+            const HybridAvailability(status: OnDeviceStatus.unavailable),
+          )).status;
     if (op.cancelled) return run.cancelled();
 
-    final decision = decideRoute(
-      RouteInput(
-        feature: task.feature,
-        hasImage: run.hasImage,
-        hasAudio: task.hasAudio,
-        estimatedTokens: estimateLocalTokens(
-          task,
-          imageTokenEstimate:
-              caps.local?.imageTokenEstimate ?? defaultImageTokenEstimate,
-        ),
-        languageTag: _language(),
-        localOnly: localOnlyFor(_privacy, task.feature),
-        online: _isOnline(),
-        cloudApproved: _routes.allows(CloudRoute.hybridFallback),
-        capabilities: caps,
-        status: availability.status,
-        remote: _remote(),
-      ),
-    );
+    final decision = decideRoute(input(status));
     final mode = decision.mode;
     if (mode == null) {
       return DispatchResult(legs: const [], blocked: decision.reason);
