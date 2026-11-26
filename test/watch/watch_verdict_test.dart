@@ -129,4 +129,29 @@ void main() {
       }
     }
   });
+
+  test('past the cue says to take the pan off the heat first', () {
+    WatchVerdict verdict(WatchVerdictSource source) => WatchVerdict(
+      state: WatchState.notYet,
+      direction: WatchDirection.less,
+      whatISee: 'Dark edges.',
+      watchId: 'w',
+      stepId: 'a',
+      sessionId: 's',
+      frameCapturedAt: DateTime(2026),
+      source: source,
+    );
+    expect(
+      verdict(WatchVerdictSource.onDevice).message,
+      "It may be past the cue. If it's on the heat, slide the pan off the "
+      'heat, then look. I can see: Dark edges.',
+    );
+    expect(
+      verdict(WatchVerdictSource.cloud).message,
+      startsWith(
+        'It may be past the cue (cloud check of one photo). '
+        "If it's on the heat, slide the pan off the heat, then look.",
+      ),
+    );
+  });
 }

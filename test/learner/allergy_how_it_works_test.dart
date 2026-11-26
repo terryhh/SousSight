@@ -88,6 +88,60 @@ void main() {
       expect(recipeAllergens(_allergenFree), isEmpty);
     });
 
+    test('allergen swap lines cover only allergen ingredients', () {
+      final recipe = Recipe(
+        id: _optionalOnly.id,
+        version: 1,
+        title: _optionalOnly.title,
+        summary: _optionalOnly.summary,
+        ingredients: [
+          ..._optionalOnly.ingredients,
+          const Ingredient(id: 'salt', name: 'Salt', qty: 'a pinch'),
+        ],
+        equipment: const [],
+        steps: _optionalOnly.steps,
+        checkpoints: const [],
+        reviewedSubstitutions: const [
+          ReviewedSubstitution(
+            ingredientId: 'butter',
+            substitute: 'Olive oil',
+            note: ' Check the label. ',
+            approvedBy: 'Recipe reviewer',
+          ),
+          ReviewedSubstitution(
+            ingredientId: 'bread',
+            substitute: 'Rice cake',
+            note: '',
+            approvedBy: 'Recipe reviewer',
+          ),
+          ReviewedSubstitution(
+            ingredientId: 'salt',
+            substitute: 'Herbs',
+            note: 'No allergen here.',
+            approvedBy: 'Recipe reviewer',
+          ),
+        ],
+        adjustmentLabels: const {},
+      );
+      expect(allergenSwapLines(recipe), [
+        'Butter -> Olive oil: Check the label.',
+        'Bread -> Rice cake.',
+      ]);
+      expect(allergenSwapLines(_allergenFree), isEmpty);
+      // No reviewed swap: the line has no swaps clause.
+      expect(
+        allergyContextLine(_optionalOnly, const []),
+        isNot(contains('Reviewed swaps')),
+      );
+      expect(
+        allergyContextLine(recipe, const []),
+        contains(
+          'Reviewed swaps: Butter -> Olive oil: Check the label. '
+          'Bread -> Rice cake. Before any other step guidance',
+        ),
+      );
+    });
+
     test('recognises a saved allergy answer', () {
       expect(hasAllergyAnswer(['Pan is hot. Answer from cook: yes']), isFalse);
       expect(
@@ -119,10 +173,27 @@ void main() {
       final context = cook.cookingContext;
       expect(context, contains('Recipe allergens: wheat, peanut.'));
       expect(context, contains('use ask_cook once'));
-      expect(context, contains('research_cooking for a safe substitution'));
+      expect(context, contains('research_cooking for a substitution'));
+      expect(context, isNot(contains('safe substitution')));
+      expect(
+        context,
+        contains(
+          'remind the cook to read labels and use a clean knife, plate and '
+          'board to avoid cross-contact; never call a swap allergen-free',
+        ),
+      );
       expect(
         context,
         contains('Never claim the camera can verify allergen absence'),
+      );
+      // The reviewed peanut swap reaches the coach with its label note.
+      expect(
+        context,
+        contains(
+          'Reviewed swaps: Peanut butter -> Sunflower seed butter: Use a '
+          'clean knife and plate. Some brands are made alongside peanuts — '
+          'check the label.',
+        ),
       );
       // The opening workspace instruction is still present.
       expect(context, contains('call show_cooking_ui'));
@@ -187,7 +258,9 @@ void main() {
       () => loadBundledRecipe('peanut_butter_sandwich_v1'),
     ))!;
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: AllergenChip(recipe: sandwich))),
+      MaterialApp(
+        home: Scaffold(body: AllergenChip(recipe: sandwich)),
+      ),
     );
     final node = tester.getSemantics(
       find.bySemanticsLabel(RegExp('Allergens. Contains: wheat, peanut')),

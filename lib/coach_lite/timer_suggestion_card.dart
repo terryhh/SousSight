@@ -89,6 +89,14 @@ class _TimerSuggestionCardState extends State<TimerSuggestionCard> {
                           color: foreground,
                         ),
                       ),
+                      if (s.capped)
+                        Text(
+                          coachLiteTimerCapNote,
+                          key: const ValueKey('timer-cap-note'),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: foreground,
+                          ),
+                        ),
                     ],
                   ),
                 ),
