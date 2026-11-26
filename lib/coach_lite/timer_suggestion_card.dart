@@ -55,6 +55,12 @@ class _TimerSuggestionCardState extends State<TimerSuggestionCard> {
                     'Suggested timer · ${duration(s.seconds)}',
                     style: theme.textTheme.bodySmall,
                   ),
+                  if (s.capped)
+                    Text(
+                      coachLiteTimerCapNote,
+                      key: const ValueKey('timer-cap-note'),
+                      style: theme.textTheme.bodySmall,
+                    ),
                 ],
               ),
             ),

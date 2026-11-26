@@ -59,14 +59,25 @@ class CoachLiteStamp {
   String toString() => 'CoachLiteStamp($sessionId, $epoch, $stepId, $sequence)';
 }
 
+/// Shown when a suggested timer was longer than the app allows.
+const coachLiteTimerCapNote = 'Timer capped at 60 minutes — check the recipe';
+
 /// A timer the model suggested. The app clamps it and shows its own control.
 class CoachLiteTimerSuggestion {
-  const CoachLiteTimerSuggestion({required this.label, required this.seconds});
+  const CoachLiteTimerSuggestion({
+    required this.label,
+    required this.seconds,
+    this.capped = false,
+  });
 
   final String label;
 
   /// Always within [coachLiteMinTimerSeconds]..[coachLiteMaxTimerSeconds].
   final int seconds;
+
+  /// True when the model asked for more than [coachLiteMaxTimerSeconds]; the
+  /// card then says so ([coachLiteTimerCapNote]) instead of capping silently.
+  final bool capped;
 
   /// Null when the suggestion is unusable (no label, no number).
   static CoachLiteTimerSuggestion? fromModel(Object? raw) {
@@ -82,6 +93,7 @@ class CoachLiteTimerSuggestion {
         coachLiteMinTimerSeconds,
         coachLiteMaxTimerSeconds,
       ),
+      capped: seconds.round() > coachLiteMaxTimerSeconds,
     );
   }
 }
@@ -442,6 +454,7 @@ class CoachLite {
         stamp: stamp,
         status: status,
         kind: kind,
+        question: question,
         modelComponents: modelComponents,
         timer: timer,
         legs: legs,
@@ -653,15 +666,62 @@ List<Map<String, dynamic>> _fallback(RecipeStep step, String? note) {
   ];
 }
 
+/// The doneness and temperature note, and the note for any other safety
+/// question.
 const coachLiteSafetyNotice =
     "Neither the camera nor this coach can confirm doneness, internal "
     'temperature, freshness or allergens. Check with a food thermometer and '
     'trusted guidance.';
 
+/// Allergen and label questions: a thermometer does not help here.
+const coachLiteAllergenNotice =
+    "I can't confirm a food is free of an allergen. Read the package label "
+    'and keep tools separate.';
+
+/// Expiry, spoilage and freshness questions.
+const coachLiteFreshnessNotice =
+    "I can't judge freshness from here. When in doubt, throw it out.";
+
+final _allergenTopic = RegExp(
+  r'\b(allerg\w*|gluten\w*|celiac|coeliac|(nut|peanut|dairy|egg|milk|wheat|'
+  r'soy|sesame)[- ]free|contains?|labels?|ingredients? list|'
+  r'cross[- ]contact|cross[- ]contaminat\w*)\b',
+  caseSensitive: false,
+);
+final _freshnessTopic = RegExp(
+  r'\b(expir\w*|spoil\w*|gone bad|go bad|goes bad|gone off|mou?ldy?|'
+  r'smells? (off|funny|bad|weird)|stale|rancid|fresh\w*|best before|'
+  r'use[- ]by|sell[- ]by|leftovers?|how long can|how long does|'
+  r'refrigerat\w*|fridge|freezer)\b',
+  caseSensitive: false,
+);
+final _donenessTopic = RegExp(
+  r'\b(done|doneness|cooked through|undercooked|under-cooked|raw|'
+  r'internal temp\w*|temperature|thermometer|degrees|reheat\w*|pink)\b|°',
+  caseSensitive: false,
+);
+
+/// The app's safety note for [question], chosen by topic: allergen and label
+/// questions get the label note, expiry and spoilage questions the freshness
+/// note, and doneness or temperature questions the thermometer note. A
+/// question on several topics gets each note; anything else gets
+/// [coachLiteSafetyNotice]. None of them certifies anything.
+String coachLiteSafetyNoteFor(String question) {
+  final allergen = _allergenTopic.hasMatch(question);
+  final freshness = _freshnessTopic.hasMatch(question);
+  final doneness = _donenessTopic.hasMatch(question);
+  return [
+    if (allergen) coachLiteAllergenNotice,
+    if (freshness) coachLiteFreshnessNotice,
+    if (doneness || !(allergen || freshness)) coachLiteSafetyNotice,
+  ].join(' ');
+}
+
 CoachLiteAnswer _answer({
   required CoachLiteStamp stamp,
   required CoachLiteStatus status,
   required CoachLiteQuestionKind kind,
+  required String question,
   required List<Map<String, dynamic>> modelComponents,
   required CoachLiteTimerSuggestion? timer,
   required List<InferenceLeg> legs,
@@ -676,6 +736,7 @@ CoachLiteAnswer _answer({
   components: _withNotices(
     modelComponents,
     kind: kind,
+    question: question,
     legs: legs,
     researchAllowed: researchAllowed,
     sourcesUnavailable: sourcesUnavailable,
@@ -716,6 +777,7 @@ String coachLiteSourcesSentence(CoachLiteSourcesUnavailable reason) =>
 List<Map<String, dynamic>> _withNotices(
   List<Map<String, dynamic>> components, {
   required CoachLiteQuestionKind kind,
+  required String question,
   required List<InferenceLeg> legs,
   required bool researchAllowed,
   required CoachLiteSourcesUnavailable? sourcesUnavailable,
@@ -744,7 +806,7 @@ List<Map<String, dynamic>> _withNotices(
         'id': 'app_safety',
         'component': 'stepCue',
         'title': 'Check for yourself',
-        'body': coachLiteSafetyNotice,
+        'body': coachLiteSafetyNoteFor(question),
       },
   ];
   if (notices.isEmpty) return components;

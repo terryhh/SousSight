@@ -41,6 +41,13 @@ const kThermometerDisclaimer =
 const kHeatDisclaimer =
     "Judge this yourself; the camera can't confirm doneness or food safety.";
 
+/// Opens every thermometer note on a heated meat, poultry, fish or egg step:
+/// colour is never the doneness test, whatever the model's cue said.
+const kColourNotDoneness = "Colour and clear juices don't show doneness.";
+
+/// Shown when a drafted timer was longer than the app allows.
+const kTimerCapNote = 'Timer capped at 60 minutes — check the recipe.';
+
 const _minIngredients = 2;
 const _maxIngredients = 12;
 const _minSteps = 3;
@@ -78,6 +85,10 @@ Write 3 to 7 steps. Each step has a short title, a short instruction, and a
 VISIBLE cue the cook can judge by eye (texture, color, coverage, bubbling).
 Cues describe what to look for; never certify doneness, internal
 temperature, or food safety, and never say the camera can confirm it.
+For meat, poultry, fish and eggs, never use colour or 'juices run clear' as
+the doneness test; the cue says to check with a thermometer — poultry
+165°F/74°C, ground meat 160°F/71°C, fish 145°F/63°C, egg dishes 160°F/71°C.
+Dried beans: soak, drain, then boil in fresh water.
 Use timerSeconds (60 to 3600) only for real waiting or heating; omit it
 otherwise. For each ingredient list allergens only from: milk, egg, fish,
 shellfish, tree nut, peanut, wheat, soy, sesame (lowercase). Never claim an
@@ -618,8 +629,14 @@ Recipe buildDraftRecipe(
   final parsed = <Map<String, Object?>>[];
   for (final raw in rawSteps) {
     if (raw is! Map) continue;
-    final instruction = _clip(_str(raw['instruction']), 400);
+    final capped = _timerCapped(raw['timerSeconds']);
+    var instruction = _clip(
+      _str(raw['instruction']),
+      capped ? 400 - kTimerCapNote.length - 1 : 400,
+    );
     if (instruction.isEmpty) continue;
+    // Say so when the app shortened the model's timer; never cap silently.
+    if (capped) instruction = '$instruction $kTimerCapNote';
     final stepTitle = _clip(_str(raw['title']), 80);
     parsed.add({
       'title': stepTitle.isEmpty ? 'Step ${parsed.length + 1}' : stepTitle,
@@ -632,7 +649,8 @@ Recipe buildDraftRecipe(
     throw FormatException('step count ${parsed.length} outside 3..7');
   }
 
-  final riskyRecipe = ingredients.any((i) => _risky.hasMatch(i.name));
+  final recipeProteins = ingredients.map((i) => i.name).join(' ');
+  final riskyRecipe = _risky.hasMatch(recipeProteins);
   final steps = <RecipeStep>[
     for (var i = 0; i < parsed.length; i++)
       RecipeStep(
@@ -645,6 +663,7 @@ Recipe buildDraftRecipe(
               '${parsed[i]['title']} ${parsed[i]['instruction']} '
               '${parsed[i]['cue']}',
           riskyRecipe: riskyRecipe,
+          recipeProteins: recipeProteins,
         ),
         timerSeconds: parsed[i]['timerSeconds'] as int?,
       ),
@@ -673,15 +692,24 @@ Recipe buildDraftRecipe(
   );
 }
 
+// Raw animal foods that need a thermometer when heated. "ground" alone is not
+// here: "ground black pepper" or "ground cumin" is a spice, while "ground
+// beef", "ground turkey" and "ground meat" still match by their meat word.
 final _risky = RegExp(
-  r'\b(raw|meat|meats|poultry|chicken|turkey|beef|pork|bacon|ham|sausages?|'
-  r'ground|mince|fish|salmon|tuna|seafood|shrimp|prawns?|eggs?)\b',
+  r'\b(raw|meat|meats|poultry|chicken|turkey|duck|beef|pork|lamb|veal|bacon|'
+  r'ham|sausages?|hamburgers?|burgers?|meatballs?|meatloaf|mince|fish|salmon|'
+  r'tuna|cod|tilapia|trout|halibut|catfish|pollock|sardines?|seafood|shrimp|'
+  r'prawns?|crab|lobster|scallops?|clams?|mussels?|oysters?|eggs?)\b',
   caseSensitive: false,
 );
 final _heat = RegExp(
   r'\b(cook|cooks|cooked|cooking|bake|baked|baking|fry|fried|frying|'
-  r'heat|heated|heating|oven|pan|skillet|boil|boiling|simmer|simmering|'
-  r'roast|roasting|grill|grilling|microwave|saute|sauté|scramble|scrambled)\b',
+  r'heat|heated|heating|oven|pan|pans|skillet|boil|boiling|simmer|simmering|'
+  r'roast|roasting|grill|grilling|microwave|saute|sauté|scramble|scrambled|'
+  r'brown|browned|browning|sear|seared|searing|toast|toasted|toasting|'
+  r'broil|broiled|broiling|poach|poached|poaching|steam|steamed|steaming|'
+  r'warm|warmed|warming|melt|melted|melting|stove|stovetop|burner|burners|'
+  r'pot|pots|saucepan|saucepans)\b',
   caseSensitive: false,
 );
 final _certainty = RegExp(
@@ -690,26 +718,73 @@ final _certainty = RegExp(
   caseSensitive: false,
 );
 
+// Safe minimum internal temperatures (USDA / FoodSafety.gov chart), checked
+// with a thermometer. Ground poultry counts as poultry (165°F).
+final _poultry = RegExp(
+  r'\b(poultry|chicken|turkey|duck)\b',
+  caseSensitive: false,
+);
+final _groundMeat = RegExp(
+  r'\b(ground|minced?)\s+(beef|pork|lamb|veal|meat)\b|'
+  r'\b(hamburgers?|burgers?|meatballs?|meatloaf|sausages?)\b',
+  caseSensitive: false,
+);
+final _finFish = RegExp(
+  r'\b(fish|salmon|tuna|cod|tilapia|trout|halibut|catfish|pollock|'
+  r'sardines?)\b',
+  caseSensitive: false,
+);
+final _egg = RegExp(r'\beggs?\b', caseSensitive: false);
+
+/// The thermometer note for a heated step with raw animal food. Names the
+/// target temperature for each protein found in [text]; anything else gets
+/// the general thermometer line. It never says the food reached a
+/// temperature, only what to check for.
+String draftThermometerNote(String text) {
+  final targets = [
+    if (_poultry.hasMatch(text)) 'poultry 165°F (74°C)',
+    if (_groundMeat.hasMatch(text)) 'ground meat 160°F (71°C)',
+    if (_finFish.hasMatch(text)) 'fish 145°F (63°C)',
+    if (_egg.hasMatch(text)) 'egg dishes 160°F (71°C)',
+  ];
+  if (targets.isEmpty) return '$kColourNotDoneness $kThermometerDisclaimer';
+  return '$kColourNotDoneness Check with a food thermometer: '
+      "${targets.join(', ')}. The camera can't confirm it's safe.";
+}
+
 String _safeCue(
   String cue, {
   required String stepText,
   required bool riskyRecipe,
+  required String recipeProteins,
 }) {
   final heated = _heat.hasMatch(stepText);
-  final risky = _risky.hasMatch(stepText) || riskyRecipe;
+  final riskyStep = _risky.hasMatch(stepText);
   final String disclaimer;
-  if (heated && risky) {
-    disclaimer = kThermometerDisclaimer;
+  if (heated && (riskyStep || riskyRecipe)) {
+    // Enforced here whatever the model wrote: a heated meat, poultry, fish
+    // or egg step always ends with the thermometer note. Temperatures come
+    // from this step's proteins, or the recipe's when the step names none.
+    disclaimer = draftThermometerNote(riskyStep ? stepText : recipeProteins);
   } else if (heated || _certainty.hasMatch(stepText)) {
     disclaimer = kHeatDisclaimer;
   } else {
     return _clip(cue, 240);
   }
+  // A cue that itself certifies ("fully cooked", "safe to eat") is dropped:
+  // the app's note replaces it rather than sitting beside it.
+  final kept = _certainty.hasMatch(cue) ? '' : cue;
   // Leave room so the disclaimer is never clipped away.
-  var base = _clip(cue, 240 - disclaimer.length - 1).trimRight();
+  final room = 240 - disclaimer.length - 1;
+  var base = _clip(kept, room < 80 ? 80 : room).trimRight();
   if (base.endsWith(disclaimer)) return base;
   if (base.isNotEmpty && !RegExp(r'[.!?]$').hasMatch(base)) base = '$base.';
   return base.isEmpty ? disclaimer : '$base $disclaimer';
+}
+
+bool _timerCapped(Object? v) {
+  final n = v is num ? v : (v is String ? num.tryParse(v.trim()) : null);
+  return n != null && n.isFinite && n.round() > _maxTimer;
 }
 
 int? _timer(Object? v) {

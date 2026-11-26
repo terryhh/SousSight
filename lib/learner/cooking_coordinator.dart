@@ -14,6 +14,7 @@ import '../live/live_types.dart';
 import '../pantry/recipe_draft.dart';
 import '../watch/watch_service.dart';
 import '../watch/watch_verdict.dart';
+import 'ingredient_label.dart';
 import 'recipe_allergens.dart';
 import 'research_panel_client.dart';
 
@@ -226,10 +227,7 @@ $cookingUiInstructions
         'title': 'On your counter',
         'items': [
           for (final ingredient in recipe.ingredients)
-            {
-              'id': ingredient.id,
-              'label': '${ingredient.qty} ${ingredient.name}',
-            },
+            {'id': ingredient.id, 'label': ingredientRowLabel(ingredient)},
         ],
       },
       _stepPanel,
