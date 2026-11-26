@@ -7,6 +7,8 @@
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 
+import 'trust_motion.dart';
+
 enum CameraAccess { granted, notAsked, denied, noCamera }
 
 enum ReadinessState {
@@ -54,12 +56,69 @@ enum ReadinessAction {
 enum ReadinessLevel { blocking, limited, info }
 
 class ReadinessItem {
-  const ReadinessItem(this.state, this.level, this.message, this.action);
+  const ReadinessItem(
+    this.state,
+    this.level,
+    this.message,
+    this.action, {
+    this.title = '',
+    this.cloudPath = false,
+  });
   final ReadinessState state;
   final ReadinessLevel level;
+
+  /// A few words the card leads with, e.g. "You're offline".
+  final String title;
   final String message;
   final ReadinessAction action;
+
+  /// True when this item describes help coming from Google cloud on
+  /// purpose (no on-device model, cloud approved and reachable). The panel
+  /// styles it as a chosen path, not a warning.
+  final bool cloudPath;
 }
+
+/// The short lead for each state's card. Specific, never alarming.
+String readinessTitle(ReadinessState state) => switch (state) {
+  ReadinessState.attestationFailed => 'Cloud help is paused',
+  ReadinessState.quotaReached => "Today's cloud allowance is used up",
+  ReadinessState.offline => "You're offline",
+  ReadinessState.noAiAvailable => 'Cook from a recipe for now',
+  ReadinessState.cameraDenied => 'Camera access is off',
+  ReadinessState.noCamera => 'No camera found',
+  ReadinessState.bridgeUnavailable => "On-device AI isn't available here",
+  ReadinessState.deviceNotSupported => "This device can't run on-device AI",
+  ReadinessState.appleIntelligenceOff => 'Turn on Apple Intelligence',
+  ReadinessState.notEnrolled => 'One more step for on-device AI',
+  ReadinessState.onDeviceUnavailable => "On-device AI isn't ready yet",
+  ReadinessState.modelDownloadable => 'Set up on-device AI',
+  ReadinessState.modelDownloading => 'On-device AI is downloading',
+  ReadinessState.photosNeedSetup => 'Photo checks need setting up',
+  ReadinessState.photosNeedSetting => 'Photo checks need one setting',
+  ReadinessState.photosNeedCloud => "Photos can't be read here",
+  ReadinessState.ready => 'Ready when you are',
+};
+
+/// A specific icon for each state, so cards differ by more than colour.
+IconData readinessIcon(ReadinessState state) => switch (state) {
+  ReadinessState.attestationFailed => Icons.gpp_maybe_outlined,
+  ReadinessState.quotaReached => Icons.hourglass_empty,
+  ReadinessState.offline => Icons.wifi_off,
+  ReadinessState.noAiAvailable => Icons.menu_book_outlined,
+  ReadinessState.cameraDenied => Icons.no_photography_outlined,
+  ReadinessState.noCamera => Icons.no_photography_outlined,
+  ReadinessState.bridgeUnavailable ||
+  ReadinessState.deviceNotSupported ||
+  ReadinessState.onDeviceUnavailable => Icons.memory_outlined,
+  ReadinessState.appleIntelligenceOff ||
+  ReadinessState.notEnrolled => Icons.settings_suggest_outlined,
+  ReadinessState.modelDownloadable => Icons.download_outlined,
+  ReadinessState.modelDownloading => Icons.downloading,
+  ReadinessState.photosNeedSetup ||
+  ReadinessState.photosNeedSetting ||
+  ReadinessState.photosNeedCloud => Icons.photo_camera_outlined,
+  ReadinessState.ready => Icons.check_circle_outline,
+};
 
 class ReadinessInput {
   const ReadinessInput({
@@ -125,8 +184,19 @@ class AppReadiness {
       ReadinessState s,
       ReadinessLevel l,
       String message,
-      ReadinessAction a,
-    ) => items.add(ReadinessItem(s, l, message, a));
+      ReadinessAction a, {
+      String? title,
+      bool cloudPath = false,
+    }) => items.add(
+      ReadinessItem(
+        s,
+        l,
+        message,
+        a,
+        title: title ?? readinessTitle(s),
+        cloudPath: cloudPath,
+      ),
+    );
 
     // Cloud-side problems only matter when cloud help is part of this build.
     if (input.cloudApproved && input.attestationFailed) {
@@ -178,12 +248,20 @@ class AppReadiness {
     final noLocalAction = cloudUsable
         ? ReadinessAction.useCloudHelp
         : ReadinessAction.showEnableSteps;
+    // With cloud help approved and reachable, no on-device model is a path
+    // the app takes on purpose, said plainly.
+    const cloudPathMessage =
+        "Your device doesn't have on-device AI yet — answers will come from "
+        "Google cloud, and we'll show you each time.";
+    const cloudPathTitle = 'Answers will come from Google cloud';
     if (bridgeMissing) {
       add(
         ReadinessState.bridgeUnavailable,
         noLocalLevel,
-        "On-device AI isn't available here.$cloudNote",
+        cloudUsable ? cloudPathMessage : "On-device AI isn't available here.",
         noLocalAction,
+        title: cloudUsable ? cloudPathTitle : null,
+        cloudPath: cloudUsable,
       );
     } else {
       switch (input.text.status) {
@@ -208,7 +286,9 @@ class AppReadiness {
           final (state, message) = switch (reason) {
             'device_not_eligible' || 'unsupported_browser' => (
               ReadinessState.deviceNotSupported,
-              "This device can't run on-device AI.",
+              cloudUsable
+                  ? cloudPathMessage
+                  : "This device can't run on-device AI.",
             ),
             'apple_intelligence_off' => (
               ReadinessState.appleIntelligenceOff,
@@ -224,11 +304,19 @@ class AppReadiness {
               "On-device AI isn't ready on this device.",
             ),
           };
+          // An unsupported device cannot be fixed by the cook: with cloud
+          // help available, carrying on is the next action.
+          final unsupportedWithCloud =
+              state == ReadinessState.deviceNotSupported && cloudUsable;
           add(
             state,
             noLocalLevel,
-            '$message$cloudNote',
-            ReadinessAction.showEnableSteps,
+            unsupportedWithCloud ? message : '$message$cloudNote',
+            unsupportedWithCloud
+                ? ReadinessAction.useCloudHelp
+                : ReadinessAction.showEnableSteps,
+            title: unsupportedWithCloud ? cloudPathTitle : null,
+            cloudPath: unsupportedWithCloud,
           );
       }
     }
@@ -245,6 +333,8 @@ class AppReadiness {
               : "${local.modelFamily} reads text only, so photo features "
                     "can't run here. Typing works.",
           cloudUsable ? ReadinessAction.dismiss : ReadinessAction.typeInstead,
+          title: cloudUsable ? 'Photos use Google cloud' : null,
+          cloudPath: cloudUsable,
         );
       } else {
         switch (input.image.status) {
@@ -313,6 +403,8 @@ class AppReadiness {
             : 'Cloud help is ready. SousSight shows you whenever something '
                   'goes to the cloud.',
         ReadinessAction.startCooking,
+        title: localReady ? 'On-device AI is ready' : 'Cloud help is ready',
+        cloudPath: !localReady,
       );
     }
 
@@ -360,16 +452,65 @@ class ReadinessPanel extends StatelessWidget {
         for (var i = 0; i < readiness.items.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: _ReadinessCard(
-              item: readiness.items[i],
-              primary: i == 0,
-              onAction: onAction,
+            child: ArrivalTransition(
+              signature: readiness.items[i].state,
+              child: _ReadinessCard(
+                item: readiness.items[i],
+                primary: i == 0,
+                onAction: onAction,
+              ),
             ),
           ),
       ],
     ),
   );
 }
+
+/// Colours for one card: warm for something to fix, blue for the chosen
+/// cloud path, green for ready.
+({Color background, Color accent, Color foreground}) _readinessColors(
+  ReadinessItem item,
+) {
+  if (item.cloudPath) {
+    return (
+      background: const Color(0xffe3ecf5),
+      accent: const Color(0xff3c6a92),
+      foreground: const Color(0xff1f3d57),
+    );
+  }
+  return switch (item.level) {
+    ReadinessLevel.blocking => (
+      background: const Color(0xfffbe8c9),
+      accent: const Color(0xffbf5b32),
+      foreground: const Color(0xff6b2a10),
+    ),
+    ReadinessLevel.limited => (
+      background: const Color(0xfffff0d6),
+      accent: const Color(0xffb7791f),
+      foreground: const Color(0xff5c3300),
+    ),
+    ReadinessLevel.info => (
+      background: const Color(0xffe4ebdf),
+      accent: const Color(0xff285b43),
+      foreground: const Color(0xff1c4231),
+    ),
+  };
+}
+
+IconData _actionIcon(ReadinessAction action) => switch (action) {
+  ReadinessAction.reload || ReadinessAction.checkConnection => Icons.refresh,
+  ReadinessAction.allowCamera => Icons.photo_camera_outlined,
+  ReadinessAction.typeInstead => Icons.keyboard_outlined,
+  ReadinessAction.useCloudHelp => Icons.cloud_outlined,
+  ReadinessAction.openOnDeviceSetup => Icons.download_outlined,
+  ReadinessAction.showDownloadProgress => Icons.downloading,
+  ReadinessAction.showEnableSteps => Icons.list_alt_outlined,
+  ReadinessAction.cookWithoutAi => Icons.menu_book_outlined,
+  ReadinessAction.startCooking => Icons.arrow_forward,
+  ReadinessAction.keepCooking ||
+  ReadinessAction.tryAgainLater ||
+  ReadinessAction.dismiss => Icons.check,
+};
 
 class _ReadinessCard extends StatelessWidget {
   const _ReadinessCard({
@@ -384,42 +525,90 @@ class _ReadinessCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (color, icon) = switch (item.level) {
-      ReadinessLevel.blocking => (const Color(0xfffbe8c9), Icons.error_outline),
-      ReadinessLevel.limited => (const Color(0xfffff0d6), Icons.info_outline),
-      ReadinessLevel.info => (
-        const Color(0xffe4ebdf),
-        Icons.check_circle_outline,
-      ),
-    };
+    final theme = Theme.of(context);
+    final colors = _readinessColors(item);
+    final icon = item.cloudPath
+        ? Icons.cloud_outlined
+        : readinessIcon(item.state);
+    final label = Text(item.action.label);
     final button = primary
         ? FilledButton(
             key: ValueKey('readiness-action-${item.state.name}'),
+            style: FilledButton.styleFrom(backgroundColor: colors.accent),
             onPressed: () => onAction(item.action),
-            child: Text(item.action.label),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(_actionIcon(item.action), size: 18),
+                const SizedBox(width: 8),
+                label,
+              ],
+            ),
           )
         : TextButton(
             key: ValueKey('readiness-action-${item.state.name}'),
+            style: TextButton.styleFrom(foregroundColor: colors.foreground),
             onPressed: () => onAction(item.action),
-            child: Text(item.action.label),
+            child: label,
           );
-    return Card(
+    return DecoratedBox(
       key: ValueKey('readiness-${item.state.name}'),
-      color: color,
+      decoration: BoxDecoration(
+        color: colors.background,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: colors.accent.withValues(alpha: 0.25)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(icon),
-                const SizedBox(width: 10),
-                Expanded(child: Text(item.message)),
+                ExcludeSemantics(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(icon, size: 20, color: Colors.white),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (item.title.isNotEmpty) ...[
+                        Semantics(
+                          header: true,
+                          child: Text(
+                            item.title,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: colors.foreground,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                      Text(
+                        item.message,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colors.foreground,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Align(alignment: Alignment.centerRight, child: button),
           ],
         ),

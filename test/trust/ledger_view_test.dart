@@ -129,6 +129,10 @@ void main() {
       findsOneWidget,
     );
 
+    // The headline counts from legs: the photo stayed, the voice clip went.
+    expect(find.text('photos left your kitchen this session'), findsOneWidget);
+    expect(find.text('1 voice clip went to Google cloud'), findsOneWidget);
+
     final allowed = find.byKey(const ValueKey('ledger-allowed'));
     final sent = find.byKey(const ValueKey('ledger-sent'));
     final local = find.byKey(const ValueKey('ledger-local'));
@@ -151,6 +155,7 @@ void main() {
       find.descendant(of: sent, matching: find.textContaining('photo')),
       findsNothing,
     );
+    await tester.scrollUntilVisible(local, 200);
     expect(
       find.descendant(of: local, matching: find.text('Pantry scan')),
       findsOneWidget,

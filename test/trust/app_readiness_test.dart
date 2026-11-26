@@ -158,8 +158,19 @@ void main() {
               image: _un('unsupported_browser'),
             ),
             ReadinessState.deviceNotSupported,
-            ReadinessAction.showEnableSteps,
+            ReadinessAction.useCloudHelp,
             ReadinessLevel.limited,
+          ),
+          (
+            'unsupported browser, cloud off',
+            input(
+              cloudApproved: false,
+              text: _un('unsupported_browser'),
+              image: _un('unsupported_browser'),
+            ),
+            ReadinessState.deviceNotSupported,
+            ReadinessAction.showEnableSteps,
+            ReadinessLevel.blocking,
           ),
           (
             'Apple Intelligence off',
@@ -344,6 +355,76 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('readiness-action-offline')));
     expect(actions, [ReadinessAction.allowCamera, ReadinessAction.keepCooking]);
     expect(find.widgetWithText(FilledButton, 'Keep cooking'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  group('cloud path', () {
+    test('no on-device model with cloud help reads as a chosen path', () {
+      for (final reason in ['unsupported_browser', 'bridge_unavailable']) {
+        final r = eval(
+          input(
+            capabilities: reason == 'bridge_unavailable'
+                ? const HybridCapabilities.none()
+                : fakeWebCapabilities,
+            text: _un(reason),
+            image: _un(reason),
+          ),
+        );
+        expect(r.primary.cloudPath, isTrue, reason: reason);
+        expect(r.primary.action, ReadinessAction.useCloudHelp);
+        expect(r.primary.title, 'Answers will come from Google cloud');
+        expect(
+          r.primary.message,
+          "Your device doesn't have on-device AI yet — answers will come "
+          "from Google cloud, and we'll show you each time.",
+        );
+      }
+    });
+
+    test('without cloud help it is not dressed up as a choice', () {
+      final r = eval(
+        input(
+          cloudApproved: false,
+          text: _un('unsupported_browser'),
+          image: _un('unsupported_browser'),
+        ),
+      );
+      expect(r.primary.cloudPath, isFalse);
+      expect(r.primary.message, isNot(contains('Google cloud')));
+    });
+
+    test('every state has a title and no safety claims', () {
+      for (final state in ReadinessState.values) {
+        final title = readinessTitle(state);
+        expect(title, isNotEmpty);
+        expect(title.toLowerCase(), isNot(contains('safe')));
+        expect(title.toLowerCase(), isNot(contains('certif')));
+      }
+    });
+  });
+
+  testWidgets('cloud path card shows its title, message and action', (
+    tester,
+  ) async {
+    final actions = <ReadinessAction>[];
+    await pumpPhone(
+      tester,
+      ReadinessPanel(
+        readiness: eval(
+          input(
+            text: _un('unsupported_browser'),
+            image: _un('unsupported_browser'),
+          ),
+        ),
+        onAction: actions.add,
+      ),
+    );
+    expect(find.text('Answers will come from Google cloud'), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_outlined), findsWidgets);
+    await tester.tap(
+      find.byKey(const ValueKey('readiness-action-deviceNotSupported')),
+    );
+    expect(actions, [ReadinessAction.useCloudHelp]);
     expect(tester.takeException(), isNull);
   });
 }

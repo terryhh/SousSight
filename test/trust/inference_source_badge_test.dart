@@ -160,4 +160,84 @@ void main() {
     await pumpPhone(tester, const InferenceSourceBadge(legs: []));
     expect(find.byKey(const ValueKey('inference-source-badge')), findsNothing);
   });
+
+  testWidgets('multi-leg chips show which data each leg carried', (
+    tester,
+  ) async {
+    await pumpPhone(
+      tester,
+      InferenceSourceBadge(
+        legs: [
+          leg(
+            Provenance.sdkCloud,
+            feature: 'pantry_voice',
+            kinds: {DataKind.audio},
+          ),
+          leg(Provenance.sdkOnDevice, kinds: {DataKind.image}),
+        ],
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('inference-leg-0')),
+        matching: find.byIcon(Icons.mic_none),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('inference-leg-1')),
+        matching: find.byIcon(Icons.photo_camera_outlined),
+      ),
+      findsOneWidget,
+    );
+    // On-device and cloud differ by icon, not colour alone.
+    expect(find.byIcon(Icons.memory), findsOneWidget);
+    expect(find.byIcon(Icons.cloud), findsOneWidget);
+  });
+
+  testWidgets('a single leg shows no data-kind glyphs', (tester) async {
+    await pumpPhone(
+      tester,
+      InferenceSourceBadge(legs: [leg(Provenance.sdkOnDevice)]),
+    );
+    expect(find.byIcon(Icons.notes), findsNothing);
+  });
+
+  testWidgets('a result arrives with a short fade, settled after it', (
+    tester,
+  ) async {
+    await pumpPhone(
+      tester,
+      InferenceSourceBadge(legs: [leg(Provenance.sdkOnDevice)]),
+    );
+    final arrival = find.byType(TweenAnimationBuilder<double>);
+    expect(arrival, findsOneWidget);
+    await tester.pumpAndSettle();
+    final opacity = tester.widget<Opacity>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('inference-source-badge')),
+        matching: find.byType(Opacity),
+      ),
+    );
+    expect(opacity.opacity, 1);
+  });
+
+  testWidgets('reduced motion: no arrival animation at all', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Scaffold(
+            body: InferenceSourceBadge(legs: [leg(Provenance.sdkCloud)]),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+    expect(find.text('Cloud · Gemini'), findsOneWidget);
+  });
 }
