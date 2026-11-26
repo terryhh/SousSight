@@ -14,7 +14,8 @@
 //   exact shape is Unproven until gate G2b runs on real hardware.
 // - Those options live on the model instance, so instances are cached by the FULL config.
 // - result.response.inferenceSource is 'on_device' | 'in_cloud'.
-// Nothing here has run against a live model; tests stub the SDK and LanguageModel.
+// Nothing here has run against a live model. Tests stub LanguageModel and either stub
+// the SDK or run the shipped 13.1.0 bundle offline with a stubbed fetch.
 (function (root) {
   'use strict';
 
@@ -206,6 +207,7 @@
       const instruction = request.systemInstruction == null ? null : String(request.systemInstruction);
       const key = stableStringify([
         request.mode, withImage, config.cloudModel, instruction, schema, request.maxOutputTokens || null, languages(),
+        !!getLanguageModel(), // an instance built without LanguageModel has no local adapter
       ]);
       const cached = models.get(key);
       if (cached) {
@@ -274,9 +276,37 @@
       }];
     }
 
-    async function run(request, withImage, signal) {
+    // A local-only request must never reach the SDK unless the local model is present
+    // and ready for this modality. In firebase-ai.js 13.1.0, a model built while
+    // LanguageModel is absent has no on-device adapter, and callCloudOrDevice then runs
+    // the CLOUD path even for only_on_device; checking the source afterwards would be
+    // too late, because the payload would already have been uploaded.
+    async function requireLocalReady(withImage) {
+      const lm = getLanguageModel();
+      if (!lm || typeof lm.availability !== 'function') {
+        throw hybridError('unavailable', 'unsupported_browser: no local model in this browser.');
+      }
+      let status;
+      try { status = await lm.availability(createOptions(withImage)); } catch (e) {
+        throw hybridError('unavailable', 'availability_error: ' + (e && e.message));
+      }
+      if (status !== 'available') {
+        throw hybridError('unavailable', `model_not_ready: local model is ${status} for ${withImage ? 'image' : 'text'} input.`);
+      }
+    }
+
+    // `isCurrent` is false once the request timed out or was cancelled. It is checked
+    // after every await, so abandoned work never goes on to send anything.
+    async function run(request, withImage, signal, isCurrent) {
+      const stale = () => { if (!isCurrent()) throw hybridError('cancelled', 'request is no longer current'); };
+      const localOnly = request.mode === 'onlyOnDevice';
+      if (localOnly) { await requireLocalReady(withImage); stale(); }
       let loaded;
       try { loaded = await loadSdk(); } catch (e) { throw hybridError('unavailable', 'bridge_unavailable: ' + (e && e.message)); }
+      stale();
+      // Re-checked synchronously right before the instance is built and the call made:
+      // the SDK reads window.LanguageModel when it creates the instance.
+      if (localOnly && !getLanguageModel()) throw hybridError('unavailable', 'unsupported_browser: local model disappeared.');
       const model = modelFor(loaded.sdk, loaded.ai, request, withImage);
       const options = { timeout: request.timeoutMs };
       if (signal) options.signal = signal;
@@ -284,8 +314,8 @@
       const response = result && result.response;
       const source = response && SOURCES[response.inferenceSource];
       if (!source) throw hybridError('failed', 'The SDK did not report an inference source.');
-      // Modes are never widened. The SDK already guarantees this; refuse a result that
-      // would contradict it rather than report it.
+      // Second line of defence: refuse a result that contradicts the mode rather than
+      // report it. (For onlyOnDevice the guard above is what keeps data on the device.)
       if ((request.mode === 'onlyOnDevice' && source !== 'onDevice') || (request.mode === 'onlyInCloud' && source !== 'cloud')) {
         throw hybridError('failed', `Mode ${request.mode} produced a ${source} result.`);
       }
@@ -413,7 +443,7 @@
           };
           inflight.set(id, entry);
           entry.timer = setTimer(() => entry.abort('timeout', `No result within ${timeoutMs} ms.`), timeoutMs);
-          run({ ...request, timeoutMs }, withImage, controller && controller.signal).then(
+          run({ ...request, timeoutMs }, withImage, controller && controller.signal, () => inflight.get(id) === entry).then(
             value => entry.settle(null, value),
             e => entry.settle(toHybridError(e)),
           );

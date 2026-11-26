@@ -417,3 +417,46 @@ test('header helpers read PNG and JPEG sizes and base64 matches Node', () => {
     assert.equal(base64(bytes), Buffer.from(bytes).toString('base64'));
   }
 });
+
+test('onlyOnDevice is refused before the SDK unless the local model is ready for this modality', async () => {
+  for (const [lm, withImage] of [
+    [null, false],
+    [fakeLanguageModel({ text: 'downloadable' }), false],
+    [fakeLanguageModel({ text: 'available', image: 'unavailable' }), true],
+  ]) {
+    const h = await configured({ languageModel: lm });
+    const parts = withImage
+      ? [{ type: 'text', text: 'x' }, { type: 'inlineData', mimeType: 'image/jpeg', bytes: jpeg(10, 10) }]
+      : [{ type: 'text', text: 'x' }];
+    await rejectsWith(h.bridge.generate(request({ mode: 'onlyOnDevice', parts })), 'unavailable');
+    assert.equal(h.sdk.models.length, 0, 'no instance built');
+    assert.equal(h.sdk.calls.length, 0, 'no SDK call');
+  }
+});
+
+test('work abandoned by cancel or timeout never goes on to call the SDK', async () => {
+  // Cancelled while the local availability check is pending.
+  let answer;
+  const slow = fakeLanguageModel();
+  slow.availability = () => new Promise(r => { answer = r; });
+  const h = await configured({ languageModel: slow });
+  const r = request({ mode: 'onlyOnDevice' });
+  const pending = h.bridge.generate(r);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  await h.bridge.cancel(r.requestId);
+  await rejectsWith(pending, 'cancelled');
+  answer('available');
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(h.sdk.calls.length, 0);
+
+  // Timed out while the SDK import is pending.
+  let release;
+  const sdk = fakeSdk(model => okResponse(model));
+  const t = setup({ importer: () => new Promise(r => { release = () => r(sdk); }) });
+  const configuring = t.bridge.configure({ cloudModel: 'cloud-model-x' });
+  await rejectsWith(t.bridge.generate(request({ mode: 'onlyInCloud', timeoutMs: 20 })), 'timeout');
+  release();
+  await configuring;
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(sdk.calls.length, 0, 'the late import does not trigger a send');
+});
