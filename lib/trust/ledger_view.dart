@@ -537,8 +537,9 @@ class LedgerView extends StatelessWidget {
         if (summary.maybeSent.isNotEmpty) ...[
           heading('May have been sent'),
           note(
-            'These were allowed to leave and then stopped with an error, so '
-            "we can't tell whether they went out.",
+            "These were allowed to leave and aren't confirmed either way: "
+            'they may still be running, or they stopped before saying '
+            'whether they went out.',
           ),
           rows(summary.maybeSent, '', 'maybe'),
         ],

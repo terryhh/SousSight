@@ -401,7 +401,7 @@ void main() {
     expect(local.unfinished, 1);
   });
 
-  test('an iOS bridge refusal then a Dart send reads as one sent, one '
+  test('a web unsupportedInput then a Dart send reads as one sent, one '
       'other attempt', () {
     final r = PrivacyReceipt.fromLegs([
       leg(
@@ -423,6 +423,77 @@ void main() {
       ),
     );
   });
+
+  test('an iOS pre-send refusal proves nothing left', () {
+    final r = PrivacyReceipt.fromLegs([
+      leg(
+        Provenance.unknown,
+        feature: 'label_check',
+        kinds: _photo,
+        transferPermitted: true,
+        error: HybridErrorCode.rejectedBeforeSend,
+      ),
+      leg(Provenance.cloudAdapter, feature: 'label_check', kinds: _photo),
+    ]);
+    expect(r.photoRequestsSent, 1);
+    expect(r.photoRequestsMaybeSent, 0);
+    expect(r.maybeSent, isEmpty);
+    expect(r.unfinished, 1);
+    expect(r.summary, endsWith('recorded requests that sent photos: 1.'));
+  });
+
+  test(
+    'a cloud-first leg answered on device may still have sent its input',
+    () {
+      for (final mode in [HybridMode.preferInCloud, HybridMode.onlyInCloud]) {
+        final r = PrivacyReceipt.fromLegs([
+          leg(
+            Provenance.sdkOnDevice,
+            feature: 'local_watch',
+            kinds: _photo,
+            mode: mode,
+            transferPermitted: true,
+          ),
+        ]);
+        expect(
+          cloudFirst(
+            leg(Provenance.sdkOnDevice, mode: mode, transferPermitted: true),
+          ),
+          isTrue,
+        );
+        expect(r.onDeviceRuns, 1);
+        expect(r.cameraChecksOnDevice, 0);
+        expect(r.photoRequestsMaybeSent, 1);
+        expect(r.maybeSent.single.outcome, LegOutcome.onDevice);
+        expect(
+          r.maybeSent.single.why,
+          'Answered on this device, but it asked for the cloud first, so its '
+          'input may have been sent',
+        );
+        expect(r.nothingRecordedLeft, isFalse);
+      }
+      // Not allowed to leave, or asked for the device first: stayed here.
+      for (final l in [
+        leg(
+          Provenance.sdkOnDevice,
+          kinds: _photo,
+          mode: HybridMode.preferInCloud,
+          transferPermitted: false,
+        ),
+        leg(
+          Provenance.sdkOnDevice,
+          kinds: _photo,
+          mode: HybridMode.preferOnDevice,
+          transferPermitted: true,
+        ),
+      ]) {
+        expect(cloudFirst(l), isFalse);
+        final r = PrivacyReceipt.fromLegs([l]);
+        expect(r.cameraChecksOnDevice, 1);
+        expect(r.maybeSent, isEmpty);
+      }
+    },
+  );
 
   test('a semantic rejection leaves no error, so it is not claimed', () {
     // The dispatcher rejected both the local result and its cloud retry

@@ -138,7 +138,11 @@ class HybridCapabilities {
 }
 
 class HybridAvailability {
-  const HybridAvailability({required this.status, this.reason, this.modelLabel});
+  const HybridAvailability({
+    required this.status,
+    this.reason,
+    this.modelLabel,
+  });
 
   final OnDeviceStatus status;
 
@@ -278,6 +282,12 @@ enum HybridErrorCode {
   timeout,
   cancelled,
   failed,
+
+  /// The bridge refused the request during its own validation, before any
+  /// SDK or network call, so nothing was sent. Only a bridge that can prove
+  /// this returns it (today: iOS, for media its sessions cannot carry). A
+  /// rejection that may come after a send stays [unsupportedInput].
+  rejectedBeforeSend,
 }
 
 class HybridException implements Exception {

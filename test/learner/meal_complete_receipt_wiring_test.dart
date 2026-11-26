@@ -38,6 +38,7 @@ void main() {
     WidgetTester tester, {
     HybridRuntime? hybrid,
     void Function()? beforeNextFrame,
+    void Function()? whileCooking,
   }) async {
     tester.view.physicalSize = const Size(412, 2400);
     tester.view.devicePixelRatio = 1;
@@ -64,6 +65,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.runAsync(() async {
       await cook.startTimer('pb-rest', 'Let it rest', 60);
+      whileCooking?.call();
       // Re-starting the same running timer is not a second timer.
       await cook.startTimer('pb-rest', 'Let it rest', 60);
       while (!cook.complete) {
@@ -147,7 +149,28 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('the receipt binds at completion, not at the first build', (
+  testWidgets('a ledger reset during the meal means no receipt at the end', (
+    tester,
+  ) async {
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: CloudRoutes.parse(''),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+      cloudModel: 'test-cloud-model',
+    );
+    await cookToTheEnd(
+      tester,
+      hybrid: hybrid,
+      // After the meal's session is bound, the ledger moves on mid-meal.
+      whileCooking: () => hybrid.ledger.startSession('somewhere-else'),
+    );
+    expect(find.byKey(const ValueKey('meal-complete')), findsOneWidget);
+    expect(find.byKey(const ValueKey('privacy-receipt')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('the receipt binds at meal start, not at the first build', (
     tester,
   ) async {
     final hybrid = HybridRuntime.create(

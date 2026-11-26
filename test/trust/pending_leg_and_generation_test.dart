@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
 import 'package:soussight/trust/inference_source_badge.dart';
+import 'package:soussight/trust/ledger_source.dart';
+import 'package:soussight/trust/ledger_view.dart';
 import 'package:soussight/trust/trust_labels.dart';
 
 import 'trust_test_helpers.dart';
@@ -90,4 +92,40 @@ void main() {
       expect(ledger.generation, 3);
     },
   );
+
+  test('a pre-send refusal is "not finished locally", never "may have been '
+      'sent"', () {
+    final refused = leg(
+      Provenance.unknown,
+      transferPermitted: true,
+      error: HybridErrorCode.rejectedBeforeSend,
+    );
+    expect(legOutcome(refused), LegOutcome.notFinishedLocal);
+    expect(
+      errorLabel(HybridErrorCode.rejectedBeforeSend),
+      'refused before sending',
+    );
+    final web = leg(
+      Provenance.unknown,
+      transferPermitted: true,
+      error: HybridErrorCode.unsupportedInput,
+    );
+    expect(legOutcome(web), LegOutcome.maybeSent);
+  });
+
+  testWidgets('the ledger sheet never says a maybe-sent leg stopped', (
+    tester,
+  ) async {
+    final ledger = ListLedgerSource([
+      leg(Provenance.unknown, transferPermitted: true),
+    ]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: LedgerView(ledger: ledger)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('may still be running'), findsWidgets);
+    expect(find.textContaining('then stopped with an error'), findsNothing);
+  });
 }

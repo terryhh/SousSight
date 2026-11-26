@@ -39,11 +39,14 @@ const kReceiptFileName = 'soussight-privacy-receipt.png';
 /// and a quick A to B to A. Once it moves, the binding retires for good and
 /// any save in flight is dropped.
 class PrivacyReceiptBinding {
+  /// [expected] is the generation the meal started on; when omitted, the
+  /// generation read now.
   PrivacyReceiptBinding({
     required int Function() generation,
+    int? expected,
     DateTime Function() clock = DateTime.now,
   }) : _read = generation,
-       generation = generation(),
+       generation = expected ?? generation(),
        printedAt = clock();
 
   final int Function() _read;
@@ -98,10 +101,11 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
     // The save belongs to the meal it started for: that exact binding must
     // stay installed on this card, and current, through every step.
     final binding = widget.binding;
-    // A popped route (the cook left this screen) ends the save too.
+    // Leaving this screen (another route pushed on top, or this one popped)
+    // ends the save too.
     bool stillThisMeal() =>
         mounted &&
-        (ModalRoute.of(context)?.isActive ?? true) &&
+        (ModalRoute.of(context)?.isCurrent ?? true) &&
         identical(widget.binding, binding) &&
         binding.isCurrent;
     if (_saving || !stillThisMeal()) return;

@@ -17,9 +17,12 @@
 //   was used.
 // - Legs record data kinds, not attachment counts, so photo numbers count
 //   requests that carried photos.
-// - Only `transferPermitted == false` proves nothing left. An error code
-//   alone (even `unsupportedInput`) does not: the SDK may have reached the
-//   cloud first, so such a leg stays "may have been sent".
+// - Only `transferPermitted == false`, or a bridge's own pre-send refusal
+//   (`HybridErrorCode.rejectedBeforeSend`), proves nothing left. Any other
+//   error code (even `unsupportedInput`) does not: the SDK may have reached
+//   the cloud first, so such a leg stays "may have been sent".
+// - A leg allowed to go to the cloud first (`preferInCloud`, `onlyInCloud`)
+//   may have sent its input even when the answer came from this device.
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridMode;
 
@@ -163,7 +166,14 @@ class PrivacyReceipt {
       // An observed local or practice run; its result may still be rejected.
       if (outcome == LegOutcome.onDevice) {
         onDevice++;
-        if (image) cameraOnDevice++;
+        if (cloudFirst(leg)) {
+          // Asked for the cloud first and allowed to leave: the answer came
+          // from this device, but its input may have been sent before that.
+          group(maybe, leg, outcome);
+          if (image) photoRequestsMaybe++;
+        } else if (image) {
+          cameraOnDevice++;
+        }
       } else {
         practice++;
         if (image) cameraPractice++;
@@ -212,7 +222,8 @@ class PrivacyReceipt {
   /// connection of its own; the ledger does not say which session it was.
   final int liveConnections;
 
-  /// On-device runs that looked at a photo or camera frame.
+  /// On-device runs that looked at a photo or camera frame, excluding
+  /// [cloudFirst] ones (their input may have been sent first).
   final int cameraChecksOnDevice;
 
   /// Rehearsal camera checks. Never counted as on-device.
@@ -292,6 +303,11 @@ class PrivacyReceipt {
 /// Where a leg went and why, from the leg alone: its observed outcome first,
 /// then the routing it asked for. Never claims what the leg does not carry.
 String _why(InferenceLeg leg, LegOutcome outcome, {required bool pending}) {
+  if (outcome == LegOutcome.onDevice) {
+    // Only [cloudFirst] on-device legs are listed.
+    return 'Answered on this device, but it asked for the cloud first, so '
+        'its input may have been sent';
+  }
   if (outcome == LegOutcome.maybeSent) {
     return pending
         ? 'Still running: allowed to leave, not finished yet'
@@ -319,6 +335,14 @@ String _why(InferenceLeg leg, LegOutcome outcome, {required bool pending}) {
   final ended = leg.error == null ? '' : ' · ended in an error';
   return '$observed$purpose$asked$ended';
 }
+
+/// A leg whose mode let it go to the cloud first (`preferInCloud` or
+/// `onlyInCloud`) and that was allowed to leave. Even an on-device answer
+/// does not prove its input stayed here.
+bool cloudFirst(InferenceLeg leg) =>
+    leg.transferPermitted &&
+    (leg.mode == HybridMode.preferInCloud ||
+        leg.mode == HybridMode.onlyInCloud);
 
 String _liveMedia(Set<DataKind> kinds) {
   final words = [

@@ -34,7 +34,11 @@ LegOutcome legOutcome(InferenceLeg leg) => switch (leg.provenance) {
   Provenance.cloudAdapter => LegOutcome.cloudAdapter,
   Provenance.simulated => LegOutcome.simulated,
   Provenance.unknown =>
-    leg.transferPermitted ? LegOutcome.maybeSent : LegOutcome.notFinishedLocal,
+    // A bridge's own pre-send refusal proves nothing left; any other error
+    // on a request allowed to leave does not.
+    leg.transferPermitted && leg.error != HybridErrorCode.rejectedBeforeSend
+        ? LegOutcome.maybeSent
+        : LegOutcome.notFinishedLocal,
 };
 
 /// Short label for one outcome. [localModel] is shown for on-device legs: the
@@ -188,4 +192,5 @@ String errorLabel(HybridErrorCode error) => switch (error) {
   HybridErrorCode.unsupportedInput => "couldn't take this input",
   HybridErrorCode.unsupportedMode => "couldn't run that way",
   HybridErrorCode.failed => "didn't finish",
+  HybridErrorCode.rejectedBeforeSend => 'refused before sending',
 };

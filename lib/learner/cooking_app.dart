@@ -399,18 +399,34 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
 
-  /// Tonight's privacy receipt binding: created at the coordinator's
-  /// completion notification (or the first build of an already complete
-  /// meal) and kept here, outside the layout, so a retired receipt stays
-  /// retired across breakpoint rebuilds (SS-105).
+  /// The ledger generation of this meal, captured once the hybrid runtime
+  /// has bound its ledger to this meal's session (at meal start). The
+  /// receipt prints only if the ledger is still on it (SS-105).
+  int? _mealGeneration;
+
+  void _captureMealGeneration() {
+    final hybrid = widget.hybrid;
+    final id = cook.session?.id;
+    if (_mealGeneration != null || hybrid == null || id == null) return;
+    if (hybrid.sessionId == id) _mealGeneration = hybrid.ledger.generation;
+  }
+
+  /// Tonight's privacy receipt binding, bound to [_mealGeneration] and kept
+  /// here, outside the layout, so a retired receipt stays retired across
+  /// breakpoint rebuilds. Null (no receipt) until the meal is complete and
+  /// the ledger is known to be this meal's.
   PrivacyReceiptBinding? _receipt;
-  PrivacyReceiptBinding? _receiptBinding() => switch (widget.hybrid) {
-    final hybrid? => _receipt ??= PrivacyReceiptBinding(
+  PrivacyReceiptBinding? _receiptBinding() {
+    _captureMealGeneration();
+    final hybrid = widget.hybrid;
+    final meal = _mealGeneration;
+    if (hybrid == null || meal == null || !cook.complete) return null;
+    return _receipt ??= PrivacyReceiptBinding(
       generation: () => hybrid.ledger.generation,
+      expected: meal,
       clock: cook.services.clock,
-    ),
-    null => null,
-  };
+    );
+  }
 
   /// Screen wake lock and Big text for this session (SS-107).
   late final KitchenMode _kitchen;
@@ -476,9 +492,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
 
   void _onChange() {
     if (!mounted) return;
-    // Bind tonight's receipt at the completion event itself, before any
-    // later ledger reset can land ahead of the next frame (SS-105).
-    if (cook.complete) _receiptBinding();
+    // Note this meal's ledger generation as soon as its session is bound,
+    // and bind the receipt at the completion event itself (SS-105).
+    _receiptBinding();
     _speaker?.sync(
       answer: cook.coachLiteAnswer,
       busy: cook.coachLiteBusy,

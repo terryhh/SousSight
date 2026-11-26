@@ -10,6 +10,9 @@ import ImageIO
 enum HybridErrorCode: String {
   case unavailable, unsupportedInput, unsupportedMode, busy, quota, blocked
   case network, attestation, timeout, cancelled, failed
+  /// Refused by this bridge's own validation before any SDK call: nothing
+  /// was sent (contract.dart `rejectedBeforeSend`).
+  case rejectedBeforeSend
 }
 
 struct HybridError: Error, Equatable {
@@ -292,7 +295,8 @@ func planRoute(
     // rejects attachment segments (GeminiTranscriptTranslator), so no iOS
     // route can carry media. The dispatcher sends onlyInCloud media with its
     // Dart cloud client.
-    throw HybridError(.unsupportedInput, "iOS hybrid sessions are text only")
+    // No SDK has been called yet, so the ledger can record that nothing left.
+    throw HybridError(.rejectedBeforeSend, "iOS hybrid sessions are text only")
   }
   let fits = estimateLocalTokens(request) <= LocalLimits.maxTotalTokens
   switch request.mode {

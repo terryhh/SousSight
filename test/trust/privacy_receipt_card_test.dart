@@ -476,6 +476,18 @@ void main() {
     expect(binding.isCurrent, isFalse);
   });
 
+  test('a binding can be bound to the generation its meal started on', () {
+    var current = 2;
+    final binding = PrivacyReceiptBinding(
+      generation: () => current,
+      expected: 1,
+    );
+    expect(binding.generation, 1);
+    expect(binding.isCurrent, isFalse);
+    current = 1;
+    expect(binding.isCurrent, isFalse, reason: 'retirement latches');
+  });
+
   testWidgets('a binding remembers when it printed', (tester) async {
     final binding = PrivacyReceiptBinding(
       generation: () => 7,
@@ -761,6 +773,44 @@ void main() {
       nav.currentState!.pop();
       await tester.pump();
       // The route is popped (still animating out): not current any more.
+      expect(saver.isCurrent!(), isFalse);
+      saver.gate!.complete(ReceiptSaveResult.downloaded);
+      await _settleSave(tester);
+      expect(find.byType(SnackBar), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('another screen pushed on top mid-save ends the save', (
+      tester,
+    ) async {
+      final saver = _Saver()..gate = Completer();
+      final nav = GlobalKey<NavigatorState>();
+      tester.view.physicalSize = const Size(360, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: nav,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: PrivacyReceiptCard(
+                ledger: ListLedgerSource([_leg('a', Provenance.sdkOnDevice)]),
+                binding: PrivacyReceiptBinding(generation: () => 1),
+                saveImage: saver.call,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _tapSave(tester);
+      expect(saver.isCurrent!(), isTrue);
+      unawaited(
+        nav.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+        ),
+      );
+      await tester.pump();
       expect(saver.isCurrent!(), isFalse);
       saver.gate!.complete(ReceiptSaveResult.downloaded);
       await _settleSave(tester);

@@ -274,11 +274,11 @@ struct CoreChecks {
       let r = await run(
         bridge,
         request(mode: mode, parts: [["type": "text", "text": "what is this"], imagePart(small)]))
-      expect(errorCode(r) == .unsupportedInput, "image with \(mode) → unsupportedInput")
+      expect(errorCode(r) == .rejectedBeforeSend, "image with \(mode) → rejectedBeforeSend")
     }
     let audio: [String: Any] = ["type": "inlineData", "mimeType": "audio/wav", "bytes": Data([1, 2])]
     var r = await run(bridge, request(parts: [["type": "text", "text": "x"], audio]))
-    expect(errorCode(r) == .unsupportedInput, "audio → unsupportedInput")
+    expect(errorCode(r) == .rejectedBeforeSend, "audio → rejectedBeforeSend")
     r = await run(bridge, request(parts: [["type": "text", "text": "x"], imagePart(small), imagePart(small)]))
     if case .failure(let e) = r { expect(e.message.contains("At most"), "two images: limit message") }
     r = await run(bridge, request(parts: [["type": "text", "text": "x"], imagePart(png(width: 800, height: 10))]))

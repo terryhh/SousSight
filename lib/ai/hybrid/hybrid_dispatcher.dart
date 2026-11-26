@@ -247,7 +247,8 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   bool _adapterApplies(_Failed failed, HybridMode mode, _Run run) {
     if (_adapter == null || mode == HybridMode.onlyOnDevice) return false;
     if (failed.code == HybridErrorCode.unavailable) return true;
-    return failed.code == HybridErrorCode.unsupportedInput &&
+    return (failed.code == HybridErrorCode.unsupportedInput ||
+            failed.code == HybridErrorCode.rejectedBeforeSend) &&
         mode == HybridMode.onlyInCloud &&
         run.task.parts.any((p) => p is HybridInlineData);
   }
