@@ -45,8 +45,8 @@ class PrivacyReceiptCard extends StatefulWidget {
   final String? recipeTitle;
   final DateTime Function() clock;
 
-  /// Timers the cook ran tonight, when the caller counts them. Not a privacy
-  /// claim; hidden when null.
+  /// Timers the cook started tonight, when the caller counts them. Not a
+  /// privacy claim; hidden when null.
   final int? timersRun;
   final ReceiptImageSaver saveImage;
 
@@ -311,7 +311,7 @@ class _ReceiptPaper extends StatelessWidget {
                   key: const ValueKey('receipt-timers'),
                   icon: Icons.timer_outlined,
                   color: _ink,
-                  label: 'Timers run',
+                  label: 'Timers started',
                   value: timers,
                 ),
               const _Perforation(),

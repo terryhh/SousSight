@@ -177,6 +177,7 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
                 ledger: ledger,
                 recipeTitle: cook.recipe.title,
                 clock: cook.services.clock,
+                timersRun: cook.timersStarted,
               ),
             ],
             const SizedBox(height: 18),

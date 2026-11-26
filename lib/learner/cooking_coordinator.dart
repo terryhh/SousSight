@@ -164,6 +164,12 @@ class CookingCoordinator extends ChangeNotifier {
   bool _wasWatching = false;
   int _researchEpoch = 0;
   int _timerSequence = 0;
+
+  /// Timers the cook started in this coordinator's session (a new cook gets
+  /// a new coordinator). Restored timers and re-starts of a running timer
+  /// are not counted. Shown on the privacy receipt (SS-105).
+  int get timersStarted => _timersStarted;
+  int _timersStarted = 0;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
 
   RecipeStep get step =>
@@ -617,7 +623,10 @@ $cookingUiInstructions
     // ui.startTimer returns an existing timer unchanged for a reused ID.
     final isNew = !ui.timers.any((t) => t.id == id);
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
-    if (isNew) _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
+    if (isNew) {
+      _timersStarted++;
+      _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
+    }
     // Every timer save goes through the step queue: offline, or behind
     // unsaved step changes, it waits with its original deadline; and a
     // dismissal while its save is in flight is cleared afterwards (SS-072).
