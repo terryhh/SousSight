@@ -49,22 +49,37 @@ class FakeHybridInference implements HybridInference {
   @override
   Future<HybridResult> generate(HybridRequest request) async {
     requests.add(request);
-    if (delay > Duration.zero) await Future<void>.delayed(delay);
-    if (cancelled.contains(request.requestId)) {
-      throw const HybridException(HybridErrorCode.cancelled, 'cancelled');
+    // Reserve this call's scripted answer now, so a cancelled or timed-out
+    // call can never hand its answer to a later request.
+    final reserved = script.isEmpty ? null : script.removeFirst();
+    Future<HybridResult> respond() async {
+      if (delay > Duration.zero) await Future<void>.delayed(delay);
+      if (cancelled.contains(request.requestId)) {
+        throw const HybridException(HybridErrorCode.cancelled, 'cancelled');
+      }
+      if (reserved == null) {
+        throw const HybridException(HybridErrorCode.failed, 'No scripted response');
+      }
+      var next = reserved;
+      if (next is Object Function(HybridRequest)) next = next(request);
+      if (next is HybridException) throw next;
+      final r = next as HybridResult;
+      return HybridResult(
+        requestId: request.requestId,
+        text: r.text,
+        source: r.source,
+        modelLabel: r.modelLabel,
+      );
     }
-    if (script.isEmpty) {
-      throw const HybridException(HybridErrorCode.failed, 'No scripted response');
-    }
-    var next = script.removeFirst();
-    if (next is Object Function(HybridRequest)) next = next(request);
-    if (next is HybridException) throw next;
-    final r = next as HybridResult;
-    return HybridResult(
-      requestId: request.requestId,
-      text: r.text,
-      source: r.source,
-      modelLabel: r.modelLabel,
+
+    // Contract: complete or throw timeout within task.timeout; a late
+    // outcome is discarded.
+    return respond().timeout(
+      request.task.timeout,
+      onTimeout: () => throw const HybridException(
+        HybridErrorCode.timeout,
+        'timed out',
+      ),
     );
   }
 
