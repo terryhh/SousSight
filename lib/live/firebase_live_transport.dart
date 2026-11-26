@@ -2,15 +2,48 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:firebase_ai/firebase_ai.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'live_tools.dart';
 import 'live_types.dart';
 
+/// Opens a Live session for [model]; [FirebaseLiveTransport]'s test seam.
+typedef LiveSessionOpener = Future<LiveSession> Function({
+  required String model,
+  required String systemInstruction,
+});
+
+Future<LiveSession> _openFirebaseSession({
+  required String model,
+  required String systemInstruction,
+}) {
+  final liveModel = FirebaseAI.googleAI().liveGenerativeModel(
+    model: model,
+    systemInstruction: Content.system(systemInstruction),
+    liveGenerationConfig: LiveGenerationConfig(
+      responseModalities: [ResponseModalities.audio],
+      inputAudioTranscription: AudioTranscriptionConfig(),
+      outputAudioTranscription: AudioTranscriptionConfig(),
+      contextWindowCompression: ContextWindowCompressionConfig(
+        slidingWindow: SlidingWindow(),
+      ),
+    ),
+    tools: [Tool.functionDeclarations(cookingLiveFunctions())],
+  );
+  return liveModel.connect(sessionResumption: SessionResumptionConfig());
+}
+
 /// Native Firebase AI Logic adapter. On web use EphemeralGeminiLiveTransport:
 /// firebase_ai 5.1's browser WebSocket cannot attach App Check headers.
 class FirebaseLiveTransport implements LiveTransport {
-  FirebaseLiveTransport({this.model = kLiveModel});
+  /// [openSession] is a test seam; production omits it and connects through
+  /// Firebase AI Logic.
+  FirebaseLiveTransport({
+    this.model = kLiveModel,
+    @visibleForTesting LiveSessionOpener? openSession,
+  }) : _openSession = openSession ?? _openFirebaseSession;
   final String model;
+  final LiveSessionOpener _openSession;
   final _events = StreamController<LiveEvent>.broadcast();
   LiveSession? _session;
   StreamSubscription<LiveServerResponse>? _subscription;
@@ -24,21 +57,9 @@ class FirebaseLiveTransport implements LiveTransport {
 
   @override
   Future<void> connect({required String systemInstruction}) async {
-    final liveModel = FirebaseAI.googleAI().liveGenerativeModel(
+    final session = await _openSession(
       model: model,
-      systemInstruction: Content.system(systemInstruction),
-      liveGenerationConfig: LiveGenerationConfig(
-        responseModalities: [ResponseModalities.audio],
-        inputAudioTranscription: AudioTranscriptionConfig(),
-        outputAudioTranscription: AudioTranscriptionConfig(),
-        contextWindowCompression: ContextWindowCompressionConfig(
-          slidingWindow: SlidingWindow(),
-        ),
-      ),
-      tools: [Tool.functionDeclarations(cookingLiveFunctions())],
-    );
-    final session = await liveModel.connect(
-      sessionResumption: SessionResumptionConfig(),
+      systemInstruction: systemInstruction,
     );
     if (_closed) {
       await session.close();
