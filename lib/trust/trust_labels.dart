@@ -158,6 +158,7 @@ const Map<String, String> featureLabels = {
   'local_watch': 'Watch my food',
   'coach_lite': 'Coach Lite',
   'label_check': 'Label check',
+  'recipe_translate': 'Recipe translation',
   'research': 'Research',
   'nearby': 'Nearby stores',
   'live': 'Live coach',

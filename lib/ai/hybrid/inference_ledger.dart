@@ -78,6 +78,7 @@ class InferenceLedger extends ChangeNotifier {
     required Provenance provenance,
     String? modelLabel,
     HybridErrorCode? error,
+    bool? transferPermitted,
   }) {
     if (!_entries.contains(entry) || !entry.pending) return;
     entry
@@ -86,6 +87,7 @@ class InferenceLedger extends ChangeNotifier {
         provenance: provenance,
         modelLabel: modelLabel,
         error: error,
+        transferPermitted: transferPermitted,
       )
       ..completedAt = _clock();
     notifyListeners();
@@ -112,12 +114,13 @@ class InferenceLedger extends ChangeNotifier {
     required Provenance provenance,
     String? modelLabel,
     required HybridErrorCode? error,
+    bool? transferPermitted,
   }) => InferenceLeg(
     requestId: leg.requestId,
     feature: leg.feature,
     mode: leg.mode,
     kinds: leg.kinds,
-    transferPermitted: leg.transferPermitted,
+    transferPermitted: transferPermitted ?? leg.transferPermitted,
     provenance: provenance,
     modelLabel: modelLabel ?? leg.modelLabel,
     error: error,

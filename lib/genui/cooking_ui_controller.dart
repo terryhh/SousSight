@@ -5,6 +5,7 @@ import 'package:a2ui_core/a2ui_core.dart' as a2ui;
 import 'package:flutter/foundation.dart';
 import 'package:genui/genui.dart';
 
+import '../safety/cook_safety.dart';
 import 'cooking_catalog.dart';
 import 'cooking_ui_contract.dart';
 
@@ -82,7 +83,9 @@ class CookingUiController extends ChangeNotifier {
       (jsonDecode(jsonEncode(_components)) as List)
           .cast<Map<String, dynamic>>();
 
-  void applyJson(String json) {
+  /// Applies model-written UI (the Live coach). [reviewed] is the recipe's
+  /// own text, which may be quoted verbatim.
+  void applyJson(String json, {Set<String> reviewed = const {}}) {
     _assertActive();
     if (json.length > 24000) {
       throw const FormatException('Cooking UI exceeds 24 KB.');
@@ -90,6 +93,11 @@ class CookingUiController extends ChangeNotifier {
     final decoded = jsonDecode(json);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Cooking UI must be an object.');
+    }
+    // Model-written panels (the Live coach) pass the shared safety gate, in
+    // every cook language, before anything is replaced.
+    if (payloadTouchesFoodSafety(decoded, reviewed: reviewed)) {
+      throw const UnsafeClaimException();
     }
     applyToolPayload(decoded);
   }

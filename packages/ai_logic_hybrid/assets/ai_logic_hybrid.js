@@ -169,13 +169,22 @@
       return config && Array.isArray(config.languages) && config.languages.length ? config.languages.slice() : ['en'];
     }
 
+    // A request's own languages (e.g. a translation answered in Spanish), else the
+    // configured ones. Only that request's model uses them; other features keep theirs.
+    function requestLanguages(request) {
+      return request && Array.isArray(request.languages) && request.languages.length
+        ? request.languages.map(String)
+        : languages();
+    }
+
     // The same create options are used for availability, download and generation, so
     // download readiness is a per-modality fact that matches what generate will ask for.
-    function createOptions(withImage) {
-      const text = { type: 'text', languages: languages() };
+    function createOptions(withImage, langs) {
+      const list = langs || languages();
+      const text = { type: 'text', languages: list };
       return {
         expectedInputs: withImage ? [text, { type: 'image' }] : [text],
-        expectedOutputs: [{ type: 'text', languages: languages() }],
+        expectedOutputs: [{ type: 'text', languages: list }],
       };
     }
 
@@ -206,7 +215,7 @@
       const schema = request.jsonSchema == null ? null : request.jsonSchema;
       const instruction = request.systemInstruction == null ? null : String(request.systemInstruction);
       const key = stableStringify([
-        request.mode, withImage, config.cloudModel, instruction, schema, request.maxOutputTokens || null, languages(),
+        request.mode, withImage, config.cloudModel, instruction, schema, request.maxOutputTokens || null, requestLanguages(request),
         !!getLanguageModel(), // an instance built without LanguageModel has no local adapter
       ]);
       const cached = models.get(key);
@@ -223,7 +232,7 @@
       }
       const inCloudParams = { model: config.cloudModel, generationConfig };
       if (instruction) inCloudParams.systemInstruction = instruction;
-      const onDeviceCreate = createOptions(withImage);
+      const onDeviceCreate = createOptions(withImage, requestLanguages(request));
       if (instruction) onDeviceCreate.initialPrompts = [{ role: 'system', content: instruction }];
       const onDeviceParams = { createOptions: onDeviceCreate };
       if (schema) onDeviceParams.promptOptions = { responseConstraint: schema };

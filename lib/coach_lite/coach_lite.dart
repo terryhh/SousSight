@@ -14,6 +14,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
 import '../genui/cooking_ui_contract.dart';
+import '../safety/cook_safety.dart';
 
 const coachLiteFeature = 'coach_lite';
 
@@ -122,15 +123,45 @@ final _safetyPattern = RegExp(
   r'allerg\w*|gluten|nut[- ]free|dairy[- ]free|contains?|'
   r'expired|spoil\w*|gone bad|go bad|mou?ldy?|smells? off|'
   r'leftovers?|room temperature|how long can|refrigerat\w*|fridge|reheat\w*|'
-  r'pregnan\w*|infant|baby)\b|°',
+  r'pregnan\w*|infant|baby)\b|°|'
+  // Spanish (SS-106): what the cook is asking, not which food they name:
+  // "¿Cómo bato los huevos?" is technique; "¿Está fresca la leche?" and
+  // "¿Contiene maní?" are safety.
+  r'(?<![\p{L}])(?:'
+  r'(?:est[áa]n?|es|son|estar[áa]n?|queda|qued[óo]|siguen?)\s+'
+  r'(?:(?:ya|bien|todav[íi]a|a[úu]n|muy)\s+)*'
+  r'(?:list|cocid|cocinad|hech|crud|segur|fresc|buen|mal|podrid|caducad|'
+  r'vencid|rosad)\w*|'
+  r'ya\s+est[áa]n?(?![\p{L}])|'
+  r'(?:puedo|puedes|podemos|se\s+puede)\s+(?:ya\s+)?(?:comer|servir|'
+  r'dar|guardar|congelar|recalentar)\w*|'
+  r'(?:contienen?|tienen?|llevan?)\s+(?:\w+\s+)?(?:gluten|man[íi]|nueces|'
+  r'l[áa]cteos|leche|huevos?|trigo|soya|soja|al[ée]rgenos?|mariscos|'
+  r's[ée]samo|ajonjol[íi]|cacahuates?|frutos\s+secos)|'
+  r'contienen?|alerg\w*|al[ée]rg\w*|cel[íi]ac\w*|sin\s+gluten|libres?\s+de|'
+  r'apt[oa]s?\s+para|temperatura|grados|term[óo]metro|crud[oa]s?|'
+  r'segur[oa]s?|peligr\w*|intoxic\w*|bacterias?|salmonela|'
+  r'echad[oa]s?\s+a\s+perder|podrid\w*|caducad\w*|vencid\w*|moho|'
+  r'huele\s+(?:mal|raro|feo|agrio)|sobras|'
+  r'cu[áa]nto\s+(?:tiempo\s+)?(?:dura|duran|aguanta|aguantan)|'
+  r'refrigera\w*|nevera|refri|congel\w*|recalent\w*|embarazada|beb[ée]s?'
+  r')(?![\p{L}])',
   caseSensitive: false,
+  unicode: true,
 );
 
 final _substitutionPattern = RegExp(
   r'\b(substitut\w*|instead of|swap\w*|replace\w*|replacement|'
   r'in place of|alternative|can i use|could i use|do i have to use|'
-  r'(i )?(don.?t|do not) have|(ran|run|running) out|without)\b',
+  r'(i )?(don.?t|do not) have|(ran|run|running) out|without)\b|'
+  // Spanish (SS-106).
+  r'(?<![\p{L}])(sustitu\w*|reemplaz\w*|en\s+vez\s+de|en\s+lugar\s+de|'
+  r'cambiar\s+\w+\s+por|puedo\s+usar|podría\s+usar|podria\s+usar|'
+  // "sin" alone ("sin salpicar") is technique; "sin <food>" is a swap.
+  r'no\s+tengo|se\s+me\s+acab\w*|sin\s+(?:usar|el|la|los|las)\s+\w+|'
+  r'qu[ée]\s+uso\s+si\s+no)(?![\p{L}])',
   caseSensitive: false,
+  unicode: true,
 );
 
 /// The safety topics a question touches. Classification and the safety note
@@ -322,27 +353,12 @@ anything cooked through. If a fact is missing, ask the cook with a stepCue whose
 action is ask_cook. Suggest a timer only if this step needs one.
 ''';
 
-/// Phrases that would certify doneness, temperature or safety. App-authored
-/// notices never pass through this check; model answers always do.
-final _certification = RegExp(
-  r"\bsafe to (eat|serve|consume)\b|"
-  // "is done" / "it's safe", unless it is a condition ("stir until it is
-  // done", "it's done when it coats a spoon").
-  r"(?<!\b(when|once|until|till|if|after|before|whether)\b[^.,;:!?]{0,40})"
-  r"\b(is|are|['\u2019]s|['\u2019]re)\s+"
-  r"(now\s+|definitely\s+|fully\s+|already\s+|completely\s+)*"
-  r"(safe|cooked through|fully cooked|ready to eat|"
-  r"done(?!\s+(when|once|if|after|before|in)\b))\b|"
-  r"\b(is|are)\s+(allergen|gluten|nut|peanut|dairy|egg)[- ]free\b|"
-  r"\breached\s+(a\s+|an\s+|the\s+)?(safe|internal)\b|"
-  r"\bno risk\b",
-  caseSensitive: false,
-);
-
-/// True when [text] would certify doneness, temperature or safety: the same
-/// check every model answer must pass. The read-aloud path (SS-077) applies
-/// it again to each sentence it speaks.
-bool coachLiteCertifies(String text) => _certification.hasMatch(text);
+/// True when [text] would certify doneness, temperature, freshness,
+/// allergen absence or dietary suitability, in English or Spanish: the
+/// shared cook-facing safety gate (lib/safety/cook_safety.dart) that every
+/// model answer must pass. The read-aloud path (SS-077) applies it again to
+/// each sentence it speaks.
+bool coachLiteCertifies(String text) => touchesFoodSafety(text);
 
 /// Parses and validates model output. Throws [FormatException].
 ({List<Map<String, dynamic>> components, CoachLiteTimerSuggestion? timer})
@@ -387,12 +403,20 @@ parseCoachLiteResponse(String text) {
       throw const FormatException('IDs starting with app_ are reserved.');
     }
   }
-  if (_certification.hasMatch(jsonEncode(cleaned))) {
-    throw const FormatException(
-      'Coach Lite must not certify doneness, temperature or safety.',
-    );
+  // Every cook-facing string, the timer label included.
+  if (payloadTouchesFoodSafety({
+    'components': cleaned,
+    'timerSuggestion': decoded['timerSuggestion'],
+  })) {
+    throw const UnsafeClaimException();
   }
   final components = validateLiteCookingUi({'components': cleaned});
+  // A tree of columns with no card says nothing: treat it as malformed so
+  // the retry or the recipe-step fallback runs. The validator has already
+  // checked that every component is reachable from the root.
+  if (!components.any((c) => c['component'] != 'CookingColumn')) {
+    throw const FormatException('Coach Lite answer has no content card.');
+  }
   return (
     components: components,
     timer: CoachLiteTimerSuggestion.fromModel(decoded['timerSuggestion']),
@@ -580,7 +604,14 @@ class CoachLite {
     } on Object catch (e) {
       return finish(
         CoachLiteStatus.invalid,
-        _fallback(step, "The on-device coach's answer could not be shown."),
+        _fallback(
+          step,
+          // A safety-gated answer is replaced by the recipe step, its cue
+          // and where to check what the coach cannot know.
+          e is UnsafeClaimException
+              ? cookSafetyFallbackNote
+              : "The on-device coach's answer could not be shown.",
+        ),
         legs: result.legs,
         error: e is FormatException ? e.message : '$e',
       );
@@ -849,4 +880,19 @@ List<Map<String, dynamic>> _withNotices(
     ...notices,
   ];
   return validateLiteCookingUi({'components': merged});
+}
+
+/// The app's own literal notices: they name doneness, temperature and
+/// allergens on purpose and are never model-written.
+const coachLiteAppLiterals = [
+  coachLiteSafetyNotice,
+  coachLiteAllergenNotice,
+  coachLiteFreshnessNotice,
+  cookSafetyFallbackNote,
+];
+
+/// True when [sentence] is (part of) one of [coachLiteAppLiterals].
+bool isCoachLiteAppLiteral(String sentence) {
+  final s = sentence.trim();
+  return s.isNotEmpty && coachLiteAppLiterals.any((l) => l.contains(s));
 }

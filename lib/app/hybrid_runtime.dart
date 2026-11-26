@@ -20,6 +20,7 @@ import '../config/remote_policy.dart';
 import '../core/cloud_send.dart';
 import '../label/household_allergens.dart';
 import '../label/label_check_controller.dart';
+import '../translate/translation_runtime.dart';
 import '../trust/ledger_source.dart';
 import '../trust/privacy_preferences.dart';
 import 'cloud_send_recorder.dart';
@@ -326,15 +327,17 @@ class HybridRuntime {
     final prefs = privacy ?? InMemoryPrivacyPreferences();
     final compiledRoutes = cloudRoutes ?? CloudRoutes.fromEnvironment();
     final routes = remote?.gate(compiledRoutes) ?? compiledRoutes;
+    final online = isOnline ?? deviceOnline;
+    // The same checks the dispatcher made, read again after the wait:
+    // privacy, route approval and connectivity.
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
       HybridConfig(cloudModel: cloudModel),
-      // The same checks the dispatcher made, read again after the wait.
       mayForward: (request) =>
           routes.allows(CloudRoute.hybridFallback) &&
-          !localOnlyFor(prefs, request.task.feature),
+          !localOnlyFor(prefs, request.task.feature) &&
+          online(),
     );
-    final online = isOnline ?? deviceOnline;
     final ledger = InferenceLedger(sessionId: _newRunId());
     final consent = DialogConsentGate(
       navigatorKey: key,
@@ -401,6 +404,9 @@ class HybridRuntime {
   /// starts an empty ledger.
   void bindCookingSession(String id) {
     final previous = _cookingSessionId;
+    // SS-106: a translation started for the previous cook stops now, before
+    // any of its sends can reach this session's ledger.
+    if (previous != id) cancelCookLanguageWork(this);
     _cookingSessionId = id;
     if (previous != null && previous != id) ledger.startSession(id);
   }

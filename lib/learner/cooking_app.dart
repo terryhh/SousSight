@@ -30,6 +30,10 @@ import '../live/live_controller.dart';
 import '../live/live_types.dart';
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
+import '../translate/cook_language.dart';
+import '../translate/practice_translation.dart';
+import '../translate/recipe_language_view.dart';
+import '../translate/translation_runtime.dart';
 import '../trust/inference_source_badge.dart';
 import '../watch/capture_owner.dart';
 import '../watch/local_watch_controller.dart';
@@ -253,7 +257,8 @@ class _CookingScreenState extends State<CookingScreen> {
       coachLite: hybrid == null
           ? null
           : CoachLite(
-              dispatcher: hybrid.dispatcher,
+              // SS-106: answers in the cook's language.
+              dispatcher: languageAwareDispatcherFor(hybrid),
               privacy: hybrid.privacy,
               cloudRoutes: hybrid.cloudRoutes,
               isOnline: hybrid.isOnline,
@@ -267,6 +272,9 @@ class _CookingScreenState extends State<CookingScreen> {
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
       isOnline: hybrid?.isOnline,
+      cookLanguage: hybrid == null
+          ? null
+          : () => translationFor(hybrid).language,
     );
   }
 
@@ -460,10 +468,25 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     if (!widget.initialized) unawaited(cook.initialize());
   }
 
+  /// The cook's language when the current Coach Lite question was asked
+  /// (SS-106). Read-aloud has English voices only, so an answer asked for in
+  /// another language is not read.
+  CookLanguage _askedIn = sourceLanguage;
+  bool _wasBusy = false;
+
+  bool get _readAloudAllowed => _askedIn.isSource;
+
   void _onChange() {
     if (!mounted) return;
+    if (cook.coachLiteBusy && !_wasBusy) {
+      final hybrid = widget.hybrid;
+      _askedIn = hybrid == null || widget.isDemo
+          ? sourceLanguage
+          : translationFor(hybrid).language;
+    }
+    _wasBusy = cook.coachLiteBusy;
     _speaker?.sync(
-      answer: cook.coachLiteAnswer,
+      answer: _readAloudAllowed ? cook.coachLiteAnswer : null,
       busy: cook.coachLiteBusy,
       liveActive: cook.live.isActive,
       stepId: cook.step.id,
@@ -696,6 +719,21 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       ),
       DraftRecipeChip(recipe: cook.recipe),
       AllergenChip(recipe: cook.recipe),
+      // SS-106: recipe content and AI answers in the cook's language;
+      // canned, labelled practice translations in rehearsal.
+      if (widget.isDemo || widget.hybrid != null)
+        CookLanguageButton(
+          controller: switch (widget.hybrid) {
+            final hybrid? when !widget.isDemo => translationFor(hybrid),
+            _ => practiceTranslation(),
+          },
+          recipe: cook.recipe,
+          // The recipe and its own session, together: disabled until this
+          // cook's session exists (SS-106).
+          enabled: cook.session != null,
+          sessionId: () => cook.session?.id ?? 'pending',
+          currentStepId: cook.session?.currentStepId,
+        ),
       if (widget.hybrid case final hybrid?)
         HybridHeaderButtons(
           hybrid: hybrid,
@@ -1201,7 +1239,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       CookingSurface(controller: cook.ui),
-      if (cook.coachLiteAnswer != null)
+      if (cook.coachLiteAnswer != null && _readAloudAllowed)
         if (_speaker case final speaker?)
           Padding(
             padding: const EdgeInsets.only(top: 8),

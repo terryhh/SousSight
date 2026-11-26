@@ -59,12 +59,18 @@ String coachLiteSpokenText(CoachLiteAnswer answer, {int maxChars = 1500}) {
   final order = root?['children'];
   if (order is! List) return '';
   final parts = <String>[];
+  // The text itself is gated, whatever card it is in: an app card can hold
+  // model-written text (an AI draft's step). Only the app's own literal
+  // notices, which name the topics on purpose, are read as written.
   void add(Object? value, [String prefix = '']) {
     if (value is! String) return;
     final clean = value.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (clean.isEmpty) return;
     for (final sentence in clean.split(RegExp(r'(?<=[.!?])\s+'))) {
-      if (sentence.isEmpty || coachLiteCertifies(sentence)) continue;
+      if (sentence.isEmpty) continue;
+      if (coachLiteCertifies(sentence) && !isCoachLiteAppLiteral(sentence)) {
+        continue;
+      }
       final s = '$prefix$sentence';
       parts.add(RegExp(r'[.!?…:]$').hasMatch(s) ? s : '$s.');
     }

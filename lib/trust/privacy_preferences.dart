@@ -34,6 +34,11 @@ const List<({String feature, String label, String detail})> privacyFeatures = [
     label: 'Label check',
     detail: 'Reading allergen statements on packaging.',
   ),
+  (
+    feature: 'recipe_translate',
+    label: 'Recipe translation',
+    detail: 'Putting recipe steps and ingredients into your language.',
+  ),
 ];
 
 abstract class PrivacyPreferences implements PrivacySettings, Listenable {
