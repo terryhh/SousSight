@@ -711,14 +711,18 @@ void main() {
       expect(fixture.cook.advancing, isFalse);
       expect(fixture.cook.pendingStepSaves, 1);
       expect(fixture.cook.error, CookingCoordinator.unsavedStepError);
-      final saved = await fixture.sessions.watch(fixture.cook.session!.id).first;
+      final saved = await fixture.sessions
+          .watch(fixture.cook.session!.id)
+          .first;
       expect(saved.currentStepId, 'prep');
       // The retry (after the fixture's 20 ms retry delay) saves it once.
       await Future<void>.delayed(const Duration(milliseconds: 60));
       await _flush();
       expect(fixture.cook.pendingStepSaves, 0);
       expect(fixture.cook.error, isNull);
-      final after = await fixture.sessions.watch(fixture.cook.session!.id).first;
+      final after = await fixture.sessions
+          .watch(fixture.cook.session!.id)
+          .first;
       expect(after.currentStepId, 'mash');
       expect(after.completedStepIds, ['prep']);
       expect(after.revision, 1);
@@ -807,36 +811,50 @@ void main() {
     expect(fixture.cook.session!.confirmedFacts, hasLength(1));
   });
 
-  test('invalid generated UI is reported to the model so it can self-correct', () async {
-    await fixture.initialize();
-    await fixture.cook.connect();
-    final before = fixture.cook.ui.components;
-    fixture.transport.source.add(
-      LiveToolCall(
-        id: 'bad-ui',
-        name: 'show_cooking_ui',
-        arguments: {
-          'stepId': 'prep',
-          'uiJson': jsonEncode({
-            'components': [
-              {'id': 'root', 'component': 'stepCue', 'title': 'x', 'body': 'y'},
-            ],
-          }),
-        },
-      ),
-    );
-    await _flush();
-    final response = fixture.transport.responses.single;
-    expect(response['ok'], isFalse);
-    expect(response['error'], startsWith('Invalid uiJson: root must be a CookingColumn.'));
-    expect(response['error'], endsWith('Fix and call show_cooking_ui again.'));
-    expect(fixture.cook.ui.components, before);
-    expect(fixture.cook.live.error, isNull);
-    // The corrected call under a new id succeeds.
-    fixture.transport.source.add(_workspaceCall('prep', 'fixed-ui'));
-    await _flush();
-    expect(fixture.transport.responses.last['ok'], isTrue);
-  });
+  test(
+    'invalid generated UI is reported to the model so it can self-correct',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      final before = fixture.cook.ui.components;
+      fixture.transport.source.add(
+        LiveToolCall(
+          id: 'bad-ui',
+          name: 'show_cooking_ui',
+          arguments: {
+            'stepId': 'prep',
+            'uiJson': jsonEncode({
+              'components': [
+                {
+                  'id': 'root',
+                  'component': 'stepCue',
+                  'title': 'x',
+                  'body': 'y',
+                },
+              ],
+            }),
+          },
+        ),
+      );
+      await _flush();
+      final response = fixture.transport.responses.single;
+      expect(response['ok'], isFalse);
+      expect(
+        response['error'],
+        startsWith('Invalid uiJson: root must be a CookingColumn.'),
+      );
+      expect(
+        response['error'],
+        endsWith('Fix and call show_cooking_ui again.'),
+      );
+      expect(fixture.cook.ui.components, before);
+      expect(fixture.cook.live.error, isNull);
+      // The corrected call under a new id succeeds.
+      fixture.transport.source.add(_workspaceCall('prep', 'fixed-ui'));
+      await _flush();
+      expect(fixture.transport.responses.last['ok'], isTrue);
+    },
+  );
 
   test('repeated answer taps save one fact and disable the question', () async {
     await fixture.initialize();
@@ -849,7 +867,11 @@ void main() {
           'stepId': 'prep',
           'uiJson': jsonEncode({
             'components': [
-              {'id': 'root', 'component': 'CookingColumn', 'children': ['q']},
+              {
+                'id': 'root',
+                'component': 'CookingColumn',
+                'children': ['q'],
+              },
               {
                 'id': 'q',
                 'component': 'cookQuestion',
@@ -892,69 +914,81 @@ void main() {
     expect(fixture.transport.texts, hasLength(1));
   });
 
-  test('the same question wording on a later step can be answered again', () async {
-    await fixture.initialize();
-    await fixture.cook.connect();
-    await fixture.cook.confirmCookAnswer('Ready to continue?', 'Yes');
-    await _flush();
-    expect(fixture.cook.ui.answerFor('Ready to continue?'), 'Yes');
-    final firstStep = fixture.cook.step.id;
-    await fixture.cook.advanceStep();
-    await _flush();
-    expect(fixture.cook.step.id, isNot(firstStep));
-    expect(fixture.cook.ui.answerFor('Ready to continue?'), isNull);
-    fixture.transport.texts.clear();
-    await fixture.cook.confirmCookAnswer('Ready to continue?', 'Yes');
-    await _flush();
-    expect(fixture.cook.ui.answerFor('Ready to continue?'), 'Yes');
-    // The later answer reaches the coach; an identical fact is stored once.
-    expect(
-      fixture.transport.texts.where((t) => t.contains('Ready to continue?')),
-      hasLength(1),
-    );
-  });
+  test(
+    'the same question wording on a later step can be answered again',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      await fixture.cook.confirmCookAnswer('Ready to continue?', 'Yes');
+      await _flush();
+      expect(fixture.cook.ui.answerFor('Ready to continue?'), 'Yes');
+      final firstStep = fixture.cook.step.id;
+      await fixture.cook.advanceStep();
+      await _flush();
+      expect(fixture.cook.step.id, isNot(firstStep));
+      expect(fixture.cook.ui.answerFor('Ready to continue?'), isNull);
+      fixture.transport.texts.clear();
+      await fixture.cook.confirmCookAnswer('Ready to continue?', 'Yes');
+      await _flush();
+      expect(fixture.cook.ui.answerFor('Ready to continue?'), 'Yes');
+      // The later answer reaches the coach; an identical fact is stored once.
+      expect(
+        fixture.transport.texts.where((t) => t.contains('Ready to continue?')),
+        hasLength(1),
+      );
+    },
+  );
 
-  test('an identical answer to a re-asked question is not stored twice', () async {
-    await fixture.initialize();
-    await fixture.cook.connect();
-    for (final id in ['ask-1', 'ask-2']) {
+  test(
+    'an identical answer to a re-asked question is not stored twice',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
+      for (final id in ['ask-1', 'ask-2']) {
+        fixture.transport.source.add(
+          LiveToolCall(
+            id: id,
+            name: 'ask_cook',
+            arguments: {
+              'question': 'Is your yogurt plain?',
+              'reason': 'Check.',
+            },
+          ),
+        );
+        await _flush();
+        await fixture.cook.say('Yes');
+      }
+      expect(fixture.cook.session!.confirmedFacts, [
+        'Is your yogurt plain? Answer from cook: Yes',
+      ]);
+      final question = fixture.cook.ui.components.firstWhere(
+        (c) => c['id'] == 'question',
+      );
+      expect(question['action'], isNull);
+      expect(question['body'], contains('Your answer: Yes'));
+    },
+  );
+
+  test(
+    'advancing clears a pending question so new text is not an old answer',
+    () async {
+      await fixture.initialize();
+      await fixture.cook.connect();
       fixture.transport.source.add(
-        LiveToolCall(
-          id: id,
+        const LiveToolCall(
+          id: 'ask',
           name: 'ask_cook',
           arguments: {'question': 'Is your yogurt plain?', 'reason': 'Check.'},
         ),
       );
       await _flush();
-      await fixture.cook.say('Yes');
-    }
-    expect(fixture.cook.session!.confirmedFacts, [
-      'Is your yogurt plain? Answer from cook: Yes',
-    ]);
-    final question = fixture.cook.ui.components.firstWhere(
-      (c) => c['id'] == 'question',
-    );
-    expect(question['action'], isNull);
-    expect(question['body'], contains('Your answer: Yes'));
-  });
-
-  test('advancing clears a pending question so new text is not an old answer', () async {
-    await fixture.initialize();
-    await fixture.cook.connect();
-    fixture.transport.source.add(
-      const LiveToolCall(
-        id: 'ask',
-        name: 'ask_cook',
-        arguments: {'question': 'Is your yogurt plain?', 'reason': 'Check.'},
-      ),
-    );
-    await _flush();
-    await fixture.cook.advanceStep();
-    expect(fixture.cook.cookQuestion, isNull);
-    await fixture.cook.say('How long do I mash?');
-    expect(fixture.transport.texts.last, 'How long do I mash?');
-    expect(fixture.cook.session!.confirmedFacts, isEmpty);
-  });
+      await fixture.cook.advanceStep();
+      expect(fixture.cook.cookQuestion, isNull);
+      await fixture.cook.say('How long do I mash?');
+      expect(fixture.transport.texts.last, 'How long do I mash?');
+      expect(fixture.cook.session!.confirmedFacts, isEmpty);
+    },
+  );
 
   test('failed clarification save keeps the question pending and sends no false fact', () async {
     await fixture.initialize();
@@ -1183,34 +1217,45 @@ void main() {
         AnalyticsEvents.stepCompleted,
         AnalyticsEvents.mealCompleted,
       ]);
-      expect(events.first.parameters, {'recipe_id': 'test-wrap', 'new_cook': 0});
+      expect(events.first.parameters, {
+        'recipe_id': 'test-wrap',
+        'new_cook': 0,
+      });
       expect(
         [
           for (final e in events)
-            if (e.name == AnalyticsEvents.stepCompleted) e.parameters['step_number'],
+            if (e.name == AnalyticsEvents.stepCompleted)
+              e.parameters['step_number'],
         ],
         [1, 2, 3],
       );
       expect(events[3].parameters, {'seconds': 60});
       for (final e in events) {
         for (final value in e.parameters.values) {
-          expect(value is num || (value as String).length <= 40, isTrue,
-              reason: '$e should only carry short labels');
+          expect(
+            value is num || (value as String).length <= 40,
+            isTrue,
+            reason: '$e should only carry short labels',
+          );
         }
       }
     });
 
-    test('research is counted by source and never includes the question', () async {
-      await fixture.initialize();
-      unawaited(fixture.cook.researchQuestionNow('Can I use yogurt?'));
-      final event = fixture.analytics.events.last;
-      expect(fixture.analytics.names, hasLength(2));
-      expect(event.name, AnalyticsEvents.researchAsked);
-      expect(event.parameters, {'recipe_id': 'test-wrap', 'source': 'cook'});
-      fixture.research.pending.single
-          .complete(const CookingResearchResult(answer: 'Yes.'));
-      await _flush();
-    });
+    test(
+      'research is counted by source and never includes the question',
+      () async {
+        await fixture.initialize();
+        unawaited(fixture.cook.researchQuestionNow('Can I use yogurt?'));
+        final event = fixture.analytics.events.last;
+        expect(fixture.analytics.names, hasLength(2));
+        expect(event.name, AnalyticsEvents.researchAsked);
+        expect(event.parameters, {'recipe_id': 'test-wrap', 'source': 'cook'});
+        fixture.research.pending.single.complete(
+          const CookingResearchResult(answer: 'Yes.'),
+        );
+        await _flush();
+      },
+    );
 
     test('connecting an already active coach is not counted twice', () async {
       await fixture.initialize();
@@ -1224,38 +1269,46 @@ void main() {
       );
     });
 
-    test('pressing the step timer again does not count a second timer', () async {
-      await fixture.initialize();
-      await fixture.cook.advanceStep(); // mash has a 60 s timer
-      await fixture.cook.startStepTimer();
-      await fixture.cook.startStepTimer();
-      expect(fixture.cook.ui.timers, hasLength(1));
-      expect(
-        fixture.analytics.names.where((n) => n == AnalyticsEvents.timerStarted),
-        hasLength(1),
-      );
-    });
+    test(
+      'pressing the step timer again does not count a second timer',
+      () async {
+        await fixture.initialize();
+        await fixture.cook.advanceStep(); // mash has a 60 s timer
+        await fixture.cook.startStepTimer();
+        await fixture.cook.startStepTimer();
+        expect(fixture.cook.ui.timers, hasLength(1));
+        expect(
+          fixture.analytics.names.where(
+            (n) => n == AnalyticsEvents.timerStarted,
+          ),
+          hasLength(1),
+        );
+      },
+    );
 
-    test('a watch the coach starts by voice is counted with source coach', () async {
-      await fixture.initialize();
-      await fixture.cook.connect();
-      fixture.transport.source.add(
-        const LiveToolCall(
-          id: 'watch-voice',
-          name: 'watch_cooking',
-          arguments: {'goal': 'Chickpeas look mashed'},
-        ),
-      );
-      await _flush();
-      expect(fixture.cook.live.watchId, isNotNull);
-      final watches = [
-        for (final e in fixture.analytics.events)
-          if (e.name == AnalyticsEvents.watchStarted) e.parameters,
-      ];
-      expect(watches, [
-        {'recipe_id': 'test-wrap', 'source': 'coach'},
-      ]);
-    });
+    test(
+      'a watch the coach starts by voice is counted with source coach',
+      () async {
+        await fixture.initialize();
+        await fixture.cook.connect();
+        fixture.transport.source.add(
+          const LiveToolCall(
+            id: 'watch-voice',
+            name: 'watch_cooking',
+            arguments: {'goal': 'Chickpeas look mashed'},
+          ),
+        );
+        await _flush();
+        expect(fixture.cook.live.watchId, isNotNull);
+        final watches = [
+          for (final e in fixture.analytics.events)
+            if (e.name == AnalyticsEvents.watchStarted) e.parameters,
+        ];
+        expect(watches, [
+          {'recipe_id': 'test-wrap', 'source': 'coach'},
+        ]);
+      },
+    );
 
     test('rehearsal (demo) builds log nothing', () async {
       await fixture.dispose();

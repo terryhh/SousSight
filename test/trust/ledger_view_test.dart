@@ -215,7 +215,9 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('ledger-not-finished')),
-        matching: find.text("photo · Didn't finish · nothing left this device"),
+        matching: find.text(
+          'photo · Running or stopped · nothing left this device',
+        ),
       ),
       findsOneWidget,
     );
@@ -259,6 +261,11 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('ledger-sent-empty')), findsOneWidget);
+    // The merged sheet is longer: scroll the uncertain section into view.
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('ledger-maybe')),
+      200,
+    );
     expect(find.byKey(const ValueKey('ledger-maybe')), findsOneWidget);
     expect(find.text('May have been sent'), findsOneWidget);
   });

@@ -34,7 +34,11 @@ LegOutcome legOutcome(InferenceLeg leg) => switch (leg.provenance) {
   Provenance.cloudAdapter => LegOutcome.cloudAdapter,
   Provenance.simulated => LegOutcome.simulated,
   Provenance.unknown =>
-    leg.transferPermitted ? LegOutcome.maybeSent : LegOutcome.notFinishedLocal,
+    // A bridge's own pre-send refusal proves nothing left; any other error
+    // on a request allowed to leave does not.
+    leg.transferPermitted && leg.error != HybridErrorCode.rejectedBeforeSend
+        ? LegOutcome.maybeSent
+        : LegOutcome.notFinishedLocal,
 };
 
 /// What practice mode (rehearsal) calls a pretend answer, on every surface.
@@ -47,7 +51,9 @@ String outcomeLabel(LegOutcome outcome) => switch (outcome) {
   LegOutcome.cloudSdk ||
   LegOutcome.cloudAdapter => "Sent online to Google's AI",
   LegOutcome.maybeSent => 'May have been sent',
-  LegOutcome.notFinishedLocal => "Didn't finish · nothing left this device",
+  // Also a local-only leg that is still running: never "didn't finish".
+  LegOutcome.notFinishedLocal =>
+    'Running or stopped · nothing left this device',
   LegOutcome.simulated => kPracticeLabel,
 };
 
@@ -72,11 +78,17 @@ String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
     "Google's AI tools reported that this was sent online to Google's AI.",
   LegOutcome.cloudAdapter => "SousSight sent this online to Google's AI.",
   LegOutcome.maybeSent =>
-    "This was allowed to leave, then stopped with an error, so we can't "
-        'tell whether it was sent.',
+    // Also shown while a request is still running (unknown provenance, no
+    // error yet), so it must not say the request stopped.
+    'This was allowed to leave this device and is not confirmed either way: '
+        'it may still be running, or it stopped before saying whether it was '
+        'sent.',
   LegOutcome.notFinishedLocal =>
-    "This didn't finish, and it wasn't allowed to leave, so nothing left "
-        'this device.',
+    // Also a request that was allowed to leave but refused before sending,
+    // so it must not claim the request was not allowed to leave.
+    'This is still running, or it stopped without finishing. Nothing left '
+        'this device: it was not allowed to leave, or it was refused before '
+        'sending.',
   LegOutcome.simulated =>
     'Practice mode: a pretend answer. No AI ran and nothing was sent.',
 };
@@ -190,4 +202,5 @@ String errorLabel(HybridErrorCode error) => switch (error) {
   HybridErrorCode.unsupportedInput => "couldn't take this input",
   HybridErrorCode.unsupportedMode => "couldn't run that way",
   HybridErrorCode.failed => "didn't finish",
+  HybridErrorCode.rejectedBeforeSend => 'refused before sending',
 };

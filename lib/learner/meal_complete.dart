@@ -4,6 +4,8 @@ import '../core/models.dart';
 import '../nearby/guarded_nearby_client.dart';
 import '../nearby/nearby_client.dart';
 import '../nearby/nearby_sheet.dart';
+import '../trust/ledger_source.dart';
+import '../trust/privacy_receipt_card.dart';
 import 'cooking_coordinator.dart';
 
 const _pantryFactPrefix = 'Pantry has (confirmed by the cook):';
@@ -40,11 +42,21 @@ class MealCompletePanel extends StatefulWidget {
     this.nearbyClient,
     this.locate,
     this.openLink,
+    this.ledger,
+    this.receiptBinding,
   });
 
   final CookingCoordinator cook;
   final bool isDemo;
   final VoidCallback onTextHousehold;
+
+  /// This session's inference ledger. When given, the panel shows tonight's
+  /// privacy receipt, counted only from its legs (SS-105).
+  final LedgerSource? ledger;
+
+  /// Which meal the receipt belongs to. Owned by the cooking screen so it
+  /// survives layout rebuilds; the receipt shows only when both are given.
+  final PrivacyReceiptBinding? receiptBinding;
 
   /// Back to the pantry when the flow has one, otherwise a new cook. Null
   /// while a new cook is already starting.
@@ -174,6 +186,18 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
             if (!cook.live.isActive) ...[
               const SizedBox(height: 4),
               _recapLine(Icons.pause_circle_outline, mealCompleteCoachNote),
+            ],
+            if ((widget.ledger, widget.receiptBinding) case (
+              final ledger?,
+              final binding?,
+            )) ...[
+              const SizedBox(height: 16),
+              PrivacyReceiptCard(
+                ledger: ledger,
+                binding: binding,
+                recipeTitle: cook.recipe.title,
+                timersRun: cook.timersStarted,
+              ),
             ],
             const SizedBox(height: 18),
             FilledButton.icon(
