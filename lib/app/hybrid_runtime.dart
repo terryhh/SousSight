@@ -41,10 +41,14 @@ const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 /// for the one [HybridInference.configure] call made at startup. A failed
 /// configure is not retried here; `generate` then fails as the bridge says.
 ///
-/// The wait is bounded: `generate` waits at most the task's own timeout and
-/// [capabilities] at most [configureWait] (on web, configure includes an
-/// unbounded `import()`). Past that they throw
-/// `HybridException(HybridErrorCode.timeout)`; nothing is forwarded.
+/// The wait is bounded, and one deadline covers it all: `generate` has the
+/// task's own timeout for configure plus generation together. The backend is
+/// handed only what remains of that budget, and when the budget runs out the
+/// request is cancelled and `generate` throws
+/// `HybridException(HybridErrorCode.timeout)`; a late answer is dropped.
+/// [capabilities] waits at most [configureWait] (on web, configure includes
+/// an unbounded `import()`). A request that times out during startup is
+/// never forwarded.
 ///
 /// Routing waits for configuration too ([capabilities] awaits it), so a
 /// decision is made against the policy as it is once the backend is ready.
@@ -58,6 +62,7 @@ class ConfiguredHybridInference implements HybridInference {
     HybridConfig config, {
     this.mayForward,
     this.configureWait = const Duration(seconds: 10),
+    this._stopwatch = Stopwatch.new,
   }) : _configured = inner
            .configure(config)
            .then<void>(
@@ -69,6 +74,10 @@ class ConfiguredHybridInference implements HybridInference {
   final HybridInference inner;
   final Future<void> _configured;
   final bool Function(HybridRequest request)? mayForward;
+
+  /// Measures how much of a request's budget startup spent. Injectable so
+  /// fake-time tests can observe the remaining budget handed to [inner].
+  final Stopwatch Function() _stopwatch;
 
   /// The longest [capabilities] waits for the startup configure.
   final Duration configureWait;
@@ -102,20 +111,73 @@ class ConfiguredHybridInference implements HybridInference {
   Stream<double?> prepare({required bool withImage}) =>
       inner.prepare(withImage: withImage);
 
+  /// One deadline for startup and generation together: the task's timeout,
+  /// measured from this call. It is enforced by a single timer, so a slow
+  /// configure, a slow backend or both together cannot stretch it.
   @override
-  Future<HybridResult> generate(HybridRequest request) async {
-    await _awaitConfigured(request.task.timeout);
-    final check = mayForward;
-    if (request.mode != HybridMode.onlyOnDevice &&
-        check != null &&
-        !check(request)) {
-      throw const HybridException(
-        HybridErrorCode.blocked,
-        'Cloud help was turned off before this request was sent.',
-      );
+  Future<HybridResult> generate(HybridRequest request) {
+    final budget = request.task.timeout;
+    final clock = _stopwatch()..start();
+    var expired = false;
+    var sent = false;
+
+    Future<HybridResult> run() async {
+      await _configured;
+      // The deadline may have passed while configure was running; a request
+      // that timed out during startup is never forwarded.
+      if (expired) throw _expired;
+      final remaining = budget - clock.elapsed;
+      // The bridge carries whole milliseconds; under 1ms nothing can run.
+      if (remaining.inMilliseconds <= 0) throw _expired;
+      final check = mayForward;
+      if (request.mode != HybridMode.onlyOnDevice &&
+          check != null &&
+          !check(request)) {
+        throw const HybridException(
+          HybridErrorCode.blocked,
+          'Cloud help was turned off before this request was sent.',
+        );
+      }
+      sent = true;
+      // Only what is left of the one budget; startup already spent the rest.
+      return inner.generate(_withTimeout(request, remaining));
     }
-    return inner.generate(request);
+
+    return run().timeout(
+      budget,
+      onTimeout: () {
+        expired = true;
+        // A backend that overruns is stopped; its late answer or error is
+        // dropped by the abandoned future.
+        if (sent) {
+          unawaited(
+            Future.sync(() => inner.cancel(request.requestId))
+                .catchError((Object _) {}),
+          );
+        }
+        throw _expired;
+      },
+    );
   }
+
+  static HybridRequest _withTimeout(HybridRequest r, Duration timeout) =>
+      HybridRequest(
+        requestId: r.requestId,
+        mode: r.mode,
+        task: HybridTask(
+          feature: r.task.feature,
+          systemInstruction: r.task.systemInstruction,
+          parts: r.task.parts,
+          jsonSchema: r.task.jsonSchema,
+          maxOutputTokens: r.task.maxOutputTokens,
+          timeout: timeout,
+        ),
+      );
+
+  static const _expired = HybridException(
+    HybridErrorCode.timeout,
+    'Hybrid inference ran past the request deadline.',
+  );
 
   @override
   Future<void> cancel(String requestId) => inner.cancel(requestId);

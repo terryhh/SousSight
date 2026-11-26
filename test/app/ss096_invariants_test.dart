@@ -8,6 +8,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +30,62 @@ class _SlowStart extends FakeHybridInference {
 
   @override
   Future<void> configure(HybridConfig config) => _done.future;
+}
+
+/// A [Stopwatch] that reads fake time, so the remaining budget handed to the
+/// backend is observable under [fakeAsync].
+class _FakeStopwatch implements Stopwatch {
+  _FakeStopwatch(this.async);
+  final FakeAsync async;
+  Duration? _startedAt;
+
+  @override
+  void start() => _startedAt ??= async.elapsed;
+
+  @override
+  Duration get elapsed =>
+      _startedAt == null ? Duration.zero : async.elapsed - _startedAt!;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Configure settles after [startup]; generation takes [work] and, unless
+/// [ignoresDeadline], honours the timeout it is handed (as the contract
+/// requires of every backend).
+class _TimedBackend extends FakeHybridInference {
+  _TimedBackend({
+    required this.startup,
+    required this.work,
+    this.ignoresDeadline = false,
+  });
+  final Duration startup;
+  final Duration work;
+  final bool ignoresDeadline;
+  final handed = <Duration>[];
+
+  @override
+  Future<void> configure(HybridConfig config) => Future<void>.delayed(startup);
+
+  @override
+  Future<HybridResult> generate(HybridRequest request) {
+    requests.add(request);
+    handed.add(request.task.timeout);
+    final answer = Future<HybridResult>.delayed(
+      work,
+      () => HybridResult(
+        requestId: request.requestId,
+        text: 'late',
+        source: InferenceSource.onDevice,
+      ),
+    );
+    if (ignoresDeadline) return answer;
+    return answer.timeout(
+      request.task.timeout,
+      onTimeout: () =>
+          throw const HybridException(HybridErrorCode.timeout, 'timed out'),
+    );
+  }
 }
 
 HybridRequest _request(Duration timeout) => HybridRequest(
@@ -174,6 +231,192 @@ void main() {
       // No capabilities means no local model; with no cloud route, blocked.
       expect(result.blocked, RouteReason.cloudNotApproved);
       expect(inner.requests, isEmpty);
+    });
+  });
+
+  group('one deadline covers configure plus generation (Codex P2)', () {
+    // Codex's repro: a 100ms task, configure finishing at 90ms and a backend
+    // that needs 90ms. Before the fix the backend was handed the full 100ms
+    // and the call could succeed at 180ms.
+    test('configure at 90ms + 90ms backend fails by the 100ms deadline and '
+        'the backend gets only the remaining 10ms', () {
+      fakeAsync((async) {
+        final inner = _TimedBackend(
+          startup: const Duration(milliseconds: 90),
+          work: const Duration(milliseconds: 90),
+        );
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          stopwatch: () => _FakeStopwatch(async),
+        );
+        HybridResult? result;
+        Object? error;
+        Duration? settledAt;
+        configured
+            .generate(_request(const Duration(milliseconds: 100)))
+            .then<void>(
+              (r) => result = r,
+              onError: (Object e) {
+                error = e;
+              },
+            )
+            .whenComplete(() => settledAt = async.elapsed);
+        async.elapse(const Duration(milliseconds: 100));
+        expect(settledAt, isNotNull, reason: 'settled within the budget');
+        expect(settledAt, lessThanOrEqualTo(const Duration(milliseconds: 100)));
+        expect(result, isNull);
+        expect(
+          error,
+          isA<HybridException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.timeout,
+          ),
+        );
+        expect(inner.handed, [const Duration(milliseconds: 10)]);
+        async.elapse(const Duration(milliseconds: 200));
+        expect(result, isNull, reason: 'no late success at 180ms');
+      });
+    });
+
+    test('a backend that ignores its deadline is cancelled at the overall '
+        'deadline and its late answer is dropped', () {
+      fakeAsync((async) {
+        final inner = _TimedBackend(
+          startup: const Duration(milliseconds: 90),
+          work: const Duration(milliseconds: 90),
+          ignoresDeadline: true,
+        );
+        // Default (real) stopwatch: the single deadline timer alone must
+        // bound the call, whatever the measured elapsed time says.
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+        );
+        HybridResult? result;
+        Object? error;
+        configured
+            .generate(_request(const Duration(milliseconds: 100)))
+            .then<void>(
+              (r) => result = r,
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.elapse(const Duration(milliseconds: 99));
+        expect(error, isNull);
+        expect(inner.requests, hasLength(1));
+        async.elapse(const Duration(milliseconds: 1));
+        expect(
+          error,
+          isA<HybridException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.timeout,
+          ),
+        );
+        async.flushMicrotasks();
+        expect(inner.cancelled, ['r1']);
+        async.elapse(const Duration(milliseconds: 200));
+        expect(result, isNull);
+      });
+    });
+
+    test('a configure that settles after the deadline never forwards the '
+        'request', () {
+      fakeAsync((async) {
+        final inner = _TimedBackend(
+          startup: const Duration(milliseconds: 150),
+          work: const Duration(milliseconds: 1),
+        );
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          stopwatch: () => _FakeStopwatch(async),
+        );
+        Object? error;
+        configured
+            .generate(_request(const Duration(milliseconds: 100)))
+            .then<void>(
+              (_) {},
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.elapse(const Duration(milliseconds: 100));
+        expect(error, isA<HybridException>());
+        async.elapse(const Duration(milliseconds: 200));
+        expect(inner.requests, isEmpty);
+        expect(inner.cancelled, isEmpty, reason: 'nothing was sent');
+      });
+    });
+
+    test('within budget the answer arrives and the backend gets what startup '
+        'left', () {
+      fakeAsync((async) {
+        final inner = _TimedBackend(
+          startup: const Duration(milliseconds: 30),
+          work: const Duration(milliseconds: 20),
+        );
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          stopwatch: () => _FakeStopwatch(async),
+        );
+        HybridResult? result;
+        configured
+            .generate(_request(const Duration(milliseconds: 100)))
+            .then((r) => result = r);
+        async.elapse(const Duration(milliseconds: 50));
+        expect(result?.text, 'late');
+        expect(result?.requestId, 'r1');
+        expect(inner.handed, [const Duration(milliseconds: 70)]);
+        expect(inner.cancelled, isEmpty);
+        final sent = inner.requests.single;
+        expect(sent.mode, HybridMode.onlyOnDevice);
+        expect(sent.task.feature, 'coach_lite');
+        expect(sent.task.maxOutputTokens, 16);
+      });
+    });
+
+    test('a blocked forward after startup is reported, not timed out', () {
+      fakeAsync((async) {
+        final inner = _TimedBackend(
+          startup: const Duration(milliseconds: 10),
+          work: const Duration(milliseconds: 10),
+        );
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+          mayForward: (_) => false,
+        );
+        Object? error;
+        configured
+            .generate(
+              HybridRequest(
+                requestId: 'c9',
+                mode: HybridMode.preferOnDevice,
+                task: _request(const Duration(milliseconds: 100)).task,
+              ),
+            )
+            .then<void>(
+              (_) {},
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.elapse(const Duration(milliseconds: 20));
+        expect(
+          error,
+          isA<HybridException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.blocked,
+          ),
+        );
+        expect(inner.requests, isEmpty);
+      });
     });
   });
 
