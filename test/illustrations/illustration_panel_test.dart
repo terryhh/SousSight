@@ -10,7 +10,7 @@ import 'package:soussight/illustrations/illustration_generator.dart';
 import 'package:soussight/illustrations/illustration_panel.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
-import 'package:soussight/app/cloud_send_recorder.dart';
+import 'package:soussight/illustrations/illustration_ledger.dart';
 import 'package:soussight/trust/privacy_preferences.dart';
 
 import 'fakes.dart';
@@ -105,8 +105,9 @@ void main() {
     expect(find.text(kPremadeSourceCopy), findsNothing);
     expect(
       find.text(
-        "Made just now in Google's cloud (fake-image-model (text→image)) "
-        "from this step's text, sent with your OK.",
+        "Made just now in Google's cloud from this step's cue and "
+        'ingredients, sent with your OK. Configured model: '
+        'fake-image-model (text→image).',
       ),
       findsOneWidget,
     );
@@ -122,7 +123,7 @@ void main() {
       privacy: prefs,
       isOnline: () => true,
       consent: h.consent,
-      recorder: LedgerCloudSendRecorder(h.ledger),
+      ledger: InferenceLedgerIllustrations(h.ledger),
       generator: h.generator,
       settingsChanges: prefs,
       decodes: (_) async => true,
@@ -419,9 +420,27 @@ void main() {
       harness: h,
       sessionId: null,
     );
+    final button = tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+    expect(button.onPressed, isNull, reason: 'disabled until a session exists');
+    expect(
+      find.text(illustrationBlockText(IllustrationBlock.noSession)),
+      findsOneWidget,
+    );
     await tester.tap(find.text(askLabel));
     await tester.pumpAndSettle();
     expect(h.consent.asks, isEmpty);
+  });
+
+  testWidgets('local-only with the route off still explains, not hides', (
+    tester,
+  ) async {
+    final h = Harness(routes: const {}, localOnly: const {'recipe_draft'});
+    await pumpPanel(tester, recipe: draftRecipe(), stepId: 'grate', harness: h);
+    expect(
+      tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+      isNull,
+    );
+    expect(find.textContaining('need the cloud'), findsOneWidget);
   });
 
   testWidgets('the session owns the controller: a rebuilt widget keeps the '

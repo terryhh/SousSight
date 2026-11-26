@@ -24,7 +24,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
-import 'package:soussight/app/cloud_send_recorder.dart';
 import 'package:soussight/app/hybrid_runtime.dart' show DialogConsentGate;
 import 'package:soussight/app/online_status.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
@@ -32,6 +31,7 @@ import 'package:soussight/core/models.dart';
 import 'package:soussight/data/firebase_services.dart';
 import 'package:soussight/illustrations/illustration_controller.dart';
 import 'package:soussight/illustrations/illustration_generator.dart';
+import 'package:soussight/illustrations/illustration_ledger.dart';
 import 'package:soussight/illustrations/illustration_panel.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
 import 'package:soussight/illustrations/premade_illustrations.dart';
@@ -146,12 +146,23 @@ class _GeneratorAppState extends State<_GeneratorApp> {
         if (t.trim().isNotEmpty) t.trim(),
     };
     final recipes = await loadRecipeCatalog();
+    // A misspelled target must fail, not quietly generate nothing.
+    final unknown = unknownPremadeTargets(only);
+    if (unknown.isNotEmpty) {
+      _emit('ILLUSTRATION_ERROR', {
+        'stage': 'targets',
+        'error': 'Unknown ILLUSTRATION_TARGETS: ${unknown.join(', ')}',
+      });
+      setState(() => _status = 'Unknown targets');
+      return;
+    }
     final generator = FirebaseAiIllustrationGenerator();
     // Give the driver time to read the mode line and arm before any call.
     await Future<void>.delayed(const Duration(seconds: 2));
     var made = 0;
     for (final recipe in recipes) {
-      for (final key in kPremadeIllustrations[recipe.id] ?? const <String>{}) {
+      for (final key
+          in kPremadeIllustrations[recipe.id]?.keys ?? const <String>[]) {
         if (only.isNotEmpty && !only.contains('${recipe.id}/$key')) continue;
         if (made >= _max) break;
         final target = key == 'plate'
@@ -207,7 +218,7 @@ class _GeneratorAppState extends State<_GeneratorApp> {
         navigatorKey: _navigatorKey,
         cloudModel: kIllustrationModel,
       ),
-      recorder: LedgerCloudSendRecorder(ledger),
+      ledger: InferenceLedgerIllustrations(ledger),
       generator: FirebaseAiIllustrationGenerator(),
       cap: 1,
     );

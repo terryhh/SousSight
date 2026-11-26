@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridErrorCode;
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
-import 'package:soussight/app/cloud_send_recorder.dart';
+import 'package:soussight/illustrations/illustration_ledger.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/illustrations/illustration_controller.dart';
 import 'package:soussight/illustrations/illustration_generator.dart';
@@ -84,6 +84,7 @@ class Harness {
     Set<CloudRoute> routes = const {CloudRoute.images},
     Set<String> localOnly = const {},
     int cap = 4,
+    IllustrationUsage? usage,
   }) : routes = CloudRoutes(routes),
        privacy = InMemoryPrivacyPreferences(localOnly) {
     controller = IllustrationController(
@@ -91,9 +92,10 @@ class Harness {
       privacy: privacy,
       isOnline: () => online,
       consent: consent,
-      recorder: LedgerCloudSendRecorder(ledger),
+      ledger: InferenceLedgerIllustrations(ledger),
       generator: generator,
       cap: cap,
+      usage: usage,
       decodes: (bytes) async {
         decoded.add(bytes);
         return decodes;

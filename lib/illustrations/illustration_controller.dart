@@ -1,5 +1,6 @@
 // On-demand "Show me what it should look like" for AI-drafted recipes
-// (SS-098). One controller per cooking session.
+// (SS-098). One controller per cooking screen; the paid cap is kept per
+// cooking-session id in an [IllustrationUsage] that outlives the screen.
 //
 // Image generation exists only in the cloud, so every request is a cloud
 // send: it needs the `images` cloud route, the cook's local-only settings
@@ -18,9 +19,9 @@ import 'package:flutter/foundation.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_policy.dart' show localOnlyFor;
 import '../ai/hybrid/payload_digest.dart' show sha256Hex;
-import '../core/cloud_send.dart';
 import '../core/models.dart';
 import 'illustration_generator.dart';
+import 'illustration_ledger.dart';
 import 'illustration_prompts.dart';
 
 /// Why no illustration was made.
@@ -39,6 +40,9 @@ enum IllustrationBlock {
   /// This target never gets a picture (meat, poultry, fish or eggs, or no
   /// visible cue).
   noPicture,
+
+  /// The cooking session has not started (or could not be opened).
+  noSession,
 }
 
 /// Cook-facing sentence for each block.
@@ -56,6 +60,8 @@ String illustrationBlockText(IllustrationBlock block) => switch (block) {
     "You've used this cook's illustrations. Check the step text and your "
         'own eyes instead.',
   IllustrationBlock.noPicture => kIllustrationNoDonenessCopy,
+  IllustrationBlock.noSession =>
+    'Available once your cooking session has started.',
 };
 
 sealed class IllustrationState {
@@ -77,27 +83,32 @@ class IllustrationReady extends IllustrationState {
   const IllustrationReady(this.image, this.source);
   final GeneratedIllustration image;
 
-  /// Where it came from, as its ledger leg recorded it.
+  /// Where it came from, read back from its settled ledger leg.
   final IllustrationSource source;
 }
 
 /// The settled ledger leg behind an on-demand image, kept beside it so the
 /// screen can say it came from the cloud (bundled images have none).
 class IllustrationSource {
-  const IllustrationSource({
-    required this.modelLabel,
-    required this.provenance,
-  });
-  final String modelLabel;
-  final Provenance provenance;
+  const IllustrationSource({required this.receipt, required this.target});
+  final IllustrationReceipt receipt;
+  final IllustrationTarget target;
 
-  /// Cook-facing, derived from the leg: only a cloud provenance says "sent".
-  String describe() => switch (provenance) {
-    Provenance.sdkCloud || Provenance.cloudAdapter =>
-      "Made just now in Google's cloud ($modelLabel) from this step's text, "
-          'sent with your OK.',
-    _ => 'Made by AI ($modelLabel).',
-  };
+  /// Cook-facing, derived from the leg and the actual payload: only a cloud
+  /// provenance says "sent". The SDK does not report which model answered,
+  /// so the model is the configured one.
+  String describe() {
+    final from = switch (target) {
+      PlateTarget() => "the dish's name and ingredients",
+      StepTarget() => "this step's cue and ingredients",
+    };
+    return switch (receipt.provenance) {
+      Provenance.sdkCloud || Provenance.cloudAdapter =>
+        "Made just now in Google's cloud from $from, sent with your OK. "
+            'Configured model: ${receipt.modelLabel}.',
+      _ => 'Made by AI from $from (configured model: ${receipt.modelLabel}).',
+    };
+  }
 }
 
 class IllustrationBlocked extends IllustrationState {
@@ -110,19 +121,30 @@ class IllustrationFailed extends IllustrationState {
   final HybridErrorCode code;
 }
 
+/// Paid on-demand sends per cooking-session id. Lives as long as the app's
+/// hybrid runtime, so leaving a cooking screen and re-entering the same
+/// session (back to the pantry, "Cook this draft" again) keeps the count.
+class IllustrationUsage {
+  final Map<String, int> _used = {};
+  int used(String sessionId) => _used[sessionId] ?? 0;
+  void charge(String sessionId) => _used[sessionId] = used(sessionId) + 1;
+}
+
 class IllustrationController extends ChangeNotifier {
   IllustrationController({
     required CloudRoutes cloudRoutes,
     required this._privacy,
     required this._isOnline,
     required this._consent,
-    required this._recorder,
+    required this._ledger,
     required this._generator,
     this.cap = kIllustrationSessionCap,
     Future<bool> Function(Uint8List bytes)? decodes,
     this._settingsChanges,
+    IllustrationUsage? usage,
   }) : _routes = cloudRoutes,
-       _decodes = decodes ?? imageDecodes {
+       _decodes = decodes ?? imageDecodes,
+       _usage = usage ?? IllustrationUsage() {
     _settingsChanges?.addListener(_onSettingsChanged);
   }
 
@@ -138,62 +160,62 @@ class IllustrationController extends ChangeNotifier {
   final PrivacySettings _privacy;
   final bool Function() _isOnline;
   final ConsentGate _consent;
-  final CloudSendRecorder _recorder;
+  final IllustrationLedger _ledger;
   final IllustrationGenerator _generator;
   final Future<bool> Function(Uint8List bytes) _decodes;
+  final IllustrationUsage _usage;
 
-  /// On-demand illustrations per session.
+  /// On-demand illustrations per cooking session.
   final int cap;
 
   String? _sessionId;
-  String? _recipeId;
+  String? _revision;
   String? _stepId;
   int _epoch = 0;
-  int _used = 0;
   bool _disposed = false;
 
-  /// This session's images, by target key.
+  /// This binding's images, by target key.
   final Map<String, IllustrationReady> _cache = {};
 
   /// Loading, blocked and failed states for the current step.
   final Map<String, IllustrationState> _states = {};
 
   String get model => _generator.model;
-  int get used => _used;
-  int get remaining => math.max(0, cap - _used);
+  bool get hasSession => _sessionId != null;
+  int get used => _sessionId == null ? 0 : _usage.used(_sessionId!);
+  int get remaining => math.max(0, cap - used);
 
-  /// Points the controller at the cook's current session, recipe and step.
-  /// A new session or recipe empties the cache and resets the cap; a new
-  /// step drops in-flight work and clears its notices.
+  /// Points the controller at the cook's current session, recipe content
+  /// and step. A new session or a recipe whose content changed (even under
+  /// the same ids) drops the cache; a new step drops in-flight work and
+  /// clears its notices. The cap belongs to the session id, not to this
+  /// binding.
   void bind({
     required String sessionId,
-    required String recipeId,
+    required Recipe recipe,
     required String stepId,
   }) {
     if (_disposed) return;
-    if (sessionId == _sessionId && recipeId == _recipeId && stepId == _stepId) {
+    final revision = illustrationRevision(recipe);
+    if (sessionId == _sessionId && revision == _revision && stepId == _stepId) {
       return;
     }
     _epoch++;
-    if (sessionId != _sessionId || recipeId != _recipeId) {
-      _cache.clear();
-      _used = 0;
-    }
+    if (sessionId != _sessionId || revision != _revision) _cache.clear();
     _states.clear();
     _sessionId = sessionId;
-    _recipeId = recipeId;
+    _revision = revision;
     _stepId = stepId;
     notifyListeners();
   }
 
-  /// The session ended: forget everything and drop in-flight results.
+  /// The session ended: forget this binding and drop in-flight results.
   void endSession() {
     if (_disposed || _sessionId == null) return;
     _epoch++;
     _cache.clear();
     _states.clear();
-    _used = 0;
-    _sessionId = _recipeId = _stepId = null;
+    _sessionId = _revision = _stepId = null;
     notifyListeners();
   }
 
@@ -206,20 +228,21 @@ class IllustrationController extends ChangeNotifier {
   }
 
   /// Why a request would be refused right now, read live; null if it may
-  /// go ahead. The cap is checked last so a cloud block is what the cook
-  /// sees first.
-  IllustrationBlock? availability({bool ignoreCap = false}) {
-    if (!_routes.allows(CloudRoute.images)) {
-      return IllustrationBlock.cloudNotApproved;
-    }
+  /// go ahead. The cook's local-only choice comes first (DESIGN.md §5),
+  /// then the build's route, connectivity, the session and the cap.
+  IllustrationBlock? availability() {
     // The prompt is built from the drafted recipe, so the recipe draft's
     // local-only switch covers it too.
     if (localOnlyFor(_privacy, kIllustrationFeature) ||
         localOnlyFor(_privacy, 'recipe_draft')) {
       return IllustrationBlock.localOnly;
     }
+    if (!_routes.allows(CloudRoute.images)) {
+      return IllustrationBlock.cloudNotApproved;
+    }
     if (!_isOnline()) return IllustrationBlock.offline;
-    if (!ignoreCap && remaining <= 0) return IllustrationBlock.capReached;
+    if (_sessionId == null) return IllustrationBlock.noSession;
+    if (remaining <= 0) return IllustrationBlock.capReached;
     return null;
   }
 
@@ -238,9 +261,13 @@ class IllustrationController extends ChangeNotifier {
 
   /// Makes an illustration of [target] in [recipe]. A cached image is
   /// returned without a call; a request already in flight is not repeated.
+  /// A request from a stale button (another step, an older recipe
+  /// revision) is ignored.
   Future<void> request(Recipe recipe, IllustrationTarget target) async {
     final session = _sessionId;
-    if (_disposed || session == null || recipe.id != _recipeId) return;
+    if (_disposed || session == null) return;
+    if (illustrationRevision(recipe) != _revision) return;
+    if (target case StepTarget(:final stepId) when stepId != _stepId) return;
     final key = target.key;
     if (_cache.containsKey(key) || _states[key] is IllustrationLoading) return;
     final prompt = illustrationPrompt(recipe, target);
@@ -289,20 +316,16 @@ class IllustrationController extends ChangeNotifier {
     // The leg is admitted before the generator is invoked (DESIGN.md §5).
     // The ledger tells its observers synchronously, and one of them may
     // change a setting or move the cook on, so everything is checked again
-    // after admission and before dispatch. A leg cancelled here never
-    // reached the generator.
-    _used++;
-    final send = _recorder.begin(kIllustrationFeature, const {DataKind.text});
-    final late = _current(epoch) ? availability(ignoreCap: true) : null;
+    // after admission. A send stopped here is withdrawn (recorded as not
+    // sent) and costs nothing; the cap is charged only at dispatch.
+    final send = _ledger.begin();
+    final late = _current(epoch) ? availability() : null;
     if (!_current(epoch) || late != null) {
-      send.failed(HybridErrorCode.cancelled);
-      // Nothing was sent. A rebind already reset the cap for its session.
-      if (_current(epoch)) {
-        _used--;
-        _set(key, IllustrationBlocked(late!));
-      }
+      send.withdrawn();
+      if (late != null && _current(epoch)) _set(key, IllustrationBlocked(late));
       return;
     }
+    _usage.charge(session);
     Future<GeneratedIllustration> pending;
     try {
       pending = _generator.generate(prompt.text);
@@ -312,21 +335,19 @@ class IllustrationController extends ChangeNotifier {
     if (_current(epoch)) _set(key, const IllustrationLoading(sending: true));
     try {
       final image = await pending;
-      final label = illustrationModelLabel(image.model);
-      send.confirmed(modelLabel: label);
+      final receipt = send.confirmed(illustrationModelLabel(image.model));
       // A valid signature over garbage must not show as a blank "ready".
       final decodes = await _decodes(image.bytes);
       if (!_current(epoch)) return;
-      if (!decodes) {
+      // No settled leg (the ledger moved to a new session): nothing may
+      // claim this send, so the image is not shown.
+      if (!decodes || receipt == null) {
         _set(key, const IllustrationFailed(HybridErrorCode.failed));
         return;
       }
       _cache[key] = IllustrationReady(
         image,
-        IllustrationSource(
-          modelLabel: label,
-          provenance: Provenance.cloudAdapter,
-        ),
+        IllustrationSource(receipt: receipt, target: target),
       );
       _states.remove(key);
       notifyListeners();

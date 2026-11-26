@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soussight/core/models.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
 import 'package:soussight/illustrations/premade_illustrations.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
@@ -12,26 +13,68 @@ IllustrationTarget targetFor(String key) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('lookup: reviewed recipes only, known keys only', () {
-    expect(
-      premadeIllustrationAsset('chickpea_wrap_v1', const StepTarget('mash')),
-      'assets/illustrations/chickpea_wrap_v1/step_mash.jpg',
-    );
-    expect(
-      premadeIllustrationAsset('chickpea_wrap_v1', const PlateTarget()),
-      'assets/illustrations/chickpea_wrap_v1/plate.jpg',
-    );
-    expect(
-      premadeIllustrationAsset('chickpea_wrap_v1', const StepTarget('nope')),
-      isNull,
-    );
-    expect(premadeIllustrationAsset('unknown', const PlateTarget()), isNull);
-    // A draft never gets a shipped image, even if its id collides.
-    expect(
-      premadeIllustrationAsset('draft_chickpea_wrap_v1', const PlateTarget()),
-      isNull,
-    );
-  });
+  test(
+    'lookup: reviewed recipes only, known keys only, matching content',
+    () async {
+      final recipes = {for (final r in await loadRecipeCatalog()) r.id: r};
+      final wrap = recipes['chickpea_wrap_v1']!;
+      expect(
+        premadeIllustrationAsset(wrap, const StepTarget('mash')),
+        'assets/illustrations/chickpea_wrap_v1/step_mash.jpg',
+      );
+      expect(
+        premadeIllustrationAsset(wrap, const PlateTarget()),
+        'assets/illustrations/chickpea_wrap_v1/plate.jpg',
+      );
+      expect(premadeIllustrationAsset(wrap, const StepTarget('nope')), isNull);
+      // A draft never gets a shipped image, even if its content matches.
+      final draft = Recipe(
+        id: 'draft_${wrap.id}',
+        version: 1,
+        title: wrap.title,
+        summary: wrap.summary,
+        ingredients: wrap.ingredients,
+        equipment: wrap.equipment,
+        steps: wrap.steps,
+        checkpoints: wrap.checkpoints,
+        reviewedSubstitutions: wrap.reviewedSubstitutions,
+        adjustmentLabels: wrap.adjustmentLabels,
+      );
+      expect(premadeIllustrationAsset(draft, const PlateTarget()), isNull);
+      // Same ids, edited cue: the reviewed picture no longer applies.
+      final edited = Recipe(
+        id: wrap.id,
+        version: wrap.version + 1,
+        title: wrap.title,
+        summary: wrap.summary,
+        ingredients: wrap.ingredients,
+        equipment: wrap.equipment,
+        steps: [
+          for (final s in wrap.steps)
+            s.id == 'mash'
+                ? RecipeStep(
+                    id: s.id,
+                    title: s.title,
+                    instruction: s.instruction,
+                    cue: 'A smooth paste.',
+                  )
+                : s,
+        ],
+        checkpoints: wrap.checkpoints,
+        reviewedSubstitutions: wrap.reviewedSubstitutions,
+        adjustmentLabels: wrap.adjustmentLabels,
+      );
+      expect(
+        premadeIllustrationAsset(edited, const StepTarget('mash')),
+        isNull,
+      );
+      expect(
+        premadeIllustrationAsset(edited, const StepTarget('mix')),
+        isNotNull,
+        reason: 'other steps are unchanged',
+      );
+    },
+  );
 
   test('every indexed image exists, is listed in the manifest, and its '
       'prompt is what the builder makes today', () async {
@@ -48,13 +91,13 @@ void main() {
     for (final MapEntry(key: recipeId, value: keys)
         in kPremadeIllustrations.entries) {
       final recipe = recipes[recipeId]!;
-      for (final key in keys) {
+      for (final key in keys.keys) {
         indexed.add('$recipeId/$key');
         final target = targetFor(key);
         if (target case StepTarget(:final stepId)) {
           expect(recipe.steps.map((s) => s.id), contains(stepId));
         }
-        final path = premadeIllustrationAsset(recipeId, target)!;
+        final path = premadeIllustrationAsset(recipe, target)!;
         final file = File(path);
         expect(file.existsSync(), isTrue, reason: path);
         // Shipped images are small JPEGs.
@@ -94,5 +137,19 @@ void main() {
     expect(entries.keys.toSet(), indexed);
     // Within the approved budget of about 15.
     expect(indexed.length, lessThanOrEqualTo(15));
+  });
+
+  test('unknown generator targets are reported, known ones are not', () {
+    expect(
+      unknownPremadeTargets([
+        'chickpea_wrap_v1/step_mash',
+        'chickpea_wrap_v1/plate',
+      ]),
+      isEmpty,
+    );
+    expect(unknownPremadeTargets(['chickpea_wrap_v1/mash', 'nope/plate']), {
+      'chickpea_wrap_v1/mash',
+      'nope/plate',
+    });
   });
 }

@@ -1,5 +1,6 @@
 // Pure helpers for tool/generate_illustrations.mjs (SS-098), kept apart so
 // tests can import them without launching a browser or a server.
+import { execFileSync } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
@@ -65,4 +66,45 @@ export function gateEvidenceOk({ shown, legs, requests, model }) {
     modelRequests[0].status === 200 &&
     modelRequests[0].path.includes(`/models/${model}:generateContent`)
   );
+}
+
+/// Canonical roots of every checkout of this repository: the primary one
+/// and all linked worktrees (`git worktree list --porcelain`). Falls back to
+/// [repo] alone when git is unavailable.
+export function checkoutRoots(repo, list = undefined) {
+  let porcelain = list;
+  if (porcelain === undefined) {
+    try {
+      porcelain = execFileSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      porcelain = '';
+    }
+  }
+  const roots = new Set([canonical(repo)]);
+  for (const line of porcelain.split('\n')) {
+    if (line.startsWith('worktree ')) roots.add(canonical(line.slice('worktree '.length).trim()));
+  }
+  return [...roots];
+}
+
+/// The real path when it exists, the absolute lexical path otherwise.
+export function canonical(path) {
+  const absolute = resolve(path);
+  return existsSync(absolute) ? realpathSync(absolute) : absolute;
+}
+
+/// Why [build] may not be served (it embeds a debug token), or null. Any
+/// build inside or containing any checkout of the repository is refused,
+/// which covers every checkout's `build/web` Hosting directory.
+export function refusedBuild(build, roots) {
+  const path = canonical(build);
+  for (const root of roots) {
+    if (within(root, path) || within(path, root)) {
+      return `Refusing a build inside (or containing) a checkout of this repository (${root}): it holds a debug token.`;
+    }
+  }
+  return null;
 }

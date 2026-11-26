@@ -154,3 +154,30 @@ test('the gate evidence predicate passes only on complete evidence', async () =>
     assert.equal(gateEvidenceOk({ ...good, ...change }), false, JSON.stringify(change));
   }
 });
+
+test('every checkout counts: a linked worktree refuses the primary build/web', async () => {
+  const { checkoutRoots, refusedBuild } = await lib();
+  const porcelain = [
+    'worktree /src/SousSight',
+    'HEAD abc',
+    'branch refs/heads/main',
+    '',
+    'worktree /src/SousSight/.worktrees/feature',
+    'HEAD def',
+    '',
+  ].join('\n');
+  const roots = checkoutRoots('/src/SousSight/.worktrees/feature', porcelain);
+  assert.deepEqual(roots.sort(), ['/src/SousSight', '/src/SousSight/.worktrees/feature']);
+  assert.match(refusedBuild('/src/SousSight/build/web', roots), /Refusing a build/);
+  assert.match(refusedBuild('/src/SousSight/.worktrees/other/build', roots), /Refusing a build/);
+  assert.match(refusedBuild('/src', roots), /Refusing a build/);
+  assert.equal(refusedBuild('/tmp/illus/build', roots), null);
+});
+
+test('from this checkout, the primary checkout\'s build/web is refused', () => {
+  const porcelain = spawnSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' }).stdout;
+  const primary = porcelain.split('\n').find((l) => l.startsWith('worktree ')).slice('worktree '.length);
+  const r = run('premade', join(primary, 'build', 'web'), '--max', '0');
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /Refusing a build/);
+});

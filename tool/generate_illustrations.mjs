@@ -23,7 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync, createReadStream } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
-import { fileToServe, gateEvidenceOk, modeAllowed, within } from './generate_illustrations_lib.mjs';
+import { checkoutRoots, fileToServe, gateEvidenceOk, modeAllowed, refusedBuild } from './generate_illustrations_lib.mjs';
 import { fileURLToPath } from 'node:url';
 
 const usage = 'usage: premade <build-dir> --max N | gate <build-dir> <evidence-dir>';
@@ -46,12 +46,12 @@ if (mode === 'premade') {
 } else if (!third) {
   fail(usage);
 }
+// Refuse any checkout's tree first (primary and linked worktrees, so the
+// primary checkout's build/web is refused from a linked one too).
+const refusal = refusedBuild(buildArg, checkoutRoots(repo));
+if (refusal) fail(refusal);
 if (!existsSync(buildArg) || !statSync(buildArg).isDirectory()) fail(`No build directory at ${buildArg}`);
-// Canonical paths, so a symlink cannot smuggle the repository in.
 const build = realpathSync(resolve(buildArg));
-if (within(repo, build) || within(build, repo)) {
-  fail('Refusing a build inside (or containing) the repository: it holds a debug token.');
-}
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
 

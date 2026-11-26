@@ -481,7 +481,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     if (cook.session?.id case final id?) {
       _illustrations?.bind(
         sessionId: id,
-        recipeId: cook.recipe.id,
+        recipe: cook.recipe,
         stepId: cook.step.id,
       );
     }

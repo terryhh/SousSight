@@ -6,7 +6,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/payload_digest.dart' show sha256Hex;
-import 'package:soussight/app/cloud_send_recorder.dart';
+import 'package:soussight/illustrations/illustration_ledger.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/trust/privacy_preferences.dart';
 import 'package:soussight/illustrations/illustration_controller.dart';
@@ -24,7 +24,7 @@ Harness bound({
   int cap = 4,
 }) {
   final h = Harness(routes: routes, localOnly: localOnly, cap: cap);
-  h.controller.bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'grate');
+  h.controller.bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'grate');
   return h;
 }
 
@@ -78,8 +78,8 @@ void main() {
     expect(h.consent.asks, hasLength(1));
     expect(h.ledger.entries, hasLength(1));
     // Moving to another step and back keeps the session cache.
-    h.controller.bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'stir');
-    h.controller.bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'grate');
+    h.controller.bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'stir');
+    h.controller.bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'grate');
     expect(h.controller.stateFor(grate), isA<IllustrationReady>());
     await h.controller.request(recipe, grate);
     expect(h.generator.prompts, hasLength(1));
@@ -88,6 +88,7 @@ void main() {
   test('the per-session cap stops further sends', () async {
     final h = bound(cap: 2);
     await h.controller.request(recipe, grate);
+    h.controller.bind(sessionId: 's1', recipe: recipe, stepId: 'stir');
     await h.controller.request(recipe, stir);
     expect(h.controller.remaining, 0);
     expect(h.controller.availability(), IllustrationBlock.capReached);
@@ -101,7 +102,7 @@ void main() {
     expect(h.generator.prompts, hasLength(2));
     expect(h.ledger.entries, hasLength(2));
     // A new session resets the cap and the cache.
-    h.controller.bind(sessionId: 's2', recipeId: 'draft_abc', stepId: 'grate');
+    h.controller.bind(sessionId: 's2', recipe: draftRecipe(), stepId: 'grate');
     expect(h.controller.remaining, 2);
     expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
   });
@@ -232,6 +233,7 @@ void main() {
       final eggs = draftRecipe(
         ingredients: const [Ingredient(id: 'e', name: 'Eggs', qty: '2')],
       );
+      h.controller.bind(sessionId: 's1', recipe: eggs, stepId: 'grate');
       await h.controller.request(eggs, const PlateTarget());
       expect(
         (h.controller.stateFor(
@@ -282,9 +284,9 @@ void main() {
         privacy: h.privacy,
         isOnline: () => true,
         consent: h.consent,
-        recorder: LedgerCloudSendRecorder(h.ledger),
+        ledger: InferenceLedgerIllustrations(h.ledger),
         generator: h.generator,
-      )..bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'grate');
+      )..bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'grate');
       h.consent.whileOpen = () => allowed = false;
       await controller.request(recipe, grate);
       expect(
@@ -304,7 +306,7 @@ void main() {
         h.controller.stateFor(grate),
         isA<IllustrationLoading>().having((s) => s.sending, 'sending', isTrue),
       );
-      h.controller.bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'stir');
+      h.controller.bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'stir');
       h.generator.release();
       await pending;
       expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
@@ -321,7 +323,7 @@ void main() {
         await pumpEventQueue();
         h.controller.bind(
           sessionId: 's1',
-          recipeId: 'draft_abc',
+          recipe: draftRecipe(),
           stepId: 'stir',
         );
         h.consent.gate!.complete();
@@ -334,7 +336,9 @@ void main() {
 
     test('session end drops the late image and empties the cache', () async {
       final h = bound();
+      h.controller.bind(sessionId: 's1', recipe: recipe, stepId: 'stir');
       await h.controller.request(recipe, stir);
+      h.controller.bind(sessionId: 's1', recipe: recipe, stepId: 'grate');
       h.generator.hold = true;
       final pending = h.controller.request(recipe, grate);
       await pumpEventQueue();
@@ -343,7 +347,7 @@ void main() {
       await pending;
       expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
       expect(h.controller.stateFor(stir), isA<IllustrationIdle>());
-      expect(h.controller.used, 0);
+      expect(h.controller.used, 0); // no session bound
       // Without a session nothing can be requested.
       await h.controller.request(recipe, grate);
       expect(h.generator.prompts, hasLength(2));
@@ -359,7 +363,7 @@ void main() {
       final pending = h.controller.request(recipe, grate);
       await pumpEventQueue();
       h.consent.gate!.complete();
-      h.controller.bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'stir');
+      h.controller.bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'stir');
       await pending;
       expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
     });
@@ -373,7 +377,7 @@ void main() {
       await pending;
       expect(h.ledger.entries.single.pending, isFalse);
       // Calls after dispose are ignored.
-      h.controller.bind(sessionId: 's9', recipeId: 'draft_abc', stepId: 'x');
+      h.controller.bind(sessionId: 's9', recipe: draftRecipe(), stepId: 'x');
       h.controller.endSession();
       await h.controller.request(recipe, grate);
       expect(h.generator.prompts, hasLength(1));
@@ -451,7 +455,7 @@ void main() {
         if (h.ledger.entries.last.pending) {
           h.controller.bind(
             sessionId: 's2',
-            recipeId: 'draft_abc',
+            recipe: draftRecipe(),
             stepId: 'grate',
           );
         }
@@ -469,7 +473,7 @@ void main() {
     final h = bound()..generator.hold = true;
     final pending = h.controller.request(recipe, grate);
     await pumpEventQueue();
-    h.controller.bind(sessionId: 's2', recipeId: 'draft_abc', stepId: 'grate');
+    h.controller.bind(sessionId: 's2', recipe: draftRecipe(), stepId: 'grate');
     h.generator.release();
     await pending;
     expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
@@ -481,18 +485,28 @@ void main() {
     expect(h.controller.remaining, 3);
   });
 
-  test('a ready image keeps its cloud source from the leg', () async {
+  test('a ready image keeps its receipt from the settled leg', () async {
     final h = bound();
     await h.controller.request(recipe, grate);
     final ready = h.controller.stateFor(grate) as IllustrationReady;
-    expect(ready.source.provenance, Provenance.cloudAdapter);
-    expect(ready.source.modelLabel, h.ledger.entries.single.leg.modelLabel);
+    final leg = h.ledger.entries.single.leg;
+    expect(ready.source.receipt.provenance, leg.provenance);
+    expect(ready.source.receipt.modelLabel, leg.modelLabel);
     expect(ready.source.describe(), contains("Google's cloud"));
-    expect(ready.source.describe(), contains('fake-image-model'));
+    expect(ready.source.describe(), contains("this step's cue"));
+    expect(ready.source.describe(), contains('Configured model'));
+    final plate = IllustrationSource(
+      receipt: ready.source.receipt,
+      target: const PlateTarget(),
+    );
+    expect(plate.describe(), contains("the dish's name and ingredients"));
     expect(
       const IllustrationSource(
-        modelLabel: 'm',
-        provenance: Provenance.unknown,
+        receipt: IllustrationReceipt(
+          modelLabel: 'm',
+          provenance: Provenance.unknown,
+        ),
+        target: grate,
       ).describe(),
       isNot(contains('cloud')),
     );
@@ -506,7 +520,7 @@ void main() {
       privacy: prefs,
       isOnline: () => true,
       consent: h.consent,
-      recorder: LedgerCloudSendRecorder(h.ledger),
+      ledger: InferenceLedgerIllustrations(h.ledger),
       generator: h.generator,
       settingsChanges: prefs,
     );
@@ -547,9 +561,9 @@ void main() {
       privacy: h.privacy,
       isOnline: () => true,
       consent: h.consent,
-      recorder: LedgerCloudSendRecorder(h.ledger),
+      ledger: InferenceLedgerIllustrations(h.ledger),
       generator: _ThrowingGenerator(),
-    )..bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'grate');
+    )..bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'grate');
     await controller.request(recipe, grate);
     expect(controller.stateFor(grate), isA<IllustrationFailed>());
     expect(h.ledger.entries.single.leg.error, HybridErrorCode.failed);
@@ -569,7 +583,11 @@ void main() {
     final h = Harness();
     await h.controller.request(recipe, grate);
     expect(h.consent.asks, isEmpty);
-    h.controller.bind(sessionId: 's1', recipeId: 'draft_other', stepId: 'a');
+    h.controller.bind(
+      sessionId: 's1',
+      recipe: draftRecipe(id: 'draft_other'),
+      stepId: 'a',
+    );
     await h.controller.request(recipe, grate);
     expect(h.consent.asks, isEmpty);
   });
@@ -578,15 +596,19 @@ void main() {
     final h = bound();
     var notified = 0;
     h.controller.addListener(() => notified++);
-    h.controller.bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'grate');
+    h.controller.bind(sessionId: 's1', recipe: draftRecipe(), stepId: 'grate');
     expect(notified, 0);
   });
 
-  test('a recipe change resets cache and cap', () async {
+  test('a recipe change drops the cache; the session keeps its cap', () async {
     final h = bound();
     await h.controller.request(recipe, grate);
-    h.controller.bind(sessionId: 's1', recipeId: 'draft_xyz', stepId: 'grate');
-    expect(h.controller.used, 0);
+    h.controller.bind(
+      sessionId: 's1',
+      recipe: draftRecipe(id: 'draft_xyz'),
+      stepId: 'grate',
+    );
+    expect(h.controller.used, 1);
     expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
   });
 
@@ -606,6 +628,127 @@ void main() {
       );
     },
   );
+
+  group('codex round 3', () {
+    test(
+      'the cap survives a new screen for the same cooking session',
+      () async {
+        final usage = IllustrationUsage();
+        Harness screen() => Harness(cap: 1, usage: usage);
+        final first = screen()
+          ..controller.bind(sessionId: 's1', recipe: recipe, stepId: 'grate');
+        await first.controller.request(recipe, grate);
+        expect(first.controller.remaining, 0);
+        first.controller.dispose(); // back to the pantry
+        // "Cook this draft" again: same session, new screen and controller.
+        final again = screen()
+          ..controller.bind(sessionId: 's1', recipe: recipe, stepId: 'grate');
+        expect(again.controller.remaining, 0);
+        await again.controller.request(recipe, grate);
+        expect(again.generator.prompts, isEmpty);
+        // A different cooking session has its own allowance.
+        final other = screen()
+          ..controller.bind(sessionId: 's2', recipe: recipe, stepId: 'grate');
+        expect(other.controller.remaining, 1);
+      },
+    );
+
+    test('a stale button for another step starts nothing', () async {
+      final h = bound();
+      h.controller.bind(sessionId: 's1', recipe: recipe, stepId: 'stir');
+      await h.controller.request(recipe, grate); // the old step's callback
+      expect(h.consent.asks, isEmpty);
+      expect(h.generator.prompts, isEmpty);
+    });
+
+    test(
+      'same ids, new content: a rebind drops pending work and the cache',
+      () async {
+        final h = bound();
+        await h.controller.request(recipe, grate);
+        expect(h.controller.stateFor(grate), isA<IllustrationReady>());
+        final edited = draftRecipe(
+          steps: const [
+            RecipeStep(
+              id: 'grate',
+              title: 'Grate',
+              instruction: 'Grate the cucumber finely.',
+              cue: 'Very fine shreds.',
+            ),
+          ],
+        );
+        h.controller.bind(sessionId: 's1', recipe: edited, stepId: 'grate');
+        expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
+        // The old recipe object is stale now.
+        await h.controller.request(recipe, grate);
+        expect(h.generator.prompts, hasLength(1));
+        // Pending work for the old content is dropped too.
+        h.generator.hold = true;
+        final pending = h.controller.request(edited, grate);
+        await pumpEventQueue();
+        h.controller.bind(sessionId: 's1', recipe: recipe, stepId: 'grate');
+        h.generator.release();
+        await pending;
+        expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
+      },
+    );
+
+    test(
+      'a step change during admission withdraws the leg as not sent',
+      () async {
+        final h = bound(cap: 1);
+        h.ledger.addListener(() {
+          if (h.ledger.entries.last.pending) {
+            h.controller.bind(sessionId: 's1', recipe: recipe, stepId: 'stir');
+          }
+        });
+        await h.controller.request(recipe, grate);
+        expect(h.generator.prompts, isEmpty);
+        expect(h.controller.remaining, 1, reason: 'charged only at dispatch');
+        final entry = h.ledger.entries.single;
+        expect(entry.pending, isFalse);
+        expect(entry.leg.transferPermitted, isFalse);
+        expect(entry.uploadUnknown, isFalse);
+        expect(entry.leg.error, HybridErrorCode.cancelled);
+        expect(h.ledger.allowedToLeave, isEmpty);
+      },
+    );
+
+    test('a ledger rotated during generation: no receipt, no image', () async {
+      final h = bound()..generator.hold = true;
+      final pending = h.controller.request(recipe, grate);
+      await pumpEventQueue();
+      h.ledger.startSession('another-run');
+      h.generator.release();
+      await pending;
+      expect(h.ledger.entries, isEmpty);
+      expect(
+        (h.controller.stateFor(grate) as IllustrationFailed).code,
+        HybridErrorCode.failed,
+      );
+    });
+
+    test(
+      "local-only wins over a disabled route; no session is its own block",
+      () {
+        final both = Harness(
+          routes: const {},
+          localOnly: const {'recipe_draft'},
+        );
+        expect(both.controller.availability(), IllustrationBlock.localOnly);
+        final noSession = Harness();
+        expect(noSession.controller.hasSession, isFalse);
+        expect(
+          noSession.controller.availability(),
+          IllustrationBlock.noSession,
+        );
+        expect(
+          illustrationBlockText(IllustrationBlock.noSession),
+          contains('cooking session'),
+        );
+      },
+    );
+  });
 }
 
 class _SwitchRoutes extends CloudRoutes {

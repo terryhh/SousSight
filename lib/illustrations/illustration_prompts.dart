@@ -11,6 +11,9 @@
 // before cooking instead, and a recipe with any of them gets no finished
 // plate at all.
 
+import 'dart:convert';
+
+import '../ai/hybrid/payload_digest.dart' show sha256Hex;
 import '../core/models.dart';
 import '../pantry/recipe_draft_client.dart'
     show kHeatDisclaimer, kThermometerDisclaimer;
@@ -98,7 +101,7 @@ class IllustrationPrompt {
 // Meat, poultry, fish, seafood and eggs, singular or plural. Deliberately
 // broad: a false match only means no picture.
 final _risky = RegExp(
-  r'\b(?:raw|meats?|poultry|chickens?|turkeys?|ducks?|goose|geese|quails?|'
+  r'\b(?:meats?|poultry|chickens?|turkeys?|ducks?|goose|geese|quails?|'
   r'hens?|beef|steaks?|pork|bacon|hams?|lamb|mutton|veal|venison|goat|'
   r'sausages?|chorizo|salami|pepperoni|prosciutto|pancetta|burgers?|'
   r'patty|patties|mince|minced|meatballs?|ribs?|brisket|tenderloin|loin|'
@@ -143,7 +146,7 @@ final _doneness = RegExp(
   r'\b(?:is|are|it.s|when) done\b|done when|doneness|opaque|'
   r'flakes? (?:easily|with a fork)|juices? run clear|no longer pink|'
   r'set in the (?:centre|center|middle)|firm to the touch|'
-  r'internal temp|safe to eat|reaches? \d+ ?°',
+  r'internal temp|\bsafe(?:ly)?\b|reaches? \d+ ?°',
   caseSensitive: false,
 );
 
@@ -177,26 +180,25 @@ bool mentionsHeat(String text) => _heat.hasMatch(text);
 String _stepText(RecipeStep step) =>
     '${step.title} ${step.instruction} ${step.cue}';
 
-/// Shelf-stable products whose fish, shellfish or egg allergen tag says
-/// nothing about doneness (mayonnaise, fish sauce, egg pasta…). Only these
-/// are exempt from the allergen rule; the name vocabulary still applies.
-final _preparedProduct = RegExp(
-  r'\b(?:mayo|mayonnaise|aioli|sauce|dressing|paste|pasta|noodles?|'
-  r'bread|buns?|tortillas?|crackers?|cakes?|cookies?|biscuits?|'
-  r'worcestershire|mustard|ketchup|oil)\b',
+/// The only products whose fish, shellfish or egg allergen tag is exempt:
+/// identified shelf-stable products, named exactly. A composite such as
+/// "langoustines in garlic sauce" or an unknown tagged food (hake,
+/// gravlax) is protein; abstaining is the cautious answer.
+final _shelfStableProduct = RegExp(
+  r'^(?:mayo|mayonnaise|(?:prepared |store[- ]bought )?mayonnaise|'
+  r'worcestershire sauce|bread|crackers?)$',
   caseSensitive: false,
 );
 
 /// Whether [ingredient] is meat, poultry, fish, shellfish or egg: by its
-/// name, or by a fish, shellfish or egg allergen tag on anything that is
-/// not a known shelf-stable product. An unrecognised tagged food (hake,
-/// gravlax) is treated as protein: abstaining is the cautious answer.
+/// name, or by a fish, shellfish or egg allergen tag unless it is an
+/// identified shelf-stable product.
 bool isAnimalProtein(Ingredient ingredient) =>
     mentionsAnimalProtein(ingredient.name) ||
     (ingredient.allergens.any(
           (a) => _proteinAllergens.contains(a.trim().toLowerCase()),
         ) &&
-        !_preparedProduct.hasMatch(ingredient.name));
+        !_shelfStableProduct.hasMatch(ingredientForPrompt(ingredient.name)));
 
 /// Whether the recipe has meat, poultry, fish or eggs anywhere: an
 /// ingredient's name or allergen tags, any step's text, or a step that
@@ -261,16 +263,36 @@ const _notIngredientWords = {
   'purple',
 };
 
-/// Whether [text] names [ingredient]: any of its words, matched on the first
-/// four letters so "mayo" finds "Mayonnaise" and "chickpeas" "chickpea".
+/// Spelling variants a step may use for an ingredient word.
+const _aliases = <String, List<String>>{
+  'mayonnaise': ['mayo'],
+};
+
+/// The whole-word forms of [word]: itself, its singular and plural.
+Iterable<String> _forms(String word) sync* {
+  yield word;
+  if (word.endsWith('oes')) yield word.substring(0, word.length - 2);
+  if (word.endsWith('s') && word.length > 3) {
+    yield word.substring(0, word.length - 1);
+  } else {
+    yield '${word}s';
+    yield '${word}es';
+  }
+  yield* _aliases[word] ?? const [];
+}
+
+/// Whether [text] names [ingredient]: one of its significant words as a
+/// whole word (singular, plural or a listed alias). "salt" never matches
+/// "saltines"; an uncertain match is no match.
 bool _names(String text, Ingredient ingredient) {
   final lower = text.toLowerCase();
   for (final word in ingredientForPrompt(
     ingredient.name,
   ).toLowerCase().split(RegExp('[^a-z]+'))) {
     if (word.length < 3 || _notIngredientWords.contains(word)) continue;
-    final stem = word.substring(0, word.length < 4 ? word.length : 4);
-    if (RegExp('\\b$stem').hasMatch(lower)) return true;
+    for (final form in _forms(word)) {
+      if (RegExp('\\b${RegExp.escape(form)}\\b').hasMatch(lower)) return true;
+    }
   }
   return false;
 }
@@ -404,3 +426,21 @@ IllustrationPrompt? illustrationPrompt(
       );
   }
 }
+
+/// A digest of everything an illustration prompt can depend on. Pending
+/// work and cached images belong to one revision; a recipe edited in place
+/// (same ids, new cue or ingredients) is a new revision.
+String illustrationRevision(Recipe recipe) => sha256Hex(
+  utf8.encode(
+    jsonEncode({
+      'id': recipe.id,
+      'title': recipe.title,
+      'ingredients': [
+        for (final i in recipe.ingredients) [i.id, i.name, i.allergens],
+      ],
+      'steps': [
+        for (final s in recipe.steps) [s.id, s.title, s.instruction, s.cue],
+      ],
+    }),
+  ),
+);

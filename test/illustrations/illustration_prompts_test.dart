@@ -337,4 +337,138 @@ void main() {
       }
     }
   });
+
+  test(
+    'a shellfish-tagged composite counts; a "safe to serve" cue abstains',
+    () {
+      final r = recipe(
+        ingredients: const [
+          Ingredient(
+            id: 'l',
+            name: 'Langoustines in garlic sauce',
+            qty: '300 g',
+            allergens: ['shellfish'],
+          ),
+        ],
+        steps: const [
+          RecipeStep(
+            id: 'warm',
+            title: 'Warm',
+            instruction: 'Warm them through.',
+            cue: 'Once golden, they are safe to serve.',
+          ),
+        ],
+      );
+      expect(isAnimalProtein(r.ingredients.single), isTrue);
+      expect(illustrationPrompt(r, const StepTarget('warm')), isNull);
+      expect(illustrationPrompt(r, const PlateTarget()), isNull);
+      // Even without protein, a safety claim from appearance abstains.
+      final veg = recipe(
+        steps: const [
+          RecipeStep(
+            id: 's',
+            title: 'S',
+            instruction: 'Stir the yogurt.',
+            cue: 'Smooth, so it is safe to eat.',
+          ),
+        ],
+      );
+      expect(illustrationPrompt(veg, const StepTarget('s')), isNull);
+      expect(illustrationPrompt(veg, const PlateTarget()), isNull);
+      // Identified shelf-stable products stay exempt from their tags.
+      for (final name in ['Mayonnaise', 'Worcestershire sauce', 'Bread']) {
+        expect(
+          isAnimalProtein(
+            Ingredient(id: 'x', name: name, qty: '', allergens: const ['egg']),
+          ),
+          isFalse,
+          reason: name,
+        );
+      }
+      for (final name in ['Garlic sauce', 'Aioli', 'Fresh pasta']) {
+        expect(
+          isAnimalProtein(
+            Ingredient(id: 'x', name: name, qty: '', allergens: const ['egg']),
+          ),
+          isTrue,
+          reason: name,
+        );
+      }
+    },
+  );
+
+  test('"raw" is not protein: raw carrots keep their pictures', () {
+    final r = recipe(
+      ingredients: const [
+        Ingredient(id: 'c', name: 'Carrots', qty: '3'),
+        Ingredient(id: 'w', name: 'Water', qty: '1 cup'),
+      ],
+      steps: const [
+        RecipeStep(
+          id: 'arrange',
+          title: 'Arrange',
+          instruction: 'Arrange raw carrots on a board.',
+          cue: 'Carrot sticks in a neat row.',
+        ),
+      ],
+    );
+    expect(recipeHasAnimalProtein(r), isFalse);
+    expect(
+      illustrationPrompt(r, const StepTarget('arrange'))!.subject,
+      IllustrationSubject.stepLook,
+    );
+    expect(illustrationPrompt(r, const PlateTarget()), isNotNull);
+  });
+
+  test('ingredients match as whole words, not prefixes', () {
+    final r = recipe(
+      ingredients: const [
+        Ingredient(id: 's', name: 'Salt', qty: 'pinch'),
+        Ingredient(id: 'c', name: 'Saltine crackers', qty: '8'),
+        Ingredient(id: 'm', name: 'Mayonnaise', qty: '2 tbsp'),
+        Ingredient(id: 't', name: 'Tomatoes', qty: '2'),
+      ],
+      steps: const [
+        RecipeStep(
+          id: 'season',
+          title: 'Season',
+          instruction: 'Add salt and the mayo, then one tomato.',
+          cue: 'Evenly seasoned.',
+        ),
+        RecipeStep(
+          id: 'serve',
+          title: 'Serve',
+          instruction: 'Serve with saltines.',
+          cue: 'Crackers on the side.',
+        ),
+      ],
+    );
+    final p = illustrationPrompt(r, const StepTarget('season'))!.text;
+    expect(
+      p,
+      contains('Ingredients in this step: Salt; Mayonnaise; Tomatoes.'),
+    );
+    expect(p, isNot(contains('Saltine')));
+    expect(
+      illustrationPrompt(r, const StepTarget('serve'))!.text,
+      contains('Saltine crackers'),
+    );
+  });
+
+  test('the revision changes with content, not with identity alone', () {
+    final a = recipe();
+    final b = recipe();
+    expect(illustrationRevision(a), illustrationRevision(b));
+    final edited = recipe(
+      steps: const [
+        RecipeStep(
+          id: 'stir',
+          title: 'Stir',
+          instruction: 'Stir the yogurt and cilantro; set the tortillas aside.',
+          cue: 'Thick and smooth.',
+        ),
+      ],
+    );
+    expect(illustrationRevision(edited), isNot(illustrationRevision(a)));
+  });
 }

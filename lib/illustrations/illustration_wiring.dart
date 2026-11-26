@@ -5,6 +5,15 @@ import 'package:flutter/foundation.dart';
 import '../app/hybrid_runtime.dart';
 import 'illustration_controller.dart';
 import 'illustration_generator.dart';
+import 'illustration_ledger.dart';
+
+final _usage = Expando<IllustrationUsage>('illustration usage');
+
+/// The paid-send counts for this app run, keyed by cooking-session id. It
+/// lives as long as [hybrid], so re-entering the same cooking session
+/// (back to the pantry, then the same draft again) keeps its count.
+IllustrationUsage illustrationUsageFor(HybridRuntime hybrid) =>
+    _usage[hybrid] ??= IllustrationUsage();
 
 /// Tests replace the controller the cooking screen builds (fake generator,
 /// consent and cap). Never set in the app.
@@ -29,8 +38,9 @@ IllustrationController illustrationControllerFor(
       navigatorKey: hybrid.navigatorKey,
       cloudModel: generator?.model ?? kIllustrationModel,
     ),
-    recorder: hybrid.cloudSends,
+    ledger: InferenceLedgerIllustrations(hybrid.ledger),
     generator: generator ?? FirebaseAiIllustrationGenerator(),
     settingsChanges: hybrid.privacy,
+    usage: illustrationUsageFor(hybrid),
   );
 }

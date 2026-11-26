@@ -286,4 +286,31 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox());
   });
+
+  test('the paid-send count is shared per runtime and per session', () {
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: const CloudRoutes({CloudRoute.images}),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+    );
+    final usage = illustrationUsageFor(hybrid);
+    expect(identical(usage, illustrationUsageFor(hybrid)), isTrue);
+    usage.charge('session-1');
+    // A fresh controller for the same session (re-entering the cooking
+    // screen) sees the earlier send.
+    final controller = illustrationControllerFor(hybrid)
+      ..bind(sessionId: 'session-1', recipe: _draft, stepId: 'stir');
+    expect(controller.used, 1);
+    expect(controller.remaining, controller.cap - 1);
+    controller.bind(sessionId: 'session-2', recipe: _draft, stepId: 'stir');
+    expect(controller.used, 0);
+    controller.dispose();
+    final other = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+    );
+    expect(illustrationUsageFor(other).used('session-1'), 0);
+  });
 }

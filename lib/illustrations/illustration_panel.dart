@@ -60,7 +60,7 @@ class _StepIllustrationsState extends State<StepIllustrations> {
     // the session's cache, cap and in-flight work.
     controller.bind(
       sessionId: session,
-      recipeId: widget.recipe.id,
+      recipe: widget.recipe,
       stepId: widget.step.id,
     );
   }
@@ -125,7 +125,7 @@ class _IllustrationSlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final prompt = illustrationPrompt(recipe, target);
-    final asset = premadeIllustrationAsset(recipe.id, target);
+    final asset = premadeIllustrationAsset(recipe, target);
     if (asset != null && prompt != null) {
       return IllustrationFrame(
         title: _title(target, prompt.subject),
