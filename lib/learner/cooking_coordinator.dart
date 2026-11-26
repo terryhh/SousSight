@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../ai/hybrid/hybrid_types.dart';
 import '../app/services_scope.dart';
+import '../coach_lite/coach_lite.dart';
 import '../core/analytics.dart';
 import '../core/cooking_research.dart';
 import '../core/models.dart';
@@ -11,6 +13,8 @@ import '../genui/cooking_ui.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
 import '../pantry/recipe_draft.dart';
+import '../watch/watch_service.dart';
+import '../watch/watch_verdict.dart';
 import 'recipe_allergens.dart';
 import 'research_panel_client.dart';
 
@@ -30,20 +34,62 @@ class CookingCoordinator extends ChangeNotifier {
   CookingCoordinator({
     required this.services,
     required this.research,
-    required LiveTransportFactory transportFactory,
+    required LiveTransportFactory? transportFactory,
     required LiveMedia media,
     this.isDemo = false,
     Recipe? recipe,
-  }) : recipe = recipe ?? services.bundledRecipe {
+    this.coachLite,
+    WatchService Function(LiveCookingController live)? watchServiceFactory,
+    this.onSessionReady,
+    this.researchAllowed,
+    this.recordCloudLeg,
+  }) : recipe = recipe ?? services.bundledRecipe,
+       liveEnabled = transportFactory != null {
     ui = CookingUiController(onAction: _onUiAction, clock: services.clock);
     live = LiveCookingController(
-      transportFactory: transportFactory,
+      transportFactory: transportFactory ?? _noLiveTransport,
       media: media,
       onToolCall: _onTool,
       clock: services.clock,
     );
     live.addListener(_onLiveChanged);
+    watchService = watchServiceFactory?.call(live);
+    watchService?.addListener(_onWatchChanged);
   }
+
+  static LiveTransport _noLiveTransport() =>
+      throw StateError('The Live coach is off in this build.');
+
+  /// False when this build has no Live coach (`LIVE_BACKEND=none`): Live
+  /// controls are hidden and typed questions go to Coach Lite.
+  final bool liveEnabled;
+
+  /// On-device answers to typed questions while Live is off (SS-068). Null
+  /// keeps the old behaviour (asks the cook to connect Live).
+  final CoachLite? coachLite;
+
+  /// Local or Live watch behind one entry point (SS-067). Null in rehearsal
+  /// and in builds without the hybrid runtime: the Live-only watch is used.
+  late final WatchService? watchService;
+
+  /// Told the session id once the cooking session is open (ledger binding).
+  final void Function(String sessionId)? onSessionReady;
+
+  /// Read immediately before every grounded research send. Null allows it.
+  final bool Function()? researchAllowed;
+
+  /// Records a send made outside the dispatcher (Live connect, research).
+  final void Function(String feature, Set<DataKind> kinds)? recordCloudLeg;
+
+  /// The applied Coach Lite answer; its timer suggestion feeds the card.
+  CoachLiteAnswer? coachLiteAnswer;
+  bool coachLiteBusy = false;
+
+  /// Bumped when Live takes over or the context resets, so a late Coach Lite
+  /// answer cannot overwrite the newer workspace.
+  int _coachEpoch = 0;
+  bool _wasLiveActive = false;
+  WatchVerdict? _announcedVerdict;
 
   final AppServices services;
   final CookingResearchClient research;
@@ -124,6 +170,8 @@ $cookingUiInstructions
           : await services.sessions.createOrResume(uid, recipe);
       if (_disposed) return;
       session = saved;
+      onSessionReady?.call(saved.id);
+      watchService?.onSessionChanged(saved.id);
       _subscriptions.addAll([
         services.sessions.watch(saved.id).listen((value) {
           if (_disposed) return;
@@ -203,20 +251,47 @@ $cookingUiInstructions
   };
 
   Future<void> connect() async {
+    if (!liveEnabled) {
+      alert =
+          'The Live coach is off in this build. Type a question for '
+          'Coach Lite instead.';
+      _notify();
+      return;
+    }
     // A repeat tap on an active coach is not a new connection.
     final wasActive = live.isActive;
+    if (!wasActive) {
+      // Live takes over: a late Coach Lite answer must not overwrite Live's
+      // workspace, and a local watch releases the camera first.
+      _resetCoachLite();
+      await watchService?.onLiveConnecting();
+      if (_disposed) return;
+    }
     await live.start(cookingContext: cookingContext);
     if (!wasActive && live.isActive) {
+      recordCloudLeg?.call('live', const {
+        DataKind.text,
+        DataKind.image,
+        DataKind.audio,
+      });
       _track(AnalyticsEvents.liveCoachConnected, {'recipe_id': _recipeLabel});
     }
   }
 
-  Future<void> say(String text) async {
-    if (text.trim().isEmpty) return;
+  /// Returns true when Live or Coach Lite took the text, so the composer can
+  /// clear it.
+  Future<bool> say(String text) async {
+    if (text.trim().isEmpty) return false;
     if (!live.isActive) {
-      alert = 'Connect the live coach to talk or type a question.';
-      _notify();
-      return;
+      final lite = coachLite;
+      final saved = session;
+      if (lite == null || saved == null) {
+        alert = 'Connect the live coach to talk or type a question.';
+        _notify();
+        return false;
+      }
+      unawaited(_askCoachLite(lite, saved.id, text));
+      return true;
     }
     final question = cookQuestion;
     if (question != null && !_answering) {
@@ -224,6 +299,75 @@ $cookingUiInstructions
     } else {
       await live.sendText(text);
     }
+    return true;
+  }
+
+  Future<void> _askCoachLite(
+    CoachLite lite,
+    String sessionId,
+    String text,
+  ) async {
+    coachLiteBusy = true;
+    _notify();
+    final epoch = _coachEpoch;
+    final CoachLiteAnswer answer;
+    try {
+      answer = await lite.ask(
+        question: text,
+        step: step,
+        recipe: recipe,
+        confirmedFacts: [
+          if (confirmedIngredients.isNotEmpty)
+            'Ingredients the cook confirmed: ${confirmedIngredients.join(', ')}',
+          ...?session?.confirmedFacts,
+          ?allergyContextLine(recipe, session?.confirmedFacts ?? const []),
+          if (isDraftRecipe(recipe)) draftRecipeContextLine,
+        ],
+        sessionId: sessionId,
+        epoch: epoch,
+      );
+    } catch (_) {
+      if (!_disposed && epoch == _coachEpoch) {
+        coachLiteBusy = false;
+        error = 'Coach Lite could not answer. Try again.';
+        _notify();
+      }
+      return;
+    }
+    // Only the newest answer for this exact session, epoch and step applies.
+    if (_disposed ||
+        live.isActive ||
+        !lite.isCurrent(
+          answer.stamp,
+          sessionId: session?.id ?? '',
+          epoch: _coachEpoch,
+          stepId: step.id,
+        )) {
+      return;
+    }
+    coachLiteBusy = false;
+    coachLiteAnswer = answer;
+    ui.applyToolPayload(answer.payload); // already lite-validated
+    // handOffToResearch is a hint, not an authorization. Re-check privacy,
+    // CloudRoutes.research and connectivity immediately before the send.
+    if (answer.handOffToResearch && lite.researchBlocker() == null) {
+      unawaited(researchQuestionNow(text, requestWorkspace: false));
+    }
+    _notify();
+  }
+
+  /// Called by the TimerSuggestionCard. The cook's tap is the only trigger.
+  Future<void> startSuggestedTimer(String label, int seconds) => startTimer(
+    'lite-${services.clock().millisecondsSinceEpoch}-${_timerSequence++}',
+    label,
+    seconds,
+  );
+
+  void _resetCoachLite() {
+    _coachEpoch++;
+    coachLite?.cancel();
+    coachLiteAnswer = null;
+    coachLiteBusy = false;
   }
 
   Future<void> confirmCookAnswer(String question, String answer) async {
@@ -275,7 +419,9 @@ $cookingUiInstructions
 
   Future<void> checkNow([String prediction = 'Not sure']) async {
     if (!live.isActive) {
-      alert = 'Connect the live coach first, then show your food.';
+      alert = liveEnabled
+          ? 'Connect the live coach first, then show your food.'
+          : 'Tap Watch my food for an on-device check of the visible cue.';
       _notify();
       return;
     }
@@ -311,6 +457,8 @@ $cookingUiInstructions
       // new message, not an answer to the old question.
       cookQuestion = null;
       live.stopWatch();
+      watchService?.onStepChanged(step.id);
+      _resetCoachLite();
       ui.applyToolPayload({
         'components': [
           {
@@ -388,7 +536,39 @@ $cookingUiInstructions
     }
   }
 
-  void startWatch() {
+  /// Whether any watch (on-device or Live) is running.
+  bool get watching =>
+      (watchService?.local.isActive ?? false) || live.watchGoal != null;
+
+  /// The one entry point for "Watch my food": picks the on-device or the
+  /// Live watch (via [watchService]) and says which.
+  Future<void> startWatch() async {
+    final service = watchService;
+    final saved = session;
+    if (service != null && saved != null && !isDemo) {
+      final stepId = step.id;
+      final started = await service.startWatch(
+        step: step,
+        sessionId: saved.id,
+        liveActive: live.isActive,
+      );
+      if (_disposed || session?.id != saved.id || step.id != stepId) return;
+      if (started.started) {
+        _track(AnalyticsEvents.watchStarted, {
+          'recipe_id': _recipeLabel,
+          'source': 'button_${started.route!.name}',
+        });
+        _watchPanel(
+          'watching',
+          'Watching ${step.title.toLowerCase()}',
+          started.message,
+        );
+      } else {
+        alert = started.message;
+      }
+      _notify();
+      return;
+    }
     if (!live.isActive || isDemo) {
       alert = isDemo
           ? 'Watch needs a real camera connection; rehearsal does not inspect food.'
@@ -410,6 +590,7 @@ $cookingUiInstructions
   }
 
   void stopWatch() {
+    if (watchService case final service?) unawaited(service.stopWatch());
     live.stopWatch();
     _watchPanel(
       'paused',
@@ -426,8 +607,26 @@ $cookingUiInstructions
     'body': body,
   });
 
+  void _onWatchChanged() {
+    if (_disposed) return;
+    // An on-device "ready" hands the decision to the cook.
+    final verdict = watchService?.local.verdict;
+    if (verdict != null &&
+        !identical(verdict, _announcedVerdict) &&
+        verdict.state == WatchState.ready &&
+        verdict.sessionId == session?.id &&
+        verdict.stepId == step.id) {
+      _announcedVerdict = verdict;
+      alert = 'Check your food: ${verdict.message}';
+    }
+    _notify();
+  }
+
   void _onLiveChanged() {
     if (_disposed) return;
+    final liveActive = live.isActive;
+    if (_wasLiveActive && !liveActive) watchService?.onLiveStopped();
+    _wasLiveActive = liveActive;
     final watching = live.watchGoal != null && live.isActive;
     if (_wasWatching && !watching) {
       _watchPanel(
@@ -528,6 +727,15 @@ $cookingUiInstructions
     final epoch = ++_researchEpoch;
     final requestedRevision = session?.revision;
     final requestedStepId = step.id;
+    // Read the route approval right before the send, never earlier.
+    if (researchAllowed?.call() == false) {
+      error =
+          'Grounded research is off in this build. Check a trusted source, '
+          'or tell me what you know.';
+      _notify();
+      return null;
+    }
+    recordCloudLeg?.call('research', const {DataKind.text});
     researching = true;
     researchQuestion = query.question;
     researchResult = null;
@@ -606,7 +814,8 @@ $cookingUiInstructions
       case 'watch_cooking':
         _watchPanel('watching', 'Watching your food', a['goal'] as String);
         // LiveCookingController started the watch before dispatching here.
-        if (live.watchId != null) {
+        if (live.watchId case final id?) {
+          watchService?.liveWatchStarted(id);
           _track(AnalyticsEvents.watchStarted, {
             'recipe_id': _recipeLabel,
             'source': 'coach',
@@ -740,7 +949,7 @@ $cookingUiInstructions
       case 'next_step':
         await advanceStep();
       case 'start_watch':
-        startWatch();
+        await startWatch();
       case 'ask_cook':
         alert = 'Answer the coach by voice or in the message box.';
     }
@@ -787,8 +996,15 @@ $cookingUiInstructions
 
   @override
   void dispose() {
+    _resetCoachLite();
     _disposed = true;
     _researchEpoch++;
+    if (watchService case final service?) {
+      service.removeListener(_onWatchChanged);
+      service.dispose();
+      // Cancels any running check and releases the camera.
+      service.local.dispose();
+    }
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }
