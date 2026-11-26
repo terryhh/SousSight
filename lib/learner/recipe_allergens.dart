@@ -38,6 +38,21 @@ List<RecipeAllergen> recipeAllergens(Recipe recipe) {
   ];
 }
 
+/// Reviewed swaps for ingredients that carry an allergen, one line each with
+/// the reviewer's note (labels and cross-contact), in recipe order.
+List<String> allergenSwapLines(Recipe recipe) {
+  final names = {
+    for (final i in recipe.ingredients)
+      if (i.allergens.any((a) => a.trim().isNotEmpty)) i.id: i.name,
+  };
+  return [
+    for (final swap in recipe.reviewedSubstitutions)
+      if (names[swap.ingredientId] case final name?)
+        '$name -> ${swap.substitute}'
+            '${swap.note.trim().isEmpty ? '.' : ': ${swap.note.trim()}'}',
+  ];
+}
+
 /// Whether the cook already answered the allergy question in this session.
 bool hasAllergyAnswer(Iterable<String> confirmedFacts) => confirmedFacts.any(
   (fact) =>
@@ -55,10 +70,16 @@ String? allergyContextLine(Recipe recipe, Iterable<String> confirmedFacts) {
   final allergens = recipeAllergens(recipe);
   if (allergens.isEmpty || hasAllergyAnswer(confirmedFacts)) return null;
   final list = allergens.map((a) => a.label).join(', ');
-  return 'Recipe allergens: $list. Before any other step guidance, use '
+  final swaps = allergenSwapLines(recipe);
+  return 'Recipe allergens: $list. '
+      '${swaps.isEmpty ? '' : 'Reviewed swaps: ${swaps.join(' ')} '}'
+      'Before any other step guidance, use '
       'ask_cook once with a question starting "$allergyQuestionPrefix" to ask '
       'whether anyone eating has an allergy to these; you may still show the '
-      'opening panels while you wait. If yes, use research_cooking for a safe '
-      'substitution and let the cook confirm it. Never claim the camera can '
+      'opening panels while you wait. If yes, offer a reviewed swap from the '
+      'recipe when one fits, otherwise use research_cooking for a '
+      'substitution; remind the cook to read labels and use a clean knife, '
+      'plate and board to avoid cross-contact; never call a swap '
+      'allergen-free. Let the cook confirm it. Never claim the camera can '
       'verify allergen absence; package labels are the source of truth.';
 }
