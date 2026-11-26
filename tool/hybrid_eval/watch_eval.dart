@@ -358,6 +358,7 @@ class WatchEvalReport {
     required this.trials,
     required this.observations,
     required this.context,
+    this.observationsLockedAt,
   }) {
     final ids = {for (final f in fixtures) f.fixtureId};
     for (final trial in trials) {
@@ -375,6 +376,11 @@ class WatchEvalReport {
   /// no sentence to score and is always [ObservationMark.fail].
   final Map<String, ObservationMark> observations;
   final WatchEvalContext context;
+
+  /// When the scorer locked the observation marks, before any verdict or
+  /// score was shown. Null means they were never locked, so the scoring
+  /// cannot be called blind and the report is incomplete.
+  final DateTime? observationsLockedAt;
 
   WatchFixture fixtureOf(WatchTrial trial) =>
       fixtures.firstWhere((f) => f.fixtureId == trial.fixtureId);
@@ -477,6 +483,7 @@ class WatchEvalReport {
   bool get complete =>
       trials.isNotEmpty &&
       observationsScored.hits == trials.length &&
+      observationsLockedAt != null &&
       context.missing.isEmpty;
 
   String get uploadSummary {
@@ -498,6 +505,7 @@ class WatchEvalReport {
       'startedAt': context.startedAt.toUtc().toIso8601String(),
       'finishedAt': context.finishedAt.toUtc().toIso8601String(),
       'missing': context.missing,
+      'observationsLockedAt': observationsLockedAt?.toUtc().toIso8601String(),
     },
     'summary': {
       'verdict': verdict.toJson(),
@@ -537,10 +545,17 @@ class WatchEvalReport {
         complete
             ? '**Status:** complete.'
             : '**Status:** INCOMPLETE — do not publish these numbers until '
-                  'every observation is scored and hardware, platform, scorer '
-                  'and build are recorded.',
+                  'every observation is scored and locked, and hardware, '
+                  'platform, scorer and build are recorded.',
       )
       ..writeln()
+      ..writeln(
+        observationsLockedAt == null
+            ? '- **Observation marks:** _not locked, so not blind-scored_'
+            : '- **Observation marks:** locked at '
+                  '${observationsLockedAt!.toUtc().toIso8601String()}, before '
+                  'any verdict or score was shown',
+      )
       ..writeln('- **Hardware:** ${orMissing(context.hardware)}')
       ..writeln('- **Platform:** ${orMissing(context.platform)}')
       ..writeln('- **Observation scorer:** ${orMissing(context.scorer)}')

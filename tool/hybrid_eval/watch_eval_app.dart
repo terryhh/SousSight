@@ -51,6 +51,10 @@ class _WatchEvalScreenState extends State<WatchEvalScreen> {
   DateTime? _startedAt;
   DateTime? _finishedAt;
 
+  /// When the scorer locked the observation marks. Verdicts and scores are
+  /// shown only after this, and marks never change once it is set.
+  DateTime? _lockedAt;
+
   /// Bumped by every run and cancel; a run that awaited across it is dropped.
   int _run = 0;
 
@@ -72,6 +76,7 @@ class _WatchEvalScreenState extends State<WatchEvalScreen> {
       _marks.clear();
       _startedAt = widget.now();
       _finishedAt = null;
+      _lockedAt = null;
     });
     try {
       for (final f in widget.fixtures) {
@@ -106,6 +111,7 @@ class _WatchEvalScreenState extends State<WatchEvalScreen> {
       _phase = _Phase.idle;
       _trials = [];
       _marks.clear();
+      _lockedAt = null;
       _error = 'Run cancelled; nothing was recorded.';
     });
   }
@@ -114,6 +120,7 @@ class _WatchEvalScreenState extends State<WatchEvalScreen> {
     fixtures: widget.fixtures,
     trials: _trials,
     observations: Map.of(_marks),
+    observationsLockedAt: _lockedAt,
     context: WatchEvalContext(
       hardware: _hardware.text,
       platform: widget.platform,
@@ -208,8 +215,8 @@ class _WatchEvalScreenState extends State<WatchEvalScreen> {
       const SizedBox(height: 16),
       Text(
         'Score each observation. Does the watch\'s sentence state what the '
-        'photo is expected to show, and not its opposite? The verdict is '
-        'hidden until you have scored.',
+        'photo is expected to show, and not its opposite? The verdicts stay '
+        'hidden until you lock your scores, and locked scores cannot change.',
         style: Theme.of(context).textTheme.titleSmall,
       ),
       for (final t in _trials) _trialCard(t),
@@ -220,7 +227,21 @@ class _WatchEvalScreenState extends State<WatchEvalScreen> {
           'and scorer${report.context.missing.contains('build SHA') ? '; this build has no GIT_SHA define' : ''}.',
           key: const Key('incomplete'),
         ),
-      if (report.observationsScored.hits == _trials.length) ...[
+      if (_lockedAt == null)
+        FilledButton(
+          key: const Key('lock'),
+          onPressed: report.observationsScored.hits == _trials.length
+              ? () => setState(() => _lockedAt = widget.now())
+              : null,
+          child: const Text('Lock my scores and show the results'),
+        )
+      else ...[
+        const Text(
+          'Scores locked. To score again, run the photos again: that is a '
+          'new run.',
+          key: Key('locked'),
+        ),
+        const SizedBox(height: 8),
         SelectableText(report.toMarkdown(), key: const Key('report')),
         const SizedBox(height: 8),
         Wrap(
@@ -286,7 +307,9 @@ class _WatchEvalScreenState extends State<WatchEvalScreen> {
                             : 'Doesn\'t match',
                       ),
                       selected: mark == m,
-                      onSelected: (_) => setState(() => _marks[t.key] = m),
+                      onSelected: _lockedAt != null
+                          ? null
+                          : (_) => setState(() => _marks[t.key] = m),
                     ),
                 ],
               ),

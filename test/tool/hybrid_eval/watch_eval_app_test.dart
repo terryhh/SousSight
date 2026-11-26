@@ -96,6 +96,15 @@ Future<void> mark(WidgetTester tester, String key, ObservationMark m) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> lock(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const Key('lock')));
+  await tester.tap(find.byKey(const Key('lock')));
+  await tester.pumpAndSettle();
+}
+
+ChoiceChip chip(WidgetTester tester, String key, ObservationMark m) =>
+    tester.widget<ChoiceChip>(find.byKey(Key('mark-$key-${m.name}')));
+
 void main() {
   test('platform names the web or the target platform', () {
     expect(describePlatform(isWeb: true), 'web');
@@ -141,14 +150,23 @@ void main() {
     expect(find.textContaining('✓'), findsNothing);
     expect(find.byKey(const Key('incomplete')), findsOneWidget);
 
+    final lockButton = find.byKey(const Key('lock'));
+    expect(tester.widget<FilledButton>(lockButton).onPressed, isNull);
     await mark(tester, 'T#1', ObservationMark.pass);
-    expect(find.byKey(const Key('report')), findsNothing);
+    expect(tester.widget<FilledButton>(lockButton).onPressed, isNull);
+    // Before locking, a mark can still be corrected; the result stays hidden.
+    await mark(tester, 'S#1', ObservationMark.pass);
     await mark(tester, 'S#1', ObservationMark.fail);
+    expect(find.byKey(const Key('report')), findsNothing);
+    await lock(tester);
+    expect(find.byKey(const Key('lock')), findsNothing);
+    expect(find.byKey(const Key('locked')), findsOneWidget);
 
     final report = tester.widget<SelectableText>(
       find.byKey(const Key('report')),
     );
     expect(report.data, contains('**Status:** complete.'));
+    expect(report.data, contains('locked at 2026-11-28T10:00:00.000Z'));
     expect(report.data, contains('| Verdict class correct | 2/2 |'));
     expect(
       report.data,
@@ -185,6 +203,7 @@ void main() {
       );
       expect(find.byKey(const Key('mark-T#1-pass')), findsNothing);
       await mark(tester, 'S#1', ObservationMark.pass);
+      await lock(tester);
       final report = tester.widget<SelectableText>(
         find.byKey(const Key('report')),
       );
@@ -193,6 +212,43 @@ void main() {
       expect(find.textContaining('no GIT_SHA define'), findsOneWidget);
     },
   );
+
+  testWidgets('locked scores cannot change after the results are shown', (
+    tester,
+  ) async {
+    final fake = FakeHybridDispatcher()
+      ..enqueue(verdictJson('ready', see: 'Coarse chunks.'))
+      ..enqueue(verdictJson('not_yet', direction: 'less', see: 'Whole beans.'));
+    tallView(tester);
+    await tester.pumpWidget(Harness(fake).app());
+    await fillContext(tester);
+    await tapRun(tester);
+    await mark(tester, 'T#1', ObservationMark.pass);
+    await mark(tester, 'S#1', ObservationMark.fail);
+    await lock(tester);
+    String reportText() =>
+        tester.widget<SelectableText>(find.byKey(const Key('report'))).data!;
+    final before = reportText();
+    expect(before, contains('| Observation correct (human-scored) | 1/2'));
+    for (final m in ObservationMark.values) {
+      expect(chip(tester, 'S#1', m).onSelected, isNull, reason: m.name);
+      expect(chip(tester, 'T#1', m).onSelected, isNull, reason: m.name);
+    }
+    // Trying anyway changes nothing: the exported report is the locked one.
+    await mark(tester, 'S#1', ObservationMark.pass);
+    expect(chip(tester, 'S#1', ObservationMark.fail).selected, isTrue);
+    expect(reportText(), before);
+
+    // A new run starts unlocked and unscored.
+    fake
+      ..enqueue(verdictJson('ready'))
+      ..enqueue(verdictJson('ready'));
+    await tester.ensureVisible(find.byKey(const Key('run')));
+    await tapRun(tester);
+    expect(find.byKey(const Key('report')), findsNothing);
+    expect(chip(tester, 'S#1', ObservationMark.fail).selected, isFalse);
+    expect(chip(tester, 'S#1', ObservationMark.fail).onSelected, isNotNull);
+  });
 
   testWidgets('a photo that fails its hash check stops with the reason', (
     tester,

@@ -27,9 +27,11 @@ Each trial is scored in three parts. Every rate is reported with its denominator
    `unsure`.
 2. **Observation (human-scored, blind):** does `whatISee` state what the fixture's
    `expectedObservations` say is visible, and not its opposite? The scorer sees the photo, the
-   expected observations and the watch's sentence. The verdict and the score stay hidden until
-   every observation is marked. A blocked or failed trial has no sentence, so it is scored as
-   not matching. A sentence the app redacted for an unsupported claim is shown as redacted.
+   expected observations and the watch's sentence. Marks can be corrected until the scorer taps
+   **Lock my scores and show the results**. Only then are verdicts and scores shown, and the
+   locked marks can't be changed. Scoring again means a new run. The report records when the
+   marks were locked. A blocked or failed trial has no sentence, so it is scored as not
+   matching. A sentence the app redacted for an unsupported claim is shown as redacted.
 3. **Next action:** what the cook would do after reading the app's message.
 
    | Watch says | App message | Cook action |
@@ -63,7 +65,7 @@ The report also counts:
   "fakes only, not evidence of the real model".
 
 A report is **incomplete**, and says so in its first line, until every observation is scored
-and hardware, platform, scorer and build SHA are recorded. Publish only complete reports.
+and locked, and hardware, platform, scorer and build SHA are recorded. Publish only complete reports.
 
 ### What this does not measure
 
@@ -112,7 +114,7 @@ stops the run.
 On the device:
 1. Enter the hardware (device, OS, browser and version) and who is scoring.
 2. Tap **Run the photos**.
-3. Score each observation.
+3. Score each observation, then tap **Lock my scores and show the results**.
 4. Copy the Markdown into [Results](#results), and the JSON into a `<details>` block under it.
 
 One run is eight trials. Repeat runs are added as separate entries. Never replace a run you

@@ -132,6 +132,7 @@ List<WatchTrial> perfect() => [
   answered('MIX-OBS', WatchState.unsure, ms: 800),
 ];
 
+final lockedAt = DateTime.utc(2026, 11, 28, 10, 3);
 Map<String, ObservationMark> allPass(List<WatchTrial> trials) => {
   for (final t in trials) t.key: ObservationMark.pass,
 };
@@ -326,6 +327,7 @@ void main() {
         trials: trials,
         observations: allPass(trials),
         context: ctx(),
+        observationsLockedAt: lockedAt,
       );
       expect('${r.verdict} ${r.observation} ${r.action}', '8/8 8/8 8/8');
       expect('${r.correctAbstentions}', '2/2');
@@ -340,6 +342,17 @@ void main() {
       expect([l.n, l.minMs, l.medianMs, l.maxMs], [8, 100, 400, 800]);
       final md = r.toMarkdown();
       expect(md, contains('**Status:** complete.'));
+      expect(
+        md,
+        contains(
+          '- **Observation marks:** locked at 2026-11-28T10:03:00.000Z, '
+          'before any verdict or score was shown',
+        ),
+      );
+      expect(
+        r.toJson()['context'],
+        containsPair('observationsLockedAt', '2026-11-28T10:03:00.000Z'),
+      );
       expect(md, contains('| Verdict class correct | 8/8 |'));
       expect(md, contains('median 400 ms'));
       expect(
@@ -504,12 +517,21 @@ void main() {
       final trials = perfect();
       WatchEvalReport build(
         WatchEvalContext c,
-        Map<String, ObservationMark> m,
-      ) => WatchEvalReport(
+        Map<String, ObservationMark> m, {
+        bool lock = true,
+      }) => WatchEvalReport(
         fixtures: eight,
         trials: trials,
         observations: m,
         context: c,
+        observationsLockedAt: lock ? lockedAt : null,
+      );
+      expect(build(ctx(), allPass(trials)).complete, isTrue);
+      final unlocked = build(ctx(), allPass(trials), lock: false);
+      expect(unlocked.complete, isFalse, reason: 'never locked, not blind');
+      expect(
+        unlocked.toMarkdown(),
+        contains('_not locked, so not blind-scored_'),
       );
       expect(build(ctx(hardware: ' '), allPass(trials)).complete, isFalse);
       expect(build(ctx(scorer: ''), allPass(trials)).complete, isFalse);
