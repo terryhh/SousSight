@@ -28,6 +28,8 @@ abstract class SessionRepository {
   /// Read-modify-write in a transaction. The mutation should bump `revision`
   /// for cook-confirmed changes.
   Future<CookingSession> update(
-      String sessionId, CookingSession Function(CookingSession current) mutate);
+    String sessionId,
+    CookingSession Function(CookingSession current) mutate,
+  );
   Future<void> deleteSession(String sessionId);
 }

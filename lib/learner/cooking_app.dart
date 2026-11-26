@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../ai/hybrid/hybrid_types.dart';
+import '../app/cloud_send_recorder.dart';
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
 import '../app/services_scope.dart';
@@ -17,9 +18,10 @@ import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../genui/cooking_ui.dart';
-import '../live/browser_live_media.dart';
+import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
 import '../live/live_controller.dart';
+import '../live/live_types.dart';
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
 import '../trust/inference_source_badge.dart';
@@ -153,6 +155,17 @@ class CookingScreen extends StatefulWidget {
   State<CookingScreen> createState() => _CookingScreenState();
 }
 
+/// Wraps a real Live transport so each connect attempt and resume is a leg
+/// in the session ledger. Rehearsal (no runtime) is left as is.
+@visibleForTesting
+LiveTransportFactory? ledgeredLiveFactory(
+  LiveTransportFactory? factory,
+  HybridRuntime? hybrid,
+) {
+  if (factory == null || hybrid == null) return factory;
+  return () => LedgeredLiveTransport(factory(), hybrid.cloudSends);
+}
+
 /// The one "Watch my food" service for a cooking session: an on-device watch
 /// over a camera-only capture of [live]'s media, or the Live watch when Live
 /// is connected (SS-067).
@@ -200,12 +213,15 @@ class _CookingScreenState extends State<CookingScreen> {
       recipe: widget.recipe,
       research: widget.isDemo
           ? FakeCookingResearchClient()
-          : GeminiCookingResearchClient(),
-      transportFactory: liveTransportFactory(
-        isDemo: widget.isDemo,
-        cloudRoutes: hybrid?.cloudRoutes,
+          : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
+      transportFactory: ledgeredLiveFactory(
+        liveTransportFactory(
+          isDemo: widget.isDemo,
+          cloudRoutes: hybrid?.cloudRoutes,
+        ),
+        hybrid,
       ),
-      media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
+      media: widget.isDemo ? DemoLiveMedia() : createLiveMedia(),
       coachLite: hybrid == null
           ? null
           : CoachLite(
@@ -222,7 +238,6 @@ class _CookingScreenState extends State<CookingScreen> {
       researchAllowed: hybrid == null
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
-      recordCloudLeg: hybrid?.recordCloudLeg,
     );
   }
 

@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 
@@ -70,10 +71,14 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     ConsentGrant? grant,
   }) {
     final op = _Operation();
+    // Everything below (routing, digest, consent, every send) uses this
+    // snapshot, taken before the first await: a caller mutating its bytes,
+    // parts or schema later cannot change what a grant covers or what is sent.
+    final snapshot = snapshotTask(task);
     final run = _Run(
-      task: task,
+      task: snapshot,
       sessionId: sessionId,
-      kinds: taskDataKinds(task),
+      kinds: taskDataKinds(snapshot),
       suppliedGrant: grant,
     );
     return HybridOperation(_newId(), _dispatch(op, run, validate), op.cancel);
@@ -107,7 +112,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
               caps.local?.imageTokenEstimate ?? defaultImageTokenEstimate,
         ),
         languageTag: _language(),
-        localOnly: _privacy.localOnly(task.feature),
+        localOnly: localOnlyFor(_privacy, task.feature),
         online: _isOnline(),
         cloudApproved: _routes.allows(CloudRoute.hybridFallback),
         capabilities: caps,
@@ -204,7 +209,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     final decision = decideCloudRetry(
       feature: run.task.feature,
       kinds: run.kinds,
-      localOnly: _privacy.localOnly(run.task.feature),
+      localOnly: localOnlyFor(_privacy, run.task.feature),
       cloudApproved: _routes.allows(CloudRoute.hybridFallback),
       online: _isOnline(),
       reason: reason,
@@ -262,7 +267,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     RouteReason? liveCheck() {
       if (op.cancelled) return RouteReason.cancelled;
       if (!mayUpload) return null;
-      if (_privacy.localOnly(feature)) return RouteReason.localOnlySetting;
+      if (localOnlyFor(_privacy, feature)) return RouteReason.localOnlySetting;
       if (!_routes.allows(CloudRoute.hybridFallback)) {
         return RouteReason.cloudNotApproved;
       }
@@ -500,3 +505,33 @@ class _Blocked extends _Outcome {
   const _Blocked(this.reason);
   final RouteReason reason;
 }
+
+/// A deep copy of [task]: new byte buffers, new parts list, and an
+/// unmodifiable deep copy of the schema.
+HybridTask snapshotTask(HybridTask task) => HybridTask(
+  feature: task.feature,
+  systemInstruction: task.systemInstruction,
+  parts: List.unmodifiable([
+    for (final p in task.parts)
+      switch (p) {
+        HybridText(:final text) => HybridText(text),
+        HybridInlineData(:final bytes, :final mimeType) => HybridInlineData(
+          Uint8List.fromList(bytes),
+          mimeType,
+        ),
+      },
+  ]),
+  jsonSchema: task.jsonSchema == null
+      ? null
+      : _deepCopy(task.jsonSchema) as Map<String, Object?>,
+  maxOutputTokens: task.maxOutputTokens,
+  timeout: task.timeout,
+);
+
+Object? _deepCopy(Object? value) => switch (value) {
+  Map() => Map<String, Object?>.unmodifiable({
+    for (final e in value.entries) e.key as String: _deepCopy(e.value),
+  }),
+  List() => List<Object?>.unmodifiable([for (final v in value) _deepCopy(v)]),
+  _ => value,
+};
