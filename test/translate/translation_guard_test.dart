@@ -234,7 +234,9 @@ void main() {
         LineRejection.numbersChanged,
       );
       expect(certifiesIn('it is safe to eat', plain), isTrue);
-      expect(certifiesIn('está cocido', plain), isFalse);
+      // The shared check covers English and Spanish for every language.
+      expect(certifiesIn('está cocido', plain), isTrue);
+      expect(certifiesIn('zz cocido', plain), isFalse);
     });
   });
 

@@ -9,6 +9,8 @@
 // The shell's own strings stay English; only recipe content and AI answers
 // use the chosen language.
 
+import 'spanish_certification.dart';
+
 /// One language a cook can cook in.
 class CookLanguage {
   const CookLanguage({
@@ -81,17 +83,7 @@ const spanish = CookLanguage(
     'pint': ['pinta', 'pintas'],
     'gallon': ['galón', 'galones'],
   },
-  // Statements, not conditions: Spanish puts conditions in the subjunctive
-  // ("hasta que esté cocido"), so the indicative "está cocido" is a claim.
-  certificationPattern:
-      r'\bsegur[oa]s?\s+(para\s+)?(comer|consumir|servir)\b|'
-      r'\b(es|está|están|son|estan)\s+'
-      r'((ya|totalmente|completamente|bien)\s+)*'
-      r'(segur[oa]s?|cocid[oa]s?|hech[oa]s?|list[oa]s?\s+para\s+(comer|servir))\b|'
-      r'\b(libres?|sin)\s+de\s+'
-      r'(alérgenos?|alergenos?|gluten|nueces|maní|mani|cacahuates?|lácteos|lacteos|huevos?)\b|'
-      r'\bsin\s+(ningún\s+)?riesgo\b|'
-      r'\b(alcanzó|alcanzaron|alcanzado|llegó\s+a)\s+(la\s+|una\s+)?temperatura\s+(segura|interna)\b',
+  certificationPattern: spanishCertificationPattern,
 );
 
 /// Every language a cook can choose, in display order. Add one entry here.

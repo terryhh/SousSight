@@ -14,6 +14,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
 import '../genui/cooking_ui_contract.dart';
+import '../translate/spanish_certification.dart';
 
 const coachLiteFeature = 'coach_lite';
 
@@ -290,10 +291,12 @@ final _certification = RegExp(
   caseSensitive: false,
 );
 
-/// True when [text] would certify doneness, temperature or safety: the same
-/// check every model answer must pass. The read-aloud path (SS-077) applies
-/// it again to each sentence it speaks.
-bool coachLiteCertifies(String text) => _certification.hasMatch(text);
+/// True when [text] would certify doneness, temperature or safety, in
+/// English or in Spanish (SS-106, the cook's language): the same check every
+/// model answer must pass. The read-aloud path (SS-077) applies it again to
+/// each sentence it speaks.
+bool coachLiteCertifies(String text) =>
+    _certification.hasMatch(text) || spanishCertifies(text);
 
 /// Parses and validates model output. Throws [FormatException].
 ({List<Map<String, dynamic>> components, CoachLiteTimerSuggestion? timer})
@@ -338,7 +341,7 @@ parseCoachLiteResponse(String text) {
       throw const FormatException('IDs starting with app_ are reserved.');
     }
   }
-  if (_certification.hasMatch(jsonEncode(cleaned))) {
+  if (coachLiteCertifies(jsonEncode(cleaned))) {
     throw const FormatException(
       'Coach Lite must not certify doneness, temperature or safety.',
     );
