@@ -31,4 +31,24 @@ void main() {
     expect(cancelled.blocked, RouteReason.cancelled);
     expect(fake.cancelledOperations, [op.operationId]);
   });
+
+  test('concurrent fake operations get distinct leg request ids', () async {
+    const task = HybridTask(
+      feature: 'local_watch',
+      parts: [HybridText('q')],
+      maxOutputTokens: 8,
+      timeout: Duration(seconds: 1),
+    );
+    final fake = FakeHybridDispatcher()
+      ..enqueue('a')
+      ..enqueue('b')
+      ..delay = const Duration(milliseconds: 10);
+    final first = fake.start(task, sessionId: 's');
+    final second = fake.start(task, sessionId: 's');
+    final ids = [
+      (await first.result).finalLeg!.requestId,
+      (await second.result).finalLeg!.requestId,
+    ];
+    expect(ids.toSet(), hasLength(2));
+  });
 }
