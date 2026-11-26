@@ -222,6 +222,9 @@ void main() {
       final hybrid = _runtime(inference);
       await (hybrid.inference as ConfiguredHybridInference).configured;
       expect(inference.config?.cloudModel, 'test-cloud-model');
+      // No ANDROID_MODEL dart-define in tests: the device's supported model.
+      expect(inference.config?.androidModel, AndroidModelOption.stable);
+      expect(kAndroidModel, AndroidModelOption.stable);
     });
 
     test('one ledger per app run: cooking sessions keep every leg', () {

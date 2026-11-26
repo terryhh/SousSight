@@ -10,14 +10,38 @@ enum InferenceSource { onDevice, cloud }
 
 enum OnDeviceStatus { available, downloadable, downloading, unavailable }
 
-/// Android local model selection. The judged build uses [preview] (Gemini Nano 4).
-enum AndroidModelOption { preview, previewFast, stable }
+/// Android local model selection. Names are the wire values. The default is
+/// [stable], the Gemini Nano the device supports (Nano 3 on a Pixel 9);
+/// [preview] (Nano 4) and [previewFast] are explicit opt-ins for devices that
+/// support them.
+enum AndroidModelOption {
+  preview,
+  previewFast,
+  stable;
+
+  /// Parses a wire or dart-define value. Null, blank or unknown → [stable].
+  static AndroidModelOption fromName(String? name) {
+    final trimmed = name?.trim();
+    for (final option in values) {
+      if (option.name == trimmed) return option;
+    }
+    return stable;
+  }
+
+  /// An option a backend reported, or null (absent or unknown).
+  static AndroidModelOption? _reported(Object? name) {
+    for (final option in values) {
+      if (option.name == name) return option;
+    }
+    return null;
+  }
+}
 
 /// Set once, before first use. Status, download and generation all use it.
 class HybridConfig {
   const HybridConfig({
     required this.cloudModel,
-    this.androidModel = AndroidModelOption.preview,
+    this.androidModel = AndroidModelOption.stable,
     this.languages = const ['en'],
   });
 
@@ -42,9 +66,14 @@ class LocalModelLimits {
     required this.defaultOutputReserve,
     required this.imageTokenEstimate,
     required this.validatedLanguages,
+    this.modelOption,
   });
 
   final String modelFamily;
+
+  /// Android: the configured option in use. Null before `configure` and on
+  /// other platforms.
+  final AndroidModelOption? modelOption;
   final bool supportsImage;
   final bool supportsJsonSchema;
 
@@ -66,10 +95,12 @@ class LocalModelLimits {
     validatedLanguages: [
       for (final l in (m['validatedLanguages'] as List)) l as String,
     ],
+    modelOption: AndroidModelOption._reported(m['modelOption']),
   );
 
   Map<String, Object?> toMap() => {
     'modelFamily': modelFamily,
+    'modelOption': modelOption?.name,
     'supportsImage': supportsImage,
     'supportsJsonSchema': supportsJsonSchema,
     'maxTotalTokens': maxTotalTokens,
@@ -142,6 +173,7 @@ class HybridAvailability {
     required this.status,
     this.reason,
     this.modelLabel,
+    this.modelOption,
   });
 
   final OnDeviceStatus status;
@@ -153,11 +185,15 @@ class HybridAvailability {
   /// Exact base model name when the platform reports one.
   final String? modelLabel;
 
+  /// Android: the option this answer is about. Null elsewhere.
+  final AndroidModelOption? modelOption;
+
   factory HybridAvailability.fromMap(Map<Object?, Object?> m) =>
       HybridAvailability(
         status: OnDeviceStatus.values.byName(m['status'] as String),
         reason: m['reason'] as String?,
         modelLabel: m['modelLabel'] as String?,
+        modelOption: AndroidModelOption._reported(m['modelOption']),
       );
 }
 
