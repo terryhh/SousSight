@@ -53,41 +53,60 @@ if [[ ! -f "$defines" ]]; then
   exit 1
 fi
 
-# Read the four keys with Python's JSON parser (present on every runner).
-# Output is one `KEY<TAB>state<TAB>value` line per key; state is `missing` or
-# `set`. Values containing tabs or newlines are rejected outright.
-if ! parsed="$(python3 - "$defines" <<'PY'
+# Read the keys with Python's JSON parser (present on every runner).
+# Every value is validated BEFORE anything is written, and nothing is written
+# on failure except diagnostics that never contain a value. On success the
+# output is one `KEY<TAB>value` line per key; APPCHECK_DEBUG_TOKEN is reduced
+# to a presence flag (`set` or empty) so its value never leaves Python.
+# Values containing tabs or newlines are rejected.
+diagnostics="$(mktemp)"
+trap 'rm -f "$diagnostics"' EXIT
+if ! parsed="$(python3 - "$defines" 2>"$diagnostics" <<'PY'
 import json, sys
+
+def die(message):
+    sys.stderr.write(f'::error::{message}\n')
+    sys.exit(1)
+
 try:
     with open(sys.argv[1], encoding='utf-8') as handle:
         data = json.load(handle)
-except (OSError, ValueError) as error:
-    print(f'::error::Defines file is not valid JSON: {error}')
-    sys.exit(1)
+except OSError:
+    die('Defines file could not be read')
+except ValueError as error:
+    # Position only: the decoder message could quote file content.
+    die(f'Defines file is not valid JSON (line {getattr(error, "lineno", "?")})')
 if not isinstance(data, dict):
-    print('::error::Defines file must be a JSON object')
-    sys.exit(1)
+    die('Defines file must be a JSON object')
+
+values = {}
+problems = []
 for key in ('LIVE_BACKEND', 'DINNER_MODE', 'CLOUD_ROUTES', 'APPCHECK_DEBUG_TOKEN', 'FAKE_BACKEND'):
-    if key not in data or data[key] is None:
-        print(f'{key}\tmissing\t')
-        continue
-    value = data[key]
-    if isinstance(value, bool):
+    value = data.get(key)
+    if value is None:
+        value = ''
+    elif isinstance(value, bool):
         value = 'true' if value else 'false'
-    value = str(value)
+    else:
+        value = str(value)
     if any(c in value for c in '\t\r\n'):
-        print(f'::error::{key} contains a tab or newline')
-        sys.exit(1)
-    print(f'{key}\tset\t{value}')
+        problems.append(f'{key} contains a tab or newline')
+    values[key] = value
+if problems:
+    sys.stderr.write(''.join(f'::error::{p}\n' for p in problems))
+    sys.exit(1)
+values['APPCHECK_DEBUG_TOKEN'] = 'set' if values['APPCHECK_DEBUG_TOKEN'] else ''
+sys.stdout.write(''.join(f'{key}\t{value}\n' for key, value in values.items()))
 PY
 )"; then
-  printf '%s\n' "$parsed"
+  # Diagnostics only; the parsed stdout is discarded on failure.
+  cat "$diagnostics"
   exit 1
 fi
 
 # Plain variables, not an associative array: macOS still ships bash 3.2.
 live_backend='' dinner_mode='' cloud_routes='' debug_token='' fake_backend=''
-while IFS=$'\t' read -r key _ key_value; do
+while IFS=$'\t' read -r key key_value; do
   case "$key" in
     LIVE_BACKEND) live_backend="$key_value" ;;
     DINNER_MODE) dinner_mode="$key_value" ;;

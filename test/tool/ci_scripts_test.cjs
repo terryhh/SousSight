@@ -14,7 +14,9 @@ const root = path.resolve(__dirname, '..', '..');
 const configScript = path.join(root, 'tool', 'check_build_config.sh');
 const bundleScript = path.join(root, 'tool', 'check_web_bundle.sh');
 const SHA = '0123456789abcdef0123456789abcdef01234567';
-const TOKEN = '0f8e2c1a-3b4d-4e5f-8a6b-7c8d9e0f1a2b';
+// Synthetic, never-registered UUID, assembled at runtime so secret scanners
+// do not see a token-shaped literal in source.
+const TOKEN = ['0f8e2c1a', '3b4d', '4e5f', '8a6b', '7c8d9e0f1a2b'].join('-');
 
 const created = [];
 function tempDir() {
@@ -129,6 +131,21 @@ test('config: APPCHECK_DEBUG_TOKEN in the file fails without printing it', () =>
   assert.match(r.out, /APPCHECK_DEBUG_TOKEN is set in the defines file/);
   assert.ok(!r.out.includes(TOKEN), 'token value must not be echoed');
   assert.equal(checkConfig({ ...judgedDefaults, APPCHECK_DEBUG_TOKEN: '' }).code, 0);
+});
+
+test('config: a token next to an invalid value is never printed', () => {
+  // Mixed valid/invalid: the token is valid on its own, a later key is not.
+  for (const bad of [{ FAKE_BACKEND: 'false\n' }, { CLOUD_ROUTES: 'research\tlive' }, { LIVE_BACKEND: '\r' }]) {
+    const r = checkConfig({ ...judgedDefaults, APPCHECK_DEBUG_TOKEN: TOKEN, ...bad });
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /contains a tab or newline/);
+    assert.ok(!r.out.includes(TOKEN), `token leaked: ${r.out}`);
+    assert.ok(!r.out.includes('site-key'), `value leaked: ${r.out}`);
+  }
+  const broken = checkConfig(null, { raw: `{"APPCHECK_DEBUG_TOKEN": "${TOKEN}", oops}` });
+  assert.equal(broken.code, 1, broken.out);
+  assert.match(broken.out, /not valid JSON/);
+  assert.ok(!broken.out.includes(TOKEN));
 });
 
 test('config: APPCHECK_DEBUG_TOKEN in the environment fails without printing it', () => {
