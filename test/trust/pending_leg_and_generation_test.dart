@@ -1,4 +1,4 @@
-// A pending leg reads as running, never as stopped (trust labels and the
+// A pending leg is never described as stopped (trust labels and the
 // source-details sheet), and the ledger's generation advances on every
 // session reset (SS-105 review).
 
@@ -15,24 +15,20 @@ import 'package:soussight/trust/trust_labels.dart';
 import 'trust_test_helpers.dart';
 
 void main() {
-  test('pending legs are explained as still running', () {
-    final allowed = leg(Provenance.unknown, transferPermitted: true);
-    final local = leg(Provenance.unknown, transferPermitted: false);
-    expect(legPending(allowed), isTrue);
-    expect(legPending(local), isTrue);
-    expect(legExplanation(allowed), startsWith('This is still running.'));
-    expect(legExplanation(allowed), isNot(contains('stopped')));
-    expect(legExplanation(local), contains('not allowed to leave'));
-    // Finished legs keep their outcome wording.
+  test('the maybe-sent explanation never says a request stopped', () {
+    final text = outcomeExplanation(LegOutcome.maybeSent);
+    expect(text, contains('may still be running'));
+    expect(text, isNot(contains('stopped with an error')));
+    // A pending leg and a failed one share the outcome, so the wording must
+    // be true for both.
+    final pending = leg(Provenance.unknown, transferPermitted: true);
     final failed = leg(
       Provenance.unknown,
       transferPermitted: true,
       error: HybridErrorCode.network,
     );
-    expect(legPending(failed), isFalse);
-    expect(legLabel(failed), 'May have been sent');
-    expect(legExplanation(failed), outcomeExplanation(LegOutcome.maybeSent));
-    expect(legPending(leg(Provenance.sdkOnDevice)), isFalse);
+    expect(legOutcome(pending), LegOutcome.maybeSent);
+    expect(legOutcome(failed), LegOutcome.maybeSent);
   });
 
   testWidgets('the source-details sheet says a pending request is running', (
@@ -57,7 +53,7 @@ void main() {
     expect(pending.provenance, Provenance.unknown);
     unawaited(showInferenceDetails(context, legs: [pending]));
     await tester.pumpAndSettle();
-    expect(find.textContaining('This is still running.'), findsOneWidget);
+    expect(find.textContaining('may still be running'), findsOneWidget);
     expect(find.textContaining('stopped with an error'), findsNothing);
   });
 

@@ -53,23 +53,9 @@ String outcomeLabel(LegOutcome outcome, {String? localModel}) =>
       LegOutcome.simulated => 'Simulated',
     };
 
-/// A leg the ledger wrote before its send and has not completed yet:
-/// `unknown` provenance and no error (`InferenceLedger.begin`).
-bool legPending(InferenceLeg leg) =>
-    leg.provenance == Provenance.unknown && leg.error == null;
-
 /// Short label for one leg.
 String legLabel(InferenceLeg leg, {String? localModel}) =>
     outcomeLabel(legOutcome(leg), localModel: leg.modelLabel ?? localModel);
-
-/// The details-sheet explanation for one leg. A pending leg is described as
-/// running, never as stopped.
-String legExplanation(InferenceLeg leg) => legPending(leg)
-    ? (leg.transferPermitted
-          ? 'This is still running. It is allowed to leave this device, so it '
-                'may be sent; this updates when it finishes.'
-          : 'This is still running. It is not allowed to leave this device.')
-    : outcomeExplanation(legOutcome(leg));
 
 /// Longer explanation used in the details sheet.
 String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
@@ -80,8 +66,11 @@ String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
   LegOutcome.cloudAdapter =>
     "Sent to the cloud by SousSight's own Firebase AI Logic client.",
   LegOutcome.maybeSent =>
-    "This was allowed to leave, then stopped with an error, so we can't "
-        'tell whether it was sent.',
+    // Also shown while a request is still running (unknown provenance, no
+    // error yet), so it must not say the request stopped.
+    'This was allowed to leave this device and is not confirmed either way: '
+        'it may still be running, or it stopped before saying whether it was '
+        'sent.',
   LegOutcome.notFinishedLocal =>
     "This didn't finish, and it wasn't allowed to leave, so nothing left "
         'this device.',
