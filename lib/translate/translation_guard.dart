@@ -41,7 +41,7 @@ class Quantity {
 
 /// English number words. "one"/"a" are left out: they double as articles,
 /// and a dropped or added "one" cannot be told from grammar.
-const englishNumberWords = <String, int>{
+const englishNumberWords = <String, num>{
   'two': 2,
   'three': 3,
   'four': 4,
@@ -66,7 +66,10 @@ const englishNumberWords = <String, int>{
   'forty': 40,
   'fifty': 50,
   'sixty': 60,
+  'seventy': 70,
+  'eighty': 80,
   'ninety': 90,
+  'half': 0.5,
   'hundred': 100,
 };
 
@@ -96,7 +99,7 @@ final _word = RegExp(r'[\s-]?\s*([\p{L}]+)\.?', unicode: true);
 List<Quantity> extractQuantities(
   String text, {
   Map<String, List<String>> units = englishUnitWords,
-  Map<String, int> numberWords = englishNumberWords,
+  Map<String, num> numberWords = englishNumberWords,
 }) {
   final lookup = <String, String>{
     for (final e in units.entries)
@@ -160,12 +163,23 @@ Map<String, List<String>> unitWordsFor(CookLanguage language) => {
 /// Number words a translation into [language] may use: its own, or the
 /// English ones for a language without any. Never both: English words are
 /// ordinary words elsewhere (Spanish "ten" means "have").
-Map<String, int> numberWordsFor(CookLanguage language) =>
+Map<String, num> numberWordsFor(CookLanguage language) =>
     language.numberWords.isEmpty ? englishNumberWords : language.numberWords;
 
 final _warning = RegExp(
   r"(?<![\p{L}])(?:warning|caution|careful|never|do\s+not|don['\u2019]t|"
-  r'avoid|labels?)(?![\p{L}])',
+  r'avoid|labels?|'
+  // Safety instructions: a thermometer check, knife and heat safety.
+  r'thermometers?|knife|knives|blade|claw|fingertips?|knuckles?|burns?|'
+  r'scald\w*|splatter\w*|steam|hot\s+oil|boiling)(?![\p{L}])',
+  caseSensitive: false,
+  unicode: true,
+);
+
+final _safetyInstruction = RegExp(
+  r'(?<![\p{L}])(?:term[óo]metros?|thermometers?|cuchill\w*|knife|knives|'
+  r'garra|yemas\s+de\s+los\s+dedos|nudillos|quemadur\w*|quemar\w*|'
+  r'vapor|aceite\s+caliente)(?![\p{L}])',
   caseSensitive: false,
   unicode: true,
 );
@@ -205,7 +219,7 @@ enum LineRejection {
 String lineRejectionSentence(LineRejection reason) => switch (reason) {
   LineRejection.reviewedEnglish =>
     'Safety, allergen, temperature or timing details stay in the '
-        'reviewed English.',
+        'original English.',
   LineRejection.empty => 'The translation was empty.',
   LineRejection.tooLong ||
   LineRejection.markup => "The translation didn't match the original.",
@@ -298,6 +312,9 @@ LineRejection? checkTranslatedLine({
   // The translation is judged on its own: a disclaimer in the source never
   // exempts a claim in the translation.
   if (touchesFoodSafety(text)) return LineRejection.certifies;
+  // Safety instructions are never translated, so one appearing (or being
+  // negated: "no hace falta usar termómetro") is the model's addition.
+  if (_safetyInstruction.hasMatch(text)) return LineRejection.certifies;
   return null;
 }
 

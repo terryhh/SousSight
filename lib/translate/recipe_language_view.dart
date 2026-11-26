@@ -102,6 +102,7 @@ class CookLanguageButton extends StatelessWidget {
     required this.recipe,
     required this.sessionId,
     this.currentStepId,
+    this.enabled = true,
   });
 
   final TranslationController controller;
@@ -110,6 +111,10 @@ class CookLanguageButton extends StatelessWidget {
   /// Read when a translation starts, so it uses the current session.
   final String Function() sessionId;
   final String? currentStepId;
+
+  /// False until this recipe's cooking session exists, so a translation is
+  /// never started under another cook's session.
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -127,20 +132,24 @@ class CookLanguageButton extends StatelessWidget {
             side: BorderSide(color: Color(0x33285b43)),
           ),
         ),
-        onPressed: () {
-          // A new cook or recipe version under a chosen language: translate
-          // it (a cached one comes back at once).
-          unawaited(controller.recipeChanged(recipe, sessionId: sessionId()));
-          unawaited(
-            showRecipeLanguageSheet(
-              context,
-              controller: controller,
-              recipe: recipe,
-              sessionId: sessionId,
-              currentStepId: currentStepId,
-            ),
-          );
-        },
+        onPressed: !enabled
+            ? null
+            : () {
+                // A new cook or recipe version under a chosen language: translate
+                // it (a cached one comes back at once).
+                unawaited(
+                  controller.recipeChanged(recipe, sessionId: sessionId()),
+                );
+                unawaited(
+                  showRecipeLanguageSheet(
+                    context,
+                    controller: controller,
+                    recipe: recipe,
+                    sessionId: sessionId,
+                    currentStepId: currentStepId,
+                  ),
+                );
+              },
         icon: const Icon(Icons.translate, size: 18),
         label: Text(controller.language.nativeName),
       ),

@@ -116,10 +116,13 @@ void main() {
 
       await chooseSpanish(tester);
       expect(
-        line(tester, RecipeLineIds.stepInstruction('spread')),
-        practiceSpanish['Put some peanut butter on one slice. Use the back of '
-            'a spoon or a butter knife to spread it gently across the bread, '
-            'adding more only if you want it.'],
+        line(tester, RecipeLineIds.stepTitle('spread')),
+        practiceSpanish['Spread the peanut butter'],
+      );
+      // "...a butter knife..." is a knife-safety line: kept in English.
+      expect(
+        find.byKey(ValueKey('kept-${RecipeLineIds.stepInstruction('spread')}')),
+        findsOneWidget,
       );
       expect(find.text('Translated on this device.'), findsOneWidget);
       expect(find.text('kept in English'), findsNothing);

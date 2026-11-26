@@ -70,6 +70,10 @@ final _english = _words([
   r'risk(?:y|s)?',
   r'hypoallergenic',
   r'(?:can|may)\s+(?:now\s+)?(?:eat|serve)',
+  // Absence of an allergen: "no peanuts in this dish", "without nuts".
+  r'(?:no|without|zero|not\s+any)\s+(?:\w+\s+)?(?:peanuts?|nuts?|'
+      r'tree\s+nuts?|gluten|dairy|milk|eggs?|wheat|soy|sesame|shellfish|'
+      r'fish|mustard|allergens?|lactose)',
 ]);
 
 /// Spanish doneness, temperature, freshness, safety and allergen-status
@@ -100,9 +104,12 @@ final _spanish = _words([
   r'contienen?',
   r'gluten',
   r'cel[íi]ac[oa]s?',
-  r'sin\s+(?:tacc|gluten|l[áa]cteos|leche|huevos?|man[íi]|nueces|trigo|'
-      r'soya|soja|mariscos|pescado|ajonjol[íi]|s[ée]samo|mostaza|'
-      r'al[ée]rgenos?|az[úu]car)',
+  // Absence of an allergen, synonyms included: "sin cacahuates",
+  // "no lleva maní".
+  r'(?:sin|no|ning[úu]n|ninguna|cero)\s+(?:\w+\s+)?(?:tacc|gluten|'
+      r'l[áa]cteos|leche|huevos?|man[íi]|manises|cacahuates?|cacahuetes?|'
+      r'nueces|frutos\s+secos|trigo|soya|soja|mariscos|pescado|'
+      r'ajonjol[íi]|s[ée]samo|mostaza|al[ée]rgenos?|lactosa|az[úu]car)',
   r'libres?\s+de',
   r'apt[oa]s?',
   r'bacterias?',
@@ -120,14 +127,21 @@ final _spanish = _words([
   r'(?:puedes|puede|pueden|se\s+puede)\s+(?:ya\s+)?(?:comer|servir|consumir)\w*',
 ]);
 
-/// Symbols that only appear with temperatures.
+/// Symbols that only appear with temperatures, and a number written as a
+/// temperature without one ("165F", "74 C", "74 grados").
 final _symbols = RegExp('[°º℉℃]');
+final _bareTemperature = RegExp(
+  r'\d+(?:[.,]\d+)?\s*(?:[FC]|grados|degrees)(?![\p{L}])',
+  caseSensitive: false,
+  unicode: true,
+);
 
 /// True when [text] touches doneness, temperature, freshness, safety or
 /// allergen status in English or Spanish. Deliberately broad: it decides
 /// that model text is not shown, never that something is safe.
 bool touchesFoodSafety(String text) =>
     _symbols.hasMatch(text) ||
+    _bareTemperature.hasMatch(text) ||
     _english.hasMatch(text) ||
     _spanish.hasMatch(text);
 

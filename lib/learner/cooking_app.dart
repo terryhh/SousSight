@@ -30,6 +30,7 @@ import '../live/live_controller.dart';
 import '../live/live_types.dart';
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
+import '../translate/cook_language.dart';
 import '../translate/practice_translation.dart';
 import '../translate/recipe_language_view.dart';
 import '../translate/translation_runtime.dart';
@@ -467,10 +468,25 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     if (!widget.initialized) unawaited(cook.initialize());
   }
 
+  /// The cook's language when the current Coach Lite question was asked
+  /// (SS-106). Read-aloud has English voices only, so an answer asked for in
+  /// another language is not read.
+  CookLanguage _askedIn = sourceLanguage;
+  bool _wasBusy = false;
+
+  bool get _readAloudAllowed => _askedIn.isSource;
+
   void _onChange() {
     if (!mounted) return;
+    if (cook.coachLiteBusy && !_wasBusy) {
+      final hybrid = widget.hybrid;
+      _askedIn = hybrid == null || widget.isDemo
+          ? sourceLanguage
+          : translationFor(hybrid).language;
+    }
+    _wasBusy = cook.coachLiteBusy;
     _speaker?.sync(
-      answer: cook.coachLiteAnswer,
+      answer: _readAloudAllowed ? cook.coachLiteAnswer : null,
       busy: cook.coachLiteBusy,
       liveActive: cook.live.isActive,
       stepId: cook.step.id,
@@ -712,8 +728,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             _ => practiceTranslation(),
           },
           recipe: cook.recipe,
-          sessionId: () =>
-              widget.hybrid?.sessionId ?? cook.session?.id ?? 'practice',
+          // The recipe and its own session, together: disabled until this
+          // cook's session exists (SS-106).
+          enabled: cook.session != null,
+          sessionId: () => cook.session?.id ?? 'pending',
           currentStepId: cook.session?.currentStepId,
         ),
       if (widget.hybrid case final hybrid?)
@@ -1221,7 +1239,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       CookingSurface(controller: cook.ui),
-      if (cook.coachLiteAnswer != null)
+      if (cook.coachLiteAnswer != null && _readAloudAllowed)
         if (_speaker case final speaker?)
           Padding(
             padding: const EdgeInsets.only(top: 8),

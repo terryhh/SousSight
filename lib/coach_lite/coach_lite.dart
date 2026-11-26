@@ -133,6 +133,8 @@ final _safetyPattern = RegExp(
   r'(?:list|cocid|cocinad|hech|crud|segur|fresc|buen|mal|podrid|caducad|'
   r'vencid|rosad)\w*|'
   r'ya\s+est[áa]n?(?![\p{L}])|'
+  r'(?:puedo|puedes|podemos|se\s+puede)\s+(?:ya\s+)?(?:comer|servir|'
+  r'dar|guardar|congelar|recalentar)\w*|'
   r'(?:contienen?|tienen?|llevan?)\s+(?:\w+\s+)?(?:gluten|man[íi]|nueces|'
   r'l[áa]cteos|leche|huevos?|trigo|soya|soja|al[ée]rgenos?|mariscos|'
   r's[ée]samo|ajonjol[íi]|cacahuates?|frutos\s+secos)|'
@@ -155,7 +157,9 @@ final _substitutionPattern = RegExp(
   // Spanish (SS-106).
   r'(?<![\p{L}])(sustitu\w*|reemplaz\w*|en\s+vez\s+de|en\s+lugar\s+de|'
   r'cambiar\s+\w+\s+por|puedo\s+usar|podría\s+usar|podria\s+usar|'
-  r'no\s+tengo|se\s+me\s+acab\w*|sin)(?![\p{L}])',
+  // "sin" alone ("sin salpicar") is technique; "sin <food>" is a swap.
+  r'no\s+tengo|se\s+me\s+acab\w*|sin\s+(?:usar|el|la|los|las)\s+\w+|'
+  r'qu[ée]\s+uso\s+si\s+no)(?![\p{L}])',
   caseSensitive: false,
   unicode: true,
 );
@@ -876,4 +880,19 @@ List<Map<String, dynamic>> _withNotices(
     ...notices,
   ];
   return validateLiteCookingUi({'components': merged});
+}
+
+/// The app's own literal notices: they name doneness, temperature and
+/// allergens on purpose and are never model-written.
+const coachLiteAppLiterals = [
+  coachLiteSafetyNotice,
+  coachLiteAllergenNotice,
+  coachLiteFreshnessNotice,
+  cookSafetyFallbackNote,
+];
+
+/// True when [sentence] is (part of) one of [coachLiteAppLiterals].
+bool isCoachLiteAppLiteral(String sentence) {
+  final s = sentence.trim();
+  return s.isNotEmpty && coachLiteAppLiterals.any((l) => l.contains(s));
 }

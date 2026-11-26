@@ -239,7 +239,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       viaAdapter: useAdapter,
       carriedGrant: carriedGrant,
     );
-    if (outcome case _Blocked(:final reason)
+    if (outcome case _Blocked(:final reason, recorded: false)
         when reason != RouteReason.cancelled) {
       _recordBlocked(run, reason);
     }
@@ -309,9 +309,37 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       transferPermitted: mayUpload,
       provenance: Provenance.unknown,
     );
-    final entry = _ledger.begin(pendingLeg);
+    // Cancellation is installed before the leg is published: a ledger
+    // listener may cancel (a new cooking session) or change a setting.
     op.inFlight = requestId;
     op.cancelInFlight = viaAdapter ? _adapter!.cancel : _inference.cancel;
+    final entry = _ledger.begin(pendingLeg);
+
+    // The final check, after publication and immediately before either
+    // sender: cancellation, privacy, route approval and connectivity.
+    final atSend = liveCheck();
+    if (atSend != null) {
+      _ledger.complete(
+        entry,
+        provenance: Provenance.unknown,
+        error: HybridErrorCode.blocked,
+        transferPermitted: false,
+      );
+      run.legs.add(
+        InferenceLeg(
+          requestId: requestId,
+          feature: feature,
+          mode: mode,
+          kinds: run.kinds,
+          transferPermitted: false,
+          provenance: Provenance.unknown,
+          error: HybridErrorCode.blocked,
+        ),
+      );
+      op.inFlight = null;
+      op.cancelInFlight = null;
+      return _Blocked(atSend, recorded: true);
+    }
 
     InferenceLeg finish(
       Provenance provenance, {
@@ -507,8 +535,11 @@ class _Failed extends _Outcome {
 }
 
 class _Blocked extends _Outcome {
-  const _Blocked(this.reason);
+  const _Blocked(this.reason, {this.recorded = false});
   final RouteReason reason;
+
+  /// Its leg is already in the ledger.
+  final bool recorded;
 }
 
 /// A deep copy of [task]: new byte buffers, new parts list, and an

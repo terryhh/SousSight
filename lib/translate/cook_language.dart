@@ -36,7 +36,7 @@ class CookLanguage {
 
   /// Written numbers in this language, by value ("dos" → 2). Articles that
   /// double as "one" are left out.
-  final Map<String, int> numberWords;
+  final Map<String, num> numberWords;
 
   /// The recipe's own language: nothing to translate.
   bool get isSource => code == sourceLanguage.code;
@@ -107,6 +107,11 @@ const spanish = CookLanguage(
     'cuarenta': 40,
     'cincuenta': 50,
     'sesenta': 60,
+    'setenta': 70,
+    'ochenta': 80,
+    'media': 0.5,
+    'medio': 0.5,
+    'mitad': 0.5,
     'noventa': 90,
     'cien': 100,
   },

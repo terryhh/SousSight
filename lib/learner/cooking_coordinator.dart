@@ -1069,17 +1069,24 @@ $cookingUiInstructions
     return {'ok': true, 'currentStep': step.id, 'currentStepId': step.id};
   }
 
-  /// The recipe's own reviewed text: a panel may quote it verbatim.
-  Set<String> get _reviewedRecipeText => {
-    for (final s in [
-      recipe.title,
-      recipe.summary,
-      for (final i in recipe.ingredients) ...[i.name, i.qty],
-      for (final st in recipe.steps) ...[st.title, st.instruction, st.cue],
-      for (final c in recipe.checkpoints) ...[c.target, ...c.cues],
-    ])
-      if (s.trim().isNotEmpty) s.trim(),
-  };
+  /// The recipe's own reviewed text: a panel may quote it verbatim. An AI
+  /// draft is model-written, so nothing in it counts as reviewed.
+  Set<String> get _reviewedRecipeText => isDraftRecipe(recipe)
+      ? const {}
+      : {
+          for (final s in [
+            recipe.title,
+            recipe.summary,
+            for (final i in recipe.ingredients) ...[i.name, i.qty],
+            for (final st in recipe.steps) ...[
+              st.title,
+              st.instruction,
+              st.cue,
+            ],
+            for (final c in recipe.checkpoints) ...[c.target, ...c.cues],
+          ])
+            if (s.trim().isNotEmpty) s.trim(),
+        };
 
   /// The model's text touched food safety: nothing is shown.
   Map<String, Object?> _gated(String what) => {
