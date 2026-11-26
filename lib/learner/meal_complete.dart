@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/models.dart';
+import '../nearby/guarded_nearby_client.dart';
 import '../nearby/nearby_client.dart';
 import '../nearby/nearby_sheet.dart';
 import 'cooking_coordinator.dart';
@@ -76,7 +77,17 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
     });
   }
 
-  void _openNearby() => showNearbySheet(
+  void _openNearby() {
+    if (!nearbyAllowed(_nearby)) {
+      // Checked before the cook is asked for a location (Codex #221).
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(kNearbyOffMessage)));
+      return;
+    }
+    _showNearby();
+  }
+
+  void _showNearby() => showNearbySheet(
     context,
     client: _nearby,
     kind: NearbyKind.foodHelp,

@@ -457,6 +457,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
 
   /// Nothing is preselected: the cook says how it looks (SS-089).
   String? _prediction;
+
+  /// The step [_prediction] was chosen on; a new step clears it (Codex #221).
+  String? _predictionStep;
   String? _announcedAlert;
   bool _messagePending = false;
 
@@ -495,6 +498,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   final _replyKey = GlobalKey(debugLabel: 'coach-reply');
   final _errorKey = GlobalKey(debugLabel: 'cooking-error');
   final _researchKey = GlobalKey(debugLabel: 'research-panel');
+  final _transcriptKey = GlobalKey(debugLabel: 'live-transcript');
+  String _shownTranscript = '';
   Object? _shownReply;
   String? _shownError;
   Object? _shownResearch;
@@ -535,6 +540,14 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       _reveal(_researchKey);
     }
     _shownResearch = panel;
+    // A finished Live reply, once per turn (Codex #221).
+    final transcript = cook.live.coachTranscript;
+    if (transcript.isNotEmpty &&
+        transcript != _shownTranscript &&
+        cook.live.status != LiveCookingStatus.speaking) {
+      _shownTranscript = transcript;
+      _reveal(_transcriptKey);
+    }
     _wasResearching = cook.researching;
   }
 
@@ -1084,6 +1097,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     children: [
       if (cook.live.coachTranscript.isNotEmpty)
         Padding(
+          key: _transcriptKey,
           padding: const EdgeInsets.only(top: 16),
           child: Card(
             child: Padding(
@@ -1275,6 +1289,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         MealCompletePanel(
           cook: cook,
           isDemo: widget.isDemo,
+          // The same guarded, ledger-backed client as the pantry (Codex #221).
+          nearbyClient: switch ((widget.isDemo, widget.hybrid)) {
+            (false, final hybrid?) => hybridNearbyClient(hybrid),
+            _ => null,
+          },
           onTextHousehold: _reviewDinner,
           onCookSomethingElse: switch (widget.onBackToPantry) {
             final back? => () {
@@ -1401,8 +1420,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           for (final prediction in ['Ready', 'Not yet', 'Not sure'])
             ChoiceChip(
               label: Text(prediction),
-              selected: _prediction == prediction,
-              onSelected: (_) => setState(() => _prediction = prediction),
+              selected:
+                  _predictionStep == cook.step.id && _prediction == prediction,
+              onSelected: (_) => setState(() {
+                _prediction = prediction;
+                _predictionStep = cook.step.id;
+              }),
             ),
         ],
       ),
@@ -1412,7 +1435,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         runSpacing: 10,
         children: [
           FilledButton.icon(
-            onPressed: () => cook.checkNow(_prediction ?? 'Not sure'),
+            onPressed: () => cook.checkNow(
+              _predictionStep == cook.step.id ? _prediction : null,
+            ),
             icon: const Icon(Icons.auto_awesome),
             label: const Text('Check my food'),
           ),

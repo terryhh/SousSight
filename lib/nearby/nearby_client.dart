@@ -264,9 +264,11 @@ class GeminiNearbyClient implements NearbyClient {
       area: area,
       missingItems: items,
     );
+    // A typed city or ZIP code is a location too (Codex #221).
     final send = recorder?.begin(kNearbyFeature, {
       DataKind.text,
-      if (cleaned.coordinates != null) DataKind.location,
+      if (cleaned.coordinates != null || cleaned.area.isNotEmpty)
+        DataKind.location,
     });
     var answered = false;
     try {

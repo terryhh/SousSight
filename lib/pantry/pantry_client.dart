@@ -266,16 +266,17 @@ class FakePantryClient implements PantryClient {
       PantryMeal(
         recipeId: 'chickpea_wrap_v1',
         why: 'Possible later if you pick up chickpeas, mayo and tortillas.',
-        // Kept in step with assets/recipes/chickpea_wrap_v1.json: red onion
-        // is optional; celery, red bell pepper and mustard are required
-        // (test/app/rehearsal_runtime_test.dart checks against the asset).
+        // Kept in step with assets/recipes/chickpea_wrap_v1.json after #215:
+        // red onion, celery and red bell pepper are optional; every required
+        // ingredient is listed (test/app/rehearsal_runtime_test.dart checks
+        // both directions against the asset).
         matched: ['red onion'],
         missing: [
           'chickpeas',
           'mayonnaise',
           'dijon mustard',
-          'celery',
-          'red bell pepper',
+          'lemon juice',
+          'salt and black pepper',
           'tortillas',
         ],
       ),

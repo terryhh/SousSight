@@ -203,6 +203,7 @@ void main() {
       expect(answer.legs.single.provenance, Provenance.sdkOnDevice);
       expect(answer.timerSuggestion!.label, 'Simmer sauce');
       expect(answer.timerSuggestion!.seconds, coachLiteMaxTimerSeconds);
+      expect(answer.timerSuggestion!.capped, isTrue);
       expect(
         lite.isCurrent(
           answer.stamp,
@@ -259,6 +260,11 @@ void main() {
       );
       expect(find.text('Low and slow'), findsOneWidget);
       expect(find.text('Suggested timer · 60 min'), findsOneWidget);
+      // 9000 s was asked for: the cap is said, not silent.
+      expect(
+        find.text('Timer capped at 60 minutes — check the recipe'),
+        findsOneWidget,
+      );
       expect(ui.timers, isEmpty, reason: 'a suggestion never starts itself');
 
       await tester.tap(find.text('Start timer'));
@@ -296,6 +302,20 @@ void main() {
           .seconds,
       90,
     );
+    // Only a timer over 60 minutes is flagged as capped.
+    for (final (seconds, capped) in [
+      (5, false),
+      (3600, false),
+      (3600.4, false),
+      (3601, true),
+    ]) {
+      expect(
+        CoachLiteTimerSuggestion.fromModel({'label': 'R', 'seconds': seconds})!
+            .capped,
+        capped,
+        reason: '$seconds',
+      );
+    }
     expect(
       CoachLiteTimerSuggestion.fromModel({'label': ' ', 'seconds': 90}),
       isNull,
@@ -482,6 +502,102 @@ void main() {
     },
   );
 
+  group('the safety note matches the question topic', () {
+    test('allergen and label questions get the label note', () {
+      for (final q in [
+        'Is this peanut butter allergy friendly?',
+        'Does the bread contain nuts?',
+        'Is the mustard gluten-free?',
+        'Is this dairy-free?',
+        'What should I check on the label?',
+      ]) {
+        expect(coachLiteSafetyNoteFor(q), coachLiteAllergenNotice, reason: q);
+      }
+    });
+
+    test('expiry and spoilage questions get the freshness note', () {
+      for (final q in [
+        'The jam expired last week, is it ok?',
+        'Has this bread gone bad?',
+        'There is a spot of mold on the bread',
+        'How long can leftovers stay in the fridge?',
+        'Is the lime still fresh?',
+      ]) {
+        expect(coachLiteSafetyNoteFor(q), coachLiteFreshnessNotice, reason: q);
+      }
+    });
+
+    test('doneness and temperature keep the thermometer line', () {
+      for (final q in [
+        'Is the chicken done?',
+        'What internal temperature should it reach?',
+        'Is it still raw inside?',
+        'Is 160° enough?',
+        'Is it safe to leave the sauce out?',
+      ]) {
+        expect(coachLiteSafetyNoteFor(q), coachLiteSafetyNotice, reason: q);
+        expect(coachLiteSafetyNoteFor(q), contains('food thermometer'));
+      }
+    });
+
+    test('a question on two topics gets both notes', () {
+      expect(
+        coachLiteSafetyNoteFor('Is the expired egg mix cooked through?'),
+        '$coachLiteFreshnessNotice $coachLiteSafetyNotice',
+      );
+      expect(
+        coachLiteSafetyNoteFor('Is the old jam allergen free and not moldy?'),
+        '$coachLiteAllergenNotice $coachLiteFreshnessNotice',
+      );
+    });
+
+    test('no note certifies anything', () {
+      for (final note in [
+        coachLiteSafetyNotice,
+        coachLiteAllergenNotice,
+        coachLiteFreshnessNotice,
+      ]) {
+        // The same certification check every model answer must pass.
+        expect(
+          () => parseCoachLiteResponse(answerJson(body: note)),
+          returnsNormally,
+          reason: note,
+        );
+      }
+    });
+
+    test('topic notes reach real answers through CoachLite.ask', () async {
+      for (final (q, note) in [
+        ('What should I check on the label?', coachLiteAllergenNotice),
+        ('Is the lime still fresh?', coachLiteFreshnessNotice),
+        ('Is the chicken done?', coachLiteSafetyNotice),
+        (
+          'The jam expired, does it contain nuts?',
+          '$coachLiteAllergenNotice $coachLiteFreshnessNotice',
+        ),
+      ]) {
+        dispatcher.enqueue(answerJson());
+        final answer = await ask(coach(), q);
+        expect(answer.kind, CoachLiteQuestionKind.safety, reason: q);
+        final safety = answer.components.firstWhere(
+          (c) => c['id'] == 'app_safety',
+        );
+        expect(safety['body'], note, reason: q);
+      }
+    });
+
+    test('an allergen question shows the label note in the answer', () async {
+      dispatcher.enqueue(answerJson());
+      final answer = await ask(coach(), 'Is this bread allergen free?');
+      expect(answer.kind, CoachLiteQuestionKind.safety);
+      final safety = answer.components.firstWhere(
+        (c) => c['id'] == 'app_safety',
+      );
+      expect(safety['body'], coachLiteAllergenNotice);
+      expect(safety['body'], isNot(contains('thermometer')));
+    });
+  });
+
   group('without sources the answer says it cannot check them', () {
     Future<CoachLiteAnswer> factual() {
       dispatcher.enqueue(answerJson());
@@ -657,6 +773,16 @@ void main() {
         'How long can leftovers stay in the fridge?',
         CoachLiteQuestionKind.safety,
       ),
+      // Topic-note questions are always safety questions (SS-094).
+      ('What should I check on the label?', CoachLiteQuestionKind.safety),
+      ('Is the lime still fresh?', CoachLiteQuestionKind.safety),
+      ('This bread is stale, is that ok?', CoachLiteQuestionKind.safety),
+      ('Is the chicken done?', CoachLiteQuestionKind.safety),
+      ('Is it still pink inside?', CoachLiteQuestionKind.safety),
+      ('How long will the jam keep?', CoachLiteQuestionKind.safety),
+      // ...without catching ordinary step help.
+      ('How long does it take to simmer?', CoachLiteQuestionKind.stepHelp),
+      ('Should I add fresh herbs now?', CoachLiteQuestionKind.stepHelp),
     ]) {
       expect(classifyCoachLiteQuestion(q), kind, reason: q);
     }
@@ -724,5 +850,42 @@ void main() {
         contains('simmer the tomato sauce'),
       );
     });
+  });
+
+  testWidgets('the timer card resets for a new suggestion and shows seconds', (
+    tester,
+  ) async {
+    final started = <(String, int)>[];
+    Widget card(CoachLiteTimerSuggestion s) => MaterialApp(
+      home: Scaffold(
+        body: TimerSuggestionCard(
+          suggestion: s,
+          onStart: (label, seconds) => started.add((label, seconds)),
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      card(const CoachLiteTimerSuggestion(label: 'Rest', seconds: 90)),
+    );
+    expect(find.text('Suggested timer · 1 min 30 s'), findsOneWidget);
+    expect(find.byKey(const ValueKey('timer-cap-note')), findsNothing);
+    await tester.tap(find.text('Start timer'));
+    await tester.pump();
+    expect(find.text('Timer started'), findsOneWidget);
+
+    await tester.pumpWidget(
+      card(
+        const CoachLiteTimerSuggestion(
+          label: 'Soak',
+          seconds: 3600,
+          capped: true,
+        ),
+      ),
+    );
+    expect(find.text('Start timer'), findsOneWidget);
+    expect(find.text(coachLiteTimerCapNote), findsOneWidget);
+    await tester.tap(find.text('Start timer'));
+    await tester.pump();
+    expect(started, [('Rest', 90), ('Soak', 3600)]);
   });
 }

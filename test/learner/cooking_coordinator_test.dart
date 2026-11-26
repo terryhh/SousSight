@@ -1048,7 +1048,7 @@ void main() {
       final oldId = fixture.cook.live.watchId;
       await fixture.cook.live.stop();
       final watch = fixture.cook.ui.components.singleWhere(
-        (component) => component['id'] == 'watch',
+        (component) => component['id'] == CookingCoordinator.watchPanelId,
       );
       expect(watch['status'], 'paused');
       fixture.transport.source.add(

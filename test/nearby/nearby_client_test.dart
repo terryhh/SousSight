@@ -210,7 +210,7 @@ void main() {
     });
 
     test(
-      'a typed area sends text only; a failure is recorded as uncertain',
+      'a typed ZIP counts as a location; a failure is recorded as uncertain',
       () async {
         final ledger = InferenceLedger(sessionId: 's');
         final client = GeminiNearbyClient(
@@ -224,7 +224,7 @@ void main() {
           throwsA(isA<NearbyException>()),
         );
         final leg = ledger.legs.single;
-        expect(leg.kinds, {DataKind.text});
+        expect(leg.kinds, {DataKind.text, DataKind.location});
         expect(leg.transferPermitted, isTrue);
         expect(leg.provenance, Provenance.unknown);
         expect(leg.error, isNotNull);

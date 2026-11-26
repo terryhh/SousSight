@@ -156,6 +156,17 @@ void main() {
         expect(match, isNotEmpty, reason: '$item is not in the recipe');
         expect(match.every((i) => !i.optional), isTrue, reason: item);
       }
+      // ...every required ingredient is accounted for (Codex #221)...
+      for (final ingredient in recipe.ingredients.where((i) => !i.optional)) {
+        expect(
+          [
+            ...wrap.matched,
+            ...wrap.missing,
+          ].any((item) => names(item, ingredient)),
+          isTrue,
+          reason: '${ingredient.name} is missing from the fake',
+        );
+      }
       // ...and everything it already has is in the recipe too.
       for (final item in wrap.matched) {
         expect(

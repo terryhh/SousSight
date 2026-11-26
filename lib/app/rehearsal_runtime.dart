@@ -25,6 +25,7 @@ import '../learner/demo_live.dart';
 import '../live/live_types.dart';
 import '../pantry/pantry_client.dart';
 import '../pantry/pantry_models.dart';
+import '../pantry/recipe_draft.dart';
 import '../pantry/pantry_ui.dart' show pantrySameItem, pantryTypedEntries;
 import '../trust/privacy_preferences.dart';
 import '../label/label_check.dart' show kLabelAllergens, kLabelCheckFeature;
@@ -77,7 +78,12 @@ class RehearsalHybridInference extends FakeHybridInference {
     // Reserved synchronously by super.generate, so concurrent calls each get
     // the answer built for their own request.
     script.add((HybridRequest r) => _answer(r));
-    return super.generate(request);
+    final result = super.generate(request);
+    // The user-facing runtime keeps no copies of requests (photos, typed
+    // questions, label text) for the app run (Codex #221).
+    requests.clear();
+    cancelled.clear();
+    return result;
   }
 
   Object _answer(HybridRequest request) {
@@ -122,15 +128,32 @@ List<String> practiceTypedItems(String typed) {
 /// food by identity, never a shared word ("sunflower seed butter" is not
 /// "peanut butter"). Only the name before the first comma counts, without
 /// notes in brackets; "X or Y" and "X and Y" offer each part.
-bool practiceHasIngredient(String item, String ingredient) {
+bool practiceHasIngredient(String item, String ingredient) =>
+    practiceIngredientMatch([item], ingredient) != null;
+
+/// The typed items that make up [ingredient], or null when they don't.
+/// "X or Y" accepts either alternative; "X and Y" needs every part
+/// ("Salt and black pepper" needs both, Codex #221).
+List<String>? practiceIngredientMatch(List<String> typed, String ingredient) {
   final head = ingredient
       .split(',')
       .first
       .replaceAll(RegExp(r'\([^)]*\)'), ' ')
       .toLowerCase();
-  return head
-      .split(RegExp(r'\s+(?:or|and)\s+'))
-      .any((part) => pantrySameItem(item, part));
+  for (final alternative in head.split(RegExp(r'\s+or\s+'))) {
+    final used = <String>[];
+    var all = true;
+    for (final part in alternative.split(RegExp(r'\s+and\s+'))) {
+      final hit = typed.where((t) => pantrySameItem(t, part)).firstOrNull;
+      if (hit == null) {
+        all = false;
+        break;
+      }
+      used.add(hit);
+    }
+    if (all && used.isNotEmpty) return used;
+  }
+  return null;
 }
 
 /// A pantry-scan JSON answer that only uses what the cook typed. [prompt] is
@@ -159,7 +182,7 @@ String practicePantryAnswer(String prompt) {
       final clean = (optional ? name.substring(0, name.length - 1) : name)
           .toLowerCase()
           .trim();
-      final hit = typed.where((t) => practiceHasIngredient(t, clean)).toList();
+      final hit = practiceIngredientMatch(typed, clean) ?? const <String>[];
       if (!optional) required++;
       if (hit.isNotEmpty) {
         matched.add(clean);
@@ -286,7 +309,8 @@ String practiceLabelAnswer(String prompt) {
   final found = [
     for (final allergen in kLabelAllergens)
       if (RegExp(
-        '\\b${RegExp.escape(allergen)}',
+        // Whole names and plurals only: "eggplant" is not egg.
+        '\\b${RegExp.escape(allergen)}(?:s|es)?\\b',
         caseSensitive: false,
       ).hasMatch(lower))
         allergen,
@@ -491,6 +515,26 @@ class RehearsalPantryClient implements PantryClient {
       legs: result.legs,
       notice: result.notice,
     );
+  }
+}
+
+/// Practice-mode recipe drafts: the canned rehearsal draft, with its legs
+/// written to the session ledger once as simulated, so the draft's badge and
+/// "What we sent" agree (Codex #221).
+class RehearsalDraftClient implements RecipeDraftClient {
+  RehearsalDraftClient(this.hybrid, this.inner);
+
+  final HybridRuntime hybrid;
+  final RecipeDraftClient inner;
+
+  @override
+  Future<RecipeDraftResult> draft(RecipeDraftRequest request) async {
+    final result = await inner.draft(request);
+    final legs = [for (final leg in result.legs) simulatedLeg(leg)];
+    for (final leg in legs) {
+      hybrid.ledger.record(leg);
+    }
+    return RecipeDraftResult(result.recipe, legs: legs);
   }
 }
 

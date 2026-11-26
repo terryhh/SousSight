@@ -17,6 +17,7 @@ import '../live/live_types.dart';
 import '../pantry/recipe_draft.dart';
 import '../watch/watch_service.dart';
 import '../watch/watch_verdict.dart';
+import 'ingredient_label.dart';
 import 'recipe_allergens.dart';
 import 'research_panel_client.dart';
 
@@ -292,7 +293,7 @@ $cookingUiInstructions
     'title': 'On your counter',
     'items': [
       for (final ingredient in recipe.ingredients)
-        {'id': ingredient.id, 'label': '${ingredient.qty} ${ingredient.name}'},
+        {'id': ingredient.id, 'label': ingredientRowLabel(ingredient)},
     ],
   };
 
@@ -430,7 +431,13 @@ $cookingUiInstructions
     // handOffToResearch is a hint, not an authorization. Re-check privacy,
     // CloudRoutes.research and connectivity immediately before the send.
     if (answer.handOffToResearch && lite.researchBlocker() == null) {
-      unawaited(researchQuestionNow(text, requestWorkspace: false));
+      unawaited(
+        researchQuestionNow(
+          text,
+          requestWorkspace: false,
+          stillAllowed: () => lite.researchBlocker() == null,
+        ),
+      );
     }
     _notify();
   }
@@ -497,7 +504,9 @@ $cookingUiInstructions
     });
   }
 
-  Future<void> checkNow([String prediction = 'Not sure']) async {
+  /// [prediction] is the cook's own "how does it look" choice for THIS
+  /// step, or null when they made none: then nothing is attributed to them.
+  Future<void> checkNow([String? prediction]) async {
     if (!live.isActive) {
       // Always a visible answer (Maya): the step's own cue to compare with,
       // plus where a camera check can come from.
@@ -510,12 +519,13 @@ $cookingUiInstructions
           : watchService != null
           ? ' Or tap Watch my food for a camera check.'
           : '';
-      alert = 'You said: $prediction. $compare$how';
+      final said = prediction == null ? '' : 'You said: $prediction. ';
+      alert = '$said$compare$how';
       _notify();
       return;
     }
     await live.sendText(
-      'Am I doing this right? My prediction is: $prediction. '
+      'Am I doing this right? My prediction is: ${prediction ?? 'Not sure'}. '
       'currentStepId: ${step.id}. Current step: ${step.title}. Compare the latest visible frame against this '
       'recipe cue: ${step.cue}. Use show_cooking_ui to make a comparison panel. '
       'If the food is unclear, ask for a better view. Ask me any missing facts.',
@@ -755,8 +765,13 @@ $cookingUiInstructions
     );
   }
 
+  /// The app-owned watch panel uses a reserved app_ ID, so a Coach Lite or
+  /// Live layout that names one of its own components "watch" can't be
+  /// replaced (and orphaned) by it (Codex #221).
+  static const watchPanelId = 'app_watch';
+
   void _watchPanel(String status, String title, String body) => ui.upsertPanel({
-    'id': 'watch',
+    'id': watchPanelId,
     'component': 'watchStatus',
     'status': status,
     'title': title,
@@ -807,9 +822,14 @@ $cookingUiInstructions
     _notify();
   }
 
+  /// [stillAllowed] carries the originating question's privacy into the
+  /// panel: a Coach Lite hand-off re-checks the cook's "keep typed questions
+  /// on this device" setting (and routes, connectivity) live before every
+  /// follow-up send (Codex #221).
   Future<CookingResearchResult?> researchQuestionNow(
     String question, {
     bool requestWorkspace = true,
+    bool Function()? stillAllowed,
   }) {
     _track(AnalyticsEvents.researchAsked, {
       'recipe_id': _recipeLabel,
@@ -836,6 +856,13 @@ $cookingUiInstructions
           if (!_isResearchPanelCurrent(panel) ||
               request.question != query.question ||
               request.currentStep != query.currentStep) {
+            return Future.value(null);
+          }
+          if (stillAllowed != null && !stillAllowed()) {
+            error =
+                'You chose to keep typed questions on this device, so this '
+                'follow-up was not sent.';
+            _notify();
             return Future.value(null);
           }
           // The panel's clarification facts belong to this exact query. Keep

@@ -9,6 +9,7 @@ import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../learner/draft_recipe_chip.dart';
 import '../live/live_types.dart';
+import '../nearby/guarded_nearby_client.dart';
 import '../nearby/nearby_client.dart';
 import '../nearby/nearby_sheet.dart';
 import 'pantry_client.dart';
@@ -44,6 +45,12 @@ List<String> pantryUnusedItems(PantryResult result) {
         item.name,
   ];
 }
+
+/// Shown beside Record: voice clips can't be understood on this device.
+const pantryVoiceDisclosure =
+    "Voice clips are sent online to Google's AI to be understood when you "
+    'tap Find my meal. To keep everything on this device, type your list '
+    'instead.';
 
 /// The catch-all when matching failed without a reason of its own.
 const pantryUnavailableMessage =
@@ -404,6 +411,19 @@ class _PantryScreenState extends State<PantryScreen> {
   Future<void> _openNearby(
     NearbyKind kind, {
     List<String> missing = const [],
+  }) async {
+    if (!nearbyAllowed(_nearby)) {
+      // Checked before the cook is asked for a location (Codex #221).
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text(kNearbyOffMessage)));
+      return;
+    }
+    await _showNearby(kind, missing: missing);
+  }
+
+  Future<void> _showNearby(
+    NearbyKind kind, {
+    List<String> missing = const [],
   }) => showNearbySheet(
     context,
     client: _nearby,
@@ -544,10 +564,10 @@ class _PantryScreenState extends State<PantryScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  if (_errorLegs.isNotEmpty)
-                    PantryLegList(legs: _errorLegs)
-                  else if (_matchError)
-                    const _NoAnswerSource(),
+                  if (_matchError)
+                    _errorLegs.isNotEmpty
+                        ? PantryLegList(legs: _errorLegs)
+                        : const _NoAnswerSource(),
                 ],
                 if (_result case final result?) ...[
                   const SizedBox(height: 28),
@@ -893,6 +913,25 @@ class _PantryScreenState extends State<PantryScreen> {
               ? null
               : () => unawaited(_record()),
         ),
+        if (!widget.isDemo) ...[
+          const SizedBox(height: 10),
+          // Said before the cook records (Codex #221): the voice task asks
+          // no further consent because this line is the disclosure.
+          const Row(
+            key: ValueKey('voice-cloud-disclosure'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.cloud_outlined, size: 18, color: Color(0xFF5C4A2E)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  pantryVoiceDisclosure,
+                  style: TextStyle(fontSize: 14, color: Color(0xFF5C4A2E)),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

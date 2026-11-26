@@ -52,14 +52,18 @@ Set<String> _words(String text) => {
     if (word.isNotEmpty && !_ignoredWords.contains(word)) _stem(word),
 };
 
-/// Maps a cook-confirmed pantry item to a recipe ingredient ID when every
-/// meaningful word of the ingredient ID appears in the item name.
+/// Maps a cook-confirmed pantry item to a recipe ingredient ID only when it
+/// IS that ingredient: its meaningful words equal the ID's words. "peanut
+/// butter cups" is not peanut butter (Codex #221); such items stay as
+/// cook-confirmed facts instead.
 String? matchIngredientId(String item, Recipe recipe) {
   final itemWords = _words(item);
   if (itemWords.isEmpty) return null;
   for (final ingredient in recipe.ingredients) {
     final idWords = _words(ingredient.id.replaceAll('_', ' '));
-    if (idWords.isNotEmpty && itemWords.containsAll(idWords)) {
+    if (idWords.isNotEmpty &&
+        itemWords.length == idWords.length &&
+        itemWords.containsAll(idWords)) {
       return ingredient.id;
     }
   }
