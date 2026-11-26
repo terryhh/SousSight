@@ -1,0 +1,19 @@
+{
+  "comment": "The journey steps capture.mjs records, in order. One clip per step per viewport: build/video/capture/<viewport>/<step>.mp4. Read by capture.mjs, titles.mjs and assemble.py.",
+  "steps": [
+    "home",
+    "type-list",
+    "find-meal",
+    "result-badge",
+    "open-recipe",
+    "cooking-screen",
+    "coach-lite-question",
+    "coach-lite-answer",
+    "watch-start",
+    "watch-unsure",
+    "ledger",
+    "on-device-sheet",
+    "how-it-works"
+  ],
+  "viewports": ["desktop", "phone"]
+}

@@ -60,14 +60,25 @@ class CoachLiteStamp {
   String toString() => 'CoachLiteStamp($sessionId, $epoch, $stepId, $sequence)';
 }
 
+/// Shown when a suggested timer was longer than the app allows.
+const coachLiteTimerCapNote = 'Timer capped at 60 minutes — check the recipe';
+
 /// A timer the model suggested. The app clamps it and shows its own control.
 class CoachLiteTimerSuggestion {
-  const CoachLiteTimerSuggestion({required this.label, required this.seconds});
+  const CoachLiteTimerSuggestion({
+    required this.label,
+    required this.seconds,
+    this.capped = false,
+  });
 
   final String label;
 
   /// Always within [coachLiteMinTimerSeconds]..[coachLiteMaxTimerSeconds].
   final int seconds;
+
+  /// True when the model asked for more than [coachLiteMaxTimerSeconds]; the
+  /// card then says so ([coachLiteTimerCapNote]) instead of capping silently.
+  final bool capped;
 
   /// Null when the suggestion is unusable (no label, no number).
   static CoachLiteTimerSuggestion? fromModel(Object? raw) {
@@ -83,6 +94,7 @@ class CoachLiteTimerSuggestion {
         coachLiteMinTimerSeconds,
         coachLiteMaxTimerSeconds,
       ),
+      capped: seconds.round() > coachLiteMaxTimerSeconds,
     );
   }
 }
@@ -122,11 +134,48 @@ final _substitutionPattern = RegExp(
   caseSensitive: false,
 );
 
+/// The safety topics a question touches. Classification and the safety note
+/// both use this, so a question that earns a topic note is always a safety
+/// question.
+enum CoachLiteSafetyTopic { allergen, freshness, doneness }
+
+final _allergenTopic = RegExp(
+  r'\b(allerg\w*|gluten\w*|celiac|coeliac|'
+  r'(nut|peanut|dairy|egg|milk|wheat|soy|sesame|allergen)[- ]free|'
+  r'contains?|labels?|cross[- ]contact|cross[- ]contaminat\w*)\b',
+  caseSensitive: false,
+);
+final _freshnessTopic = RegExp(
+  r'\b(expir\w*|spoil\w*|gone bad|go bad|goes bad|gone off|mou?ldy?|'
+  r'smells? (off|funny|bad|weird|sour)|stale|rancid|still fresh|'
+  r'(is|are) (it|this|that|they|these|those) fresh|fresh enough|freshness|'
+  r'best before|use[- ]by|sell[- ]by|leftovers?|'
+  r'how long (can|will|does|do|would)\b.{0,40}\b(keep|last|stay)|'
+  r'refrigerat\w*|fridge|freezer)\b',
+  caseSensitive: false,
+);
+final _donenessTopic = RegExp(
+  r'\b(done yet|(is|are)\b[^.?!]{0,30}\bdone|doneness|'
+  r'cooked through|undercooked|under-cooked|raw|internal temp\w*|'
+  r'temperature|thermometer|degrees|reheat\w*|still pink|pink inside|'
+  r'no longer pink)\b|°',
+  caseSensitive: false,
+);
+
+Set<CoachLiteSafetyTopic> coachLiteSafetyTopics(String question) => {
+  if (_allergenTopic.hasMatch(question)) CoachLiteSafetyTopic.allergen,
+  if (_freshnessTopic.hasMatch(question)) CoachLiteSafetyTopic.freshness,
+  if (_donenessTopic.hasMatch(question)) CoachLiteSafetyTopic.doneness,
+};
+
 /// Flags questions that need facts rather than step coaching. Safety wins over
 /// substitution because a substitution that touches allergens is a safety
 /// question too.
 CoachLiteQuestionKind classifyCoachLiteQuestion(String question) {
-  if (_safetyPattern.hasMatch(question)) return CoachLiteQuestionKind.safety;
+  if (_safetyPattern.hasMatch(question) ||
+      coachLiteSafetyTopics(question).isNotEmpty) {
+    return CoachLiteQuestionKind.safety;
+  }
   if (_substitutionPattern.hasMatch(question)) {
     return CoachLiteQuestionKind.substitution;
   }
@@ -450,6 +499,7 @@ class CoachLite {
         stamp: stamp,
         status: status,
         kind: kind,
+        question: question,
         modelComponents: modelComponents,
         timer: timer,
         legs: legs,
@@ -661,15 +711,44 @@ List<Map<String, dynamic>> _fallback(RecipeStep step, String? note) {
   ];
 }
 
+/// The doneness and temperature note, and the note for any other safety
+/// question.
 const coachLiteSafetyNotice =
     "Neither the camera nor this coach can confirm doneness, internal "
     'temperature, freshness or allergens. Check with a food thermometer and '
     'trusted guidance.';
 
+/// Allergen and label questions: a thermometer does not help here.
+const coachLiteAllergenNotice =
+    "I can't confirm a food is free of an allergen. Read the package label "
+    'and keep tools separate.';
+
+/// Expiry, spoilage and freshness questions.
+const coachLiteFreshnessNotice =
+    "I can't judge freshness from here. When in doubt, throw it out.";
+
+/// The app's safety note for [question], chosen by topic: allergen and label
+/// questions get the label note, expiry and spoilage questions the freshness
+/// note, and doneness or temperature questions the thermometer note. A
+/// question on several topics gets each note; anything else gets
+/// [coachLiteSafetyNotice]. None of them certifies anything.
+String coachLiteSafetyNoteFor(String question) {
+  final topics = coachLiteSafetyTopics(question);
+  final allergen = topics.contains(CoachLiteSafetyTopic.allergen);
+  final freshness = topics.contains(CoachLiteSafetyTopic.freshness);
+  final doneness = topics.contains(CoachLiteSafetyTopic.doneness);
+  return [
+    if (allergen) coachLiteAllergenNotice,
+    if (freshness) coachLiteFreshnessNotice,
+    if (doneness || !(allergen || freshness)) coachLiteSafetyNotice,
+  ].join(' ');
+}
+
 CoachLiteAnswer _answer({
   required CoachLiteStamp stamp,
   required CoachLiteStatus status,
   required CoachLiteQuestionKind kind,
+  required String question,
   required List<Map<String, dynamic>> modelComponents,
   required CoachLiteTimerSuggestion? timer,
   required List<InferenceLeg> legs,
@@ -684,6 +763,7 @@ CoachLiteAnswer _answer({
   components: _withNotices(
     modelComponents,
     kind: kind,
+    question: question,
     legs: legs,
     researchAllowed: researchAllowed,
     sourcesUnavailable: sourcesUnavailable,
@@ -724,6 +804,7 @@ String coachLiteSourcesSentence(CoachLiteSourcesUnavailable reason) =>
 List<Map<String, dynamic>> _withNotices(
   List<Map<String, dynamic>> components, {
   required CoachLiteQuestionKind kind,
+  required String question,
   required List<InferenceLeg> legs,
   required bool researchAllowed,
   required CoachLiteSourcesUnavailable? sourcesUnavailable,
@@ -752,7 +833,7 @@ List<Map<String, dynamic>> _withNotices(
         'id': 'app_safety',
         'component': 'stepCue',
         'title': 'Check for yourself',
-        'body': coachLiteSafetyNotice,
+        'body': coachLiteSafetyNoteFor(question),
       },
   ];
   if (notices.isEmpty) return components;
