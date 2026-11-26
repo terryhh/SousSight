@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'app/hybrid_runtime.dart';
 import 'app/services_scope.dart';
+import 'config/firebase_remote_config_source.dart';
+import 'config/remote_policy.dart';
 import 'data/firebase_services.dart';
 import 'learner/cooking_app.dart';
 import 'pantry/recipe_catalog.dart';
@@ -26,7 +28,13 @@ class _SousSightBootstrapState extends State<SousSightBootstrap> {
   Future<(AppServices, HybridRuntime?)> _load() async {
     if (kFakeBackend) return (await fakeServices(), null);
     final services = await firebaseServices();
-    return (services, HybridRuntime.create());
+    // Remote Config can only tighten routing; it waits at most 2 s and falls
+    // back to the in-app defaults (SS-076).
+    final remote = await RemotePolicy.load(
+      FirebaseRemoteConfigSource(),
+      compiledCloudModel: kHybridCloudModel,
+    );
+    return (services, HybridRuntime.create(remote: remote));
   }
 
   @override
