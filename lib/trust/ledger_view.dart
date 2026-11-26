@@ -549,7 +549,8 @@ class LedgerView extends StatelessWidget {
           heading('Not finished'),
           note(
             'These are still running, or stopped before giving an answer. '
-            "They weren't allowed to leave, so nothing left this device.",
+            "Nothing left this device: they weren't allowed to leave, or "
+            'were refused before sending.',
           ),
           rows(summary.notFinishedLocal, '', 'not-finished'),
         ],

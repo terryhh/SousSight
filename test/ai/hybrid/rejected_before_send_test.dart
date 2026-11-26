@@ -81,6 +81,8 @@ void main() {
         .result;
     expect(result.text, 'adapter answer');
     expect(adapter.requests, hasLength(1));
+    // The refusal proves the grant paid for nothing: the cook is asked once.
+    expect(consent.asks, 1);
     expect(result.legs, hasLength(2));
     final refused = result.legs.first;
     expect(refused.error, HybridErrorCode.rejectedBeforeSend);

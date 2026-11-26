@@ -1,5 +1,5 @@
 // Contract: `rejectedBeforeSend` is the bridge's proof that it refused a
-// request before any SDK or network call. Its wire name must match the iOS
+// request before its inference payload was submitted anywhere. Its wire name must match the iOS
 // bridge's `HybridErrorCode.rejectedBeforeSend` raw value.
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';

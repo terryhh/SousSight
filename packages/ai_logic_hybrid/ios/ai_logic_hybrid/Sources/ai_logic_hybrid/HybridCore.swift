@@ -10,8 +10,9 @@ import ImageIO
 enum HybridErrorCode: String {
   case unavailable, unsupportedInput, unsupportedMode, busy, quota, blocked
   case network, attestation, timeout, cancelled, failed
-  /// Refused by this bridge's own validation before any SDK call: nothing
-  /// was sent (contract.dart `rejectedBeforeSend`).
+  /// Refused by this bridge's own validation before the inference payload
+  /// was submitted: its content was not sent (contract.dart
+  /// `rejectedBeforeSend`).
   case rejectedBeforeSend
 }
 
@@ -185,7 +186,9 @@ func imagePixelSize(_ data: Data) -> (width: Int, height: Int)? {
   return (width, height)
 }
 
-/// Enforces the every-route attachment limits before any SDK call (§4).
+/// Enforces the every-route attachment limits before the payload is
+/// submitted (§4). A refusal here proves nothing was sent:
+/// `rejectedBeforeSend`.
 func checkAttachmentLimits(_ request: BridgeRequest) throws {
   var images = 0
   for part in request.parts {
@@ -193,19 +196,19 @@ func checkAttachmentLimits(_ request: BridgeRequest) throws {
     if mime.hasPrefix("image/") {
       images += 1
       if images > AttachmentLimits.maxImages {
-        throw HybridError(.unsupportedInput, "At most \(AttachmentLimits.maxImages) image")
+        throw HybridError(.rejectedBeforeSend, "At most \(AttachmentLimits.maxImages) image")
       }
       if bytes.count > AttachmentLimits.maxImageBytes {
-        throw HybridError(.unsupportedInput, "Image larger than \(AttachmentLimits.maxImageBytes) bytes")
+        throw HybridError(.rejectedBeforeSend, "Image larger than \(AttachmentLimits.maxImageBytes) bytes")
       }
       guard let size = imagePixelSize(bytes) else {
-        throw HybridError(.unsupportedInput, "Image could not be read")
+        throw HybridError(.rejectedBeforeSend, "Image could not be read")
       }
       if max(size.width, size.height) > AttachmentLimits.maxImageDimension {
-        throw HybridError(.unsupportedInput, "Image larger than \(AttachmentLimits.maxImageDimension) px")
+        throw HybridError(.rejectedBeforeSend, "Image larger than \(AttachmentLimits.maxImageDimension) px")
       }
     } else if !mime.hasPrefix("audio/") {
-      throw HybridError(.unsupportedInput, "Unsupported attachment type \(mime)")
+      throw HybridError(.rejectedBeforeSend, "Unsupported attachment type \(mime)")
     }
   }
 }

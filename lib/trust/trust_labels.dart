@@ -78,8 +78,11 @@ String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
         'it may still be running, or it stopped before saying whether it was '
         'sent.',
   LegOutcome.notFinishedLocal =>
-    'This is still running, or it stopped without finishing. It is not '
-        'allowed to leave, so nothing left this device.',
+    // Also a request that was allowed to leave but refused before sending,
+    // so it must not claim the request was not allowed to leave.
+    'This is still running, or it stopped without finishing. Nothing left '
+        'this device: it was not allowed to leave, or it was refused before '
+        'sending.',
   LegOutcome.simulated =>
     'Simulated for this rehearsal. No model ran and nothing was sent.',
 };

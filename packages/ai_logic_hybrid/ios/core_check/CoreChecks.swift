@@ -281,13 +281,20 @@ struct CoreChecks {
     expect(errorCode(r) == .rejectedBeforeSend, "audio → rejectedBeforeSend")
     r = await run(bridge, request(parts: [["type": "text", "text": "x"], imagePart(small), imagePart(small)]))
     if case .failure(let e) = r { expect(e.message.contains("At most"), "two images: limit message") }
+    expect(errorCode(r) == .rejectedBeforeSend, "two images: rejectedBeforeSend")
     r = await run(bridge, request(parts: [["type": "text", "text": "x"], imagePart(png(width: 800, height: 10))]))
     if case .failure(let e) = r { expect(e.message.contains("px"), "dimension limit") }
+    expect(errorCode(r) == .rejectedBeforeSend, "dimension limit: rejectedBeforeSend")
     r = await run(bridge, request(parts: [["type": "text", "text": "x"], imagePart(Data(count: 1024 * 1024 + 1))]))
     if case .failure(let e) = r { expect(e.message.contains("bytes"), "byte limit") }
+    expect(errorCode(r) == .rejectedBeforeSend, "byte limit: rejectedBeforeSend")
+    // The dispatcher test's JPEG bytes (not a readable image) are refused
+    // before send too.
+    r = await run(bridge, request(mode: .onlyInCloud, parts: [["type": "text", "text": "x"], ["type": "inlineData", "mimeType": "image/jpeg", "bytes": Data([1, 2, 3])]]))
+    expect(errorCode(r) == .rejectedBeforeSend, "unreadable image: rejectedBeforeSend")
     let pdf: [String: Any] = ["type": "inlineData", "mimeType": "application/pdf", "bytes": Data([1])]
     r = await run(bridge, request(parts: [["type": "text", "text": "x"], pdf]))
-    expect(errorCode(r) == .unsupportedInput, "other attachment types rejected")
+    expect(errorCode(r) == .rejectedBeforeSend, "other attachment types rejected before send")
     expect(engine.calls.isEmpty, "no media request reached an SDK")
   }
 

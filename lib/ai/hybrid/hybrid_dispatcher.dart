@@ -370,8 +370,11 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       }
       // The contract rejects unsupportedInput before any SDK call, so the
       // grant did not pay for a transfer and may carry to the adapter.
+      // rejectedBeforeSend is a bridge's explicit proof of that (SS-105).
       final refund =
-          e.code == HybridErrorCode.unsupportedInput && grant != null;
+          (e.code == HybridErrorCode.unsupportedInput ||
+              e.code == HybridErrorCode.rejectedBeforeSend) &&
+          grant != null;
       if (refund) _spent.remove(grant);
       return _Failed(e.code, sent: true, unspentGrant: refund ? grant : null);
     } catch (_) {

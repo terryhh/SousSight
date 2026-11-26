@@ -128,4 +128,49 @@ void main() {
     expect(find.textContaining('may still be running'), findsWidgets);
     expect(find.textContaining('then stopped with an error'), findsNothing);
   });
+
+  testWidgets('a consented pre-send refusal never says it was not allowed '
+      'to leave', (tester) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (c) {
+              context = c;
+              return const SizedBox();
+            },
+          ),
+        ),
+      ),
+    );
+    final refused = leg(
+      Provenance.unknown,
+      kinds: {DataKind.image},
+      transferPermitted: true,
+      error: HybridErrorCode.rejectedBeforeSend,
+    );
+    unawaited(showInferenceDetails(context, legs: [refused]));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Allowed to leave this device: photo.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('refused before sending'), findsWidgets);
+    expect(find.textContaining('It is not allowed to leave'), findsNothing);
+    expect(
+      find.textContaining('it was not allowed to leave, or it was refused'),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: LedgerView(ledger: ListLedgerSource([refused]))),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('or were refused before sending'),
+      findsOneWidget,
+    );
+  });
 }

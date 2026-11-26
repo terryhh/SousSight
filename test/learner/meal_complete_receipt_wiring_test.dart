@@ -44,12 +44,15 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final services = (await tester.runAsync(fakeServices))!;
-    final cook = CookingCoordinator(
+    late final CookingCoordinator cook;
+    cook = CookingCoordinator(
       services: services,
       research: FakeCookingResearchClient(),
       transportFactory: null,
       media: DemoLiveMedia(),
-      onSessionReady: hybrid?.bindCookingSession,
+      onSessionReady: hybrid == null
+          ? null
+          : bindMealSession(hybrid, () => cook),
     );
     await tester.pumpWidget(
       MaterialApp(
@@ -204,6 +207,13 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('Start new cook: a ledger switch after the replacement binds '
+      'but before its screen subscribes means no receipt', (tester) async {
+    for (final probe in [false, true]) {
+      await _newCookRun(tester, probe: probe);
+    }
+  });
+
   testWidgets('without a hybrid runtime there is no receipt', (tester) async {
     final cook = await cookToTheEnd(tester);
     expect(cook.timersStarted, 1);
@@ -230,4 +240,88 @@ void main() {
     await cook.startTimer('b', 'Second', 45);
     expect(cook.timersStarted, 2);
   });
+}
+
+Future<void> _newCookRun(WidgetTester tester, {required bool probe}) async {
+  {
+    tester.view.physicalSize = const Size(412, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: CloudRoutes.parse(''),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+      cloudModel: 'test-cloud-model',
+    );
+    final services = (await tester.runAsync(fakeServices))!;
+    final cooks = <CookingCoordinator>[];
+    CookingCoordinator create() {
+      late final CookingCoordinator cook;
+      final bind = bindMealSession(hybrid, () => cook);
+      cook = CookingCoordinator(
+        services: services,
+        research: FakeCookingResearchClient(),
+        transportFactory: null,
+        media: DemoLiveMedia(),
+        onSessionReady: (id) {
+          bind(id);
+          if (probe && cooks.length > 1) {
+            // The probe: right after the replacement binds, and before its
+            // screen exists, the runtime switches away and back to the same
+            // meal ID, and a cloud photo lands.
+            hybrid.ledger
+              ..startSession('elsewhere')
+              ..startSession(id);
+            hybrid.ledger.record(
+              const InferenceLeg(
+                requestId: 'later-photo',
+                feature: 'label_check',
+                mode: HybridMode.onlyInCloud,
+                kinds: {DataKind.image},
+                transferPermitted: true,
+                provenance: Provenance.cloudAdapter,
+              ),
+            );
+          }
+        },
+      );
+      cooks.add(cook);
+      return cook;
+    }
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: cookingTheme,
+        home: CookingScreen(
+          services: services,
+          isDemo: false,
+          hybrid: hybrid,
+          createCoordinator: create,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey('new-cook'));
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start new cook'));
+    await tester.pumpAndSettle();
+    expect(cooks, hasLength(2));
+    final replacement = cooks.last;
+    await tester.runAsync(() async {
+      while (!replacement.complete) {
+        await replacement.advanceStep();
+      }
+    });
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('meal-complete')), findsOneWidget);
+    // Control: without the switch, the replacement meal prints its receipt.
+    expect(
+      find.byKey(const ValueKey('privacy-receipt')),
+      probe ? findsNothing : findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox());
+  }
 }

@@ -229,6 +229,22 @@ WatchService buildWatchService(
   );
 }
 
+/// The ledger generation each coordinator's meal started on, recorded in the
+/// same call that bound the runtime's ledger to that meal's session (SS-105).
+final _mealLedgerGeneration = Expando<int>('meal ledger generation');
+
+/// A coordinator's `onSessionReady` for a hybrid build: binds the runtime's
+/// ledger to the session and, in the same call, records the generation the
+/// meal starts on. The privacy receipt prints only while the ledger is still
+/// on it, however late the cooking screen subscribes.
+void Function(String sessionId) bindMealSession(
+  HybridRuntime hybrid,
+  CookingCoordinator Function() cook,
+) => (sessionId) {
+  hybrid.bindCookingSession(sessionId);
+  _mealLedgerGeneration[cook()] = hybrid.ledger.generation;
+};
+
 /// Owns a cooking session's lifetime; a new cook gets a fresh screen and coordinator.
 class _CookingScreenState extends State<CookingScreen> {
   late CookingCoordinator _cook;
@@ -239,7 +255,8 @@ class _CookingScreenState extends State<CookingScreen> {
     final custom = widget.createCoordinator?.call();
     if (custom != null) return custom;
     final hybrid = widget.isDemo ? null : widget.hybrid;
-    return CookingCoordinator(
+    late final CookingCoordinator created;
+    return created = CookingCoordinator(
       services: widget.services,
       isDemo: widget.isDemo,
       recipe: widget.recipe,
@@ -263,7 +280,9 @@ class _CookingScreenState extends State<CookingScreen> {
       watchServiceFactory: hybrid == null
           ? null
           : (live) => buildWatchService(hybrid, live),
-      onSessionReady: hybrid?.bindCookingSession,
+      onSessionReady: hybrid == null
+          ? null
+          : bindMealSession(hybrid, () => created),
       researchAllowed: hybrid == null
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
@@ -399,27 +418,15 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
 
-  /// The ledger generation of this meal, captured once the hybrid runtime
-  /// has bound its ledger to this meal's session (at meal start). The
-  /// receipt prints only if the ledger is still on it (SS-105).
-  int? _mealGeneration;
-
-  void _captureMealGeneration() {
-    final hybrid = widget.hybrid;
-    final id = cook.session?.id;
-    if (_mealGeneration != null || hybrid == null || id == null) return;
-    if (hybrid.sessionId == id) _mealGeneration = hybrid.ledger.generation;
-  }
-
-  /// Tonight's privacy receipt binding, bound to [_mealGeneration] and kept
+  /// Tonight's privacy receipt binding, bound to the generation recorded by
+  /// [bindMealSession] when this meal's session was bound, and kept
   /// here, outside the layout, so a retired receipt stays retired across
   /// breakpoint rebuilds. Null (no receipt) until the meal is complete and
   /// the ledger is known to be this meal's.
   PrivacyReceiptBinding? _receipt;
   PrivacyReceiptBinding? _receiptBinding() {
-    _captureMealGeneration();
     final hybrid = widget.hybrid;
-    final meal = _mealGeneration;
+    final meal = _mealLedgerGeneration[cook];
     if (hybrid == null || meal == null || !cook.complete) return null;
     return _receipt ??= PrivacyReceiptBinding(
       generation: () => hybrid.ledger.generation,
@@ -492,8 +499,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
 
   void _onChange() {
     if (!mounted) return;
-    // Note this meal's ledger generation as soon as its session is bound,
-    // and bind the receipt at the completion event itself (SS-105).
+    // Bind the receipt at the completion event itself (SS-105).
     _receiptBinding();
     _speaker?.sync(
       answer: cook.coachLiteAnswer,
