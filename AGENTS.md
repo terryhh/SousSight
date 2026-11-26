@@ -25,3 +25,11 @@ The user's November 7 corrections supersede the older instructor-centric handoff
 - Terry retains shared runtime integration, model evaluation, deployment, runtime fixes and final recording/submission. Coordinate handoffs through the cards and `docs/MVP-WORK-PLAN.md`; no implicit takeover of either person’s files.
 
 - Add meaningful regression coverage alongside MVP behavior changes. Prioritize the working deployment and critical flows; distinguish automated, emulator, live-service and physical-device evidence. Avoid redundant tests that only mirror implementation.
+
+## #BuildHybridAI 2026 entry (Terry's November 25 decisions)
+
+- SousSight is being entered in Google's #BuildHybridAI 2026 hackathon. Deadline: Nov 30, 2026, 2:00 pm PT. Read `docs/buildhybridai/PLAN.md` (what and why) and `docs/buildhybridai/DESIGN.md` (how, file ownership, how to pick up a card) before starting any card labelled `buildhybridai`.
+- For this entry Terry reopened native packaging: Android and iOS builds are in scope, gated as described in the plan. This supersedes the "APK/native packaging is tabled" line above for `buildhybridai` cards only.
+- Spending for this entry is free tier only. This is stricter than the $20 monthly budget above; if any path would bill, stop and ask Terry.
+- Every model call in the judged build goes through Firebase AI Logic. Do not add direct Gemini endpoints.
+- A relicense from AGPL-3.0 needs an explicit yes from both Terry and Jenna. Do not change `LICENSE` without it.

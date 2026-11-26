@@ -46,13 +46,15 @@ dinner-ready message. The source of each answer sits beside the result.
 
 ## 2. Day-one gates (run before the fan-out; go/no-go Fri Nov 27)
 
-Each gate can remove a platform or the headline demo, so they come first.
+Each gate can remove a platform or the headline demo, so they come first. G6 and G1 run before
+any live traffic. How to run each gate, and the technical design for every card, is in
+[DESIGN.md](DESIGN.md).
 
 | Gate | Pass bar | If it fails |
 |---|---|---|
 | **G1 Free cloud route** | For each cloud path (hybrid fallback, Live, Search/Maps grounding): the project, backend, model and quota are confirmed free in the console, and one real automatic cloud fallback succeeds. Real SMS confirmed disabled server-side. | That path stays out of the judged build. Stop and ask before anything bills. |
 | **G2 Web hybrid slice** | One real task in the real app: on-device result in Chrome; then the **same task, same prefer-on-device config**, where the local model is genuinely unavailable, returns a cloud result with the SDK-reported source and App Check on the request. | Fix before anything else; this is the contest's defining behaviour. |
-| **G3 Web Live through AI Logic** | Real app factory, **same Live model pinned on both paths**, enforcement on, production App Check: two spoken turns, a camera-driven reply, a generated panel. | Terry decides (see section 9). Recommended: the contest web build ships without the direct-Gemini coach, and Live runs through AI Logic on native. |
+| **G3 Web Live through AI Logic** | Real app factory, **same Live model pinned on both paths**, enforcement on, production App Check: two spoken turns, a camera-driven reply, a generated panel. | Default: the judged web build ships without the direct-Gemini coach, and Live runs through AI Logic on native (see section 9). |
 | **G4 Android** | Phone enrolled in AICore preview; Gradle resolves `firebase-ai` + `firebase-ai-ondevice` against BoM 35.1.0 at minSdk 26; the **signed release APK**, clean-installed, reports a **Gemini Nano 4** on-device result, an attested cloud fallback, and working camera/mic. | Android is not claimed. |
 | **G5 iOS** | One build with `FirebaseAILogic` on the shared SPM graph (pin is exactly 13.1.1), OS availability guards (Runner targets iOS 15), iOS app registered, signing, App Check, real on-device source on the iPhone. | iOS is dropped from platform selection. |
 | **G6 Eligibility** | Terry confirms who funded the DevFest prize and whether the $300 welcome credit / $10 Developer Program benefit in `docs/COST-LEDGER.md` were used; asks the hackathon manager if unclear. | Resolve with the organizer before building further. |
@@ -144,8 +146,9 @@ recipe retry, then iOS. The hero journey, the web slice and the evidence are nev
 
 - **Now:** G6 eligibility facts; install Xcode; connect both phones; enroll the Android phone in
   the AICore Developer Preview; Firebase CLI login.
-- **If G3 fails:** choose between shipping the contest web build without the direct-Gemini coach
-  (recommended; Live stays on native through AI Logic) or keeping it and disclosing it (Stage One risk).
+- **If G3 fails:** the default is that the judged web build ships without the direct-Gemini coach
+  (Live stays on native through AI Logic; web gets Coach Lite). The direct connection breaks
+  the "runs on Firebase AI Logic" rule, so it can only stay in a separate build that is not the entry.
 - **Later:** real-device passes, the ≤3 min YouTube video, joining on Devpost, adding Jenna,
   platform selection, submitting.
 
