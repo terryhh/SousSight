@@ -1,6 +1,8 @@
 // SS-110 offline check in a real Chrome: load the built app, let the shell
-// worker cache it, cut the network, reload and reopen, and require Flutter's
-// first frame each time. Opt-in because it needs a build and Chrome:
+// worker cache it, deploy a rebuild of the same commit (a new Flutter build
+// number) and check it waits for the next launch and takes over with a
+// complete cache, then cut the network, reload and reopen, and require
+// Flutter's first frame each time. Opt-in because it needs a build and Chrome:
 //
 //   ./tool/build_web.sh --dart-define=FAKE_BACKEND=true
 //   SOUSSIGHT_OFFLINE_CHECK_BUILD=build/web node --test test/web/offline_chrome_test.cjs
@@ -46,7 +48,9 @@ const TYPES = {
 /** Static server shaped like firebase.json Hosting: SPA rewrite, /api/ to Functions. */
 function appServer(root) {
   const sockets = new Set();
-  const state = { offline: false };
+  // `buildNumber` simulates deploying a rebuild: the served bootstrap carries
+  // a different Flutter build number, everything else is byte-identical.
+  const state = { offline: false, buildNumber: null };
   const server = http.createServer((req, res) => {
     if (state.offline) return req.socket.destroy();
     const url = new URL(req.url, 'http://local');
@@ -57,6 +61,12 @@ function appServer(root) {
     let file = path.join(root, decodeURIComponent(url.pathname));
     if (!file.startsWith(path.resolve(root))) return res.writeHead(403).end();
     if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, 'index.html');
+    if (state.buildNumber && path.basename(file) === 'flutter_bootstrap.js') {
+      const body = fs.readFileSync(file, 'utf8').replace(/const localBuild = "[0-9]+"/, `const localBuild = "${state.buildNumber}"`);
+      res.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-cache' });
+      res.end(body);
+      return;
+    }
     res.writeHead(200, {
       'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream',
       'cache-control': 'no-cache',
@@ -252,25 +262,89 @@ test('the built app opens again with no network once it has been opened', { skip
     { what: 'the shell cache to hold main.dart.js and CanvasKit', timeout: 90000, interval: 500 },
   );
   t.diagnostic(`online: ${JSON.stringify(shell)}; proxied hosts: ${[...proxy.state.hosts].join(', ')}`);
-  assert.match(shell.cache, /^soussight-shell-(local-\d+|[0-9a-f]{40})$/);
+  assert.match(shell.cache, /^soussight-shell-(local|[0-9a-f]{40})-\d+$/);
   assert.match(shell.worker, /^\/sw\.js\?v=/);
   assert.deepEqual(shell.apiEntries, [], 'no API response is cached');
   await screenshot(page, 'online');
 
+  // 1b. Deploy a rebuild of the same commit. The open page still runs build A
+  // from the cache; it must register B, and B must wait (no mid-session swap).
+  const oldBuild = shell.worker.split('v=')[1];
+  const newNumber = String((Number(oldBuild.split('-').pop()) + 1) % 4294967296);
+  app.state.buildNumber = newNumber;
+  await page.send('Page.reload', { ignoreCache: false });
+  await firstFrame(page, 'first frame after the rebuild was deployed');
+  const waiting = await waitFor(
+    () =>
+      page.eval(`(async () => {
+        const registration = await navigator.serviceWorker.getRegistration();
+        const next = registration && registration.waiting;
+        if (!next) return null;
+        const names = (await caches.keys()).filter((n) => n.startsWith('soussight-shell-'));
+        return {
+          waiting: next.scriptURL.replace(location.origin, ''),
+          controller: navigator.serviceWorker.controller.scriptURL.replace(location.origin, ''),
+          caches: names,
+        };
+      })()`),
+    { what: 'the rebuilt worker to install and wait', timeout: 90000, interval: 500 },
+  );
+  t.diagnostic(`update waiting: ${JSON.stringify(waiting)}`);
+  assert.match(waiting.waiting, new RegExp(`-${newNumber}$`), 'the page registered the deployed rebuild');
+  assert.equal(waiting.controller, shell.worker, 'the running build keeps control mid-session');
+  assert.equal(waiting.caches.length, 2);
+
+  // 1c. Next launch: close the only tab, then open the app again (online).
+  // The waiting worker activates only once no tab uses the old one, so leave
+  // a gap as a real relaunch does; retry if Chrome had not let go yet.
+  let updated = page;
+  const takeoverProbe = `(async () => {
+        const controller = navigator.serviceWorker.controller;
+        if (!controller || !controller.scriptURL.endsWith('-${newNumber}')) return null;
+        const names = (await caches.keys()).filter((n) => n.startsWith('soussight-shell-'));
+        if (names.length !== 1) return null;
+        const keys = (await (await caches.open(names[0])).keys()).map((r) => r.url);
+        return {
+          worker: controller.scriptURL.replace(location.origin, ''),
+          cache: names[0],
+          canvasKit: keys.filter((u) => /canvaskit\\.wasm$/.test(u)).length,
+          fonts: keys.filter((u) => u.startsWith('https://fonts.gstatic.com/')).length,
+          firebaseSdk: keys.filter((u) => u.includes('/firebasejs/')).length,
+          entries: keys.length,
+        };
+      })()`;
+  let takeover = null;
+  for (let launch = 0; launch < 5 && !takeover; launch += 1) {
+    await cdp.send('Target.closeTarget', { targetId: updated.targetId });
+    await new Promise((r) => setTimeout(r, 1500));
+    updated = await openPage(cdp, `${origin}/`);
+    await firstFrame(updated, 'first frame on the launch after the update');
+    takeover = await waitFor(() => updated.eval(takeoverProbe), {
+      what: 'the rebuilt worker to take over and drop the old cache',
+      timeout: 10000,
+      interval: 500,
+    }).catch(() => null);
+  }
+  assert.ok(takeover, 'the rebuilt worker took over at a later launch');
+  t.diagnostic(`after update: ${JSON.stringify(takeover)}`);
+  assert.ok(takeover.canvasKit >= 1, 'CanvasKit carried into the new cache');
+  assert.equal(takeover.firebaseSdk, shell.firebaseSdk);
+  const current = updated;
+
   // 2. Cut every route out, then reload.
   app.goOffline();
   proxy.goOffline();
-  const blocked = await page.eval(`fetch('${origin}/main.dart.js?probe=' + Date.now()).then(() => 'reachable', () => 'blocked')`);
+  const blocked = await current.eval(`fetch('${origin}/main.dart.js?probe=' + Date.now()).then(() => 'reachable', () => 'blocked')`);
   assert.equal(blocked, 'blocked', 'the app server is really unreachable');
-  await page.send('Page.reload', { ignoreCache: false });
-  await firstFrame(page, 'first frame after an offline reload');
-  await screenshot(page, 'offline-reload');
+  await current.send('Page.reload', { ignoreCache: false });
+  await firstFrame(current, 'first frame after an offline reload');
+  await screenshot(current, 'offline-reload');
 
   // 3. Close the tab and open the app again, still offline ("next launch").
-  await cdp.send('Target.closeTarget', { targetId: page.targetId });
+  await cdp.send('Target.closeTarget', { targetId: current.targetId });
   const reopened = await openPage(cdp, `${origin}/`);
   await firstFrame(reopened, 'first frame on an offline relaunch');
   await screenshot(reopened, 'offline-relaunch');
   const controlled = await reopened.eval('navigator.serviceWorker.controller && navigator.serviceWorker.controller.scriptURL.replace(location.origin, "")');
-  assert.equal(controlled, shell.worker);
+  assert.equal(controlled, takeover.worker);
 });

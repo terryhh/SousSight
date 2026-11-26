@@ -3,10 +3,23 @@
 // Goal: once the hosted app has been opened, it opens again with no
 // connection, so a cook can keep using Chrome's on-device model offline.
 //
-// Registered by web/flutter_bootstrap.js as `sw.js?v=<build>`, where <build>
-// is the full commit SHA that CI stamps into version.json (or `local-<n>` for
-// an unstamped local build). A different <build> is a different worker script,
-// which is how the browser notices an update.
+// Registered by web/flutter_bootstrap.js as `sw.js?v=<build>`. <build> is
+// `<commit>-<n>`: the full commit CI stamps into version.json, and the random
+// number Flutter writes into each build's flutter_bootstrap.js, so rebuilding
+// the same commit with other settings is still a new build. An unstamped
+// local build is `local-<n>`. A different <build> is a different worker
+// script, which is how the browser notices an update. Both the page and this
+// worker read <build> from the DEPLOYED files (version.json, and
+// flutter_bootstrap.js fetched with a query so no worker answers it).
+//
+// Install (precache) never mixes builds: it checks the deployed <build>
+// before and after downloading, and that the bootstrap it cached carries <n>;
+// any mismatch discards the new cache and the previous worker stays. It also
+// carries over what the previous build's cache learned from the page:
+// immutable pinned files (SDK, fonts) are copied; CanvasKit is copied, or
+// fetched at this build's engine revision (required, so an update can never
+// leave the app without its renderer); other same-origin files are re-fetched
+// from this deploy.
 //
 // Routing (routeFor):
 //   * passthrough (never intercepted, never cached): anything that is not a
@@ -77,15 +90,21 @@ const NAVIGATION_TIMEOUT_MS = 4000;
 const MAX_WARM_URLS = 300;
 
 const COMMIT_PATTERN = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
-const LOCAL_BUILD_PATTERN = /^local-[0-9]{1,12}$/;
-const CANVASKIT_PATH = /^\/flutter-canvaskit\/[0-9a-f]{40}\//;
+const BUILD_ID_PATTERN = /^(?:[0-9a-f]{40}(?:[0-9a-f]{24})?|local)-([0-9]{1,12})$/;
+// Written by Flutter into web/flutter_bootstrap.js at build time.
+const BUILD_NUMBER_IN_BOOTSTRAP = /const localBuild = "([0-9]{1,12})"/;
+const ENGINE_REVISION_IN_BOOTSTRAP = /"engineRevision":"([0-9a-f]{40})"/;
+const CANVASKIT_PATH = /^\/flutter-canvaskit\/([0-9a-f]{40})\/(.+)$/;
+// A query makes this worker pass the request through to the network.
+const BUILD_PROBE = 'flutter_bootstrap.js?soussight-build-probe=1';
 
 const buildId = new URL(self.location.href).searchParams.get('v') || '';
-const isCommitBuild = COMMIT_PATTERN.test(buildId);
+const buildMatch = BUILD_ID_PATTERN.exec(buildId);
 // An unrecognised version (including none) makes this worker inert: it
 // intercepts nothing and clears SousSight caches, so `sw.js?v=off` is a
 // kill switch.
-const enabled = isCommitBuild || LOCAL_BUILD_PATTERN.test(buildId);
+const enabled = Boolean(buildMatch);
+const buildNumber = buildMatch ? buildMatch[1] : '';
 const cacheName = enabled ? CACHE_PREFIX + buildId : '';
 
 function scopeUrl() {
@@ -180,37 +199,91 @@ async function fetchForCache(url) {
   return fetch(url, sameOrigin ? { cache: 'no-cache', credentials: 'same-origin' } : { mode: 'cors', credentials: 'omit' });
 }
 
-async function checkDeployedBuild() {
-  if (!isCommitBuild) return;
-  const response = await fetch(shellUrl('version.json'), { cache: 'no-store', credentials: 'same-origin' });
-  if (!response.ok) throw new Error('version.json unavailable');
-  const version = await response.json();
-  // A deploy landed between registration and install: cache nothing under
-  // the wrong name. The next launch registers the matching worker.
-  if (!version || version.commit !== buildId) throw new Error('build changed during install');
+/** The build id a deployment's version.json and bootstrap describe, or ''. */
+function identityOf(version, bootstrapText) {
+  const number = BUILD_NUMBER_IN_BOOTSTRAP.exec(bootstrapText || '');
+  if (!number) return '';
+  const commit = version && typeof version.commit === 'string' && COMMIT_PATTERN.test(version.commit) ? version.commit : 'local';
+  return `${commit}-${number[1]}`;
+}
+
+async function deployedIdentity() {
+  const init = { cache: 'no-store', credentials: 'same-origin' };
+  const [version, bootstrap] = await Promise.all([fetch(shellUrl('version.json'), init), fetch(shellUrl(BUILD_PROBE), init)]);
+  if (!version.ok || !bootstrap.ok) throw new Error('deployment identity unavailable');
+  return identityOf(await version.json(), await bootstrap.text());
+}
+
+async function requireDeployedBuild() {
+  // A deploy landed before or during the downloads: cache nothing under the
+  // wrong name. The next launch registers the matching worker.
+  if ((await deployedIdentity()) !== buildId) throw new Error('build changed during install');
+}
+
+async function storeRequired(cache, url) {
+  const response = await fetchForCache(url);
+  if (!isStorable(response)) throw new Error('required shell file missing');
+  await cache.put(url, response);
+}
+
+async function storeOptional(cache, url) {
+  try {
+    const response = await fetchForCache(url);
+    if (isStorable(response)) await cache.put(url, response);
+  } catch (_) {
+    // Best effort: the page's warm-up message and runtime caching fill gaps.
+  }
+}
+
+/**
+ * Copies or re-fetches what earlier SousSight caches learned from the page,
+ * so the update is as complete offline as the build it replaces.
+ */
+async function carryOver(cache, engineRevision) {
+  const scope = scopeUrl();
+  const names = (await caches.keys()).filter((name) => name.startsWith(CACHE_PREFIX) && name !== cacheName);
+  for (const name of names) {
+    const previous = await caches.open(name);
+    for (const request of await previous.keys()) {
+      let url;
+      try {
+        url = new URL(request.url);
+      } catch (_) {
+        continue;
+      }
+      if (routeFor({ method: 'GET', url: url.href, mode: 'cors', headers: new Headers() }) !== 'cache-first') continue;
+      const canvasKit = url.hostname === 'www.gstatic.com' ? CANVASKIT_PATH.exec(url.pathname) : null;
+      if (canvasKit) {
+        if (!engineRevision) continue;
+        const target = `https://www.gstatic.com/flutter-canvaskit/${engineRevision}/${canvasKit[2]}`;
+        if (await cache.match(target)) continue;
+        const copy = canvasKit[1] === engineRevision ? await previous.match(url.href) : null;
+        if (copy) await cache.put(target, copy);
+        else await storeRequired(cache, target);
+      } else if (url.origin !== scope.origin) {
+        // Pinned or content-addressed URLs: the bytes cannot have changed.
+        if (await cache.match(url.href)) continue;
+        const copy = await previous.match(url.href);
+        if (copy) await cache.put(url.href, copy);
+      } else if (!(await cache.match(url.href))) {
+        await storeOptional(cache, url.href);
+      }
+    }
+  }
 }
 
 async function precache() {
-  await checkDeployedBuild();
+  await requireDeployedBuild();
   const cache = await caches.open(cacheName);
   try {
-    for (const path of SHELL_REQUIRED) {
-      const url = shellUrl(path);
-      const response = await fetchForCache(url);
-      if (!isStorable(response)) throw new Error('required shell file missing');
-      await cache.put(url, response);
-    }
-    const optional = [...SHELL_OPTIONAL.map(shellUrl), ...sdkUrls()];
-    await Promise.all(
-      optional.map(async (url) => {
-        try {
-          const response = await fetchForCache(url);
-          if (isStorable(response)) await cache.put(url, response);
-        } catch (_) {
-          // Best effort: the page's warm-up message and runtime caching fill gaps.
-        }
-      }),
-    );
+    for (const path of SHELL_REQUIRED) await storeRequired(cache, shellUrl(path));
+    const bootstrap = await (await cache.match(shellUrl('flutter_bootstrap.js'))).text();
+    const number = BUILD_NUMBER_IN_BOOTSTRAP.exec(bootstrap);
+    if (!number || number[1] !== buildNumber) throw new Error('build changed during install');
+    const engine = ENGINE_REVISION_IN_BOOTSTRAP.exec(bootstrap);
+    await Promise.all([...SHELL_OPTIONAL.map(shellUrl), ...sdkUrls()].map((url) => storeOptional(cache, url)));
+    await carryOver(cache, engine ? engine[1] : null);
+    await requireDeployedBuild();
   } catch (error) {
     await caches.delete(cacheName);
     throw error;
@@ -341,6 +414,7 @@ self.addEventListener('message', (event) => {
 // Exposed for test/web/sw_test.cjs.
 self.soussightShell = Object.freeze({
   routeFor,
+  identityOf,
   buildId,
   cacheName,
   enabled,

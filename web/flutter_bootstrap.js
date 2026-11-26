@@ -13,34 +13,42 @@
   'use strict';
 
   const COMMIT = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
-  // A random number Flutter substitutes per build (null with
-  // --pwa-strategy=none and under flutter run). Used only when version.json
-  // carries no commit, which means a local, unstamped build.
+  // A random number Flutter writes here per build (null with
+  // --pwa-strategy=none and under flutter run). It identifies this exact
+  // artifact: rebuilding the same commit with other settings changes it.
+  // The page and sw.js read it from the DEPLOYED copy of this file, never
+  // from the copy this page is running, which may be an older cached build.
   const localBuild = {{flutter_service_worker_version}};
+  const BUILD_NUMBER = /const localBuild = "([0-9]{1,12})"/;
   const WARM_HOSTS = ['www.gstatic.com', 'fonts.gstatic.com'];
 
   try {
     performance.setResourceTimingBufferSize(1000);
   } catch (_) {}
 
-  // The build to register: a commit, `local-<n>`, '' when the server answered
-  // but names no usable build, or null when version.json was unreachable.
+  // The deployed build: `<commit>-<n>` (`local-<n>` when version.json has
+  // no stamped commit), '' when the server answered but names no usable
+  // build, or null when it was unreachable.
   async function shellBuildId() {
     let version;
+    let bootstrap;
     try {
-      const response = await fetch('version.json', { cache: 'no-store', credentials: 'same-origin' });
-      if (!response.ok) return null;
-      version = await response.json();
+      const init = { cache: 'no-store', credentials: 'same-origin' };
+      const [versionResponse, bootstrapResponse] = await Promise.all([
+        fetch('version.json', init),
+        // The query makes sw.js pass this through to the network.
+        fetch('flutter_bootstrap.js?soussight-build-probe=1', init),
+      ]);
+      if (!versionResponse.ok || !bootstrapResponse.ok) return null;
+      version = await versionResponse.json();
+      bootstrap = await bootstrapResponse.text();
     } catch (_) {
       return null;
     }
-    if (version && typeof version.commit === 'string' && COMMIT.test(version.commit)) {
-      return version.commit;
-    }
-    if (typeof localBuild === 'string' && /^[0-9]{1,12}$/.test(localBuild)) {
-      return 'local-' + localBuild;
-    }
-    return '';
+    const number = BUILD_NUMBER.exec(bootstrap);
+    if (!number) return '';
+    const commit = version && typeof version.commit === 'string' && COMMIT.test(version.commit) ? version.commit : 'local';
+    return commit + '-' + number[1];
   }
 
   // Resources this page loaded before the worker controlled it. Only
@@ -80,8 +88,8 @@
       const build = await shellBuildId();
       if (build === null) return;
       if (build === '') {
-        // A deploy this page cannot version (no stamped commit, no local
-        // build number). Rather than leave an older worker serving an older
+        // A deploy this page cannot version (no per-build number, e.g.
+        // --pwa-strategy=none). Rather than leave an older worker serving an older
         // cached build, replace it with the inert worker, which clears the
         // shell caches when it activates at the next launch.
         if (await navigator.serviceWorker.getRegistration()) {

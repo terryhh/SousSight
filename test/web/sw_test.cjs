@@ -17,6 +17,14 @@ const SCOPE = `${ORIGIN}/`;
 const COMMIT = '0123456789abcdef'.repeat(3).slice(0, 40);
 const NEXT_COMMIT = 'fedcba9876543210'.repeat(3).slice(0, 40);
 const ENGINE = 'abcdef0123456789'.repeat(3).slice(0, 40);
+const NEXT_ENGINE = '9876543210fedcba'.repeat(3).slice(0, 40);
+// Flutter's random per-build number, as written into flutter_bootstrap.js.
+const N = '1111';
+const NEXT_N = '2222';
+const BUILD = `${COMMIT}-${N}`;
+const NEXT_BUILD = `${NEXT_COMMIT}-${NEXT_N}`;
+// The same commit rebuilt (for example with other repository variables).
+const REBUILD = `${COMMIT}-${NEXT_N}`;
 // Built from parts so this file never carries the Gemini Developer API host
 // as one literal (tool/check_web_bundle.sh greps for it).
 const GEMINI_DEV_HOST = ['generative', 'language.googleapis.com'].join('');
@@ -35,6 +43,9 @@ class FakeCache {
   async put(request, response) {
     if (response.bodyUsed) throw new TypeError('body already used');
     this.entries.set(FakeCache.key(request), response);
+  }
+  async keys() {
+    return [...this.entries.keys()].map((url) => ({ url }));
   }
 }
 
@@ -62,13 +73,13 @@ function okResponse(body, type = 'application/javascript') {
 }
 
 /** A fresh worker global running web/sw.js registered as sw.js?v=<version>. */
-function worker({ version = COMMIT, active = null, network, setTimeoutImpl, caches } = {}) {
+function worker({ version = BUILD, active = null, network, setTimeoutImpl, caches } = {}) {
   const listeners = new Map();
   const calls = [];
   const logs = [];
   const counters = { claim: 0, skipWaiting: 0 };
   const cacheStorage = caches ?? new FakeCacheStorage();
-  const handler = network ?? defaultNetwork({ commit: version });
+  const handler = network ?? defaultNetwork({ deploy: deployOf(version) });
   const sandbox = {
     URL,
     Headers,
@@ -148,16 +159,36 @@ function worker({ version = COMMIT, active = null, network, setTimeoutImpl, cach
   };
 }
 
-/** Network that serves a deployed build: shell files, SDK modules, version.json. */
-function defaultNetwork({ commit = COMMIT, missing = [] } = {}) {
+/** The deployment a build id describes: { commit?, n, engine }. */
+function deployOf(version) {
+  const match = /^(.*)-([0-9]+)$/.exec(version ?? '');
+  if (!match) return { commit: COMMIT, n: N, engine: ENGINE };
+  return { commit: match[1] === 'local' ? undefined : match[1], n: match[2], engine: ENGINE };
+}
+
+/** What Flutter writes into a build's flutter_bootstrap.js, reduced to the parts sw.js reads. */
+function bootstrapText({ n, engine }) {
+  const number = n === null ? 'null' : `"${n}"`;
+  return `_flutter.buildConfig = {"engineRevision":"${engine}","builds":[]};\nconst localBuild = ${number} /* deprecated */;`;
+}
+
+/**
+ * Network that serves a deployment: shell files, SDK modules, version.json and
+ * a bootstrap naming the build number. [deploy] may be mutated mid-test to
+ * model a new release landing on Hosting.
+ */
+function defaultNetwork({ deploy = { commit: COMMIT, n: N, engine: ENGINE }, missing = [], fail = [] } = {}) {
   return async (url) => {
     const parsed = new URL(url);
+    if (fail.some((pattern) => url.includes(pattern))) throw new TypeError('Failed to fetch');
     if (parsed.origin === ORIGIN) {
       const file = parsed.pathname.slice(1);
       if (missing.includes(file)) return new Response('not found', { status: 404 });
       if (file === 'version.json') {
-        return okResponse(JSON.stringify({ app_name: 'soussight', version: '1.0.0', commit }), 'application/json');
+        return okResponse(JSON.stringify({ app_name: 'soussight', version: '1.0.0', commit: deploy.commit }), 'application/json');
       }
+      if (file === 'flutter_bootstrap.js') return okResponse(bootstrapText(deploy));
+      if (deploy.tag) return okResponse(`network:${deploy.tag}:${file}`);
       return okResponse(`network:${file}`);
     }
     if (parsed.hostname === 'www.gstatic.com' || parsed.hostname === 'fonts.gstatic.com') {
@@ -255,15 +286,28 @@ test('the shell, pinned SDK, CanvasKit and fonts are cache-first; index and vers
   assert.equal(shell.routeFor(request('https://www.gstatic.com/flutter-canvaskit/latest/canvaskit.js')), 'passthrough');
 });
 
-test('the cache is named by the build commit', () => {
-  assert.equal(worker().shell.cacheName, `soussight-shell-${COMMIT}`);
+test('the cache is named by the build: commit plus Flutter build number', () => {
+  assert.equal(worker().shell.cacheName, `soussight-shell-${BUILD}`);
   assert.equal(worker({ version: 'local-42' }).shell.cacheName, 'soussight-shell-local-42');
+  // Codex #249: the same commit rebuilt is a different worker and cache.
+  assert.notEqual(worker({ version: REBUILD }).shell.cacheName, worker().shell.cacheName);
+});
+
+test('the deployed identity combines version.json commit and the bootstrap build number', () => {
+  const { shell } = worker();
+  assert.equal(shell.identityOf({ commit: COMMIT }, bootstrapText({ n: N, engine: ENGINE })), BUILD);
+  assert.equal(shell.identityOf({ commit: COMMIT }, bootstrapText({ n: NEXT_N, engine: ENGINE })), REBUILD);
+  assert.equal(shell.identityOf({ version: '1.0.0' }, bootstrapText({ n: '7', engine: ENGINE })), 'local-7');
+  assert.equal(shell.identityOf({ commit: 'nope' }, bootstrapText({ n: '7', engine: ENGINE })), 'local-7');
+  assert.equal(shell.identityOf({ commit: COMMIT }, bootstrapText({ n: null, engine: ENGINE })), '');
+  // The pattern that reads the number never matches its own source text.
+  assert.equal(shell.identityOf({ commit: COMMIT }, BOOTSTRAP_SOURCE), '');
 });
 
 test('an unknown or missing version makes the worker inert and clears SousSight caches (kill switch)', async () => {
-  for (const version of [null, '', 'off', 'main', COMMIT.toUpperCase(), `${COMMIT}x`, 'local-abc']) {
+  for (const version of [null, '', 'off', 'main', COMMIT, `${COMMIT.toUpperCase()}-1`, `${COMMIT}x-1`, 'local-abc', 'local-', `${COMMIT}-`]) {
     const caches = new FakeCacheStorage();
-    await caches.open(`soussight-shell-${COMMIT}`);
+    await caches.open(`soussight-shell-${BUILD}`);
     await caches.open('someone-else');
     const w = worker({ version, caches });
     assert.equal(w.shell.enabled, false, String(version));
@@ -296,12 +340,51 @@ test('install pre-caches the shell, the pinned Firebase SDK modules, and nothing
   assert.ok(!cached.some((url) => /googleapis\.com|\/api\/|\/__\//.test(url)));
 });
 
-test('install refuses a cache whose deployed version.json names another commit', async () => {
-  const w = worker({ network: defaultNetwork({ commit: NEXT_COMMIT }) });
-  await assert.rejects(w.install(), /build changed during install/);
-  assert.deepEqual(await w.caches.keys(), []);
-  assert.ok(w.logs.every((line) => !line.includes(ORIGIN)), 'logs carry no URLs');
+test('install refuses a cache whose deployment is another commit or another build of the same commit', async () => {
+  for (const other of [NEXT_BUILD, REBUILD]) {
+    const w = worker({ network: defaultNetwork({ deploy: deployOf(other) }) });
+    await assert.rejects(w.install(), /build changed during install/, other);
+    assert.deepEqual(await w.caches.keys(), []);
+    assert.ok(w.logs.every((line) => !line.includes(ORIGIN)), 'logs carry no URLs');
+  }
 });
+
+test('install reads the deployed bootstrap through the network, never a cached copy', async () => {
+  const w = worker();
+  await w.install();
+  const probes = w.calls.filter((call) => call.url.includes('flutter_bootstrap.js?'));
+  assert.equal(probes.length, 2, 'checked before and after the downloads');
+  for (const probe of probes) {
+    assert.equal(probe.init.cache, 'no-store');
+    assert.equal(w.shell.routeFor(request(probe.url)), 'passthrough', 'no worker answers the probe');
+  }
+});
+
+// Codex #249 finding 3: a deploy that lands while install downloads.
+for (const [label, switchAfter] of [
+  ['after index.html', 'index.html'],
+  ['after flutter_bootstrap.js', 'flutter_bootstrap.js'],
+  ['after main.dart.js', 'main.dart.js'],
+  ['during the optional files', 'manifest.json'],
+]) {
+  test(`a deploy that lands ${label} discards the half-built cache`, async () => {
+    const deploy = { ...deployOf(BUILD), tag: 'A' };
+    const base = defaultNetwork({ deploy });
+    const caches = new FakeCacheStorage();
+    const w = worker({
+      caches,
+      network: async (url, init) => {
+        const response = await base(url, init);
+        if (new URL(url).pathname === `/${switchAfter}` && !url.includes('?')) {
+          Object.assign(deploy, deployOf(NEXT_BUILD), { tag: 'B' });
+        }
+        return response;
+      },
+    });
+    await assert.rejects(w.install(), /build changed during install/);
+    assert.deepEqual(await caches.keys(), [], 'no cache mixes builds A and B');
+  });
+}
 
 test('install fails cleanly when a required shell file is missing', async () => {
   const w = worker({ network: defaultNetwork({ missing: ['main.dart.js'] }) });
@@ -324,8 +407,8 @@ test('a missing optional file or SDK module does not fail the install', async ()
   assert.ok(!cached.includes(`${ORIGIN}/soussight_live.js`));
 });
 
-test('a local build skips the commit check', async () => {
-  const w = worker({ version: 'local-7', network: defaultNetwork({ commit: undefined }) });
+test('a local build (no stamped commit) installs under local-<n>', async () => {
+  const w = worker({ version: 'local-7' });
   await w.install();
   assert.ok(w.caches.urls('soussight-shell-local-7').includes(`${ORIGIN}/main.dart.js`));
 });
@@ -341,18 +424,105 @@ test('the first install claims the open page; an update waits for the next launc
 
   const caches = first.caches;
   const update = worker({
-    version: NEXT_COMMIT,
-    active: { scriptURL: `${ORIGIN}/sw.js?v=${COMMIT}` },
-    network: defaultNetwork({ commit: NEXT_COMMIT }),
+    version: NEXT_BUILD,
+    active: { scriptURL: `${ORIGIN}/sw.js?v=${BUILD}` },
+    network: defaultNetwork({ deploy: deployOf(NEXT_BUILD) }),
     caches,
   });
   await update.install();
-  assert.deepEqual((await caches.keys()).sort(), [`soussight-shell-${COMMIT}`, `soussight-shell-${NEXT_COMMIT}`].sort(),
+  assert.deepEqual((await caches.keys()).sort(), [`soussight-shell-${BUILD}`, `soussight-shell-${NEXT_BUILD}`].sort(),
     'the running build keeps its cache while the update waits');
   assert.equal(update.counters.skipWaiting, 0, 'never skipWaiting: no mid-session takeover');
   await update.activate();
   assert.equal(update.counters.claim, 0, 'an update never claims open pages');
-  assert.deepEqual(await caches.keys(), [`soussight-shell-${NEXT_COMMIT}`]);
+  assert.deepEqual(await caches.keys(), [`soussight-shell-${NEXT_BUILD}`]);
+});
+
+// Codex #249 finding 1: the update must open offline as completely as the
+// build it replaces, including what only the page's warm-up taught build A.
+async function warmedBuildA(caches, engine = ENGINE) {
+  const a = worker({ caches, network: defaultNetwork({ deploy: { ...deployOf(BUILD), engine, tag: 'A' } }) });
+  await a.install();
+  await a.activate();
+  await a.message({
+    type: 'soussight-warm',
+    urls: [
+      `https://www.gstatic.com/flutter-canvaskit/${engine}/chromium/canvaskit.js`,
+      `https://www.gstatic.com/flutter-canvaskit/${engine}/chromium/canvaskit.wasm`,
+      'https://fonts.gstatic.com/s/roboto/v32/regular.woff2',
+      `${ORIGIN}/assets/assets/reference-cooking/onion.jpg`,
+    ],
+  });
+  return a;
+}
+
+test('an update carries CanvasKit, fonts and learned assets forward, so it opens offline after taking over', async () => {
+  const caches = new FakeCacheStorage();
+  await warmedBuildA(caches, ENGINE);
+  const b = worker({
+    version: NEXT_BUILD,
+    active: { scriptURL: `${ORIGIN}/sw.js?v=${BUILD}` },
+    network: defaultNetwork({ deploy: { ...deployOf(NEXT_BUILD), engine: NEXT_ENGINE, tag: 'B' } }),
+    caches,
+  });
+  await b.install();
+  const fetched = b.calls.map((call) => call.url);
+  assert.ok(fetched.includes(`https://www.gstatic.com/flutter-canvaskit/${NEXT_ENGINE}/chromium/canvaskit.wasm`),
+    'CanvasKit is fetched at the new engine revision');
+  assert.ok(!fetched.some((url) => url.startsWith('https://fonts.gstatic.com/')), 'immutable fonts are copied, not re-fetched');
+  await b.activate();
+  assert.deepEqual(await caches.keys(), [`soussight-shell-${NEXT_BUILD}`], 'A is gone once B takes over');
+
+  const offlineB = worker({ version: NEXT_BUILD, caches, network: offline });
+  for (const url of [
+    `https://www.gstatic.com/flutter-canvaskit/${NEXT_ENGINE}/chromium/canvaskit.js`,
+    `https://www.gstatic.com/flutter-canvaskit/${NEXT_ENGINE}/chromium/canvaskit.wasm`,
+    'https://fonts.gstatic.com/s/roboto/v32/regular.woff2',
+    `${ORIGIN}/main.dart.js`,
+  ]) {
+    const response = await offlineB.fetch(request(url));
+    assert.ok(response && response.ok, `offline ${url}`);
+  }
+  assert.equal(await text(await offlineB.fetch(request(`${ORIGIN}/assets/assets/reference-cooking/onion.jpg`))),
+    'network:B:assets/assets/reference-cooking/onion.jpg', 'learned same-origin assets come from the new deploy');
+  assert.equal(await text(await offlineB.fetch(request(`${ORIGIN}/main.dart.js`))), 'network:B:main.dart.js');
+  assert.equal(offlineB.calls.length, 0);
+});
+
+test('an update on the same engine copies CanvasKit without downloading it again', async () => {
+  const caches = new FakeCacheStorage();
+  await warmedBuildA(caches, ENGINE);
+  const b = worker({ version: REBUILD, caches, active: {}, network: defaultNetwork({ deploy: deployOf(REBUILD) }) });
+  await b.install();
+  assert.ok(!b.calls.some((call) => call.url.includes('/flutter-canvaskit/')));
+  assert.ok(b.caches.urls(`soussight-shell-${REBUILD}`).includes(`https://www.gstatic.com/flutter-canvaskit/${ENGINE}/chromium/canvaskit.wasm`));
+});
+
+test('an update that cannot get its CanvasKit fails, keeping the running build and its cache', async () => {
+  const caches = new FakeCacheStorage();
+  await warmedBuildA(caches, ENGINE);
+  const b = worker({
+    version: NEXT_BUILD,
+    active: {},
+    network: defaultNetwork({ deploy: { ...deployOf(NEXT_BUILD), engine: NEXT_ENGINE }, fail: ['/flutter-canvaskit/'] }),
+    caches,
+  });
+  await assert.rejects(b.install(), /Failed to fetch/);
+  assert.deepEqual(await caches.keys(), [`soussight-shell-${BUILD}`]);
+  assert.ok(caches.urls(`soussight-shell-${BUILD}`).includes(`https://www.gstatic.com/flutter-canvaskit/${ENGINE}/chromium/canvaskit.wasm`));
+});
+
+test('carry-over never copies anything the routing rules would not cache', async () => {
+  const caches = new FakeCacheStorage();
+  const a = await caches.open(`soussight-shell-${BUILD}`);
+  await a.put('https://firestore.googleapis.com/v1/doc', okResponse('api'));
+  await a.put(`${ORIGIN}/api/live-session`, okResponse('api'));
+  await a.put('https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js', okResponse('old sdk'));
+  const b = worker({ version: NEXT_BUILD, caches, active: {}, network: defaultNetwork({ deploy: deployOf(NEXT_BUILD) }) });
+  await b.install();
+  const cached = caches.urls(`soussight-shell-${NEXT_BUILD}`);
+  assert.ok(!cached.some((url) => /googleapis|\/api\/|12\.0\.0/.test(url)));
+  assert.ok(!b.calls.some((call) => /googleapis|\/api\//.test(call.url)));
 });
 
 test('the worker never calls skipWaiting', () => {
@@ -417,7 +587,7 @@ test('online navigation returns the network page and leaves the cached build unt
   await worker({ caches }).install();
   const w = worker({ caches, network: async () => okResponse('fresh index') });
   assert.equal(await text(await w.fetch(request(`${ORIGIN}/`, { mode: 'navigate' }))), 'fresh index');
-  const cached = await (await caches.open(`soussight-shell-${COMMIT}`)).match(`${ORIGIN}/index.html`);
+  const cached = await (await caches.open(`soussight-shell-${BUILD}`)).match(`${ORIGIN}/index.html`);
   assert.equal(await cached.text(), 'network:index.html');
 });
 
@@ -448,7 +618,7 @@ test('version.json is network-first, falls back offline, and is never overwritte
   const timers = [];
   const online = worker({
     caches,
-    network: defaultNetwork({ commit: NEXT_COMMIT }),
+    network: defaultNetwork({ deploy: deployOf(NEXT_BUILD) }),
     setTimeoutImpl: (fn, ms) => {
       timers.push(ms);
       return setTimeout(fn, ms);
@@ -555,7 +725,15 @@ test('the worker and bootstrap carry nothing tool/check_web_bundle.sh rejects', 
 
 // ---------------------------------------------------------------- bootstrap
 
-function bootstrap({ versionJson, localBuild = '"123" /* deprecated */', fetchImpl, resources = [], controller = null, existing = null } = {}) {
+function bootstrap({
+  versionJson,
+  localBuild = `"${N}" /* deprecated */`,
+  deployedNumber = N,
+  fetchImpl,
+  resources = [],
+  controller = null,
+  existing = null,
+} = {}) {
   const listeners = new Map();
   const timers = [];
   const registered = [];
@@ -599,6 +777,7 @@ function bootstrap({ versionJson, localBuild = '"123" /* deprecated */', fetchIm
     fetch: async (url, init) => {
       fetched.push({ url, init });
       if (fetchImpl) return fetchImpl(url, init);
+      if (url.startsWith('flutter_bootstrap.js?')) return okResponse(bootstrapText({ n: deployedNumber, engine: ENGINE }));
       return okResponse(JSON.stringify(versionJson ?? { version: '1.0.0', commit: COMMIT }), 'application/json');
     },
     setTimeout: (fn, ms) => timers.push({ fn, ms }),
@@ -631,33 +810,41 @@ test('the bootstrap loads Flutter without serviceWorkerSettings, so Flutter neve
   assert.ok(page.registered.every((r) => !r.url.includes('flutter_service_worker')));
 });
 
-test('the worker is registered after the first frame, versioned by the stamped commit', async () => {
+test('the worker is registered after the first frame, versioned by the deployed commit and build number', async () => {
   const page = bootstrap();
   assert.equal(page.registered.length, 0, 'nothing registers before the first frame');
   assert.equal(page.fetched.length, 0);
   await page.firstFrame();
-  assert.deepEqual(page.registered.map((r) => r.url), [`sw.js?v=${COMMIT}`]);
+  assert.deepEqual(page.registered.map((r) => r.url), [`sw.js?v=${BUILD}`]);
   assert.equal(page.registered[0].options.updateViaCache, 'none');
-  assert.equal(page.fetched[0].url, 'version.json');
-  assert.equal(page.fetched[0].init.cache, 'no-store');
+  assert.deepEqual(page.fetched.map((f) => f.url).sort(), ['flutter_bootstrap.js?soussight-build-probe=1', 'version.json']);
+  assert.ok(page.fetched.every((f) => f.init.cache === 'no-store'));
+  assert.equal(worker().shell.routeFor(request(`${ORIGIN}/flutter_bootstrap.js?soussight-build-probe=1`)), 'passthrough');
+});
+
+test('a page running an older cached build registers the DEPLOYED build, including a rebuild of the same commit', async () => {
+  // Codex #249 finding 2: same commit, new artifact.
+  const page = bootstrap({ localBuild: `"${N}"`, deployedNumber: NEXT_N });
+  await page.firstFrame();
+  assert.deepEqual(page.registered.map((r) => r.url), [`sw.js?v=${REBUILD}`]);
 });
 
 test('a local build without a commit registers a local-<n> worker; a fresh page registers none without either', async () => {
   const local = bootstrap({ versionJson: { version: '1.0.0' } });
   await local.firstFrame();
-  assert.deepEqual(local.registered.map((r) => r.url), ['sw.js?v=local-123']);
+  assert.deepEqual(local.registered.map((r) => r.url), [`sw.js?v=local-${N}`]);
 
-  const none = bootstrap({ versionJson: { version: '1.0.0' }, localBuild: 'null /* deprecated */' });
+  const none = bootstrap({ versionJson: { version: '1.0.0' }, localBuild: 'null /* deprecated */', deployedNumber: null });
   await none.firstFrame();
   assert.deepEqual(none.registered, []);
 
-  const bogus = bootstrap({ versionJson: { commit: 'not-a-sha' }, localBuild: 'null' });
+  const bogus = bootstrap({ versionJson: { commit: 'not-a-sha' }, localBuild: 'null', deployedNumber: null });
   await bogus.firstFrame();
   assert.deepEqual(bogus.registered, []);
 });
 
 test('an unversionable deploy retires an existing worker instead of leaving an old build cached', async () => {
-  const page = bootstrap({ versionJson: { version: '1.0.0' }, localBuild: 'null', existing: { scope: SCOPE } });
+  const page = bootstrap({ versionJson: { version: '1.0.0' }, localBuild: 'null', deployedNumber: null, existing: { scope: SCOPE } });
   await page.firstFrame();
   assert.deepEqual(page.registered.map((r) => r.url), ['sw.js?v=off']);
   assert.equal(page.posted.length, 0, 'nothing to warm for an inert worker');
