@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 /// Household lifecycle messages. Text is composed by the server from fixed
@@ -178,28 +179,40 @@ typedef DinnerMessageSender = Future<DinnerMessageResult> Function(
   DinnerMessageRequest request,
 );
 
+/// The HTTP POST used by [sendDinnerMessage]; [http.post] in production.
+typedef DinnerMessagePost = Future<http.Response> Function(
+  Uri url, {
+  Map<String, String>? headers,
+  Object? body,
+});
+
+/// [auth], [appCheck] and [post] are test seams; production passes none of
+/// them and uses the Firebase singletons and [http.post].
 Future<DinnerMessageResult> sendDinnerMessage(
-  DinnerMessageRequest request,
-) async {
+  DinnerMessageRequest request, {
+  @visibleForTesting FirebaseAuth? auth,
+  @visibleForTesting FirebaseAppCheck? appCheck,
+  @visibleForTesting DinnerMessagePost? post,
+}) async {
   const configured = String.fromEnvironment('DINNER_MESSAGE_URL');
   final endpoint = configured.isEmpty
       ? Uri.base.resolve('/api/dinner-ready')
       : Uri.parse(configured);
-  final idToken = await FirebaseAuth.instance.currentUser?.getIdToken();
-  final appCheck = await FirebaseAppCheck.instance.getToken();
-  if (idToken == null || appCheck == null) {
+  final idToken = await (auth ?? FirebaseAuth.instance).currentUser
+      ?.getIdToken();
+  final appCheckToken = await (appCheck ?? FirebaseAppCheck.instance)
+      .getToken();
+  if (idToken == null || appCheckToken == null) {
     throw StateError('Sign-in required.');
   }
-  final response = await http
-      .post(
-        endpoint,
-        headers: {
-          'Authorization': 'Bearer $idToken',
-          'X-Firebase-AppCheck': appCheck,
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(request.toJson()),
-      )
-      .timeout(const Duration(seconds: 25));
+  final response = await (post ?? http.post)(
+    endpoint,
+    headers: {
+      'Authorization': 'Bearer $idToken',
+      'X-Firebase-AppCheck': appCheckToken,
+      'Content-Type': 'application/json',
+    },
+    body: jsonEncode(request.toJson()),
+  ).timeout(const Duration(seconds: 25));
   return parseDinnerMessageResponse(response);
 }
