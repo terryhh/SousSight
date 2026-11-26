@@ -3,6 +3,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../app/hybrid_runtime.dart';
+import 'illustration_consent.dart';
 import 'illustration_controller.dart';
 import 'illustration_generator.dart';
 import 'illustration_ledger.dart';
@@ -34,9 +35,9 @@ IllustrationController illustrationControllerFor(
     cloudRoutes: hybrid.cloudRoutes,
     privacy: hybrid.privacy,
     isOnline: hybrid.isOnline,
-    consent: DialogConsentGate(
+    consent: IllustrationConsentGate(
       navigatorKey: hybrid.navigatorKey,
-      cloudModel: generator?.model ?? kIllustrationModel,
+      model: generator?.model ?? kIllustrationModel,
     ),
     ledger: InferenceLedgerIllustrations(hybrid.ledger),
     generator: generator ?? FirebaseAiIllustrationGenerator(),

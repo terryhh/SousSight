@@ -168,7 +168,7 @@ void main() {
     // The prompt names the image model.
     expect(find.byKey(const ValueKey('consent-dialog')), findsOneWidget);
     expect(find.textContaining('gemini-nano-banana-2.1'), findsOneWidget);
-    await tester.tap(find.text("Don't send"));
+    await tester.tap(find.text('Keep it on my phone'));
     await tester.pumpAndSettle();
     expect(find.text('Nothing was sent.'), findsOneWidget);
     expect(

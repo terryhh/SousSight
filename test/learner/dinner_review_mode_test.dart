@@ -157,7 +157,10 @@ void main() {
         find.widgetWithText(FilledButton, 'Confirm simulated send'),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Enter 1–120 minutes.'), findsOneWidget);
+      expect(
+        find.text('Enter 1–120 minutes, or leave it blank.'),
+        findsOneWidget,
+      );
       expect(fake.sent, isEmpty);
 
       await tester.enterText(minutesField(), '25');

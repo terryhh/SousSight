@@ -24,11 +24,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
-import 'package:soussight/app/hybrid_runtime.dart' show DialogConsentGate;
 import 'package:soussight/app/online_status.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/data/firebase_services.dart';
+import 'package:soussight/illustrations/illustration_consent.dart';
 import 'package:soussight/illustrations/illustration_controller.dart';
 import 'package:soussight/illustrations/illustration_generator.dart';
 import 'package:soussight/illustrations/illustration_ledger.dart';
@@ -214,9 +214,9 @@ class _GeneratorAppState extends State<_GeneratorApp> {
       cloudRoutes: CloudRoutes.parse('images'),
       privacy: InMemoryPrivacyPreferences(),
       isOnline: deviceOnline,
-      consent: DialogConsentGate(
+      consent: IllustrationConsentGate(
         navigatorKey: _navigatorKey,
-        cloudModel: kIllustrationModel,
+        model: kIllustrationModel,
       ),
       ledger: InferenceLedgerIllustrations(ledger),
       generator: FirebaseAiIllustrationGenerator(),

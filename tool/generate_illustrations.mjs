@@ -12,7 +12,7 @@
 // premade: writes assets/illustrations/<recipe>/<key>.jpg (resized to 800 px
 //          wide, JPEG quality 70, with macOS `sips`) and merges each image's
 //          prompt, model and date into assets/illustrations/manifest.json.
-// gate:    clicks "Show me what it should look like", then "Allow once" in the
+// gate:    clicks "Show me what it should look like", then "Send this once" in the
 //          consent dialog, waits for the labelled illustration, and saves a
 //          screenshot plus the ledger legs to <evidence-dir>.
 //
@@ -75,7 +75,7 @@ const page = await browser.newPage({ viewport: { width: 900, height: 1100 } });
 let modelCalls = 0;
 const statuses = [];
 // No model request passes until the page has announced a mode this run
-// accepts, and (for the gate) until the cook's "Allow once" is clicked.
+// accepts, and (for the gate) until the cook's "Send this once" is clicked.
 let announced = null;
 let armed = false;
 await page.route('**/*', (route) => {
@@ -205,7 +205,7 @@ async function gate(evidenceDir) {
     return false;
   }
   await ask.click();
-  const allow = page.getByRole('button', { name: 'Allow once' });
+  const allow = page.getByRole('button', { name: 'Send this once' });
   await allow.waitFor({ timeout: 30_000 });
   await page.screenshot({ path: join(evidenceDir, 'gate-02-consent.png') });
   armed = true; // the one consented request may pass now

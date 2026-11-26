@@ -88,6 +88,106 @@ void main() {
     );
   });
 
+  group('internal-doneness, temperature and safety claims (SS-113)', () {
+    const claims = [
+      // Codex's probe, verbatim.
+      'The chicken is cooked all the way through.',
+      'The chicken is cooked all the way.',
+      'Cooked-through and juicy.',
+      'Thoroughly cooked chicken.',
+      'The pork is fully done.',
+      'It looks done.',
+      'It’s done now.',
+      'The burger is done inside.',
+      'Done in the middle.',
+      'No longer pink inside.',
+      'The chicken is no longer pink.',
+      'Still pink in the centre.',
+      'Raw in the center.',
+      'Opaque throughout.',
+      'Right through to the bone.',
+      'The thigh has reached 74 degrees.',
+      'Reached 165F.',
+      'About 165 °F.',
+      'Internal temp looks right.',
+      'Cooked internally.',
+      'The interior is done.',
+      'Safe to eat.',
+      'Safely cooked.',
+      'Ready to eat.',
+      'Fine to serve.',
+      'No salmonella risk.',
+      'The juices run clear.',
+      'Medium-rare steak.',
+      'The rice is underdone.',
+      'Perfect doneness.',
+    ];
+    const visibleOnly = [
+      'Golden on top.',
+      'The edges look crisp.',
+      'Onions look soft and translucent.',
+      'Small bubbles across the surface of the sauce.',
+      'Steam rising from the pot.',
+      'Browned on the outside with a dark crust.',
+      'The cheese has melted and is bubbling.',
+      'Pink shrimp curled into a C shape.',
+      'The pancake is set at the edges.',
+      'The pasta water is at a rolling boil.',
+      'Dark sear marks on one side.',
+    ];
+
+    for (final claim in claims) {
+      test('redacts: $claim', () {
+        for (final state in ['ready', 'not_yet']) {
+          final parsed = parseWatchJson(verdictJson(state, see: claim));
+          expect(parsed.redacted, isTrue, reason: '$state: $claim');
+          expect(parsed.whatISee, isNot(contains(claim)));
+          final message = WatchVerdict(
+            state: parsed.state,
+            direction: parsed.direction,
+            whatISee: parsed.whatISee,
+            redacted: parsed.redacted,
+            watchId: 'w',
+            stepId: 'a',
+            sessionId: 's',
+            frameCapturedAt: DateTime(2026),
+            source: WatchVerdictSource.onDevice,
+          ).message.toLowerCase();
+          expect(message, isNot(contains(claim.toLowerCase())));
+          expect(message, isNot(contains('cooked all the way')));
+          expect(message, isNot(contains('cooked through')));
+        }
+      });
+    }
+
+    for (final seen in visibleOnly) {
+      test('keeps visible-cue wording: $seen', () {
+        final parsed = parseWatchJson(verdictJson('ready', see: seen));
+        expect(parsed.state, WatchState.ready);
+        expect(parsed.redacted, isFalse, reason: seen);
+        expect(parsed.whatISee, seen);
+      });
+    }
+
+    test('Codex probe: ready stays visible-cue only', () {
+      final parsed = parseWatchJson(
+        '{"state":"ready","direction":"none",'
+        '"whatISee":"The chicken is cooked all the way through."}',
+      );
+      expect(parsed.state, WatchState.ready);
+      expect(parsed.redacted, isTrue);
+      expect(
+        parsed.whatISee,
+        'I can describe how it looks, not how it is inside.',
+      );
+    });
+
+    test('claimsUnsupported normalises curly apostrophes', () {
+      expect(claimsUnsupported('It’s done.'), isTrue);
+      expect(claimsUnsupported('It’s golden.'), isFalse);
+    });
+  });
+
   test('prompt carries the step cue and stays bounded', () {
     final long = RecipeStep(
       id: 'x',

@@ -116,7 +116,15 @@ void main() {
         recipeTitle: 'Chickpea wraps',
         minutes: 25,
       ),
-      'SousSight: Your cook started Chickpea wraps. Dinner in about 25 min.',
+      "SousSight: Dinner's started, about 25 minutes to go. "
+      'Your cook is making Chickpea wraps.',
+    );
+    expect(
+      composeDinnerMessage(
+        kind: DinnerKind.started,
+        recipeTitle: 'Chickpea wraps',
+      ),
+      "SousSight: Dinner's started. Your cook is making Chickpea wraps.",
     );
     expect(
       cleanTemplateText(' <b>Pad\u0007 Thai</b> http://x.co/y ', 60),
@@ -125,6 +133,112 @@ void main() {
     expect(
       cleanTemplateText('Mac & cheese!\nvisit evil.example', 60),
       'Mac & cheese! visit evil example',
+    );
+  });
+
+  test(
+    'the fixed template text is GSM-7 only; ASCII slots fit one segment',
+    () {
+      // The GSM 03.38 basic character set (no extension table, no em dash or
+      // curly quotes, which would force UCS-2 and 70-character segments).
+      const gsm7 =
+          '@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?'
+          '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+      final messages = [
+        composeDinnerMessage(kind: DinnerKind.ready, recipeTitle: 'Soup'),
+        for (final minutes in [null, 1, 25, 120])
+          for (final cookName in [null, 'Terry'])
+            composeDinnerMessage(
+              kind: DinnerKind.started,
+              recipeTitle: 'Chickpea wraps',
+              minutes: minutes,
+              cookName: cookName,
+            ),
+      ];
+      for (final message in messages) {
+        final outside = message.runes
+            .map(String.fromCharCode)
+            .where((c) => !gsm7.contains(c))
+            .toList();
+        expect(outside, isEmpty, reason: message);
+        expect(message.length, lessThanOrEqualTo(160), reason: message);
+      }
+    },
+  );
+
+  test('accented names in the GSM-7 alphabet keep the message GSM-7', () {
+    // Same fixture as functions/test/dinner-ready.test.js.
+    const gsm7 =
+        '@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?'
+        '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+    List<String> outside(String text) => text.runes
+        .map(String.fromCharCode)
+        .where((c) => !gsm7.contains(c))
+        .toList();
+    final message = composeDinnerMessage(
+      kind: DinnerKind.started,
+      recipeTitle: 'Paella',
+      minutes: 25,
+      cookName: 'René',
+    );
+    expect(
+      message,
+      "SousSight: Dinner's started, about 25 minutes to go. "
+      'René is making Paella.',
+    );
+    expect(outside(message), isEmpty);
+    expect(message.length, lessThanOrEqualTo(160));
+    final brulee = composeDinnerMessage(
+      kind: DinnerKind.started,
+      recipeTitle: 'Crème brûlée',
+      minutes: 25,
+      cookName: 'René',
+    );
+    // û is outside GSM-7: that title alone makes the SMS UCS-2.
+    expect(outside(brulee), ['û']);
+  });
+
+  test('Unicode names and titles pass through; only fixed text is GSM-7', () {
+    // Same fixture as functions/test/dinner-ready.test.js.
+    const gsm7 =
+        '@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?'
+        '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+    List<String> outside(String text) => text.runes
+        .map(String.fromCharCode)
+        .where((c) => !gsm7.contains(c))
+        .toList();
+    final cookName = '豆腐' * 15;
+    final message = composeDinnerMessage(
+      kind: DinnerKind.started,
+      recipeTitle: '豆腐汤',
+      minutes: 120,
+      cookName: cookName,
+    );
+    expect(
+      message,
+      "SousSight: Dinner's started, about 120 minutes to go. "
+      '$cookName is making 豆腐汤.',
+    );
+    final fixed = message.replaceFirst(cookName, '').replaceFirst('豆腐汤', '');
+    expect(outside(fixed), isEmpty);
+    // A Unicode slot makes the SMS UCS-2 (70 characters a segment): the
+    // one-segment claim covers only the fixed text and ASCII slots.
+    expect(outside(message), isNotEmpty);
+    expect(message.length, greaterThan(70));
+  });
+
+  test('a started request without an estimate leaves minutes out', () {
+    const request = DinnerMessageRequest(
+      sessionId: 's',
+      notificationId: 'notice-123',
+      recipient: '+14075550100',
+      kind: DinnerKind.started,
+      recipeTitle: 'Soup',
+    );
+    expect(request.toJson().containsKey('minutes'), isFalse);
+    expect(
+      request.preview,
+      "SousSight: Dinner's started. Your cook is making Soup.",
     );
   });
 
@@ -143,6 +257,8 @@ void main() {
       'recipient': '+14075550100',
       'kind': 'ready',
       'recipeTitle': 'Soup',
+      // The wording the client previewed (server template version 2).
+      'templateVersion': 2,
     });
   });
 

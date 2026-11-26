@@ -46,7 +46,8 @@ service cloud.firestore {
             'learnerId', 'recipeId', 'recipeVersion', 'ingredients',
             'substitutions', 'currentStepId', 'completedStepIds', 'revision',
             'createdAt', 'updatedAt', 'language', 'timerDeadline',
-            'timerLabel', 'timerId', 'confirmedFacts', 'appliedOpIds'
+            'timerLabel', 'timerId', 'confirmedFacts', 'appliedOpIds',
+            'finishedTimerStepIds'
           ])
           && shortText(data.learnerId, 128)
           && shortText(data.recipeId, 128) && data.recipeId.size() > 0
@@ -64,6 +65,8 @@ service cloud.firestore {
           && optionalText(data.get('timerId', null), 128)
           && data.get('confirmedFacts', []) is list
           && data.get('confirmedFacts', []).size() <= 100
+          && data.get('finishedTimerStepIds', []) is list
+          && data.get('finishedTimerStepIds', []).size() <= 100
           && validOpIds(data.get('appliedOpIds', []));
       }
 
@@ -92,7 +95,7 @@ service cloud.firestore {
         && changed().hasOnly([
           'ingredients', 'substitutions', 'currentStepId', 'completedStepIds',
           'revision', 'updatedAt', 'language', 'timerDeadline', 'timerLabel',
-          'timerId', 'confirmedFacts', 'appliedOpIds'
+          'timerId', 'confirmedFacts', 'appliedOpIds', 'finishedTimerStepIds'
         ])
         && request.resource.data.revision >= resource.data.revision;
 
