@@ -120,7 +120,41 @@ void main() {
       'The juices run clear.',
       'Medium-rare steak.',
       'The rice is underdone.',
+      // Codex, #271 review, verbatim.
+      'meets all food safeguards',
+      'The rice is overdone.',
+      'Ya está hecho.',
+      'Los fideos están hechos.',
+      'El filete está muy hecho.',
+      // Codex, #271 review: non-visual judgements.
+      'It looks edible.',
+      'there are no peanuts',
+      'The sauce contains nuts.',
+      'Free from dairy.',
+      'Es comestible.',
       'Perfect doneness.',
+      // Codex, second round (#269 follow-up), verbatim.
+      'cooked to the bone',
+      'well-done',
+      'gluten-free',
+      'El pollo está completamente cocido',
+      // Orchestrator: the only observation on a ready verdict.
+      'The chicken is done and ready to eat',
+      // More doneness wording and Spanish basics.
+      'Overcooked edges.',
+      'The steak is well done.',
+      'Nut-free crust.',
+      'May contain peanuts.',
+      'Dairy free sauce.',
+      'La carne está bien hecha.',
+      'Es seguro para comer.',
+      'Ya está segura.',
+      'Pan sin gluten.',
+      'Crudo por dentro.',
+      'Está rosado por dentro.',
+      'La temperatura es de 75 grados.',
+      'Listo para comer.',
+      'Contiene alérgenos.',
     ];
     const visibleOnly = [
       'Golden on top.',
@@ -134,6 +168,13 @@ void main() {
       'The pancake is set at the edges.',
       'The pasta water is at a rolling boil.',
       'Dark sear marks on one side.',
+      'Free of lumps and smooth.',
+      'The onions are cooking in the pan.',
+      'Las cebollas están doradas.',
+      'Burbujas pequeñas en la salsa.',
+      'Bordes crujientes.',
+      // Codex, #271 review: "hecho" as an auxiliary is a visible cue.
+      'Se han hecho burbujas en la superficie',
     ];
 
     for (final claim in claims) {
@@ -141,6 +182,12 @@ void main() {
         for (final state in ['ready', 'not_yet']) {
           final parsed = parseWatchJson(verdictJson(state, see: claim));
           expect(parsed.redacted, isTrue, reason: '$state: $claim');
+          // A redacted positive abstains; not_yet keeps its state.
+          expect(
+            parsed.state,
+            state == 'ready' ? WatchState.unsure : WatchState.notYet,
+            reason: '$state: $claim',
+          );
           expect(parsed.whatISee, isNot(contains(claim)));
           final message = WatchVerdict(
             state: parsed.state,
@@ -169,17 +216,103 @@ void main() {
       });
     }
 
-    test('Codex probe: ready stays visible-cue only', () {
+    test('Codex probe: a redacted ready abstains as unsure', () {
       final parsed = parseWatchJson(
         '{"state":"ready","direction":"none",'
         '"whatISee":"The chicken is cooked all the way through."}',
       );
-      expect(parsed.state, WatchState.ready);
+      expect(parsed.state, WatchState.unsure);
       expect(parsed.redacted, isTrue);
       expect(
         parsed.whatISee,
         'I can describe how it looks, not how it is inside.',
       );
+    });
+
+    test('a redacted unsure stays unsure', () {
+      final parsed = parseWatchJson(verdictJson('unsure', see: 'Safe to eat.'));
+      expect(parsed.state, WatchState.unsure);
+      expect(parsed.redacted, isTrue);
+    });
+
+    test('a redacted not_yet drops its heat adjustment', () {
+      for (final direction in ['more', 'less']) {
+        final parsed = parseWatchJson(
+          verdictJson(
+            'not_yet',
+            direction: direction,
+            see: 'Not cooked through yet.',
+          ),
+        );
+        expect(parsed.state, WatchState.notYet);
+        expect(parsed.direction, WatchDirection.none, reason: direction);
+        expect(parsed.redacted, isTrue);
+        final message = WatchVerdict(
+          state: parsed.state,
+          direction: parsed.direction,
+          whatISee: parsed.whatISee,
+          watchId: 'w',
+          stepId: 'a',
+          sessionId: 's',
+          frameCapturedAt: DateTime(2026),
+          source: WatchVerdictSource.onDevice,
+        ).message;
+        expect(message, isNot(contains('heat')));
+        expect(message, isNot(contains('keep going')));
+      }
+      // An unredacted not_yet keeps its direction.
+      expect(
+        parseWatchJson(
+          verdictJson('not_yet', direction: 'less', see: 'Very dark edges.'),
+        ).direction,
+        WatchDirection.less,
+      );
+    });
+
+    test('a claim past the display clip is still caught', () {
+      final long = '${'Golden edges on soft onions. ' * 12}Safe to eat.';
+      expect(long.length, greaterThan(280));
+      final parsed = parseWatchJson(verdictJson('ready', see: long));
+      expect(parsed.redacted, isTrue);
+      expect(parsed.state, WatchState.unsure);
+    });
+
+    test('ready must relate to the step cue when the cue is known', () {
+      const cue = 'Onions are soft and golden at the edges.';
+      for (final seen in [
+        'Golden edges.',
+        'The onions look soft.',
+        'Edges have turned golden brown.',
+      ]) {
+        final parsed = parseWatchJson(
+          verdictJson('ready', see: seen),
+          cue: cue,
+        );
+        expect(parsed.state, WatchState.ready, reason: seen);
+      }
+      for (final seen in [
+        'A pan on the stove.',
+        'It looks like it is there now.',
+        'Steam rising from the pot.',
+      ]) {
+        final parsed = parseWatchJson(
+          verdictJson('ready', see: seen),
+          cue: cue,
+        );
+        expect(parsed.state, WatchState.unsure, reason: seen);
+        expect(parsed.whatISee, seen);
+        expect(parsed.redacted, isFalse);
+      }
+      // not_yet and unsure are not held to the cue.
+      expect(
+        parseWatchJson(
+          verdictJson('not_yet', direction: 'more', see: 'A pan on the stove.'),
+          cue: cue,
+        ).state,
+        WatchState.notYet,
+      );
+      expect(relatesToCue('Sauce coats the spoon.', 'Coats a spoon.'), isTrue);
+      expect(relatesToCue('Looks like this.', 'Looks like that.'), isFalse);
     });
 
     test('claimsUnsupported normalises curly apostrophes', () {
