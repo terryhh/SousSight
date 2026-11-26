@@ -405,8 +405,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
-    expect(find.text('Voice list · Google cloud'), findsOneWidget);
-    expect(find.text('Meal match · on this device'), findsOneWidget);
+    expectLeg('Voice list', 'Cloud · Gemini');
+    expectLeg('Meal match', 'On this device');
     expect(find.text(kPantryVoiceSkippedNotice), findsOneWidget);
   });
 
@@ -419,7 +419,7 @@ void main() {
     await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
     expect(find.text('Okay, your list was not sent.'), findsOneWidget);
-    expect(find.text('Voice list · Google cloud'), findsOneWidget);
+    expectLeg('Voice list', 'Cloud · Gemini');
   });
 
   testWidgets('rehearsal results show a simulated leg', (tester) async {
@@ -428,7 +428,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
-    expect(find.text('Meal match · simulated, no model used'), findsOneWidget);
+    expectLeg('Meal match', 'Simulated');
   });
 
   testWidgets(
@@ -480,4 +480,12 @@ class _SlowMedia extends _FakeMedia {
     stopped = true;
     started = false;
   }
+}
+
+/// One leg row: what ran, and the trust badge's chip for where it ran.
+void expectLeg(String what, String where) {
+  Finder inLegs(Finder f) =>
+      find.descendant(of: find.byKey(const ValueKey('pantry-legs')), matching: f);
+  expect(inLegs(find.text(what)), findsOneWidget);
+  expect(inLegs(find.text(where)), findsWidgets);
 }

@@ -15,6 +15,8 @@ import '../ai/cooking_research_client.dart';
 import '../ai/hybrid/hybrid_dispatcher.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_ledger.dart';
+import '../label/household_allergens.dart';
+import '../label/label_check_controller.dart';
 import '../trust/ledger_source.dart';
 import '../trust/privacy_preferences.dart';
 import '../trust/trust_labels.dart';
@@ -36,11 +38,13 @@ const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 /// configure is not retried here; `generate` then fails as the bridge says.
 class ConfiguredHybridInference implements HybridInference {
   ConfiguredHybridInference(this.inner, HybridConfig config)
-    : _configured = inner.configure(config).then<void>(
-        (_) {},
-        onError: (Object error) =>
-            debugPrint('Hybrid configure failed (${error.runtimeType})'),
-      );
+    : _configured = inner
+          .configure(config)
+          .then<void>(
+            (_) {},
+            onError: (Object error) =>
+                debugPrint('Hybrid configure failed (${error.runtimeType})'),
+          );
 
   final HybridInference inner;
   final Future<void> _configured;
@@ -241,13 +245,12 @@ class FirebaseAiCloudSender implements CloudFallbackSender {
   Future<void> cancel(String requestId) async => _cancelled.add(requestId);
 }
 
-typedef CloudGenerate =
-    Future<String?> Function({
-      required String model,
-      required String? systemInstruction,
-      required Content content,
-      required GenerationConfig config,
-    });
+typedef CloudGenerate = Future<String?> Function({
+  required String model,
+  required String? systemInstruction,
+  required Content content,
+  required GenerationConfig config,
+});
 
 /// Call only after Firebase and App Check have been initialized by the app.
 Future<String?> _generateWithFirebase({
@@ -336,6 +339,21 @@ class HybridRuntime {
   final GlobalKey<NavigatorState> navigatorKey;
   final bool Function() isOnline;
   final String cloudModel;
+
+  /// The household's allergens for label check. On this device only.
+  final HouseholdAllergens household = InMemoryHouseholdAllergens();
+
+  /// A fresh label-check controller (the sheet disposes it on close).
+  LabelCheckController labelCheck(String sessionId) => LabelCheckController(
+    dispatcher: dispatcher,
+    privacy: privacy,
+    household: household,
+    capabilities: inference.capabilities,
+    sessionId: sessionId,
+    consentGate: consent,
+    cloudRoutes: cloudRoutes,
+    isOnline: isOnline,
+  );
 
   String? _cookingSessionId;
 

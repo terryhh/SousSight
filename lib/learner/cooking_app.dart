@@ -7,15 +7,25 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
+import '../ai/hybrid/hybrid_types.dart';
+import '../app/hybrid_controls.dart';
+import '../app/hybrid_runtime.dart';
 import '../app/services_scope.dart';
+import '../coach_lite/coach_lite.dart';
+import '../coach_lite/timer_suggestion_card.dart';
 import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
-import '../data/live_token_provider.dart';
 import '../genui/cooking_ui.dart';
 import '../live/browser_live_media.dart';
-import '../live/ephemeral_live_transport.dart';
+import '../live/live_backend.dart';
 import '../live/live_controller.dart';
+import '../label/label_check_controller.dart';
+import '../label/label_check_sheet.dart';
+import '../trust/inference_source_badge.dart';
+import '../watch/capture_owner.dart';
+import '../watch/local_watch_controller.dart';
+import '../watch/watch_service.dart';
 import '../core/analytics.dart';
 import '../core/models.dart';
 import '../pantry/pantry_flow.dart';
@@ -65,6 +75,7 @@ class CookingApp extends StatelessWidget {
     this.isDemo = false,
     this.pantryFirst = false,
     this.initialRecipeId,
+    this.hybrid,
   });
   final AppServices services;
   final bool isDemo;
@@ -73,18 +84,24 @@ class CookingApp extends StatelessWidget {
   /// [initialRecipeId] deep link skips straight to that recipe.
   final bool pantryFirst;
   final String? initialRecipeId;
+
+  /// Shared hybrid inference services (real builds). Null in rehearsal.
+  final HybridRuntime? hybrid;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'SousSight',
     debugShowCheckedModeBanner: false,
     theme: cookingTheme,
+    // The consent dialog opens on this navigator.
+    navigatorKey: hybrid?.navigatorKey,
     home: pantryFirst
         ? PantryFlow(
             services: services,
             isDemo: isDemo,
             initialRecipeId: initialRecipeId,
+            hybrid: hybrid,
           )
-        : CookingScreen(services: services, isDemo: isDemo),
+        : CookingScreen(services: services, isDemo: isDemo, hybrid: hybrid),
   );
 }
 
@@ -113,9 +130,14 @@ class CookingScreen extends StatefulWidget {
     this.dinnerStatus,
     this.recipe,
     this.onBackToPantry,
+    this.hybrid,
   });
   final AppServices services;
   final bool isDemo;
+
+  /// Shared hybrid inference services. Null in rehearsal and in tests that
+  /// build their own coordinator.
+  final HybridRuntime? hybrid;
 
   /// The recipe chosen at runtime; defaults to the bundled build-time recipe.
   final Recipe? recipe;
@@ -130,26 +152,78 @@ class CookingScreen extends StatefulWidget {
   State<CookingScreen> createState() => _CookingScreenState();
 }
 
+/// The one "Watch my food" service for a cooking session: an on-device watch
+/// over a camera-only capture of [live]'s media, or the Live watch when Live
+/// is connected (SS-067).
+@visibleForTesting
+WatchService buildWatchService(
+  HybridRuntime hybrid,
+  LiveCookingController live,
+) {
+  late final LocalWatchController local;
+  local = LocalWatchController(
+    dispatcher: hybrid.dispatcher,
+    capture: CaptureOwner(live.media),
+    // The "Ask the cloud about this photo" offer exists only when the build
+    // approves cloud help; the prompt shows the exact frame.
+    consentGate: hybrid.cloudRoutes.allows(CloudRoute.hybridFallback)
+        ? FramePreviewConsentGate(
+            hybrid.consent,
+            () => local.consentFrame?.bytes,
+          )
+        : null,
+    privacy: hybrid.privacy,
+  );
+  return WatchService(
+    local: local,
+    startLiveWatch: live.startWatch,
+    stopLiveWatch: live.stopWatch,
+    localVisionSupported: () async =>
+        (await hybrid.inference.capabilities()).local?.supportsImage ?? false,
+  );
+}
+
 /// Owns a cooking session's lifetime; a new cook gets a fresh screen and coordinator.
 class _CookingScreenState extends State<CookingScreen> {
   late CookingCoordinator _cook;
   bool _initialized = false;
   bool _startingNewCook = false;
 
-  CookingCoordinator _createCoordinator() =>
-      widget.createCoordinator?.call() ??
-      CookingCoordinator(
-        services: widget.services,
+  CookingCoordinator _createCoordinator() {
+    final custom = widget.createCoordinator?.call();
+    if (custom != null) return custom;
+    final hybrid = widget.isDemo ? null : widget.hybrid;
+    return CookingCoordinator(
+      services: widget.services,
+      isDemo: widget.isDemo,
+      recipe: widget.recipe,
+      research: widget.isDemo
+          ? FakeCookingResearchClient()
+          : GeminiCookingResearchClient(),
+      transportFactory: liveTransportFactory(
         isDemo: widget.isDemo,
-        recipe: widget.recipe,
-        research: widget.isDemo
-            ? FakeCookingResearchClient()
-            : GeminiCookingResearchClient(),
-        transportFactory: widget.isDemo
-            ? DemoLiveTransport.new
-            : () => EphemeralGeminiLiveTransport(tokenProvider: fetchLiveToken),
-        media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
-      );
+        cloudRoutes: hybrid?.cloudRoutes,
+      ),
+      media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
+      coachLite: hybrid == null
+          ? null
+          : CoachLite(
+              dispatcher: hybrid.dispatcher,
+              privacy: hybrid.privacy,
+              cloudRoutes: hybrid.cloudRoutes,
+              isOnline: hybrid.isOnline,
+            ),
+      // Rehearsal keeps the Live-only watch: no local watch on DemoLiveMedia.
+      watchServiceFactory: hybrid == null
+          ? null
+          : (live) => buildWatchService(hybrid, live),
+      onSessionReady: hybrid?.bindCookingSession,
+      researchAllowed: hybrid == null
+          ? null
+          : () => hybrid.cloudRoutes.allows(CloudRoute.research),
+      recordCloudLeg: hybrid?.recordCloudLeg,
+    );
+  }
 
   @override
   void initState() {
@@ -173,8 +247,14 @@ class _CookingScreenState extends State<CookingScreen> {
             'stop, and the current timer workspace will close.',
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Keep cooking')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Start new cook')),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Keep cooking'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Start new cook'),
+            ),
           ],
         ),
       );
@@ -201,9 +281,13 @@ class _CookingScreenState extends State<CookingScreen> {
       });
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not start a new cook. Your current cook is still available. Try again.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Could not start a new cook. Your current cook is still available. Try again.',
+            ),
+          ),
+        );
       }
     } finally {
       candidate?.dispose();
@@ -223,6 +307,7 @@ class _CookingScreenState extends State<CookingScreen> {
     startingNewCook: _startingNewCook,
     sendDinner: widget.sendDinner,
     dinnerStatus: widget.dinnerStatus,
+    hybrid: widget.isDemo ? null : widget.hybrid,
   );
 
   @override
@@ -244,7 +329,9 @@ class _CookingSessionScreen extends StatefulWidget {
     required this.startingNewCook,
     required this.sendDinner,
     required this.dinnerStatus,
+    this.hybrid,
   });
+  final HybridRuntime? hybrid;
   final AppServices services;
   final bool isDemo;
   final CookingCoordinator cook;
@@ -282,6 +369,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     }
     return result;
   }
+
   late final DinnerStatusSource _dinnerStatus =
       widget.dinnerStatus ??
       dinnerStatusFor(
@@ -304,6 +392,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
 
   void _onChange() {
     if (!mounted) return;
+    if (cook.session?.id case final id?) _label?.setSession(id);
     if (cook.alert == null) _announcedAlert = null;
     if (cook.alert != null && cook.alert != _announcedAlert) {
       _announcedAlert = cook.alert;
@@ -339,6 +428,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
       unawaited(cook.live.stop());
+      cook.watchService?.onBackgrounded();
     }
     if (state == AppLifecycleState.resumed) cook.ui.refreshTimers();
   }
@@ -357,8 +447,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     setState(() => _messagePending = true);
     final text = _message.text;
     try {
-      await cook.say(text);
-      if (cook.live.isActive) _message.clear();
+      final accepted = await cook.say(text);
+      if (accepted && mounted) _message.clear();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -520,9 +610,60 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       ),
       DraftRecipeChip(recipe: cook.recipe),
       AllergenChip(recipe: cook.recipe),
+      if (widget.hybrid case final hybrid?)
+        HybridHeaderButtons(
+          hybrid: hybrid,
+          onLabel: cook.session == null ? null : () => _openLabel(hybrid),
+        ),
       HowItWorksButton(isDemo: widget.isDemo),
     ],
   );
+
+  /// The open label check, told when the cooking session changes under it.
+  LabelCheckController? _label;
+
+  Future<void> _openLabel(HybridRuntime hybrid) async {
+    final sessionId = cook.session?.id;
+    if (sessionId == null) return;
+    final controller = hybrid.labelCheck(sessionId);
+    _label = controller;
+    try {
+      await showLabelCheckSheet(
+        context,
+        controller: controller,
+        takePhoto: _labelPhoto,
+      );
+    } finally {
+      if (identical(_label, controller)) _label = null;
+    }
+  }
+
+  /// One label photo. While Live holds the camera, its latest frame (already
+  /// shared with Live); otherwise a camera-only capture through the
+  /// session's CaptureOwner, released straight after.
+  Future<Uint8List?> _labelPhoto() async {
+    if (cook.live.isActive) return cook.live.latestFrame;
+    final service = cook.watchService;
+    if (service == null) return null;
+    final capture = service.capture;
+    Future<Uint8List?> nextFrame() => capture.media.timedFrames
+        .skip(2)
+        .first
+        .then<Uint8List?>((frame) => frame.bytes)
+        .timeout(const Duration(seconds: 8), onTimeout: () => null);
+    if (capture.mode == CaptureMode.localCamera) return nextFrame();
+    CaptureLease? lease;
+    try {
+      lease = await capture.acquireLocalCamera();
+      if (lease == null) return null;
+      final bytes = await nextFrame();
+      return capture.isCurrent(lease) ? bytes : null;
+    } catch (_) {
+      return null;
+    } finally {
+      if (lease != null && capture.isCurrent(lease)) await capture.release();
+    }
+  }
 
   Widget _cameraColumn({bool includeConversation = true}) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -624,7 +765,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                         ? 'SIMULATED'
                         : cook.live.isActive
                         ? _liveLabel
-                        : 'CAMERA OFF',
+                        : (cook.watchService?.captureLabel?.toUpperCase() ??
+                              'CAMERA OFF'),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,
@@ -644,16 +786,31 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         runSpacing: 10,
         children: [
           OutlinedButton.icon(
-            onPressed: cook.live.watchGoal == null
-                ? cook.startWatch
-                : cook.stopWatch,
+            key: const ValueKey('watch-toggle'),
+            onPressed: cook.watching
+                ? cook.stopWatch
+                : () => unawaited(cook.startWatch()),
             icon: const Icon(Icons.visibility_outlined),
-            label: Text(
-              cook.live.watchGoal == null ? 'Watch my food' : 'Pause watch',
-            ),
+            label: Text(cook.watching ? 'Pause watch' : 'Watch my food'),
           ),
+          if (cook.watchService?.local case final local?
+              when local.canRequestCloudCheck)
+            TextButton.icon(
+              key: const ValueKey('watch-cloud-check'),
+              onPressed: () => unawaited(local.requestCloudCheck()),
+              icon: const Icon(Icons.cloud_upload_outlined),
+              label: const Text('Ask the cloud about this photo'),
+            ),
         ],
       ),
+      if (cook.watchService?.statusText case final status?)
+        Semantics(
+          liveRegion: true,
+          child: _inlineNotice(status, Icons.visibility_outlined),
+        ),
+      if (cook.watchService?.local.verdict?.legs case final legs?
+          when legs.isNotEmpty)
+        InferenceSourceBadge(legs: legs),
       if (cook.live.error case final error?)
         _inlineNotice(error, Icons.cloud_off_outlined),
       if (cook.live.notice case final notice?)
@@ -742,7 +899,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                               : 'Rehearsal ready')
                         : (cook.live.isActive
                               ? _liveLabel
-                              : 'Camera and microphone off'),
+                              : cook.watchService?.captureLabel ??
+                                    (cook.liveEnabled
+                                        ? 'Camera and microphone off'
+                                        : 'Live coach is off in this build · '
+                                              'type a question for Coach Lite')),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -763,22 +924,23 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                       ? 'Unmute microphone'
                       : 'Mute microphone',
                 ),
-              Tooltip(
-                message: cook.live.isActive
-                    ? 'End live session'
-                    : (widget.isDemo ? 'Start rehearsal' : 'Cook with me'),
-                child: FilledButton.icon(
-                  key: const ValueKey('live-session-toggle'),
-                  onPressed: () =>
-                      cook.live.isActive ? cook.live.stop() : cook.connect(),
-                  icon: Icon(
-                    cook.live.isActive
-                        ? Icons.stop_rounded
-                        : Icons.videocam_outlined,
+              if (cook.liveEnabled)
+                Tooltip(
+                  message: cook.live.isActive
+                      ? 'End live session'
+                      : (widget.isDemo ? 'Start rehearsal' : 'Cook with me'),
+                  child: FilledButton.icon(
+                    key: const ValueKey('live-session-toggle'),
+                    onPressed: () =>
+                        cook.live.isActive ? cook.live.stop() : cook.connect(),
+                    icon: Icon(
+                      cook.live.isActive
+                          ? Icons.stop_rounded
+                          : Icons.videocam_outlined,
+                    ),
+                    label: Text(cook.live.isActive ? 'Stop' : 'Start'),
                   ),
-                  label: Text(cook.live.isActive ? 'Stop' : 'Start'),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -796,9 +958,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                   onSubmitted: (_) => _send(),
                   decoration: InputDecoration(
                     counterText: '',
-                    hintText: cook.cookQuestion == null
-                        ? 'Ask the coach…'
-                        : 'Your answer…',
+                    hintText: cook.cookQuestion != null
+                        ? 'Your answer…'
+                        : !cook.live.isActive && cook.coachLite != null
+                        ? 'Ask Coach Lite (on-device)…'
+                        : 'Ask the coach…',
                     suffixIcon: IconButton(
                       onPressed: _messagePending ? null : _send,
                       icon: const Icon(Icons.arrow_upward_rounded),
@@ -902,7 +1066,36 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
           ),
         ),
       const SizedBox(height: 10),
+      if (cook.coachLiteBusy)
+        Semantics(
+          liveRegion: true,
+          child: _inlineNotice(
+            'Coach Lite is thinking…',
+            Icons.hourglass_top_outlined,
+          ),
+        ),
       CookingSurface(controller: cook.ui),
+      if (cook.coachLiteAnswer case final answer?) ...[
+        if (answer.legs.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: InferenceSourceBadge(
+              key: const ValueKey('coach-lite-source'),
+              legs: answer.legs,
+              reason: answer.blocked,
+            ),
+          ),
+        if (answer.timerSuggestion case final suggestion?)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: TimerSuggestionCard(
+              key: ValueKey(answer.stamp),
+              suggestion: suggestion,
+              onStart: (label, seconds) =>
+                  unawaited(cook.startSuggestedTimer(label, seconds)),
+            ),
+          ),
+      ],
       const SizedBox(height: 16),
       const Text(
         'How does your food look?',

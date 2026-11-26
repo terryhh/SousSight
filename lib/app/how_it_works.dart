@@ -212,7 +212,9 @@ class _DevFestXRayCard extends StatelessWidget {
       color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.2)),
+        side: BorderSide(
+          color: theme.colorScheme.primary.withValues(alpha: 0.2),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -221,7 +223,11 @@ class _DevFestXRayCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.terminal, size: 20, color: theme.colorScheme.primary),
+                Icon(
+                  Icons.terminal,
+                  size: 20,
+                  color: theme.colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -240,8 +246,14 @@ class _DevFestXRayCard extends StatelessWidget {
               'Gemini Live Protocol',
               isDemo ? 'Rehearsal Fake' : 'WebSocket w/ Ephemeral Auth',
             ),
-            _diagRow('Audio Capture & Playback', '16 kHz Mono In · 24 kHz PCM Out'),
-            _diagRow('Video Frame Ingestion', '1 fps JPEG (≤768px, client-rendered)'),
+            _diagRow(
+              'Audio Capture & Playback',
+              '16 kHz Mono In · 24 kHz PCM Out',
+            ),
+            _diagRow(
+              'Video Frame Ingestion',
+              '1 fps JPEG (≤768px, client-rendered)',
+            ),
             _diagRow(
               'GenUI / A2UI Safety',
               'Schema-validated trusted catalog; no model-written code or HTML',
@@ -250,7 +262,10 @@ class _DevFestXRayCard extends StatelessWidget {
               'Grounding Engines',
               'Google Search (cited sources) & Google Maps (grounded places)',
             ),
-            _diagRow('Client Secret Isolation', 'Zero long-lived keys in web bundle'),
+            _diagRow(
+              'Client Secret Isolation',
+              'Zero long-lived keys in web bundle',
+            ),
             _diagRow(
               'Budget Guardrail',
               '8 min session cap · 3 min idle watchdog · 15s watch',

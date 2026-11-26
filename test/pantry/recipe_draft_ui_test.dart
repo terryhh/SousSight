@@ -173,7 +173,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('cook-drafted')));
     expect(find.text(kDraftRecipeLabel), findsOneWidget);
-    expect(find.text('Recipe draft · on this device'), findsOneWidget);
+    expectLeg('Recipe draft', 'On this device');
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -242,4 +242,12 @@ void main() {
       },
     );
   });
+}
+
+/// One leg row: what ran, and the trust badge's chip for where it ran.
+void expectLeg(String what, String where) {
+  Finder inLegs(Finder f) =>
+      find.descendant(of: find.byKey(const ValueKey('pantry-legs')), matching: f);
+  expect(inLegs(find.text(what)), findsOneWidget);
+  expect(inLegs(find.text(where)), findsWidgets);
 }

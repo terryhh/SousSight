@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../app/hybrid_controls.dart';
+import '../app/hybrid_runtime.dart';
 import '../app/services_scope.dart';
 import '../core/analytics.dart';
 import '../core/models.dart';
@@ -33,6 +35,7 @@ class PantryFlow extends StatefulWidget {
     this.mediaFactory,
     this.loadRecipes = loadRecipeCatalog,
     this.cookingBuilder,
+    this.hybrid,
   });
 
   final AppServices services;
@@ -46,6 +49,10 @@ class PantryFlow extends StatefulWidget {
   final Future<List<Recipe>> Function() loadRecipes;
   final CookingPageBuilder? cookingBuilder;
 
+  /// Shared hybrid inference services. Null in rehearsal (everything is
+  /// simulated) and in tests that supply their own clients.
+  final HybridRuntime? hybrid;
+
   @override
   State<PantryFlow> createState() => _PantryFlowState();
 }
@@ -54,11 +61,25 @@ class _PantryFlowState extends State<PantryFlow> {
   late final Future<List<Recipe>> _recipes = widget.loadRecipes();
   late final PantryClient _client =
       widget.client ??
-      (widget.isDemo ? const FakePantryClient() : GeminiPantryClient());
+      switch ((widget.isDemo, widget.hybrid)) {
+        (true, _) => const FakePantryClient(),
+        (false, final hybrid?) => HybridPantryClient(
+          dispatcher: hybrid.dispatcher,
+          sessionId: () => hybrid.sessionId,
+        ),
+        (false, null) => GeminiPantryClient(),
+      };
   // SS-053: the only place the default draft clients are chosen.
   late final RecipeDraftClient _draftClient =
       widget.draftClient ??
-      (widget.isDemo ? FakeRecipeDraftClient() : GeminiRecipeDraftClient());
+      switch ((widget.isDemo, widget.hybrid)) {
+        (true, _) => FakeRecipeDraftClient(),
+        (false, final hybrid?) => HybridRecipeDraftClient(
+          dispatcher: hybrid.dispatcher,
+          sessionId: () => hybrid.sessionId,
+        ),
+        (false, null) => GeminiRecipeDraftClient(),
+      };
   bool _opening = false;
 
   Widget _cooking(Recipe recipe, VoidCallback onBack) =>
@@ -69,6 +90,7 @@ class _PantryFlowState extends State<PantryFlow> {
         isDemo: widget.isDemo,
         recipe: recipe,
         onBackToPantry: onBack,
+        hybrid: widget.isDemo ? null : widget.hybrid,
       );
 
   Widget _pantry(List<Recipe> recipes) => PantryScreen(
@@ -80,6 +102,20 @@ class _PantryFlowState extends State<PantryFlow> {
         ? null
         : (widget.mediaFactory ?? createBrowserLiveMedia),
     onChooseRecipe: _open,
+    header: switch ((widget.isDemo, widget.hybrid)) {
+      (false, final hybrid?) => HybridReadinessCard(hybrid: hybrid),
+      _ => null,
+    },
+    headerActions: switch ((widget.isDemo, widget.hybrid)) {
+      (false, final hybrid?) => HybridHeaderButtons(
+        hybrid: hybrid,
+        // Typed labels only here: the pantry screen owns its own camera.
+        onLabel: () => unawaited(
+          openLabelCheck(context, hybrid, sessionId: hybrid.sessionId),
+        ),
+      ),
+      _ => null,
+    },
   );
 
   Future<void> _open(Recipe recipe, PantryHandoff handoff) async {
