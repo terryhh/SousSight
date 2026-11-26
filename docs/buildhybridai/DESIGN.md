@@ -11,16 +11,16 @@
 >
 > **Evidence labels.** *Verified* = read from installed source or the shipped SDK bundle.
 > *Docs* = stated in Firebase/Chrome/Flutter documentation, not yet run. *Unproven* = a design
-> assumption a gate (§8) must confirm on real hardware. Nothing here has been run against a
-> live model yet.
+> assumption a gate (§8) must confirm on real hardware. *Physical device* = observed on real
+> hardware, with the scope stated in the row. Unless a row says otherwise, nothing here has been
+> run against a live model.
 
 ## 1. Picking up a card
 
 1. Read [AGENTS.md](../../AGENTS.md), [PLAN.md](PLAN.md), then the section your card names.
 2. `git fetch origin`. **Your local `main` may be stale** (on the original dev machine it is 42
    commits behind). Always start from the ref named in §9 and check it with `git rev-parse`.
-   Until the plan and design PRs merge, these two documents exist only on branch
-   `hybrid/00-design`; read them there.
+   The plan and this design are on `main`; read the current versions there.
 3. Find your card in §9. Cards marked *human* or *gate* are not coding pickups. For the rest:
    the card must be in **Ready** with its dependencies Done. **Respect the GitHub assignee
    whatever the board status says**: take a card only if it is assigned to you or your operator,
@@ -103,7 +103,7 @@ Rules that hold everywhere:
 | `FirebaseAIOnDevice.checkStatus()` and `.download()` (Flow); no automatic download | Docs |
 | Gemini Nano 4 is `OnDeviceModelOption.PREVIEW` / `PREVIEW_FAST` and needs AICore Developer Preview enrollment; default `STABLE` is Nano 2/3 | Docs |
 | On a Pixel 10 Pro XL (Android 17), the bridge's `preview` option reported `unavailable not_enrolled` before enrollment, with **no fallback to `STABLE`**; after enrolling and a ~3-minute text `prepare`, `available nano-v4-full` (text and image) | Physical device, availability only, debug build of `lib/main_hybrid_gate.dart` (Jenna, #145). No probe, App Check off; not the G4 release check |
-| On Terry's Pixel 9, Nano 4 preview reports `available` but every generate fails with ML Kit `ErrorCode 8` (AICore `606-FEATURE_NOT_FOUND`), so status alone cannot pick the model | Physical device, as reported in #227's description; **pending merge of #227** for the fix (`auto`, §4) |
+| On Terry's enrolled Pixel 9 (which the docs list as Gemini Nano 3; AGENT.md §6), the Nano 4 preview (`nano-v4-full`) reports `available` but every generate fails with ML Kit `ErrorCode 8` (AICore `606-FEATURE_NOT_FOUND`), so status alone cannot pick the model | Physical device, as reported in #227's description; **pending merge of #227** for the fix (`auto`, §4) |
 | Limits: text + one Bitmap, JSON output, **4,000 tokens for the whole request**, aim for ≤256 output tokens, foreground only, `BUSY` and battery-quota errors, English/Korean validated | Docs |
 | Release signing reads the gitignored `android/key.properties`; without it the release build uses the debug key and prints a warning. The manifest declares `INTERNET`, `CAMERA`, `RECORD_AUDIO`, `MODIFY_AUDIO_SETTINGS` (#192) | Verified (repo, `android/app/`); `flutter build apk` only, nothing installed |
 
@@ -112,7 +112,7 @@ Rules that hold everywhere:
 | Fact | Evidence |
 |---|---|
 | Firebase Apple SDK **13.0.0 removed** `HybridModel`, Firebase's `SystemLanguageModel` wrapper, `GenerativeModelSession` and the `apple-foundation-models-system-language-model` `modelVersion` report (`FirebaseAI/CHANGELOG.md`). There is no SDK-level hybrid fallback on iOS | Verified (SDK source at tag 13.1.1, read in #189) |
-| `firebase_core` 5.1.0's SPM manifest pins `firebase-ios-sdk` to **exactly 13.1.1**; the plugin pins the same (`packages/ai_logic_hybrid/ios/ai_logic_hybrid/Package.swift`, products `FirebaseAILogic` + `FirebaseCore`, iOS 15.0) | Verified (repo). `flutter build ios --no-codesign` builds with Xcode 27.2 (#192, #212); running on an iPhone is **Unproven** (G5) |
+| `firebase_core` 5.1.0's SPM manifest pins `firebase-ios-sdk` to **exactly 13.1.1**; the plugin pins the same (`packages/ai_logic_hybrid/ios/ai_logic_hybrid/Package.swift`, products `FirebaseAILogic` + `FirebaseCore`, iOS 15.0) | Verified (repo). `flutter build ios --no-codesign` builds (#192 with Xcode 27.2; also #212); running on an iPhone is **Unproven** (G5) |
 | **Local:** Apple's `LanguageModelSession(model: SystemLanguageModel.default, instructions:)` from Foundation Models, **iOS 26+** | Verified (`FoundationModelsEngine.swift`); compile and type-check only (#189) |
 | **Cloud:** `FirebaseAI.firebaseAI(backend: .googleAI()).geminiLanguageModel(name:)` as the model of an Apple `LanguageModelSession`, **iOS 27+**, and only in a build made with Swift ≥ 6.4 | Verified (`FoundationModelsEngine.swift`); compile and type-check only (#189) |
 | Each request runs in a new single-model session. The plugin picks local or cloud before the call (`planRoute`, `HybridCore.swift`), so `source` is the model the session was built with: a fact about the executor, **not an SDK-reported string**. `modelLabel` is omitted (neither SDK reports the answering model) | Verified (source) |
@@ -127,13 +127,13 @@ Rules that hold everywhere:
 
 | Fact | Evidence |
 |---|---|
-| Every real build uses `EphemeralGeminiLiveTransport` (`lib/learner/cooking_app.dart:149`), which opens `generativelanguage.googleapis.com` (`lib/live/ephemeral_live_transport.dart:88`) | Verified |
+| Before SS-074, every real build used `EphemeralGeminiLiveTransport`, which opens `generativelanguage.googleapis.com` (`lib/live/ephemeral_live_transport.dart`). Since #200, `liveTransportFactory` in `lib/live/live_backend.dart` picks the transport from the compile-time `LIVE_BACKEND`: `ephemeral` keeps that socket, `aiLogic` also needs `live` in `CLOUD_ROUTES`, and a missing or unknown value is `none` (no Live coach). Rehearsal always uses the simulated transport | Verified (trunk `1e4cb4c`) |
 | On web, the JS SDK and `firebase_ai` open the Live socket with only `?key=`; no App Check token is sent. Backend behaviour under enforcement is undocumented | Verified (source); outcome **Unproven** (G3) |
 | On native, `firebase_ai` sends App Check and Auth headers on the Live handshake | Verified (`live_session.dart`) |
 | Client `kLiveModel` (`lib/live/live_tools.dart:7`) and server `LIVE_MODEL` (`functions/src/live-token.js:5`) default to different models | Verified |
 | Quotas are enforced only at token mint: `createQuotaReservation(db)` in `functions/src/token-quota.js`, called with a verified UID | Verified |
 | While connected, `LiveCookingController` forwards each camera frame to the transport (`lib/live/live_controller.dart:153-159`) | Verified |
-| `web/soussight_live.js:59` requests camera **and** microphone in one `getUserMedia` call; `LiveMedia` has no camera-only mode | Verified |
+| `web/soussight_live.js:59` requests camera **and** microphone in one `getUserMedia` call; `LiveMedia` has no camera-only mode | Verified at `430747b`. **Superseded by #181:** `LiveMedia.startCameraOnly()` and `timedFrames` (`lib/live/live_types.dart`, `web/soussight_live.js`), and on native `NativeLiveMedia` (#192) |
 | Billing is enabled on the project; caps are delayed; credit coverage is unverified (`docs/COST-LEDGER.md`) | Verified (repo record) |
 | CI defaults `ENABLE_DINNER_MESSAGES` and `ALLOW_DELIVERY_SIMULATION` to `false` unless repo variables say otherwise | Verified (workflow); deployed values **Unproven** (G1) |
 
@@ -273,8 +273,11 @@ Contract rules:
 - **Schema:** only `type`, `properties`, `required`, `items`, `enum`, `minItems`, `maxItems`,
   `description`, lowercase types. Web cloud → `inCloudParams.generationConfig` with **both**
   `responseMimeType: 'application/json'` and `responseSchema`; web local →
-  `promptOptions.responseConstraint`; Android → the SDK schema type; iOS local → appended to the
-  prompt, caller validates.
+  `promptOptions.responseConstraint`; Android cloud → the SDK `Schema` as `responseSchema` with
+  `responseMimeType: 'application/json'`; Android local → the on-device provider ignores
+  `generationConfig`, so the schema travels as a prompt instruction
+  (`SchemaMapping.localInstruction`) and the caller validates (#194); iOS, both routes → appended
+  to the prompt, caller validates (#189).
 
 Mode mapping per platform:
 
@@ -655,14 +658,19 @@ Written from #243's description and branch `hybrid/30-images`; issue #226.
   `ILLUSTRATION_SESSION_CAP` (default 4). It has **no free tier for image output**; the price and
   every real call are in `docs/COST-LEDGER.md`.
 - The three reviewed recipes ship pre-made images (`assets/illustrations/**` + `manifest.json`).
-  AI-drafted recipes get an on-demand "Show me what it should look like" button that passes, in
-  order: `CloudRoute.images`; local-only for `step_illustration` **and** its parent
-  `recipe_draft`; connectivity; a `ConsentGate` grant for this prompt digest and session; the cap.
-  Settings are re-read at send time; each send writes one cloud ledger leg (text→image).
+  AI-drafted recipes get an on-demand "Show me what it should look like" button. A request first
+  passes, in order: `CloudRoute.images`; local-only for `step_illustration` **and** its parent
+  `recipe_draft`; connectivity; room under the per-session cap (`availability()` in
+  `lib/illustrations/illustration_controller.dart`). It then asks the `ConsentGate` for this
+  prompt digest and session, and re-runs every check after consent, before the send. Each send
+  writes one cloud ledger leg (text→image).
 - Every picture is labelled "AI illustration — not a photo of your food". Prompts use only the
   step's visible cue (safety and doneness sentences removed) and its ingredients. Steps with
   meat, poultry, fish or eggs never get a "done" shot, and those recipes get no plate picture.
 - Until `images` is added to the `CLOUD_ROUTES` repo variable after merge, the button is hidden.
+- Evidence, per #243: fakes for gating, cap, ledger and labels; **live service** for one
+  trial image, the 15 pre-made images and one on-demand gate run (17 real calls, recorded in
+  that branch's `docs/COST-LEDGER.md`; the bill was not inspected). Terry's review of the images is still a merge condition.
 
 ## 7. Configuration
 
@@ -794,8 +802,10 @@ In every PR, mark each claim as fakes, emulator, live service, or physical devic
    *iOS (#189):* cancel calls `Task.cancel()`; whether or not the SDK stops, the call completes
    once with `cancelled` (or the bridge's own `timeout`) and a late result is discarded.
 7. Does the Android SDK expose the observed base model name? (G4)
-   *Partly:* availability reported `nano-v4-full` on a Pixel 10 Pro XL (#145, physical device,
-   availability only).
+   *In code, yes (#194):* availability reads `OnDeviceExtension.getModelName()`, and an on-device
+   result's `modelLabel` is the response's `modelVersion` (ML Kit's base model name), both in
+   `FirebaseHybridEngine.kt`. *On a device:* availability reported `nano-v4-full` on a Pixel 10
+   Pro XL (#145, physical device, availability only, debug build); no generate result yet.
 8. Can the iOS hybrid session carry an image to the cloud model, or must cloud-only photo
    requests use the Dart client? (SS-064) *Answered (#189): no.* `GeminiTranscriptTranslator`
    rejects attachment segments, so cloud-only photos use the Dart client (§4).
