@@ -1,7 +1,9 @@
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridMode;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/cooking_research_client.dart';
+import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/learner/cooking_app.dart';
@@ -43,10 +45,22 @@ class _FakeDraftClient implements RecipeDraftClient {
   RecipeDraftRequest? request;
 
   @override
-  Future<Recipe> draft(RecipeDraftRequest request) async {
+  Future<RecipeDraftResult> draft(RecipeDraftRequest request) async {
     this.request = request;
     if (error case final error?) throw error;
-    return _draft;
+    return const RecipeDraftResult(
+      _draft,
+      legs: [
+        InferenceLeg(
+          requestId: 'r1',
+          feature: kRecipeDraftFeature,
+          mode: HybridMode.preferOnDevice,
+          kinds: {DataKind.text},
+          transferPermitted: false,
+          provenance: Provenance.sdkOnDevice,
+        ),
+      ],
+    );
   }
 }
 
@@ -159,6 +173,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('cook-drafted')));
     expect(find.text(kDraftRecipeLabel), findsOneWidget);
+    expect(find.text('Recipe draft · on this device'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

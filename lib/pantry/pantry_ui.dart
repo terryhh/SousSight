@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:genui/genui.dart';
 import 'package:json_schema_builder/json_schema_builder.dart';
 
+import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
+import 'pantry_client.dart' show kPantryScanFeature, kPantryVoiceFeature;
 import 'pantry_models.dart';
+import 'recipe_draft.dart' show kRecipeDraftFeature;
 
 const pantryGreen = Color(0xFF235B46);
 const pantryTomato = Color(0xFFC4472B);
@@ -526,4 +529,75 @@ class _MealCard extends StatelessWidget {
       ),
     ],
   );
+}
+
+// ------------------------------------------------------------ provenance
+
+/// One plain line per inference leg: what ran and where the SDK said it ran.
+/// The source is reported, never inferred; an error on a send that was
+/// allowed to upload says that data may have left the device.
+String pantryLegLabel(InferenceLeg leg) {
+  final what = switch (leg.feature) {
+    kPantryVoiceFeature => 'Voice list',
+    kPantryScanFeature => 'Meal match',
+    kRecipeDraftFeature => 'Recipe draft',
+    _ => leg.feature,
+  };
+  final where = switch (leg.provenance) {
+    Provenance.sdkOnDevice => 'on this device',
+    Provenance.sdkCloud => 'Google cloud',
+    Provenance.cloudAdapter => 'Google cloud',
+    Provenance.simulated => 'simulated, no model used',
+    Provenance.unknown =>
+      leg.transferPermitted ? 'may have used Google cloud' : 'on this device',
+  };
+  final failed = leg.error == null ? '' : ' · did not finish';
+  return '$what · $where$failed';
+}
+
+/// Simple per-leg provenance list for a pantry result.
+// TODO(SS-070): swap for the lib/trust provenance badge widget once it lands;
+// keep one entry per leg, never one merged badge.
+class PantryLegList extends StatelessWidget {
+  const PantryLegList({super.key, required this.legs});
+
+  final List<InferenceLeg> legs;
+
+  @override
+  Widget build(BuildContext context) {
+    if (legs.isEmpty) return const SizedBox.shrink();
+    return Column(
+      key: const ValueKey('pantry-legs'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final leg in legs)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                Icon(
+                  switch (leg.provenance) {
+                    Provenance.sdkOnDevice => Icons.smartphone_outlined,
+                    Provenance.simulated => Icons.science_outlined,
+                    _ => Icons.cloud_outlined,
+                  },
+                  size: 16,
+                  color: const Color(0xFF6B5A3E),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    pantryLegLabel(leg),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF3B3328),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }
