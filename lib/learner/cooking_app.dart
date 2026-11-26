@@ -28,6 +28,7 @@ import '../live/live_controller.dart';
 import '../live/live_types.dart';
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
+import '../translate/practice_translation.dart';
 import '../translate/recipe_language_view.dart';
 import '../translate/translation_runtime.dart';
 import '../trust/inference_source_badge.dart';
@@ -253,7 +254,8 @@ class _CookingScreenState extends State<CookingScreen> {
       coachLite: hybrid == null
           ? null
           : CoachLite(
-              dispatcher: hybrid.dispatcher,
+              // SS-106: answers in the cook's language.
+              dispatcher: languageAwareDispatcherFor(hybrid),
               privacy: hybrid.privacy,
               cloudRoutes: hybrid.cloudRoutes,
               isOnline: hybrid.isOnline,
@@ -267,6 +269,9 @@ class _CookingScreenState extends State<CookingScreen> {
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
       isOnline: hybrid?.isOnline,
+      cookLanguage: hybrid == null
+          ? null
+          : () => translationFor(hybrid).language,
     );
   }
 
@@ -682,12 +687,17 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       ),
       DraftRecipeChip(recipe: cook.recipe),
       AllergenChip(recipe: cook.recipe),
-      // SS-106: recipe content and AI answers in the cook's language.
-      if (widget.hybrid case final hybrid?)
+      // SS-106: recipe content and AI answers in the cook's language;
+      // canned, labelled practice translations in rehearsal.
+      if (widget.isDemo || widget.hybrid != null)
         CookLanguageButton(
-          controller: translationFor(hybrid),
+          controller: switch (widget.hybrid) {
+            final hybrid? when !widget.isDemo => translationFor(hybrid),
+            _ => practiceTranslation(),
+          },
           recipe: cook.recipe,
-          sessionId: () => hybrid.sessionId,
+          sessionId: () =>
+              widget.hybrid?.sessionId ?? cook.session?.id ?? 'practice',
           currentStepId: cook.session?.currentStepId,
         ),
       if (widget.hybrid case final hybrid?)

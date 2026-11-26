@@ -41,12 +41,14 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     bool Function()? isOnline,
     RemoteRouting? Function()? remoteRouting,
     String Function()? languageTag,
+    String? Function(String feature)? featureLanguageTag,
     String Function()? newId,
   }) : _routes = cloudRoutes,
        _adapter = cloudFallback,
        _isOnline = isOnline ?? (() => true),
        _remote = remoteRouting ?? (() => null),
        _language = languageTag ?? (() => 'en'),
+       _featureLanguage = featureLanguageTag,
        _newId = newId ?? _defaultIds();
 
   final HybridInference _inference;
@@ -58,6 +60,11 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   final bool Function() _isOnline;
   final RemoteRouting? Function() _remote;
   final String Function() _language;
+
+  /// The output language of one feature's answers, when it differs from
+  /// [_language] (e.g. a recipe translation or Coach Lite in the cook's
+  /// language, SS-106). Null falls back to [_language].
+  final String? Function(String feature)? _featureLanguage;
   final String Function() _newId;
 
   /// Grants are used once: a grant that paid for a send is spent.
@@ -111,7 +118,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
           imageTokenEstimate:
               caps.local?.imageTokenEstimate ?? defaultImageTokenEstimate,
         ),
-        languageTag: _language(),
+        languageTag: _featureLanguage?.call(task.feature) ?? _language(),
         localOnly: localOnlyFor(_privacy, task.feature),
         online: _isOnline(),
         cloudApproved: _routes.allows(CloudRoute.hybridFallback),

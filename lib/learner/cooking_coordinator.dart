@@ -15,6 +15,7 @@ import '../genui/cooking_ui.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
 import '../pantry/recipe_draft.dart';
+import '../translate/cook_language.dart';
 import '../watch/watch_service.dart';
 import '../watch/watch_verdict.dart';
 import 'recipe_allergens.dart';
@@ -44,6 +45,7 @@ class CookingCoordinator extends ChangeNotifier {
     WatchService Function(LiveCookingController live)? watchServiceFactory,
     this.onSessionReady,
     this.researchAllowed,
+    this.cookLanguage,
     bool Function()? isOnline,
     Stream<void>? connectivityChanges,
     StepOpStore? stepOps,
@@ -105,6 +107,10 @@ class CookingCoordinator extends ChangeNotifier {
 
   /// Read immediately before every grounded research send. Null allows it.
   final bool Function()? researchAllowed;
+
+  /// The cook's language (SS-106), read when Live connects: the coach and
+  /// its generated panels answer in it. Null keeps the recipe's language.
+  final CookLanguage Function()? cookLanguage;
 
   /// The applied Coach Lite answer; its timer suggestion feeds the card.
   CoachLiteAnswer? coachLiteAnswer;
@@ -314,7 +320,12 @@ $cookingUiInstructions
       await watchService?.onLiveConnecting();
       if (_disposed) return;
     }
-    await live.start(cookingContext: cookingContext);
+    await live.start(
+      cookingContext: withAnswerLanguage(
+        cookingContext,
+        cookLanguage?.call() ?? sourceLanguage,
+      ),
+    );
     if (!wasActive && live.isActive) {
       _track(AnalyticsEvents.liveCoachConnected, {'recipe_id': _recipeLabel});
     }

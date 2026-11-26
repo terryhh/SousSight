@@ -20,6 +20,7 @@ import '../config/remote_policy.dart';
 import '../core/cloud_send.dart';
 import '../label/household_allergens.dart';
 import '../label/label_check_controller.dart';
+import '../translate/translation_runtime.dart';
 import '../trust/ledger_source.dart';
 import '../trust/privacy_preferences.dart';
 import '../trust/trust_labels.dart';
@@ -343,7 +344,9 @@ class HybridRuntime {
       navigatorKey: key,
       cloudModel: cloudModel,
     );
-    return HybridRuntime(
+    // Read by the dispatcher at each decision, after it is assigned.
+    late final HybridRuntime runtime;
+    return runtime = HybridRuntime(
       inference: configured,
       privacy: prefs,
       cloudRoutes: routes,
@@ -362,6 +365,8 @@ class HybridRuntime {
             cloudFallback ?? FirebaseAiCloudSender(model: cloudModel),
         isOnline: online,
         remoteRouting: remote?.routing,
+        // SS-106: translations and Coach Lite answer in the cook's language.
+        featureLanguageTag: (feature) => cookLanguageTagFor(runtime, feature),
       ),
     );
   }

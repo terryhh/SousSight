@@ -76,6 +76,7 @@ class _Harness {
     HybridCapabilities caps = fakeWebCapabilities,
     String routes = 'hybridFallback',
     String language = 'es',
+    String? Function(String feature)? featureLanguage,
   }) : bridge = FakeHybridInference(capabilities: caps) {
     var seq = 0;
     dispatcher = DefaultHybridDispatcher(
@@ -86,6 +87,7 @@ class _Harness {
       ledger: ledger,
       cloudFallback: adapter,
       languageTag: () => language,
+      featureLanguageTag: featureLanguage,
       newId: () => 'id-${++seq}',
     );
     translator = RecipeTranslator(dispatcher: dispatcher);
@@ -343,6 +345,38 @@ void main() {
       expect(t.status, TranslationStatus.partial);
       expect(t.blocked, RouteReason.localOnlySetting);
       expect(h.ledger.legs, hasLength(1));
+    });
+
+    test('the per-feature language tag drives the language check', () async {
+      final h = _Harness(
+        caps: fakeIosCapabilities,
+        language: 'en',
+        featureLanguage: (f) => f == _f ? 'es' : null,
+      );
+      h.answer(source: InferenceSource.cloud);
+      final t = await h.translator.translate(
+        testRecipe(),
+        spanish,
+        sessionId: 's1',
+      );
+      // Spanish is not validated on this device, so it went to the cloud.
+      expect(h.bridge.requests.single.mode, _cloud);
+      expect(t.status, TranslationStatus.complete);
+      // Other features keep the app's language and stay on device.
+      h.bridge.enqueueText('ok');
+      final other = await h.dispatcher
+          .start(
+            const HybridTask(
+              feature: 'coach_lite',
+              parts: [HybridText('q')],
+              maxOutputTokens: 10,
+              timeout: Duration(seconds: 5),
+            ),
+            sessionId: 's1',
+          )
+          .result;
+      expect(other.text, 'ok');
+      expect(h.bridge.requests.last.mode, _local);
     });
 
     test('an unapproved route never reaches the cloud', () async {

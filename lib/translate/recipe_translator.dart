@@ -110,10 +110,15 @@ abstract final class RecipeLineIds {
   static String stepCue(String id) => 'step.$id.cue';
 }
 
+/// The short English name for an ingredient: its name up to the first
+/// comma or parenthesis ("Flour tortillas (10 inch)" → "Flour tortillas").
+String allergenKeyName(String name) => name.split(RegExp(r'[,(]')).first.trim();
+
 /// The English names of ingredients that carry an allergen.
 List<String> allergenIngredientNames(Recipe recipe) => [
   for (final i in recipe.ingredients)
-    if (i.allergens.isNotEmpty && i.name.trim().isNotEmpty) i.name.trim(),
+    if (i.allergens.isNotEmpty && allergenKeyName(i.name).isNotEmpty)
+      allergenKeyName(i.name),
 ];
 
 /// Every non-empty line of [recipe], in reading order.
@@ -139,7 +144,9 @@ List<SourceLine> recipeSourceLines(Recipe recipe) {
         RecipeLineIds.ingredientName(i.id),
         RecipeLineKind.ingredientName,
         i.name,
-        allergenName: i.allergens.isEmpty ? null : i.name.trim(),
+        allergenName: i.allergens.isEmpty || allergenKeyName(i.name).isEmpty
+            ? null
+            : allergenKeyName(i.name),
       ),
       ?line(
         RecipeLineIds.ingredientQty(i.id),

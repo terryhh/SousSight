@@ -26,3 +26,16 @@ HybridDispatcher languageAwareDispatcherFor(HybridRuntime hybrid) =>
       hybrid.dispatcher,
       language: () => translationFor(hybrid).language,
     );
+
+/// Features whose answers are written in the cook's language, so the
+/// dispatcher's on-device language check must use it. Everything else (the
+/// watch, the label check, the pantry scan) keeps the app's own language.
+const cookLanguageFeatures = {recipeTranslateFeature, ...languageAwareFeatures};
+
+/// For `DefaultHybridDispatcher(featureLanguageTag: ...)`: the cook's
+/// language for [feature], or null to use the default. Never creates a
+/// controller.
+String? cookLanguageTagFor(HybridRuntime hybrid, String feature) =>
+    cookLanguageFeatures.contains(feature)
+    ? _controllers[hybrid]?.language.code
+    : null;
