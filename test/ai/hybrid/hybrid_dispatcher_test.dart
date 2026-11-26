@@ -717,6 +717,40 @@ void main() {
     expect(h.bridge.requests.single.mode, HybridMode.onlyOnDevice);
   });
 
+  // Codex #224 (69/100) P2: native reachability is re-read after consent.
+  test('losing the network (native reader) during the consent prompt '
+      'blocks the send', () async {
+    final h = _Harness();
+    final prompt = Completer<ConsentGrant?>();
+    h.consent.answer = (_) => prompt.future;
+    final result = h.run(_photo('local_watch_cloud_check'));
+    await pumpEventQueue();
+    h.reachable = false;
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
+    expect((await result).blocked, RouteReason.offline);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+  });
+
+  // Codex #224 (69/100) P1: the gate copies the ask itself.
+  test(
+    'a grant keeps the ask as shown, whatever the caller changes later',
+    () async {
+      final h = _Harness();
+      final kinds = <DataKind>{DataKind.text};
+      final grant = await h.consent.grantFor(
+        ConsentAsk(
+          feature: 'coach_lite',
+          kinds: kinds,
+          payloadDigest: 'd',
+          sessionId: 's1',
+        ),
+      );
+      kinds.add(DataKind.image);
+      expect(grant.ask.kinds, {DataKind.text});
+    },
+  );
+
   test('a reader that throws counts as unknown (reachable)', () async {
     final h = _Harness();
     final d = DefaultHybridDispatcher(

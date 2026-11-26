@@ -257,7 +257,7 @@ void main() {
 
   // Codex #224 (71/100) P2: a session reset while reachable() is pending.
   test('a session change during the reachability probe: the old search is '
-      'not sent and is recorded unsent', () async {
+      'not sent and not written into the new ledger', () async {
     final h = _Harness();
     final gateOpen = Completer<bool>();
     h.probe = () => gateOpen.future;
@@ -270,9 +270,8 @@ void main() {
     gateOpen.complete(true);
     await search;
     expect(h.requests, isEmpty, reason: "meal A's ZIP never left");
-    final entry = h.ledger.entries.single;
-    expect(entry.leg.transferPermitted, isFalse);
-    expect(entry.leg.error, HybridErrorCode.cancelled);
+    // Meal A's ledger is gone; nothing of A's is written into meal B's.
+    expect(h.ledger.entries, isEmpty);
   });
 
   test(

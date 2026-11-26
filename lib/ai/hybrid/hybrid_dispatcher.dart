@@ -335,8 +335,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       grant = offered != null && _grantFits(offered, run)
           ? offered
           : await _askConsent(run, mode);
-      // The cook may have changed a setting or cancelled while the prompt
-      // was open.
+      // The cook may have changed a setting, cancelled or lost the network
+      // while the prompt was open: re-read native reachability too.
+      await _probe(run);
       final late = liveCheck();
       if (late != null) return _Blocked(late);
       if (grant == null || !_grantFits(grant, run)) {

@@ -43,7 +43,7 @@ abstract class PrivacySettings {
 enum DataKind { text, image, audio, location }
 
 /// Consent is for one exact payload in one session, and is used once.
-class ConsentAsk {
+final class ConsentAsk {
   const ConsentAsk({
     required this.feature,
     required this.kinds,
@@ -60,15 +60,6 @@ class ConsentAsk {
   /// `onlyInCloud` sends at once; a `prefer…` mode may still finish on the
   /// device. Null: the feature's default route decides the wording.
   final HybridMode? mode;
-
-  /// A copy the caller cannot change: [kinds] is an unmodifiable copy.
-  ConsentAsk frozen() => ConsentAsk(
-    feature: feature,
-    kinds: Set.unmodifiable(kinds),
-    payloadDigest: payloadDigest,
-    sessionId: sessionId,
-    mode: mode,
-  );
 }
 
 /// The cook's "allow once" for one [ConsentAsk]. The only way to obtain one
@@ -97,7 +88,15 @@ abstract class ConsentGate {
   Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) async {
     // The gate owns what the cook sees and what the grant covers: one frozen
     // snapshot, taken before the prompt, so the caller cannot widen it later.
-    final shown = ask.frozen();
+    // Copied field by field here (ConsentAsk is final; nothing overridable
+    // is called), with an unmodifiable copy of [ConsentAsk.kinds].
+    final shown = ConsentAsk(
+      feature: ask.feature,
+      kinds: Set.unmodifiable(ask.kinds),
+      payloadDigest: ask.payloadDigest,
+      sessionId: ask.sessionId,
+      mode: ask.mode,
+    );
     try {
       return await confirm(shown, preview: preview)
           ? ConsentGrant._(shown, this)

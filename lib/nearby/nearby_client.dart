@@ -410,15 +410,9 @@ class GeminiNearbyClient implements GatedNearbyClient {
     final started = gate.generation();
     final reachable = await gate.reachable();
     // The session may have changed during the probe: this search belonged to
-    // the previous one, so it stops here, recorded as not sent.
-    if (gate.generation() != started) {
-      gate.recorder.rejectedLocally(
-        kNearbyFeature,
-        kNearbyKinds,
-        HybridErrorCode.cancelled,
-      );
-      throw _sessionChanged;
-    }
+    // the previous one, whose ledger is gone, so it stops here and writes
+    // nothing into the new session's ledger.
+    if (gate.generation() != started) throw _sessionChanged;
     // Read again after the probe: the settings may have changed meanwhile.
     if (gate.check(reachable: reachable) case final blocked?) {
       _recordRefused(blocked);
