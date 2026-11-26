@@ -265,6 +265,9 @@ class OfflineStepQueue extends ChangeNotifier {
   final List<StepOp> _pending = [];
   OpTimer? _looseTimer;
 
+  /// A timer whose own save has been sent and not yet answered.
+  OpTimer? _looseInFlight;
+
   /// A dismissed timer that a sent (possibly already saved) step change may
   /// carry. The sent change stays as it was; after it is answered, the timer
   /// is cleared, but only if the session still has this timer.
@@ -290,6 +293,7 @@ class OfflineStepQueue extends ChangeNotifier {
     _sessionId = sessionId;
     _pending.clear();
     _looseTimer = null;
+    _looseInFlight = null;
     _clearTimerId = null;
     _retry?.cancel();
     _changes ??= _connectivityChanges?.listen((_) {
@@ -331,13 +335,19 @@ class OfflineStepQueue extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Forgets a pending timer the cook dismissed. An unsent change drops it;
-  /// a sent one is left unchanged and the timer is cleared after it is
-  /// answered ([clearTimerLater]). True if a pending change carried it.
+  /// Forgets a pending timer the cook dismissed. An unsent change or timer
+  /// drops it; a sent one is left unchanged and the timer is cleared after it
+  /// is answered ([clearTimerLater]). True if pending work carried it.
   bool dismissTimer(String timerId) {
     var found = false;
     if (_looseTimer?.id == timerId) {
       _looseTimer = null;
+      found = true;
+    }
+    // Its save may already have landed: clear after the answer, by id, so a
+    // newer replacement timer is kept.
+    if (_looseInFlight?.id == timerId) {
+      _clearTimerId = timerId;
       found = true;
     }
     for (final op in _pending) {
@@ -430,11 +440,14 @@ class OfflineStepQueue extends ChangeNotifier {
       final timer = _looseTimer;
       final save = saveTimer;
       if (timer == null || save == null) return;
+      _looseInFlight = timer;
       try {
         await save(timer);
       } catch (error) {
         if (current()) _failed(error);
         return;
+      } finally {
+        if (identical(_looseInFlight, timer)) _looseInFlight = null;
       }
       if (!current()) return;
       if (identical(_looseTimer, timer)) _looseTimer = null;

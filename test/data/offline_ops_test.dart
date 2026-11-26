@@ -97,6 +97,9 @@ class _Server extends FakeSessionRepository implements StepOpStore {
   final _injected = StreamController<CookingSession>.broadcast();
   int plainUpdates = 0;
   Completer<void>? gate;
+
+  /// Holds ordinary (non-step) saves, such as a timer on its own.
+  Completer<void>? updateGate;
   bool loseNextAck = false;
   DateTime now = DateTime.utc(2026, 11, 25, 18);
 
@@ -104,8 +107,10 @@ class _Server extends FakeSessionRepository implements StepOpStore {
   Future<CookingSession> update(
     String sessionId,
     CookingSession Function(CookingSession current) mutate,
-  ) {
+  ) async {
     plainUpdates++;
+    final hold = updateGate;
+    if (hold != null) await hold.future;
     return super.update(sessionId, mutate);
   }
 
@@ -650,6 +655,66 @@ void main() {
       final saved = await f.saved();
       expect(saved.timerId, 'second');
       expect(saved.timerDeadline, f.now.add(const Duration(seconds: 30)));
+    });
+
+    test('a timer started offline on its own and dismissed while its save is '
+        'in flight is cleared after the acknowledgement (Codex P2)', () async {
+      await f.setOnline(false);
+      await f.cook.startTimer('rest', 'Rest', 60);
+      expect(f.cook.session!.timerId, 'rest');
+      f.server.updateGate = Completer<void>();
+      await f.setOnline(true); // the timer's own save is now in flight
+      expect(f.server.plainUpdates, 1);
+      f.cook.ui.dismissTimer('rest');
+      await _flush();
+      expect(f.cook.session!.timerId, isNull);
+      f.server.updateGate!.complete();
+      f.server.updateGate = null;
+      await _flush();
+      final saved = await f.saved();
+      expect(saved.timerId, isNull);
+      expect(saved.timerDeadline, isNull);
+      expect(f.server.plainUpdates, 2); // the save, then the conditional clear
+      expect(f.cook.pendingStepSaves, 0);
+      expect(f.cook.session!.timerId, isNull);
+    });
+
+    test('online, a timer dismissed while its save is in flight is cleared, '
+        'and a newer replacement timer is kept', () async {
+      f.server.updateGate = Completer<void>();
+      unawaited(f.cook.startTimer('rest', 'Rest', 60));
+      await _flush();
+      expect(f.server.plainUpdates, 1);
+      f.cook.ui.dismissTimer('rest');
+      await _flush();
+      f.now = f.now.add(const Duration(seconds: 3));
+      unawaited(f.cook.startTimer('stir', 'Stir', 30));
+      await _flush();
+      expect(f.cook.session!.timerId, 'stir');
+      f.server.updateGate!.complete();
+      f.server.updateGate = null;
+      await _flush();
+      final saved = await f.saved();
+      expect(saved.timerId, 'stir');
+      expect(saved.timerDeadline, f.now.add(const Duration(seconds: 30)));
+      expect(f.cook.session!.timerId, 'stir');
+    });
+
+    test('a timer save that fails online is retried with its deadline and '
+        'reports unsaved progress meanwhile', () async {
+      f.server.updateGate = Completer<void>();
+      final starting = f.cook.startTimer('rest', 'Rest', 60);
+      await _flush();
+      f.server.updateGate!.completeError(StateError('network'));
+      f.server.updateGate = null;
+      await starting;
+      expect(f.cook.error, CookingCoordinator.unsavedStepError);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await _flush();
+      final saved = await f.saved();
+      expect(saved.timerId, 'rest');
+      expect(saved.timerDeadline, f.now.add(const Duration(seconds: 60)));
+      expect(f.cook.error, isNull);
     });
 
     test('dismissing the saved timer offline clears it on reconnect', () async {

@@ -73,7 +73,7 @@ class CookingCoordinator extends ChangeNotifier {
           ..onSaveFailed = _onStepSaveFailed
           ..saveTimer = _saveTimer
           ..clearTimer = _clearTimer
-          ..addListener(_notify);
+          ..addListener(_onOpsChanged);
     live = LiveCookingController(
       transportFactory: transportFactory ?? _noLiveTransport,
       media: media,
@@ -475,9 +475,10 @@ $cookingUiInstructions
     );
   }
 
-  /// Shown while a step change is on screen but its save keeps failing.
+  /// Shown while a step change or timer is on screen but its save keeps
+  /// failing.
   static const unsavedStepError =
-      "Your step changed on this screen but isn't saved yet. We'll keep trying.";
+      "Your progress is shown here but isn't saved yet. We'll keep trying.";
 
   /// Moves to the next step (or finishes the last) on this device at once,
   /// then saves it: now when online, otherwise on reconnect (SS-072).
@@ -573,6 +574,11 @@ $cookingUiInstructions
           'Your progress was changed somewhere else, so this screen now shows '
           'the saved step.';
     }
+    _notify();
+  }
+
+  /// The unsaved-progress error lasts only while work is still pending.
+  void _onOpsChanged() {
     if (!_ops.hasPendingWork && error == unsavedStepError) error = null;
     _notify();
   }
@@ -612,30 +618,18 @@ $cookingUiInstructions
     final isNew = !ui.timers.any((t) => t.id == id);
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
     if (isNew) _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
-    final pending = OpTimer(
-      id: timer.id,
-      label: timer.label,
-      endsAt: timer.deadline,
+    // Every timer save goes through the step queue: offline, or behind
+    // unsaved step changes, it waits with its original deadline; and a
+    // dismissal while its save is in flight is cleared afterwards (SS-072).
+    _ops.recordTimer(
+      OpTimer(id: timer.id, label: timer.label, endsAt: timer.deadline),
     );
-    // Offline, or behind unsaved step changes: the deadline is saved later,
-    // unchanged, with those changes (SS-072).
-    if (_queueTimer(pending)) return;
-    try {
-      await _save((current) => withTimer(current, pending));
-    } catch (_) {
-      if (_disposed || _queueTimer(pending)) return;
-      error = 'The timer is running here, but could not be saved for reload.';
-      _notify();
-    }
-  }
-
-  bool _queueTimer(OpTimer timer) {
-    final saved = _saved;
-    if (saved == null || (_ops.online && !_ops.hasPendingWork)) return false;
-    _ops.recordTimer(timer);
-    _setSaved(saved);
+    if (_saved case final saved?) _setSaved(saved);
     _notify();
-    return true;
+    if (!_ops.online) return;
+    // Behind a step save in flight, don't hold the caller for that save.
+    final saving = _ops.flush();
+    if (_ops.pendingSteps == 0) await saving;
   }
 
   /// Whether any watch (on-device or Live) is running.
@@ -1105,7 +1099,7 @@ $cookingUiInstructions
     _resetCoachLite();
     _disposed = true;
     _ops
-      ..removeListener(_notify)
+      ..removeListener(_onOpsChanged)
       ..dispose();
     _researchEpoch++;
     if (watchService case final service?) {
