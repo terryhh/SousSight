@@ -650,7 +650,7 @@ Recipe buildDraftRecipe(
   }
 
   final recipeProteins = ingredients.map((i) => i.name).join(' ');
-  final riskyRecipe = _risky.hasMatch(recipeProteins);
+  final riskyRecipe = _risky.hasMatch(_normalizeShapes(recipeProteins));
   final steps = <RecipeStep>[
     for (var i = 0; i < parsed.length; i++)
       RecipeStep(
@@ -697,7 +697,8 @@ Recipe buildDraftRecipe(
 // beef", "ground turkey" and "ground meat" still match by their meat word.
 final _risky = RegExp(
   r'\b(raw|meat|meats|poultry|chicken|turkey|duck|beef|pork|lamb|veal|bacon|'
-  r'ham|sausages?|hamburgers?|burgers?|meatballs?|meatloaf|mince|fish|salmon|'
+  r'ham|sausages?|hamburgers?|burgers?|patty|patties|meatballs?|meatloaf|'
+  r'mince|fish|salmon|'
   r'tuna|cod|tilapia|trout|halibut|catfish|pollock|sardines?|seafood|shrimp|'
   r'prawns?|crab|lobster|scallops?|clams?|mussels?|oysters?|eggs?)\b',
   caseSensitive: false,
@@ -725,25 +726,31 @@ final _poultry = RegExp(
   r'\b(poultry|chicken|turkey|duck)\b',
   caseSensitive: false,
 );
-// Ground red meat named as such. "ground meat" counts: it is the chart's own
-// wording for 160°F.
+// Ground red meat named as such: a red-meat word right before the shape.
+// A hamburger is a shape like a burger, not a meat: "turkey hamburgers"
+// are poultry.
 final _groundRedMeat = RegExp(
-  r'\b(ground|minced?)\s+(beef|pork|lamb|veal|meat)\b|'
-  r'\b(beef|pork|lamb|veal)\s+(burgers?|sausages?|meatballs?|meatloaf)\b|'
-  r'\bhamburgers?\b',
+  r'\b(ground|minced?)\s+(beef|pork|lamb|veal)\b|'
+  r'\b(beef|pork|lamb|veal)\s+(hamburgers?|burgers?|sausages?|patty|patties|'
+  r'meatballs?|meatloaf)\b',
   caseSensitive: false,
 );
-// Burgers, sausages and meatballs whose meat is not named right before
-// them. Their target depends on what the recipe names elsewhere.
+// "Ground meat" or "minced meat" without the animal. The chart's own
+// wording for 160°F, unless the recipe says the meat is poultry. "Mince"
+// alone is not here: it is also a verb ("mince the garlic").
+final _groundGeneric = RegExp(
+  r'\b(ground|minced?)\s+meat\b',
+  caseSensitive: false,
+);
+// Burgers, hamburgers, patties, sausages and meatballs whose meat is not
+// named right before them. Their target depends on what the recipe names
+// elsewhere, and they get no number when it names neither or both kinds.
 final _groundUnnamed = RegExp(
   r'(?<!\b(?:beef|pork|lamb|veal|chicken|turkey|duck|poultry)\s)'
-  r'\b(burgers?|meatballs?|meatloaf|sausages?)\b',
+  r'\b(hamburgers?|burgers?|patty|patties|meatballs?|meatloaf|sausages?)\b',
   caseSensitive: false,
 );
-final _redMeat = RegExp(
-  r'\b(beef|pork|lamb|veal|hamburgers?)\b|\bground\s+meat\b',
-  caseSensitive: false,
-);
+final _redMeat = RegExp(r'\b(beef|pork|lamb|veal)\b', caseSensitive: false);
 final _finFish = RegExp(
   r'\b(fish|salmon|tuna|cod|tilapia|trout|halibut|catfish|pollock|'
   r'sardines?)\b',
@@ -779,6 +786,45 @@ const _warmOnly = {
 
 const _reheatedTarget = 'leftovers and reheated food 165°F (74°C)';
 
+const _shapeWords =
+    r'(hamburgers?|burgers?|patty|patties|sausages?|meatballs?|meatloaf)';
+
+/// Spells burger-style foods the same way before they are classified:
+/// "turkeyburgers", "turkey-burgers" and "turkey  burgers" become
+/// "turkey burgers", "cheeseburger" becomes "cheese burger", and a
+/// plant-based burger or sausage ("veggie burgers", "black bean patties")
+/// and burger buns lose their meat shape word, so none of them is read as
+/// meat of unknown kind.
+String _normalizeShapes(String text) => text
+    .replaceAllMapped(
+      RegExp(
+        r'\b(beef|pork|lamb|veal|chicken|turkey|duck|cheese|veggie|vegan|'
+                r'bean|tofu)[\s-]*' +
+            _shapeWords +
+            r'\b',
+        caseSensitive: false,
+      ),
+      (m) => '${m[1]} ${m[2]}',
+    )
+    .replaceAll(
+      RegExp(
+        r'\b(veggie|vegetable|vegan|vegetarian|plant[\s-]*based|meatless|'
+                r'bean|black\s+bean|lentil|chickpea|mushroom|tofu|tempeh|quinoa|'
+                r'falafel)\s+' +
+            _shapeWords +
+            r'\b',
+        caseSensitive: false,
+      ),
+      'plant-based food',
+    )
+    .replaceAll(
+      RegExp(
+        r'\b(hamburgers?|burgers?)\s+(buns?|rolls?|bread)\b',
+        caseSensitive: false,
+      ),
+      'buns',
+    );
+
 /// The thermometer note for a heated step with animal food. [proteins] is
 /// the text that names the food (the step, or the recipe's ingredients when
 /// the step names none); [step] is the step's own text and defaults to
@@ -786,17 +832,21 @@ const _reheatedTarget = 'leftovers and reheated food 165°F (74°C)';
 ///
 /// Rules, conservative because these numbers are the app's own claims:
 /// reheated or leftover food is 165°F; a step that only warms, melts or
-/// toasts food of unknown state names no number; an unnamed burger, sausage
-/// or meatball takes poultry's 165°F when the recipe names only poultry,
-/// ground meat's 160°F when it names only red meat, and no number when the
-/// recipe names both or neither. It never says the food reached a
+/// toasts food of unknown state names no number; an unnamed burger,
+/// hamburger, patty, sausage or meatball takes poultry's 165°F when the
+/// recipe names only poultry, ground meat's 160°F when it names only red
+/// meat, and no number when the recipe names both or neither; "ground meat"
+/// without the animal is 160°F unless the recipe names poultry; plant-based
+/// burgers and sausages get no number. It never says the food reached a
 /// temperature.
 String draftThermometerNote(
   String proteins, {
   String? step,
   String recipe = '',
 }) {
-  final stepText = step ?? proteins;
+  proteins = _normalizeShapes(proteins);
+  recipe = _normalizeShapes(recipe);
+  final stepText = _normalizeShapes(step ?? proteins);
   final both = '$stepText $proteins $recipe';
   const general = '$kColourNotDoneness $kThermometerDisclaimer';
   final List<String> targets;
@@ -811,13 +861,22 @@ String draftThermometerNote(
     }
     var poultry = _poultry.hasMatch(proteins);
     var groundMeat = _groundRedMeat.hasMatch(proteins);
-    if (_groundUnnamed.hasMatch(proteins)) {
+    final unnamedShape = _groundUnnamed.hasMatch(proteins);
+    final unnamedGround = _groundGeneric.hasMatch(proteins);
+    if (unnamedShape || unnamedGround) {
+      // Poultry is resolved first: a shape or "ground meat" never lowers an
+      // identified poultry ingredient to 160°F.
       final context = '$proteins $recipe';
       final namesPoultry = _poultry.hasMatch(context);
       final namesRed = _redMeat.hasMatch(context);
-      if (namesPoultry == namesRed) return general;
-      poultry = poultry || namesPoultry;
-      groundMeat = groundMeat || namesRed;
+      if (namesPoultry && namesRed) return general;
+      if (namesPoultry) {
+        poultry = true;
+      } else if (namesRed || (unnamedGround && !unnamedShape)) {
+        groundMeat = true;
+      } else {
+        return general;
+      }
     }
     targets = [
       if (poultry) 'poultry 165°F (74°C)',
@@ -838,7 +897,7 @@ String _safeCue(
   required String recipeProteins,
 }) {
   final heated = _heat.hasMatch(stepText);
-  final riskyStep = _risky.hasMatch(stepText);
+  final riskyStep = _risky.hasMatch(_normalizeShapes(stepText));
   final String disclaimer;
   if (heated && (riskyStep || riskyRecipe)) {
     // Enforced here whatever the model wrote: a heated meat, poultry, fish

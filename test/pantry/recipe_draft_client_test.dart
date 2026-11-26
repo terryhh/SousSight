@@ -388,6 +388,131 @@ void main() {
       );
     });
 
+    group('burger, hamburger, patty and sausage identity', () {
+      const poultry = 'poultry 165°F (74°C)';
+      const ground = 'ground meat 160°F (71°C)';
+      // Exactly one target: the right number, and never the other one.
+      Matcher only(String target) => allOf(
+        contains('Check with a food thermometer: $target.'),
+        startsWith(kColourNotDoneness),
+        endsWith("The camera can't confirm it's safe."),
+      );
+      // (step, recipe ingredients, expected)
+      final cases = <(String, String, Matcher)>[
+        // Codex probes on 649c1be.
+        ('Brown the hamburgers in a pan', 'Ground turkey Bread', only(poultry)),
+        ('Brown the turkey hamburgers', '', only(poultry)),
+        // Plurals and casing.
+        ('Brown the hamburger in a pan', 'Ground turkey Bread', only(poultry)),
+        ('BROWN THE HAMBURGERS', 'GROUND TURKEY', only(poultry)),
+        ('Fry the Turkey Hamburger', '', only(poultry)),
+        ('Grill the TURKEY BURGERS', '', only(poultry)),
+        ('Grill the turkey burger', '', only(poultry)),
+        ('Grill the turkeyburgers', '', only(poultry)),
+        ('Grill the turkey-burgers', '', only(poultry)),
+        // Named meat before the shape.
+        ('Fry the chicken hamburgers', '', only(poultry)),
+        ('Fry the chicken hamburger patties', '', only(poultry)),
+        ('Grill the beef hamburgers', '', only(ground)),
+        ('Grill the Beef Hamburger', '', only(ground)),
+        ('Grill the pork burger', '', only(ground)),
+        // Unnamed hamburgers resolve from the recipe.
+        ('Grill the hamburgers', 'Ground beef Buns', only(ground)),
+        ('Grill the cheeseburgers', 'Ground beef Buns', only(ground)),
+        ('Grill the cheeseburgers', 'Ground turkey Buns', only(poultry)),
+        // Ground turkey, however it is worded.
+        ('Brown the ground turkey in a pan', '', only(poultry)),
+        ('Brown the Ground Turkey', '', only(poultry)),
+        ('Brown the ground meat', 'Ground turkey Onion', only(poultry)),
+        ('Brown the minced meat', 'Ground chicken', only(poultry)),
+        ('Brown the ground meat', 'Onion', only(ground)),
+        ('Cook the patties in a skillet', 'Ground turkey Buns', only(poultry)),
+        ('Cook the patties in a skillet', 'Ground pork', only(ground)),
+        // Sausage patties.
+        ('Fry the sausage patties', 'Pork sausage Eggs', contains(ground)),
+        ('Fry the sausage patties', 'Pork sausage', only(ground)),
+        ('Fry the pork sausage patties', '', only(ground)),
+        ('Fry the turkey sausage patties', '', only(poultry)),
+        ('Fry the Chicken Sausage Patty', '', only(poultry)),
+        ('Fry the sausage patties', 'Turkey sausage', only(poultry)),
+      ];
+      for (final (stepText, recipe, expected) in cases) {
+        test('"$stepText" with "$recipe"', () {
+          final note = draftThermometerNote(stepText, recipe: recipe);
+          expect(note, expected);
+          expect(note, isNot(contains('reached')));
+        });
+      }
+
+      // Ambiguous or not meat: the general thermometer line, no number.
+      final abstain = <(String, String)>[
+        ('Grill the hamburgers', ''),
+        ('Grill the hamburgers', 'Buns Cheese'),
+        ('Grill the burgers', 'Ground turkey Ground beef'),
+        ('Grill the HAMBURGERS', 'Chicken thighs Beef'),
+        ('Fry the sausage patties', ''),
+        ('Fry the sausage patties', 'Turkey sausage Pork sausage'),
+        ('Brown the ground meat', 'Ground turkey Ground beef'),
+        ('Grill the veggie burgers', ''),
+        ('Grill the Veggie Burger', 'Ground beef'),
+        ('Grill the veggieburgers', 'Ground turkey'),
+        ('Fry the black bean patties', ''),
+        ('Fry the vegan sausages', 'Pork sausage'),
+        ('Fry the plant-based burgers', 'Ground beef'),
+      ];
+      for (final (stepText, recipe) in abstain) {
+        test('"$stepText" with "$recipe" names no number', () {
+          expect(draftThermometerNote(stepText, recipe: recipe), general);
+        });
+      }
+
+      test('mince as a verb is not ground meat', () {
+        expect(
+          draftThermometerNote('Mince the garlic and saute in a pan'),
+          general,
+        );
+      });
+    });
+
+    test('hamburger and veggie burger steps, end to end', () async {
+      Map<String, Object> ingredient(String name, List<String> allergens) => {
+        'name': name,
+        'fromConfirmed': name.toLowerCase(),
+        'qty': '1',
+        'optional': false,
+        'allergens': allergens,
+      };
+      final turkey = await cues(
+        [
+          step('Shape the ground turkey into patties.'),
+          step('Brown the HAMBURGERS in a pan.', 'Both sides are browned.'),
+          step('Serve on the bread.'),
+        ],
+        ingredients: [
+          ingredient('Ground turkey', []),
+          ingredient('Bread', ['wheat']),
+        ],
+        items: ['ground turkey', 'bread'],
+      );
+      expect(turkey[1], contains('poultry 165°F (74°C)'));
+      expect(turkey[1], isNot(contains('160°F')));
+
+      final veggie = await cues(
+        [
+          step('Unwrap the veggie burgers.'),
+          step('Grill the veggie burgers.', 'Both sides are browned.'),
+          step('Serve on the bread.'),
+        ],
+        ingredients: [
+          ingredient('Veggie burgers', ['soy']),
+          ingredient('Bread', ['wheat']),
+        ],
+        items: ['veggie burgers', 'bread'],
+      );
+      expect(veggie[1], endsWith(kHeatDisclaimer));
+      expect(veggie[1], isNot(contains('°F')));
+    });
+
     test(
       'reheated food is 165°F; warming food of unknown state names none',
       () {
