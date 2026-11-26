@@ -40,3 +40,17 @@ paths = ['''^test/tool/ci_scripts_test\.cjs$''']
 regexes = [
   '''^0f8e2c1a-3b4d-4e5f-8a6b-7c8d9e0f1a2b$''',
 ]
+
+# Synthetic idempotency ledger key in the dinner-ready legacy fixture (#237,
+# commit 5dec64a). It is the SHA-256 of fake request fields recorded by running
+# pre-change code against fake Firestore — not a credential. Because the secret
+# scan reads every fetched branch, this commit fails every PR until allowed.
+# Permit only this exact value, only in that file, only for the rule it tripped.
+[[allowlists]]
+description = "Synthetic dinner ledger key in a functions test fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^functions/test/fixtures/legacy-started-claim\.json$''']
+regexes = [
+  '''^b512aa05da2a3afabca3fb1d9c93f709f19ec0b6699734df9caefc5f39ba84e1$''',
+]
