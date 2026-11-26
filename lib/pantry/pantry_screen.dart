@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../learner/draft_recipe_chip.dart';
@@ -98,6 +99,7 @@ class _PantryScreenState extends State<PantryScreen> {
   double _recordProgress = 0;
   bool _thinking = false;
   String? _error;
+  List<InferenceLeg> _errorLegs = const [];
   PantryResult? _result;
   bool _drafting = false;
   String? _draftError;
@@ -263,6 +265,7 @@ class _PantryScreenState extends State<PantryScreen> {
     setState(() {
       _thinking = true;
       _error = null;
+      _errorLegs = const [];
     });
     // Release the camera and microphone as soon as the inputs are captured.
     await _stopMedia();
@@ -282,7 +285,12 @@ class _PantryScreenState extends State<PantryScreen> {
         _answer.clear();
       });
     } on PantryException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _errorLegs = error.legs;
+        });
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -420,6 +428,10 @@ class _PantryScreenState extends State<PantryScreen> {
                     Icons.info_outline,
                     color: const Color(0xFFFBE3DC),
                   ),
+                  if (_errorLegs.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    PantryLegList(legs: _errorLegs),
+                  ],
                 ],
                 if (_result case final result?) ...[
                   const SizedBox(height: 28),

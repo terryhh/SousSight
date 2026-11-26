@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -17,6 +18,9 @@ class _ScriptedDispatcher implements HybridDispatcher {
   final sessions = <String>[];
   final script = <DispatchResult Function(HybridTask)>[];
 
+  /// When set, the next send waits for this instead of the script.
+  Completer<DispatchResult>? hold;
+
   @override
   HybridOperation start(
     HybridTask task, {
@@ -26,6 +30,10 @@ class _ScriptedDispatcher implements HybridDispatcher {
     tasks.add(task);
     validators.add(validate);
     sessions.add(sessionId);
+    if (hold case final pending?) {
+      hold = null;
+      return HybridOperation('op-${tasks.length}', pending.future, () {});
+    }
     final next = script.removeAt(0);
     return HybridOperation(
       'op-${tasks.length}',
@@ -208,6 +216,108 @@ void main() {
     expect(result.notice, kPantryVoiceSkippedNotice);
     expect(result.meals, isNotEmpty);
   });
+
+  test('the whole scan stays bound to the session it started in', () async {
+    var session = 'A';
+    client = HybridPantryClient(
+      dispatcher: dispatcher,
+      sessionId: () => session,
+    );
+    final voice = Completer<DispatchResult>();
+    dispatcher.hold = voice;
+    final scan = client.identify(
+      PantryInput(photoJpeg: _photo, audioWav: _audio),
+      recipes,
+    );
+    await Future<void>.delayed(Duration.zero);
+    session = 'B';
+    voice.complete(
+      DispatchResult(
+        text: _voice(['bread']),
+        legs: [_leg(kPantryVoiceFeature, Provenance.sdkCloud)],
+      ),
+    );
+    await expectLater(
+      scan,
+      throwsA(
+        isA<PantryException>()
+            .having((e) => e.message, 'message', contains('session changed'))
+            .having((e) => e.legs.map((l) => l.provenance), 'legs', [
+              Provenance.sdkCloud,
+            ]),
+      ),
+    );
+    expect(dispatcher.sessions, ['A'], reason: 'nothing is sent in B');
+    expect(dispatcher.tasks.map((t) => t.feature), [kPantryVoiceFeature]);
+
+    // Unchanged, both sends use the snapshot.
+    session = 'C';
+    dispatcher.script
+      ..add(_reply(_voice(['bread']), Provenance.sdkCloud))
+      ..add(_reply(_scan(), Provenance.sdkOnDevice));
+    await client.identify(
+      PantryInput(photoJpeg: _photo, audioWav: _audio),
+      recipes,
+    );
+    expect(dispatcher.sessions.skip(1), ['C', 'C']);
+  });
+
+  test(
+    'a declined ranking after a cloud voice leg reports the upload',
+    () async {
+      dispatcher.script
+        ..add(_reply(_voice(['bread']), Provenance.sdkCloud))
+        ..add(
+          _reply(
+            null,
+            Provenance.unknown,
+            blocked: RouteReason.consentDeclined,
+          ),
+        );
+      await expectLater(
+        client.identify(
+          PantryInput(photoJpeg: _photo, audioWav: _audio),
+          recipes,
+        ),
+        throwsA(
+          isA<PantryException>()
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('photo and list were not sent'),
+                  contains('voice clip was already sent to Google cloud'),
+                  isNot(contains('nothing was sent')),
+                ),
+              )
+              .having(
+                (e) => e.legs.map((l) => (l.feature, l.provenance)).first,
+                'voice leg',
+                (kPantryVoiceFeature, Provenance.sdkCloud),
+              ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'a declined scan with no earlier upload says nothing was sent',
+    () async {
+      dispatcher.script.add(
+        _reply(null, Provenance.unknown, blocked: RouteReason.consentDeclined),
+      );
+      await expectLater(
+        client.identify(const PantryInput(text: 'corn'), recipes),
+        throwsA(
+          isA<PantryException>().having(
+            (e) => e.message,
+            'message',
+            contains('nothing was sent'),
+          ),
+        ),
+      );
+    },
+  );
 
   test('a blocked scan surfaces a cook-facing message', () async {
     dispatcher.script.add(

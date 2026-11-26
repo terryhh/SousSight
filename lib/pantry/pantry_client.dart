@@ -26,8 +26,12 @@ abstract class PantryClient {
 
 /// Safe to show to a cook; provider errors are never exposed.
 class PantryException implements Exception {
-  const PantryException(this.message);
+  const PantryException(this.message, {this.legs = const []});
   final String message;
+
+  /// Attempts already made before the failure, for example a voice clip that
+  /// was sent to the cloud before the ranking was declined. Shown to the cook.
+  final List<InferenceLeg> legs;
   @override
   String toString() => message;
 }
@@ -517,13 +521,19 @@ class HybridPantryClient implements PantryClient {
         'Please keep the list under 1,500 characters.',
       );
     }
+    // One scan belongs to one session: every send uses this snapshot, and the
+    // scan stops before a later send if the session has changed meanwhile.
+    final sessionId = _sessionId();
     final legs = <InferenceLeg>[];
+    PantryException fail(String message) =>
+        PantryException(message, legs: List.unmodifiable(legs));
     var spoken = const <PantryItem>[];
     String? notice;
     if (input.audioWav case final audio? when audio.isNotEmpty) {
       try {
         final voice = await _run(
           buildPantryVoiceTask(audio),
+          sessionId: sessionId,
           validate: (text) => _check(() => parsePantryItems(text)),
         );
         legs.addAll(voice.legs);
@@ -537,12 +547,19 @@ class HybridPantryClient implements PantryClient {
     }
     final hasPhoto = input.photoJpeg?.isNotEmpty ?? false;
     if (input.text.trim().isEmpty && !hasPhoto && spoken.isEmpty) {
-      throw const PantryException(
+      throw fail(
         'I could not use your voice clip. Type what you got, or snap a photo.',
+      );
+    }
+    if (_sessionId() != sessionId) {
+      throw fail(
+        'Your cooking session changed, so I stopped before sending your '
+        '${hasPhoto ? 'photo and ' : ''}list. Please try again.',
       );
     }
     final ids = {for (final recipe in recipes) recipe.id};
     final scan = await _run(
+      sessionId: sessionId,
       buildPantryScanTask(
         typedText: input.text,
         spokenItems: [
@@ -561,14 +578,26 @@ class HybridPantryClient implements PantryClient {
     );
     legs.addAll(scan.legs);
     if (scan.blocked case final reason?) {
-      throw PantryException(_blockedMessage(reason, hasPhoto: hasPhoto));
+      throw fail(
+        _blockedMessage(
+          reason,
+          hasPhoto: hasPhoto,
+          voiceSent: legs.any(
+            (leg) =>
+                leg.feature == kPantryVoiceFeature &&
+                leg.transferPermitted &&
+                leg.provenance != Provenance.sdkOnDevice &&
+                leg.provenance != Provenance.simulated,
+          ),
+        ),
+      );
     }
     final PantryResult result;
     try {
       result = parsePantryResult(scan.text, ids);
     } on FormatException catch (error) {
       debugPrint('Pantry response rejected: ${error.message}');
-      throw PantryException(
+      throw fail(
         scan.text == null
             ? (hasPhoto
                   ? 'I could not use that photo. Try again, or type your list below.'
@@ -577,7 +606,7 @@ class HybridPantryClient implements PantryClient {
       );
     }
     if (result.items.isEmpty && result.meals.isEmpty) {
-      throw const PantryException(
+      throw fail(
         'I could not make out any food. Try a closer photo or type the list.',
       );
     }
@@ -597,11 +626,12 @@ class HybridPantryClient implements PantryClient {
 
   Future<DispatchResult> _run(
     HybridTask task, {
+    required String sessionId,
     required ResultValidator validate,
   }) async {
     final operation = _dispatcher.start(
       task,
-      sessionId: _sessionId(),
+      sessionId: sessionId,
       validate: validate,
     );
     try {
@@ -625,21 +655,29 @@ class HybridPantryClient implements PantryClient {
   }
 
   // TODO(SS-070): use the trust surface's one sentence per RouteReason.
-  static String _blockedMessage(RouteReason reason, {required bool hasPhoto}) =>
-      switch (reason) {
-        RouteReason.localOnlySetting || RouteReason.cloudNotApproved =>
-          'This needs Google cloud AI, which is off for this feature. Type '
-              'your list, or pick a recipe below.',
-        RouteReason.consentDeclined =>
-          'Okay, nothing was sent. Pick a recipe below, or try again.',
-        RouteReason.modelDownloading || RouteReason.modelNotReady =>
-          'The on-device model is still getting ready. Try again in a moment.',
-        RouteReason.offline =>
-          'You look offline. Pick a recipe below, or try again when connected.',
-        RouteReason.cancelled => 'Stopped. Nothing more was sent.',
-        _ =>
-          hasPhoto
-              ? 'I could not use that photo here. Type your list, or pick a recipe below.'
-              : 'Ingredient matching is unavailable right now. Pick a recipe below.',
-      };
+  static String _blockedMessage(
+    RouteReason reason, {
+    required bool hasPhoto,
+    required bool voiceSent,
+  }) => switch (reason) {
+    RouteReason.localOnlySetting || RouteReason.cloudNotApproved =>
+      'This needs Google cloud AI, which is off for this feature. Type '
+          'your list, or pick a recipe below.',
+    // Only the ranking was declined; an earlier voice upload is real.
+    RouteReason.consentDeclined when voiceSent =>
+      'Okay, your ${hasPhoto ? 'photo and list were' : 'list was'} not sent. '
+          'Your voice clip was already sent to Google cloud to read the '
+          'items. Pick a recipe below, or try again.',
+    RouteReason.consentDeclined =>
+      'Okay, nothing was sent. Pick a recipe below, or try again.',
+    RouteReason.modelDownloading || RouteReason.modelNotReady =>
+      'The on-device model is still getting ready. Try again in a moment.',
+    RouteReason.offline =>
+      'You look offline. Pick a recipe below, or try again when connected.',
+    RouteReason.cancelled => 'Stopped. Nothing more was sent.',
+    _ =>
+      hasPhoto
+          ? 'I could not use that photo here. Type your list, or pick a recipe below.'
+          : 'Ingredient matching is unavailable right now. Pick a recipe below.',
+  };
 }
