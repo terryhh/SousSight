@@ -7,6 +7,7 @@ import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
 import 'pantry_client.dart' show kPantryScanFeature, kPantryVoiceFeature;
 import 'pantry_models.dart';
+import 'recipe_draft.dart' show kRecipeDraftFeature;
 
 const pantryGreen = Color(0xFF235B46);
 const pantryTomato = Color(0xFFC4472B);
@@ -539,6 +540,7 @@ String pantryLegLabel(InferenceLeg leg) {
   final what = switch (leg.feature) {
     kPantryVoiceFeature => 'Voice list',
     kPantryScanFeature => 'Meal match',
+    kRecipeDraftFeature => 'Recipe draft',
     _ => leg.feature,
   };
   final where = switch (leg.provenance) {

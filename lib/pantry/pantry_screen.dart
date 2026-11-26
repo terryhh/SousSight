@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../learner/draft_recipe_chip.dart';
@@ -102,6 +103,7 @@ class _PantryScreenState extends State<PantryScreen> {
   bool _drafting = false;
   String? _draftError;
   Recipe? _drafted;
+  List<InferenceLeg> _draftLegs = const [];
   int _draftEpoch = 0;
 
   @override
@@ -279,6 +281,7 @@ class _PantryScreenState extends State<PantryScreen> {
         _drafting = false;
         _draftError = null;
         _drafted = null;
+        _draftLegs = const [];
         _answer.clear();
       });
     } on PantryException catch (error) {
@@ -318,12 +321,15 @@ class _PantryScreenState extends State<PantryScreen> {
       _draftError = null;
     });
     try {
-      final recipe = await client.draft(
+      final result = await client.draft(
         RecipeDraftRequest(confirmedItems: items, note: _text.text.trim()),
       );
       if (!mounted || epoch != _draftEpoch) return;
-      setState(() => _drafted = recipe);
-      _choose(recipe);
+      setState(() {
+        _drafted = result.recipe;
+        _draftLegs = result.legs;
+      });
+      _choose(result.recipe);
     } on RecipeDraftException catch (error) {
       if (mounted && epoch == _draftEpoch) {
         setState(() => _draftError = error.message);
@@ -887,6 +893,7 @@ class _PantryScreenState extends State<PantryScreen> {
           child: DraftRecipeChip(recipe: drafted),
         ),
         const SizedBox(height: 8),
+        PantryLegList(legs: _draftLegs),
         OutlinedButton.icon(
           key: const ValueKey('cook-drafted'),
           icon: const Icon(Icons.restaurant),
