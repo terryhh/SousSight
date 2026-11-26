@@ -696,8 +696,8 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     if (ledger != null) {
       _watchLegs.begin(local.isActive ? local.watchId : null, ledger.legs);
     }
-    if (local.previewFrame == null) return null;
-    if (ledger == null) return LocalWatchOverlay.of(local);
+    // A local watch only exists with the hybrid runtime, so its ledger.
+    if (local.previewFrame == null || ledger == null) return null;
     return ListenableBuilder(
       listenable: ledger,
       builder: (context, _) =>
