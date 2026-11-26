@@ -3,7 +3,8 @@
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
-import 'package:soussight/live/live_backend_guard.dart' show kLiveFeature;
+import 'package:soussight/live/live_backend_guard.dart'
+    show kLiveFeature, kLiveLegKinds;
 import 'package:soussight/trust/privacy_receipt.dart';
 import 'package:soussight/trust/trust_labels.dart';
 
@@ -17,7 +18,7 @@ void main() {
     expect(kReceiptLiveFeature, kLiveFeature);
   });
 
-  test('zero-cloud night: every answer on this device, nothing left', () {
+  test('zero-cloud night: every run on this device, nothing recorded left', () {
     final r = PrivacyReceipt.fromLegs([
       leg(Provenance.sdkOnDevice, feature: 'pantry_scan'),
       leg(Provenance.sdkOnDevice, feature: 'local_watch', kinds: _photo),
@@ -25,27 +26,44 @@ void main() {
       leg(Provenance.sdkOnDevice, feature: 'coach_lite'),
     ]);
     expect(r.legCount, 4);
-    expect(r.answers, 4);
-    expect(r.onDeviceAnswers, 4);
-    expect(r.cloudAnswers, 0);
-    expect(r.practiceAnswers, 0);
+    expect(r.runs, 4);
+    expect(r.onDeviceRuns, 4);
+    expect(r.cloudRuns, 0);
+    expect(r.practiceRuns, 0);
     expect(r.cameraChecksOnDevice, 2);
     expect(r.photosSent, 0);
     expect(r.photosMaybeSent, 0);
     expect(r.unfinished, 0);
-    expect(r.nothingLeft, isTrue);
+    expect(r.inProgress, 0);
+    expect(r.nothingRecordedLeft, isTrue);
     expect(r.practiceOnly, isFalse);
-    expect(r.headline, '4 answers tonight');
-    expect(r.summary, '4 answers tonight, 4 on this device; photos sent: 0.');
+    expect(r.headline, '4 AI runs tonight');
+    expect(
+      r.summary,
+      '4 AI runs tonight, 4 on this device; recorded photos sent: 0.',
+    );
   });
 
   test('a night with no legs claims nothing but zero', () {
     final r = PrivacyReceipt.fromLegs(const []);
-    expect(r.answers, 0);
-    expect(r.headline, 'No AI answers tonight');
-    expect(r.nothingLeft, isTrue);
+    expect(r.runs, 0);
+    expect(r.headline, 'No finished AI runs recorded tonight');
+    expect(r.nothingRecordedLeft, isTrue);
     expect(r.practiceOnly, isFalse);
-    expect(r.summary, 'No AI answers tonight; photos sent: 0.');
+    expect(r.allSimulated, isFalse);
+  });
+
+  test('a run is counted per finished leg, not as an accepted answer', () {
+    // The dispatcher's semantic retry: a local result the feature rejected,
+    // then a cloud result it also rejected. Both legs ran; neither was an
+    // accepted answer, so the receipt says "runs", and keeps both legs.
+    final r = PrivacyReceipt.fromLegs([
+      leg(Provenance.sdkOnDevice, feature: 'pantry_scan'),
+      leg(Provenance.sdkCloud, feature: 'pantry_scan'),
+    ]);
+    expect(r.runs, 2);
+    expect(r.headline, '2 AI runs tonight');
+    expect(r.sent.single.feature, 'pantry_scan');
   });
 
   test('mixed night: sent photos are counted, listed and explained', () {
@@ -70,38 +88,72 @@ void main() {
         feature: 'nearby',
         kinds: {DataKind.location},
       ),
+      leg(
+        Provenance.sdkCloud,
+        feature: 'coach_lite',
+        mode: HybridMode.preferInCloud,
+      ),
+      const InferenceLeg(
+        requestId: 'no-mode',
+        feature: 'coach_lite',
+        mode: null,
+        kinds: {DataKind.text},
+        transferPermitted: true,
+        provenance: Provenance.sdkCloud,
+      ),
     ]);
-    expect(r.answers, 6);
-    expect(r.onDeviceAnswers, 1);
-    expect(r.cloudAnswers, 5);
+    expect(r.runs, 8);
+    expect(r.onDeviceRuns, 1);
+    expect(r.cloudRuns, 7);
     expect(r.photosSent, 3);
     expect(r.cameraChecksOnDevice, 0);
-    expect(r.nothingLeft, isFalse);
-    expect(r.sent, hasLength(4));
+    expect(r.nothingRecordedLeft, isFalse);
     final label = r.sent.firstWhere((s) => s.feature == 'label_check');
     expect(label.count, 2);
     expect(label.outcome, LegOutcome.cloudSdk);
     expect(label.what, 'Label check · photo and text');
-    expect(label.why, 'Tried this device first; Gemini in the cloud answered');
-    final pantry = r.sent.firstWhere((s) => s.feature == 'pantry_scan');
-    expect(pantry.why, 'Sent to Gemini in the cloud');
+    // The observed result first; the requested preference separately.
+    expect(
+      label.why,
+      'Ran on Gemini in the cloud · asked to prefer this device',
+    );
+    expect(label.why, isNot(contains('Tried')));
+    expect(
+      r.sent.firstWhere((s) => s.feature == 'pantry_scan').why,
+      "Sent by SousSight's cloud client · asked for the cloud",
+    );
     expect(
       r.sent.firstWhere((s) => s.feature == 'research').why,
-      'Grounded answers search the web',
+      "Sent by SousSight's cloud client to search the web · asked for the "
+      'cloud',
     );
-    expect(
-      r.sent.firstWhere((s) => s.feature == 'nearby').what,
-      'Nearby stores · location',
-    );
-    expect(
-      r.sent.firstWhere((s) => s.feature == 'nearby').why,
-      'Finding places near you',
-    );
-    expect(r.summary, contains('1 on this device, 5 from the cloud'));
-    expect(r.summary, endsWith('photos sent: 3.'));
+    final nearby = r.sent.firstWhere((s) => s.feature == 'nearby');
+    expect(nearby.what, 'Nearby stores · location');
+    expect(nearby.why, contains('to find places near you'));
+    final coach = r.sent.where((s) => s.feature == 'coach_lite').toList();
+    expect(coach.map((s) => s.why), {
+      'Ran on Gemini in the cloud · asked to prefer the cloud',
+      'Ran on Gemini in the cloud',
+    });
+    expect(r.summary, contains('1 on this device, 7 in the cloud'));
+    expect(r.summary, endsWith('recorded photos sent: 3.'));
   });
 
-  test('unknown provenance is never on-device', () {
+  test('an on-device-only request that reached the cloud says so', () {
+    final r = PrivacyReceipt.fromLegs([
+      leg(
+        Provenance.sdkCloud,
+        feature: 'coach_lite',
+        mode: HybridMode.onlyOnDevice,
+      ),
+    ]);
+    expect(
+      r.sent.single.why,
+      'Ran on Gemini in the cloud · asked for this device only',
+    );
+  });
+
+  test('unknown provenance is never on-device; pending is not "stopped"', () {
     final r = PrivacyReceipt.fromLegs([
       // Allowed to leave, then failed: may have been sent.
       leg(
@@ -111,8 +163,13 @@ void main() {
         transferPermitted: true,
         error: HybridErrorCode.network,
       ),
-      // Still pending, allowed to leave: also "may have been sent".
-      leg(Provenance.unknown, feature: 'coach_lite', transferPermitted: true),
+      // Still pending, allowed to leave (InferenceLedger.begin's state).
+      leg(
+        Provenance.unknown,
+        feature: 'label_check',
+        kinds: _photo,
+        transferPermitted: true,
+      ),
       // Not allowed to leave and failed.
       leg(
         Provenance.unknown,
@@ -129,17 +186,27 @@ void main() {
         transferPermitted: false,
       ),
     ]);
-    expect(r.onDeviceAnswers, 0);
+    expect(r.onDeviceRuns, 0);
     expect(r.cameraChecksOnDevice, 0);
-    expect(r.answers, 0);
-    expect(r.unfinished, 4);
+    expect(r.runs, 0);
+    expect(r.unfinished, 2);
+    expect(r.inProgress, 2);
     expect(r.photosSent, 0);
-    expect(r.photosMaybeSent, 1);
+    expect(r.photosMaybeSent, 2);
     expect(r.maybeSent, hasLength(2));
-    expect(r.maybeSent.first.outcome, LegOutcome.maybeSent);
-    expect(r.maybeSent.first.why, contains("we can't tell if it was sent"));
-    expect(r.nothingLeft, isFalse);
-    expect(r.summary, endsWith('photos sent: 0, and 1 may have been sent.'));
+    final stopped = r.maybeSent.firstWhere((s) => s.feature == 'pantry_scan');
+    expect(stopped.pending, isFalse);
+    expect(stopped.why, contains("we can't tell if it was sent"));
+    final running = r.maybeSent.firstWhere((s) => s.feature == 'label_check');
+    expect(running.pending, isTrue);
+    expect(running.outcome, LegOutcome.maybeSent);
+    expect(running.why, 'Still running: allowed to leave, not finished yet');
+    expect(running.why, isNot(contains('stopped')));
+    expect(r.nothingRecordedLeft, isFalse);
+    expect(
+      r.summary,
+      endsWith('recorded photos sent: 0, and 2 may have been sent.'),
+    );
   });
 
   test('simulated legs read as practice, never on this device', () {
@@ -148,30 +215,49 @@ void main() {
       leg(Provenance.simulated, feature: 'local_watch', kinds: _photo),
       leg(Provenance.simulated, feature: 'local_watch', kinds: _photo),
     ]);
-    expect(r.practiceAnswers, 3);
-    expect(r.onDeviceAnswers, 0);
+    expect(r.practiceRuns, 3);
+    expect(r.onDeviceRuns, 0);
     expect(r.cameraChecksOnDevice, 0);
     expect(r.practiceCameraChecks, 2);
+    expect(r.allSimulated, isTrue);
     expect(r.practiceOnly, isTrue);
-    expect(r.headline, '3 practice answers tonight');
-    expect(r.summary, '3 practice answers tonight; photos sent: 0.');
+    expect(r.headline, '3 practice runs tonight');
+    expect(r.summary, '3 practice runs tonight; recorded photos sent: 0.');
     final one = PrivacyReceipt.fromLegs([leg(Provenance.simulated)]);
-    expect(one.headline, '1 practice answer tonight');
+    expect(one.headline, '1 practice run tonight');
+    // An errored simulated leg is still simulated.
+    expect(
+      PrivacyReceipt.fromLegs([
+        leg(Provenance.simulated),
+        leg(Provenance.simulated, error: HybridErrorCode.failed),
+      ]).practiceOnly,
+      isTrue,
+    );
   });
 
-  test('practice mixed with real legs is not practice-only', () {
-    final r = PrivacyReceipt.fromLegs([
+  test('practice is practice-only only when every leg is simulated', () {
+    final mixed = PrivacyReceipt.fromLegs([
       leg(Provenance.simulated),
       leg(Provenance.sdkOnDevice),
     ]);
-    expect(r.practiceOnly, isFalse);
-    expect(r.headline, '2 answers tonight');
+    expect(mixed.practiceOnly, isFalse);
+    expect(mixed.headline, '2 AI runs tonight');
     expect(
-      r.summary,
-      '2 answers tonight, 1 on this device, 1 practice; '
-      'photos sent: 0.',
+      mixed.summary,
+      '2 AI runs tonight, 1 on this device, 1 practice; '
+      'recorded photos sent: 0.',
     );
-    // A practice night where something real left is not "nothing was sent".
+    // A real local-only timeout cannot establish that no model ran.
+    final timeout = PrivacyReceipt.fromLegs([
+      leg(Provenance.simulated),
+      leg(
+        Provenance.unknown,
+        transferPermitted: false,
+        error: HybridErrorCode.timeout,
+      ),
+    ]);
+    expect(timeout.practiceOnly, isFalse);
+    expect(timeout.allSimulated, isFalse);
     final sent = PrivacyReceipt.fromLegs([
       leg(Provenance.simulated),
       leg(
@@ -183,46 +269,66 @@ void main() {
     expect(sent.practiceOnly, isFalse);
   });
 
-  test('Live coach legs are sessions, not answers or photos', () {
-    final live = {DataKind.audio, DataKind.image, DataKind.text};
+  test('Live coach legs are connections, not runs or photos', () {
     final r = PrivacyReceipt.fromLegs([
-      leg(Provenance.cloudAdapter, feature: 'live', kinds: live),
-      leg(Provenance.cloudAdapter, feature: 'live', kinds: live),
+      leg(Provenance.cloudAdapter, feature: 'live', kinds: kLiveLegKinds),
+      leg(Provenance.cloudAdapter, feature: 'live', kinds: kLiveLegKinds),
       leg(
         Provenance.unknown,
         feature: 'live',
-        kinds: live,
+        kinds: kLiveLegKinds,
         transferPermitted: true,
         error: HybridErrorCode.network,
       ),
       leg(
         Provenance.unknown,
         feature: 'live',
-        kinds: live,
+        kinds: kLiveLegKinds,
         transferPermitted: false,
         error: HybridErrorCode.blocked,
       ),
       leg(Provenance.sdkOnDevice, feature: 'coach_lite'),
     ]);
-    expect(r.liveSessions, 2);
-    expect(r.answers, 1);
-    expect(r.cloudAnswers, 0);
+    expect(r.liveConnections, 2);
+    expect(r.runs, 1);
+    expect(r.cloudRuns, 0);
     expect(r.photosSent, 0);
     expect(r.photosMaybeSent, 0);
     expect(r.unfinished, 0);
     expect(r.sent.single.count, 2);
-    expect(r.sent.single.what, 'Live coach · photo, voice clip and text');
-    expect(r.sent.single.why, 'The Live coach hears and sees while it is on');
+    expect(r.sent.single.what, 'Live coach · connection');
+    // Its media capability, not a claim about what it saw.
+    expect(
+      r.sent.single.why,
+      'While connected it can receive your camera, voice and text',
+    );
+    expect(r.sent.single.why, isNot(contains('saw')));
     expect(r.maybeSent.single.feature, 'live');
-    expect(r.nothingLeft, isFalse);
-    expect(r.summary, contains('2 Live coach sessions'));
+    expect(r.summary, contains('2 Live coach connections'));
     final one = PrivacyReceipt.fromLegs([
-      leg(Provenance.cloudAdapter, feature: 'live', kinds: live),
+      leg(Provenance.cloudAdapter, feature: 'live', kinds: {DataKind.audio}),
     ]);
-    expect(one.summary, contains('1 Live coach session;'));
+    expect(one.summary, contains('1 Live coach connection;'));
+    expect(one.sent.single.why, 'While connected it can receive your voice');
+    expect(
+      PrivacyReceipt.fromLegs([
+        leg(Provenance.cloudAdapter, feature: 'live', kinds: const {}),
+      ]).sent.single.why,
+      'While connected it can receive your nothing',
+    );
+    expect(
+      PrivacyReceipt.fromLegs([
+        leg(
+          Provenance.cloudAdapter,
+          feature: 'live',
+          kinds: {DataKind.location, DataKind.text},
+        ),
+      ]).sent.single.why,
+      'While connected it can receive your location and text',
+    );
   });
 
-  test('sent legs that errored still count as sent, not as answers', () {
+  test('sent legs that errored still count as sent, not as runs', () {
     final r = PrivacyReceipt.fromLegs([
       leg(
         Provenance.sdkCloud,
@@ -233,7 +339,7 @@ void main() {
       leg(Provenance.sdkOnDevice, error: HybridErrorCode.busy),
       leg(Provenance.simulated, error: HybridErrorCode.failed),
     ]);
-    expect(r.answers, 0);
+    expect(r.runs, 0);
     expect(r.photosSent, 1);
     expect(r.unfinished, 3);
     expect(r.sent.single.count, 1);

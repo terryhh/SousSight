@@ -12,13 +12,17 @@ import 'package:soussight/trust/ledger_source.dart';
 import 'package:soussight/trust/privacy_receipt.dart';
 import 'package:soussight/trust/privacy_receipt_card.dart';
 import 'package:soussight/trust/privacy_receipt_save.dart';
+// The stub directly, so this test means the same on every platform.
+import 'package:soussight/trust/privacy_receipt_save_stub.dart' as stub;
 
 import 'trust_test_helpers.dart';
 
-/// A ledger that can be reset, like `InferenceLedger.startSession`.
+/// A ledger with a session identity, like `InferenceLedger`: [startSession]
+/// clears it and changes the session even when it was already empty.
 class _Ledger extends ChangeNotifier implements LedgerSource {
-  _Ledger(this._legs);
+  _Ledger([this._legs = const []]);
   List<InferenceLeg> _legs;
+  int session = 1;
 
   @override
   List<InferenceLeg> get legs => List.unmodifiable(_legs);
@@ -28,7 +32,8 @@ class _Ledger extends ChangeNotifier implements LedgerSource {
     notifyListeners();
   }
 
-  void reset([List<InferenceLeg> legs = const []]) {
+  void startSession([List<InferenceLeg> legs = const []]) {
+    session++;
     _legs = legs;
     notifyListeners();
   }
@@ -53,12 +58,20 @@ InferenceLeg _leg(
 
 class _Saver {
   final calls = <(Uint8List, String)>[];
+  final currentAtCall = <bool>[];
+  bool Function()? isCurrent;
   ReceiptSaveResult result = ReceiptSaveResult.downloaded;
   Object? error;
   Completer<ReceiptSaveResult>? gate;
 
-  Future<ReceiptSaveResult> call(Uint8List png, String name) async {
+  Future<ReceiptSaveResult> call(
+    Uint8List png,
+    String name, {
+    required bool Function() isCurrent,
+  }) async {
     calls.add((png, name));
+    this.isCurrent = isCurrent;
+    currentAtCall.add(isCurrent());
     if (error case final e?) throw e;
     if (gate case final g?) return g.future;
     return result;
@@ -68,10 +81,11 @@ class _Saver {
 Future<void> _pump(
   WidgetTester tester,
   LedgerSource ledger, {
+  Object? Function()? session,
   _Saver? saver,
   int? timersRun,
   bool reduceMotion = false,
-  Size size = const Size(360, 1400),
+  Size size = const Size(360, 1600),
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -85,6 +99,9 @@ Future<void> _pump(
             padding: const EdgeInsets.all(16),
             child: PrivacyReceiptCard(
               ledger: ledger,
+              session:
+                  session ??
+                  (ledger is _Ledger ? () => ledger.session : () => 's1'),
               recipeTitle: 'Peanut Butter Sandwich',
               clock: () => DateTime(2026, 11, 26, 19, 42),
               timersRun: timersRun,
@@ -107,13 +124,29 @@ Future<void> _tapSave(WidgetTester tester) async {
 Future<void> _settleSave(WidgetTester tester) async {
   for (var i = 0; i < 5; i++) {
     await tester.runAsync(
-      () => Future<void>.delayed(Duration(milliseconds: 40)),
+      () => Future<void>.delayed(const Duration(milliseconds: 40)),
     );
     await tester.pump();
   }
 }
 
+String _count(WidgetTester tester, String key) => tester
+    .widget<Text>(
+      find
+          .descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(Text),
+          )
+          .last,
+    )
+    .data!;
+
+String _photos(WidgetTester tester) => tester
+    .widget<Text>(find.byKey(const ValueKey('receipt-photos-sent')))
+    .data!;
+
 const _photo = {DataKind.image};
+final _receipt = find.byKey(const ValueKey('privacy-receipt'));
 
 void main() {
   testWidgets('practice night: stamped PRACTICE, nothing claimed on-device', (
@@ -129,21 +162,17 @@ void main() {
     expect(find.text("Tonight's privacy receipt"), findsOneWidget);
     expect(find.text('Peanut Butter Sandwich'), findsOneWidget);
     expect(find.text('Thu 26 Nov · 7:42 pm'), findsOneWidget);
+    expect(find.text('AI runs recorded'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('receipt-stamp-practice')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('receipt-stamp-local')), findsNothing);
     expect(find.byKey(const ValueKey('receipt-on-device')), findsNothing);
     expect(find.byKey(const ValueKey('receipt-cloud')), findsNothing);
     expect(find.byKey(const ValueKey('receipt-camera')), findsNothing);
-    expect(find.text('Practice · no model ran'), findsOneWidget);
-    expect(find.text('Practice camera checks'), findsOneWidget);
-    expect(find.text('On this device'), findsNothing);
-    expect(
-      find.text('Practice mode: no model ran and nothing was sent.'),
-      findsOneWidget,
-    );
+    expect(_count(tester, 'receipt-practice'), '2');
+    expect(_count(tester, 'receipt-practice-camera'), '1');
+    expect(find.textContaining('every recorded request was pretend'), findsOne);
     expect(tester.takeException(), isNull);
   });
 
@@ -157,7 +186,46 @@ void main() {
     expect(find.byKey(const ValueKey('receipt-camera')), findsNothing);
   });
 
-  testWidgets('zero-cloud night: STAYED HERE and no photo sent', (
+  testWidgets('practice plus a real timeout is not stamped PRACTICE', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      ListLedgerSource([
+        _leg('a', Provenance.simulated),
+        _leg(
+          'b',
+          Provenance.unknown,
+          transferPermitted: false,
+          error: HybridErrorCode.timeout,
+        ),
+      ]),
+    );
+    expect(find.byKey(const ValueKey('receipt-stamp-practice')), findsNothing);
+    expect(find.textContaining('No model ran'), findsNothing);
+    expect(_count(tester, 'receipt-unfinished'), '1');
+  });
+
+  testWidgets('practice and real camera checks both show their counts', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      ListLedgerSource([
+        _leg('a', Provenance.simulated, feature: 'local_watch', kinds: _photo),
+        _leg(
+          'b',
+          Provenance.sdkOnDevice,
+          feature: 'local_watch',
+          kinds: _photo,
+        ),
+      ]),
+    );
+    expect(_count(tester, 'receipt-camera'), '1');
+    expect(_count(tester, 'receipt-practice-camera'), '1');
+  });
+
+  testWidgets('zero-cloud night: no stamp, and claims scoped to the ledger', (
     tester,
   ) async {
     await _pump(
@@ -179,27 +247,21 @@ void main() {
       ]),
       timersRun: 2,
     );
-    expect(find.byKey(const ValueKey('receipt-stamp-local')), findsOneWidget);
-    Text count(String key) => tester.widget<Text>(
-      find
-          .descendant(
-            of: find.byKey(ValueKey(key)),
-            matching: find.byType(Text),
-          )
-          .last,
-    );
-    expect(count('receipt-on-device').data, '3');
-    expect(count('receipt-cloud').data, '0');
-    expect(count('receipt-camera').data, '2');
-    expect(count('receipt-timers').data, '2');
+    // Some sends (Nearby) are not ledgered yet: no absolute stamp.
+    expect(find.byKey(const ValueKey('receipt-stamp-local')), findsNothing);
+    expect(find.text('STAYED HERE'), findsNothing);
+    expect(_count(tester, 'receipt-on-device'), '3');
+    expect(_count(tester, 'receipt-cloud'), '0');
+    expect(_count(tester, 'receipt-camera'), '2');
+    expect(_count(tester, 'receipt-timers'), '2');
+    expect(find.text('RECORDED PHOTOS SENT'), findsOneWidget);
+    expect(_photos(tester), '0');
     expect(
-      tester
-          .widget<Text>(find.byKey(const ValueKey('receipt-photos-sent')))
-          .data,
-      '0',
+      find.text('No recorded request sent a photo tonight.'),
+      findsOneWidget,
     );
     expect(
-      find.text('No photo left this device for an answer tonight.'),
+      find.textContaining("it can't vouch for anything it didn't record"),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('receipt-sent-list')), findsNothing);
@@ -207,7 +269,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('mixed night lists what left, what may have, and why', (
+  testWidgets('mixed night lists what left, what may have, and where', (
     tester,
   ) async {
     await _pump(
@@ -226,26 +288,51 @@ void main() {
         _leg('d', Provenance.simulated),
       ]),
     );
-    expect(find.byKey(const ValueKey('receipt-stamp-local')), findsNothing);
     expect(find.byKey(const ValueKey('receipt-stamp-practice')), findsNothing);
     expect(find.byKey(const ValueKey('receipt-practice')), findsOneWidget);
-    expect(find.byKey(const ValueKey('receipt-unfinished')), findsOneWidget);
+    expect(_count(tester, 'receipt-unfinished'), '1');
     expect(find.text('WHAT LEFT THIS DEVICE'), findsOneWidget);
     expect(find.text('Label check · photo'), findsOneWidget);
     expect(
-      find.text('Tried this device first; Gemini in the cloud answered'),
+      find.text('Ran on Gemini in the cloud · asked to prefer this device'),
       findsOneWidget,
     );
     expect(find.text('MAY HAVE LEFT'), findsOneWidget);
     expect(find.text('Pantry scan · photo'), findsOneWidget);
+    expect(_photos(tester), '1');
     expect(
-      tester
-          .widget<Text>(find.byKey(const ValueKey('receipt-photos-sent')))
-          .data,
-      '1',
+      find.text(
+        '1 more may have been sent: allowed to leave, not confirmed either '
+        'way.',
+      ),
+      findsOneWidget,
     );
-    expect(find.textContaining('1 more may have been sent'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a request still running reads as running, not stopped', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      ListLedgerSource([
+        _leg(
+          'a',
+          Provenance.unknown,
+          feature: 'label_check',
+          kinds: _photo,
+          transferPermitted: true,
+        ),
+        _leg('b', Provenance.unknown, transferPermitted: false),
+      ]),
+    );
+    expect(
+      find.text('Still running: allowed to leave, not finished yet'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('stopped'), findsNothing);
+    expect(_count(tester, 'receipt-in-progress'), '2');
+    expect(find.byKey(const ValueKey('receipt-unfinished')), findsNothing);
   });
 
   testWidgets('sent photos without doubt point at the list', (tester) async {
@@ -261,12 +348,14 @@ void main() {
       ]),
     );
     expect(
-      find.text('Each one is listed below, with why it went.'),
+      find.text('Each one is listed below, with where it went.'),
       findsOneWidget,
     );
   });
 
-  testWidgets('a Live night says the coach saw the camera', (tester) async {
+  testWidgets('a Live night reports connections and what they can receive', (
+    tester,
+  ) async {
     await _pump(
       tester,
       ListLedgerSource([
@@ -279,63 +368,54 @@ void main() {
         _leg('a', Provenance.sdkOnDevice),
       ]),
     );
-    expect(find.byKey(const ValueKey('receipt-live')), findsOneWidget);
-    expect(find.byKey(const ValueKey('receipt-stamp-local')), findsNothing);
-    expect(
-      find.textContaining('The Live coach saw your camera'),
-      findsOneWidget,
-    );
+    expect(_count(tester, 'receipt-live'), '1');
+    expect(find.text('Live coach connections · cloud'), findsOneWidget);
+    expect(find.text('Live coach · connection'), findsOneWidget);
+    expect(find.textContaining('it can receive your camera'), findsWidgets);
+    expect(find.textContaining('saw'), findsNothing);
   });
 
   testWidgets('an empty night still prints, honestly', (tester) async {
     await _pump(tester, ListLedgerSource());
-    expect(find.text('AI answers'), findsOneWidget);
-    expect(find.byKey(const ValueKey('receipt-stamp-local')), findsNothing);
+    expect(find.text('AI runs recorded'), findsOneWidget);
     expect(find.byKey(const ValueKey('receipt-stamp-practice')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('updates as legs finish, and hides when the session changes', (
+  testWidgets('updates as legs finish, and retires when the session changes', (
     tester,
   ) async {
     final ledger = _Ledger([_leg('first', Provenance.sdkOnDevice)]);
     await _pump(tester, ledger);
     ledger.add(_leg('second', Provenance.sdkCloud, kinds: _photo));
     await tester.pump();
-    expect(
-      tester
-          .widget<Text>(find.byKey(const ValueKey('receipt-photos-sent')))
-          .data,
-      '1',
-    );
-    // A new cooking session resets the ledger: not tonight's receipt now.
-    ledger.reset([_leg('other-session', Provenance.sdkOnDevice)]);
+    expect(_photos(tester), '1');
+    ledger.startSession([_leg('other', Provenance.sdkOnDevice)]);
     await tester.pump();
-    expect(find.byKey(const ValueKey('privacy-receipt')), findsNothing);
-    // It stays retired even if the ledger later looks familiar.
-    ledger.reset([_leg('first', Provenance.sdkOnDevice)]);
-    await tester.pump();
-    expect(find.byKey(const ValueKey('privacy-receipt')), findsNothing);
+    expect(_receipt, findsNothing);
   });
 
-  testWidgets('a receipt that started empty anchors on its first leg', (
+  testWidgets('an empty receipt retires on an empty-to-empty reset', (
     tester,
   ) async {
-    final ledger = _Ledger([]);
+    final ledger = _Ledger();
     await _pump(tester, ledger);
-    ledger.add(_leg('first', Provenance.sdkOnDevice));
+    expect(_receipt, findsOneWidget);
+    // The next meal starts: still empty, but a different session.
+    ledger.startSession();
     await tester.pump();
-    expect(find.byKey(const ValueKey('privacy-receipt')), findsOneWidget);
-    ledger.reset();
+    expect(_receipt, findsNothing);
+    // The next meal's photo never lands on this receipt.
+    ledger.add(_leg('next', Provenance.sdkCloud, kinds: _photo));
     await tester.pump();
-    expect(find.byKey(const ValueKey('privacy-receipt')), findsNothing);
+    expect(_receipt, findsNothing);
   });
 
-  testWidgets('prints in over about a second, instantly under reduced motion', (
+  testWidgets('prints top edge first, instantly under reduced motion', (
     tester,
   ) async {
     final ledger = ListLedgerSource([_leg('a', Provenance.sdkOnDevice)]);
-    tester.view.physicalSize = const Size(360, 1400);
+    tester.view.physicalSize = const Size(360, 1600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     Widget app(bool reduce) => MaterialApp(
@@ -343,17 +423,25 @@ void main() {
         data: MediaQueryData(disableAnimations: reduce),
         child: Scaffold(
           body: SingleChildScrollView(
-            child: PrivacyReceiptCard(ledger: ledger),
+            child: PrivacyReceiptCard(ledger: ledger, session: () => 's'),
           ),
         ),
       ),
     );
-    double factor() => tester
-        .widget<Align>(find.byKey(const ValueKey('privacy-receipt-print')))
-        .heightFactor!;
+    final print = find.byKey(const ValueKey('privacy-receipt-print'));
+    double factor() => tester.widget<Align>(print).heightFactor!;
     await tester.pumpWidget(app(false));
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(factor(), lessThan(1));
+    // Mid-print the header is inside the visible strip, the footer is not.
+    final visible = tester.getRect(print);
+    final header = tester.getRect(find.text('SOUSSIGHT'));
+    final footer = tester.getRect(
+      find.textContaining('Made here; saving it uploads nothing'),
+    );
+    expect(header.top, greaterThanOrEqualTo(visible.top));
+    expect(header.bottom, lessThanOrEqualTo(visible.bottom));
+    expect(footer.top, greaterThan(visible.bottom));
     await tester.pumpAndSettle();
     expect(factor(), 1);
     await tester.pumpWidget(const SizedBox());
@@ -377,16 +465,18 @@ void main() {
       final (png, name) = saver.calls.single;
       expect(name, kReceiptFileName);
       expect(png.sublist(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
+      expect(saver.currentAtCall.single, isTrue);
       expect(
         find.text('Receipt saved to your downloads. Nothing was uploaded.'),
         findsOneWidget,
       );
     });
 
-    testWidgets('shared and cancelled say nothing more', (tester) async {
+    testWidgets('shared, cancelled and stale say nothing more', (tester) async {
       for (final result in [
         ReceiptSaveResult.shared,
         ReceiptSaveResult.cancelled,
+        ReceiptSaveResult.stale,
       ]) {
         final saver = _Saver()..result = result;
         await _pump(
@@ -424,7 +514,6 @@ void main() {
         find.text("Couldn't make the image. Nothing was uploaded."),
         findsOneWidget,
       );
-      // The button is usable again.
       final button = tester.widget<TextButton>(
         find.ancestor(
           of: find.text('Save image'),
@@ -466,6 +555,7 @@ void main() {
       );
       await _tapSave(tester);
       await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+      expect(saver.isCurrent!(), isFalse);
       saver.gate!.complete(ReceiptSaveResult.downloaded);
       await _settleSave(tester);
       expect(find.byType(SnackBar), findsNothing);
@@ -479,14 +569,42 @@ void main() {
       final ledger = _Ledger([_leg('first', Provenance.sdkOnDevice)]);
       await _pump(tester, ledger, saver: saver);
       await tester.tap(find.byKey(const ValueKey('privacy-receipt-save')));
-      // The ledger moves to another session before the PNG is encoded.
-      ledger.reset([_leg('next', Provenance.sdkOnDevice)]);
+      ledger.startSession();
       await _settleSave(tester);
       expect(saver.calls, isEmpty);
       expect(find.byType(SnackBar), findsNothing);
     });
 
-    testWidgets('a retired receipt cannot be saved', (tester) async {
+    testWidgets('a session change during the save: the saver is told, and '
+        'no feedback is shown', (tester) async {
+      for (final outcome in [
+        ReceiptSaveResult.downloaded,
+        ReceiptSaveResult.unsupported,
+        null, // the saver throws
+      ]) {
+        final saver = _Saver()..gate = Completer();
+        final ledger = _Ledger([_leg('first', Provenance.sdkOnDevice)]);
+        await _pump(tester, ledger, saver: saver);
+        await _tapSave(tester);
+        expect(saver.currentAtCall.single, isTrue);
+        ledger.startSession();
+        await tester.pump();
+        // The web saver checks this before falling back to a download.
+        expect(saver.isCurrent!(), isFalse);
+        if (outcome == null) {
+          saver.gate!.completeError(StateError('share failed'));
+        } else {
+          saver.gate!.complete(outcome);
+        }
+        await _settleSave(tester);
+        expect(find.byType(SnackBar), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
+
+    testWidgets('a retired receipt cannot be saved by a stale handler', (
+      tester,
+    ) async {
       final saver = _Saver();
       final ledger = _Ledger([_leg('first', Provenance.sdkOnDevice)]);
       await _pump(tester, ledger, saver: saver);
@@ -496,8 +614,7 @@ void main() {
           matching: find.byWidgetPredicate((w) => w is TextButton),
         ),
       );
-      ledger.reset();
-      // Without a rebuild, a stale handler still refuses.
+      ledger.startSession();
       button.onPressed!();
       await _settleSave(tester);
       expect(saver.calls, isEmpty);
@@ -506,7 +623,11 @@ void main() {
 
   test('the stub saver reports unsupported without writing anything', () async {
     expect(
-      await saveReceiptImage(Uint8List(0), kReceiptFileName),
+      await stub.saveReceiptImage(
+        Uint8List(0),
+        kReceiptFileName,
+        isCurrent: () => true,
+      ),
       ReceiptSaveResult.unsupported,
     );
   });
@@ -526,10 +647,9 @@ void main() {
   });
 
   test('summary is built only from legs', () {
-    // Keeps the import of PrivacyReceipt meaningful for this file's readers.
     expect(
       PrivacyReceipt.fromLegs([leg(Provenance.sdkOnDevice)]).summary,
-      '1 answer tonight, 1 on this device; photos sent: 0.',
+      '1 AI run tonight, 1 on this device; recorded photos sent: 0.',
     );
   });
 }

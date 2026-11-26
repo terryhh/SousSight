@@ -11,7 +11,6 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
-import '../ai/hybrid/hybrid_types.dart';
 import 'ledger_source.dart';
 import 'privacy_receipt.dart';
 import 'privacy_receipt_save.dart';
@@ -34,6 +33,7 @@ class PrivacyReceiptCard extends StatefulWidget {
   const PrivacyReceiptCard({
     super.key,
     required this.ledger,
+    required this.session,
     this.recipeTitle,
     this.clock = DateTime.now,
     this.timersRun,
@@ -42,6 +42,12 @@ class PrivacyReceiptCard extends StatefulWidget {
 
   /// This session's ledger. Every number comes from its legs.
   final LedgerSource ledger;
+
+  /// The ledger's session identity, read now (`InferenceLedger.sessionId`).
+  /// The receipt binds to the value it was printed with: once it changes,
+  /// even from an empty ledger to another empty one, the receipt retires and
+  /// any save in flight is dropped.
+  final Object? Function() session;
   final String? recipeTitle;
   final DateTime Function() clock;
 
@@ -58,38 +64,31 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
   final _boundary = GlobalKey();
   late final DateTime _printedAt = widget.clock();
 
-  /// The first leg this receipt saw. If the ledger no longer starts with it,
-  /// a new session reset the ledger and this receipt is no longer tonight's.
-  String? _anchor;
+  /// The session this receipt was printed for.
+  late final Object? _session = widget.session();
 
   /// Latched once the ledger moved on to another session.
   bool _retired = false;
   bool _saving = false;
 
-  /// The legs of the session this receipt was printed for, read now, or
-  /// null once the ledger moved on to another session.
-  List<InferenceLeg>? _sessionLegs() {
-    if (_retired) return null;
-    final legs = widget.ledger.legs;
-    final anchor = _anchor;
-    if (anchor == null) {
-      if (legs.isNotEmpty) _anchor = legs.first.requestId;
-      return legs;
-    }
-    if (legs.isEmpty || legs.first.requestId != anchor) {
-      _retired = true;
-      return null;
-    }
-    return legs;
+  /// Whether this is still the session the receipt was printed for.
+  bool _current() {
+    if (!_retired && widget.session() != _session) _retired = true;
+    return !_retired;
   }
 
   Future<void> _save() async {
-    if (_saving || _sessionLegs() == null) return;
+    if (_saving || !_current()) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     setState(() => _saving = true);
-    void say(String text) => messenger
-      ?..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text)));
+    // Feedback only while the receipt is on screen and still tonight's.
+    void say(String text) {
+      if (!mounted || !_current()) return;
+      messenger
+        ?..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(text)));
+    }
+
     try {
       final boundary =
           _boundary.currentContext?.findRenderObject()
@@ -103,14 +102,16 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
         image.dispose();
       }
       // The receipt must still be tonight's, and still on screen.
-      if (!mounted || bytes == null || _sessionLegs() == null) return;
+      if (!mounted || bytes == null || !_current()) return;
       final result = await widget.saveImage(
         bytes.buffer.asUint8List(),
         kReceiptFileName,
+        isCurrent: () => mounted && _current(),
       );
-      if (!mounted) return;
       switch (result) {
-        case ReceiptSaveResult.shared || ReceiptSaveResult.cancelled:
+        case ReceiptSaveResult.shared ||
+            ReceiptSaveResult.cancelled ||
+            ReceiptSaveResult.stale:
           break;
         case ReceiptSaveResult.downloaded:
           say('Receipt saved to your downloads. Nothing was uploaded.');
@@ -121,7 +122,7 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
           );
       }
     } catch (_) {
-      if (mounted) say("Couldn't make the image. Nothing was uploaded.");
+      say("Couldn't make the image. Nothing was uploaded.");
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -131,9 +132,8 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.ledger,
     builder: (context, _) {
-      final legs = _sessionLegs();
-      if (legs == null) return const SizedBox.shrink();
-      final receipt = PrivacyReceipt.fromLegs(legs);
+      if (!_current()) return const SizedBox.shrink();
+      final receipt = PrivacyReceipt.fromLegs(widget.ledger.legs);
       return Column(
         key: const ValueKey('privacy-receipt'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -193,7 +193,7 @@ class _PrintIn extends StatelessWidget {
     builder: (context, t, child) => ClipRect(
       child: Align(
         key: const ValueKey('privacy-receipt-print'),
-        alignment: Alignment.bottomCenter,
+        alignment: Alignment.topCenter,
         heightFactor: t,
         child: Opacity(
           opacity: 0.35 + 0.65 * t,
@@ -245,33 +245,33 @@ class _ReceiptPaper extends StatelessWidget {
                 stamp: stamp,
               ),
               const _Perforation(),
-              _Line(label: 'AI answers', value: r.answers, strong: true),
+              _Line(label: 'AI runs recorded', value: r.runs, strong: true),
               const SizedBox(height: 8),
               _SplitBar(receipt: r),
               const SizedBox(height: 6),
-              if (r.onDeviceAnswers > 0 || !r.practiceOnly)
+              if (!r.practiceOnly)
                 _Line(
                   key: const ValueKey('receipt-on-device'),
                   icon: outcomeIcon(LegOutcome.onDevice),
                   color: _local,
-                  label: 'On this device',
-                  value: r.onDeviceAnswers,
+                  label: 'Ran on this device',
+                  value: r.onDeviceRuns,
                 ),
-              if (r.cloudAnswers > 0 || !r.practiceOnly)
+              if (!r.practiceOnly)
                 _Line(
                   key: const ValueKey('receipt-cloud'),
                   icon: Icons.cloud_outlined,
                   color: _cloud,
-                  label: 'From the cloud',
-                  value: r.cloudAnswers,
+                  label: 'Ran in the cloud',
+                  value: r.cloudRuns,
                 ),
-              if (r.practiceAnswers > 0)
+              if (r.practiceRuns > 0)
                 _Line(
                   key: const ValueKey('receipt-practice'),
                   icon: outcomeIcon(LegOutcome.simulated),
                   color: _practice,
                   label: 'Practice · no model ran',
-                  value: r.practiceAnswers,
+                  value: r.practiceRuns,
                 ),
               if (r.unfinished > 0)
                 _Line(
@@ -281,6 +281,14 @@ class _ReceiptPaper extends StatelessWidget {
                   label: "Didn't finish",
                   value: r.unfinished,
                 ),
+              if (r.inProgress > 0)
+                _Line(
+                  key: const ValueKey('receipt-in-progress'),
+                  icon: Icons.hourglass_empty,
+                  color: _muted,
+                  label: 'Still running',
+                  value: r.inProgress,
+                ),
               const _Perforation(),
               if (r.practiceCameraChecks > 0 || r.practiceOnly)
                 _Line(
@@ -289,8 +297,8 @@ class _ReceiptPaper extends StatelessWidget {
                   color: _practice,
                   label: 'Practice camera checks',
                   value: r.practiceCameraChecks,
-                )
-              else
+                ),
+              if (!r.practiceOnly)
                 _Line(
                   key: const ValueKey('receipt-camera'),
                   icon: Icons.photo_camera_outlined,
@@ -298,13 +306,13 @@ class _ReceiptPaper extends StatelessWidget {
                   label: 'Camera checks on device',
                   value: r.cameraChecksOnDevice,
                 ),
-              if (r.liveSessions > 0)
+              if (r.liveConnections > 0)
                 _Line(
                   key: const ValueKey('receipt-live'),
                   icon: Icons.graphic_eq,
                   color: _cloud,
-                  label: 'Live coach sessions · cloud',
-                  value: r.liveSessions,
+                  label: 'Live coach connections · cloud',
+                  value: r.liveConnections,
                 ),
               if (timersRun case final timers?)
                 _Line(
@@ -338,8 +346,9 @@ class _ReceiptPaper extends StatelessWidget {
               _Barcode(seed: r.summary),
               const SizedBox(height: 10),
               const Text(
-                "Counted from tonight's AI ledger on this device. "
-                'This receipt is made here; saving it uploads nothing.',
+                'Counted only from the AI requests SousSight recorded '
+                "tonight on this device; it can't vouch for anything it "
+                "didn't record. Made here; saving it uploads nothing.",
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11.5, color: _muted),
               ),
@@ -350,20 +359,15 @@ class _ReceiptPaper extends StatelessWidget {
     );
   }
 
-  /// A rubber stamp, only when the legs earn it.
+  /// A rubber stamp, only when the legs earn it. There is deliberately no
+  /// "nothing left" stamp: some sends (such as Nearby lookups) are not yet
+  /// recorded in the ledger, so the receipt never claims more than it saw.
   static Widget? _stamp(PrivacyReceipt r) {
     if (r.practiceOnly) {
       return const _Stamp(
         key: ValueKey('receipt-stamp-practice'),
         text: 'PRACTICE',
         color: _practice,
-      );
-    }
-    if (r.nothingLeft && r.onDeviceAnswers > 0 && r.practiceAnswers == 0) {
-      return const _Stamp(
-        key: ValueKey('receipt-stamp-local'),
-        text: 'STAYED HERE',
-        color: _local,
       );
     }
     return null;
@@ -562,7 +566,7 @@ class _DotsPainter extends CustomPainter {
   bool shouldRepaint(_DotsPainter oldDelegate) => false;
 }
 
-/// The share of answers by where they ran.
+/// The share of finished runs by where they ran.
 class _SplitBar extends StatelessWidget {
   const _SplitBar({required this.receipt});
   final PrivacyReceipt receipt;
@@ -571,9 +575,9 @@ class _SplitBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final r = receipt;
     final parts = [
-      (r.onDeviceAnswers, _local),
-      (r.cloudAnswers, _cloud),
-      (r.practiceAnswers, _practice),
+      (r.onDeviceRuns, _local),
+      (r.cloudRuns, _cloud),
+      (r.practiceRuns, _practice),
     ].where((p) => p.$1 > 0).toList();
     return ExcludeSemantics(
       child: ClipRRect(
@@ -611,26 +615,28 @@ class _PhotosSent extends StatelessWidget {
     final zero = r.photosSent == 0 && r.photosMaybeSent == 0;
     final String note;
     if (r.practiceOnly) {
-      note = 'Practice mode: no model ran and nothing was sent.';
-    } else if (zero && r.liveSessions > 0) {
       note =
-          'No photo was sent for an answer. The Live coach saw your camera '
-          'while it was on.';
+          'Practice mode: every recorded request was pretend. No model ran '
+          'for them and none was sent.';
+    } else if (zero && r.liveConnections > 0) {
+      note =
+          'No recorded request sent a photo. The Live coach connected; while '
+          'connected it can receive your camera.';
     } else if (zero) {
-      note = 'No photo left this device for an answer tonight.';
+      note = 'No recorded request sent a photo tonight.';
     } else if (r.photosMaybeSent > 0) {
       note =
           '${r.photosMaybeSent} more may have been sent: allowed to leave, '
-          "then stopped, so we can't tell.";
+          'not confirmed either way.';
     } else {
-      note = 'Each one is listed below, with why it went.';
+      note = 'Each one is listed below, with where it went.';
     }
     return Semantics(
       container: true,
       child: Column(
         children: [
           const Text(
-            'PHOTOS SENT',
+            'RECORDED PHOTOS SENT',
             style: TextStyle(
               fontSize: 11,
               letterSpacing: 2.4,

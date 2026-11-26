@@ -42,6 +42,7 @@ class MealCompletePanel extends StatefulWidget {
     this.locate,
     this.openLink,
     this.ledger,
+    this.ledgerSession,
   });
 
   final CookingCoordinator cook;
@@ -51,6 +52,10 @@ class MealCompletePanel extends StatefulWidget {
   /// This session's inference ledger. When given, the panel shows tonight's
   /// privacy receipt, counted only from its legs (SS-105).
   final LedgerSource? ledger;
+
+  /// The ledger's session identity (`InferenceLedger.sessionId`), read now.
+  /// The receipt binds to it, and is shown only when both are given.
+  final Object? Function()? ledgerSession;
 
   /// Back to the pantry when the flow has one, otherwise a new cook. Null
   /// while a new cook is already starting.
@@ -171,13 +176,17 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
               const SizedBox(height: 4),
               _recapLine(Icons.pause_circle_outline, mealCompleteCoachNote),
             ],
-            if (widget.ledger case final ledger?) ...[
+            if ((widget.ledger, widget.ledgerSession) case (
+              final ledger?,
+              final ledgerSession?,
+            )) ...[
               const SizedBox(height: 16),
               PrivacyReceiptCard(
                 ledger: ledger,
                 recipeTitle: cook.recipe.title,
                 clock: cook.services.clock,
                 timersRun: cook.timersStarted,
+                session: ledgerSession,
               ),
             ],
             const SizedBox(height: 18),

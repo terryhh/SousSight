@@ -117,6 +117,10 @@ void main() {
     expect(count('receipt-timers'), '1');
     expect(find.text('Timers started'), findsOneWidget);
     expect(tester.takeException(), isNull);
+    // A new ledger session (another cook) retires tonight's receipt.
+    hybrid.ledger.startSession('next-cook');
+    await tester.pump();
+    expect(receipt, findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 

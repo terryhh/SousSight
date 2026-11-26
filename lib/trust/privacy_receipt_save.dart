@@ -23,10 +23,17 @@ enum ReceiptSaveResult {
 
   /// This platform has no local save path yet.
   unsupported,
+
+  /// The receipt stopped being tonight's before the image was handed over,
+  /// so nothing was saved.
+  stale,
 }
 
-/// Saves [png] locally as [fileName]. Never uploads.
+/// Saves [png] locally as [fileName]. Never uploads. [isCurrent] is checked
+/// again before any later fallback (a download after a failed share), so an
+/// image of a retired receipt is never saved.
 typedef ReceiptImageSaver = Future<ReceiptSaveResult> Function(
   Uint8List png,
-  String fileName,
-);
+  String fileName, {
+  required bool Function() isCurrent,
+});

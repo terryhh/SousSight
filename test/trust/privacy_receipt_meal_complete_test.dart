@@ -19,6 +19,7 @@ void main() {
   Future<CookingCoordinator> pumpPanel(
     WidgetTester tester, {
     LedgerSource? ledger,
+    Object? Function()? ledgerSession,
   }) async {
     tester.view.physicalSize = const Size(360, 2400);
     tester.view.devicePixelRatio = 1;
@@ -53,6 +54,7 @@ void main() {
               onTextHousehold: () {},
               onCookSomethingElse: () {},
               ledger: ledger,
+              ledgerSession: ledgerSession,
             ),
           ),
         ),
@@ -71,6 +73,7 @@ void main() {
         leg(Provenance.simulated),
         leg(Provenance.simulated, kinds: {DataKind.image}),
       ]),
+      ledgerSession: () => 'session-1',
     );
     expect(find.byKey(const ValueKey('privacy-receipt')), findsOneWidget);
     expect(find.text(cook.recipe.title), findsOneWidget);
@@ -88,6 +91,16 @@ void main() {
     );
     expect(text.top, greaterThan(receipt.bottom));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a ledger without its session identity prints nothing', (
+    tester,
+  ) async {
+    await pumpPanel(
+      tester,
+      ledger: ListLedgerSource([leg(Provenance.simulated)]),
+    );
+    expect(find.byKey(const ValueKey('privacy-receipt')), findsNothing);
   });
 
   testWidgets('without a ledger, no receipt and no claims', (tester) async {

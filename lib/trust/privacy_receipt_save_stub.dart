@@ -7,5 +7,6 @@ import 'privacy_receipt_save.dart';
 
 Future<ReceiptSaveResult> saveReceiptImage(
   Uint8List png,
-  String fileName,
-) async => ReceiptSaveResult.unsupported;
+  String fileName, {
+  required bool Function() isCurrent,
+}) async => ReceiptSaveResult.unsupported;

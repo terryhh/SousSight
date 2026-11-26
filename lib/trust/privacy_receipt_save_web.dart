@@ -11,8 +11,10 @@ import 'privacy_receipt_save.dart';
 
 Future<ReceiptSaveResult> saveReceiptImage(
   Uint8List png,
-  String fileName,
-) async {
+  String fileName, {
+  required bool Function() isCurrent,
+}) async {
+  if (!isCurrent()) return ReceiptSaveResult.stale;
   final parts = <web.BlobPart>[png.toJS].toJS;
   final file = web.File(
     parts,
@@ -34,8 +36,10 @@ Future<ReceiptSaveResult> saveReceiptImage(
     } catch (error) {
       // The cook closed the sheet: respect that, no surprise download.
       if ('$error'.contains('AbortError')) return ReceiptSaveResult.cancelled;
-      // Any other share failure falls through to a download.
+      // Any other share failure falls through to a download, but only for
+      // a receipt that is still tonight's.
     }
+    if (!isCurrent()) return ReceiptSaveResult.stale;
   }
   final url = web.URL.createObjectURL(file);
   final anchor = web.HTMLAnchorElement()

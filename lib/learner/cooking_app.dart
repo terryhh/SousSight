@@ -1120,6 +1120,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             null => widget.onNewCook,
           },
           ledger: widget.hybrid?.ledgerSource,
+          ledgerSession: switch (widget.hybrid) {
+            final hybrid? => () => hybrid.ledger.sessionId,
+            null => null,
+          },
         ),
         const SizedBox(height: 24),
       ],
