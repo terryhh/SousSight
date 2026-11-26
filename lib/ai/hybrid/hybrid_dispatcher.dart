@@ -43,6 +43,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     RemoteRouting? Function()? remoteRouting,
     String Function()? languageTag,
     String Function()? newId,
+    this._currentSession,
   }) : _routes = cloudRoutes,
        _adapter = cloudFallback,
        _isOnline = isOnline ?? (() => true),
@@ -56,6 +57,16 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   final ConsentGate _consent;
   final InferenceLedger _ledger;
   final CloudFallbackSender? _adapter;
+
+  /// The app's current session (meal or pantry flow), when known. A run for
+  /// any other session is stale: it never sends, and a grant for it is void.
+  final String Function()? _currentSession;
+
+  /// True when [run] no longer belongs to the live session or ledger: the
+  /// next meal started, or the cook went back to the pantry.
+  bool _stale(_Run run) =>
+      _ledger.generation != run.ledgerGeneration ||
+      (_currentSession != null && _currentSession() != run.sessionId);
   final bool Function() _isOnline;
   final RemoteRouting? Function() _remote;
   final String Function() _language;
@@ -92,16 +103,19 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     ResultValidator? validate,
   ) async {
     final task = run.task;
+    // A request for a session that is no longer current (meal A after meal
+    // B started) is never routed, let alone sent.
+    if (_stale(run)) return run.cancelled();
     final caps = await _safe(
       _inference.capabilities,
       const HybridCapabilities.none(),
     );
-    if (op.cancelled) return run.cancelled();
+    if (op.cancelled || _stale(run)) return run.cancelled();
     final availability = await _safe(
       () => _inference.availability(withImage: run.hasImage),
       const HybridAvailability(status: OnDeviceStatus.unavailable),
     );
-    if (op.cancelled) return run.cancelled();
+    if (op.cancelled || _stale(run)) return run.cancelled();
 
     final decision = decideRoute(
       RouteInput(
@@ -205,7 +219,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     required RouteReason reason,
     required bool viaAdapter,
   }) async {
-    if (op.cancelled || _ledger.generation != run.ledgerGeneration) {
+    if (op.cancelled || _stale(run)) {
       return const _Blocked(RouteReason.cancelled);
     }
     final decision = decideCloudRetry(
@@ -265,9 +279,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     final feature = run.task.feature;
 
     RouteReason? liveCheck() {
-      if (op.cancelled || _ledger.generation != run.ledgerGeneration) {
-        return RouteReason.cancelled;
-      }
+      if (op.cancelled || _stale(run)) return RouteReason.cancelled;
       if (!mayUpload) return null;
       if (localOnlyFor(_privacy, feature)) return RouteReason.localOnlySetting;
       if (!_routes.allows(CloudRoute.hybridFallback)) {
@@ -443,7 +455,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   void _recordBlocked(_Run run, RouteReason reason) {
     if (run.legs.isEmpty) return;
     // Never write an old run's leg into the next session's ledger.
-    if (_ledger.generation != run.ledgerGeneration) return;
+    if (_stale(run)) return;
     final leg = InferenceLeg(
       requestId: _newId(),
       feature: run.task.feature,
@@ -559,9 +571,11 @@ HybridTask snapshotTask(HybridTask task) => HybridTask(
     for (final p in task.parts)
       switch (p) {
         HybridText(:final text) => HybridText(text),
+        // The MIME type is normalized here, once: `Image/JPEG ` is an image
+        // for routing, consent, the digest and the ledger alike.
         HybridInlineData(:final bytes, :final mimeType) => HybridInlineData(
           Uint8List.fromList(bytes),
-          mimeType,
+          normalizeMimeType(mimeType),
         ),
       },
   ]),

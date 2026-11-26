@@ -47,13 +47,22 @@ Set<DataKind> taskDataKinds(HybridTask task) => {
   if ((task.systemInstruction ?? '').isNotEmpty ||
       task.parts.any((p) => p is HybridText))
     DataKind.text,
-  if (task.hasImage) DataKind.image,
-  if (task.hasAudio) DataKind.audio,
+  if (task.parts.any(isImagePart)) DataKind.image,
+  if (task.parts.any(
+    (p) =>
+        p is HybridInlineData &&
+        normalizeMimeType(p.mimeType).startsWith('audio/'),
+  ))
+    DataKind.audio,
 };
 
-/// Same test as [HybridTask.hasImage], per part.
+/// A MIME type as the dispatcher classifies and sends it: trimmed and lower
+/// case (`Image/JPEG ` → `image/jpeg`). Types are case-insensitive.
+String normalizeMimeType(String mimeType) => mimeType.trim().toLowerCase();
+
+/// Same test as [HybridTask.hasImage], per part, on the normalized type.
 bool isImagePart(HybridPart p) =>
-    p is HybridInlineData && p.mimeType.startsWith('image/');
+    p is HybridInlineData && normalizeMimeType(p.mimeType).startsWith('image/');
 
 const _k = <int>[
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, //

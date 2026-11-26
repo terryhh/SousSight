@@ -396,6 +396,38 @@ void main() {
       });
     });
 
+    // #227 review: a configure that never settles must not hold a cancelled
+    // request until its deadline; configure races the cancellation.
+    test('cancel wins over a configure that never settles', () {
+      fakeAsync((async) {
+        final inner = _SlowStart(); // never released
+        final configured = ConfiguredHybridInference(
+          inner,
+          const HybridConfig(cloudModel: 'm'),
+        );
+        Object? error;
+        configured
+            .generate(_request(const Duration(seconds: 30)))
+            .then<void>(
+              (_) {},
+              onError: (Object e) {
+                error = e;
+              },
+            );
+        async.elapse(const Duration(milliseconds: 5));
+        expect(error, isNull);
+        unawaited(configured.cancel('r1'));
+        async.flushMicrotasks();
+        expect(
+          (error as HybridException?)?.code,
+          HybridErrorCode.cancelled,
+          reason: 'settled at once, not at the 30s deadline',
+        );
+        expect(inner.requests, isEmpty);
+        expect(inner.cancelled, isEmpty);
+      });
+    });
+
     // Pre-existing (Codex): cancelling while startup is still running used
     // to reach a backend with no such request, and generate still ran.
     test('a request cancelled while waiting for configure is never '
@@ -405,11 +437,8 @@ void main() {
         inner,
         const HybridConfig(cloudModel: 'm'),
       );
-      final pending = configured.generate(_request(const Duration(seconds: 5)));
-      await configured.cancel('r1');
-      inner.release();
-      await expectLater(
-        pending,
+      final pending = expectLater(
+        configured.generate(_request(const Duration(seconds: 5))),
         throwsA(
           isA<HybridException>().having(
             (e) => e.code,
@@ -418,7 +447,11 @@ void main() {
           ),
         ),
       );
+      await configured.cancel('r1');
+      inner.release();
+      await pending;
       expect(inner.requests, isEmpty);
+      expect(inner.cancelled, isEmpty, reason: 'the backend never had r1');
       // The cancellation was spent: a later request is not affected.
       inner.enqueueText('ok');
       final later = HybridRequest(
@@ -660,7 +693,7 @@ void main() {
               required systemInstruction,
               required content,
               required config,
-            }) => reply(),
+            }) => reply().then((text) => CloudReply(text)),
           );
       await expectLater(
         sender(() => Completer<String?>().future)

@@ -427,7 +427,8 @@ void main() {
         isOnline: () => true,
         remote: policy,
       );
-      final op = hybrid.dispatcher.start(draft(), sessionId: 's');
+      // The runtime's current session: a run for any other is stale.
+      final op = hybrid.dispatcher.start(draft(), sessionId: hybrid.sessionId);
       await Future<void>.delayed(Duration.zero);
       expect(inference.requests, isEmpty);
       // Remote Config activates late, while the backend is still starting.

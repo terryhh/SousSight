@@ -375,7 +375,7 @@ void main() {
               sentInstruction = systemInstruction;
               expect(model, 'm-2');
               expect(content.parts, hasLength(2));
-              return '{"a":1}';
+              return const CloudReply('{"a":1}');
             },
       );
       final result = await sender.send(
@@ -397,9 +397,39 @@ void main() {
       );
       expect(result.source, InferenceSource.cloud);
       expect(result.requestId, 'r1');
-      expect(result.modelLabel, 'm-2');
+      // firebase_ai reports no model version here: the alias is labelled
+      // as requested, never as observed.
+      expect(result.modelLabel, 'requested: m-2');
       expect(sentInstruction, 'sys');
       expect(sentConfig!.toJson()['responseJsonSchema'], {'type': 'object'});
+    });
+
+    test('a model version the SDK reports is recorded as observed', () async {
+      final sender = FirebaseAiCloudSender(
+        model: 'gemini-flash-latest',
+        generate:
+            ({
+              required model,
+              required systemInstruction,
+              required content,
+              required config,
+            }) async =>
+                const CloudReply('ok', modelVersion: 'gemini-2.5-flash-001'),
+      );
+      final result = await sender.send(
+        const HybridRequest(
+          requestId: 'r',
+          mode: HybridMode.onlyInCloud,
+          task: HybridTask(
+            feature: 'label_check',
+            parts: [HybridText('hi')],
+            maxOutputTokens: 8,
+            timeout: Duration(seconds: 1),
+          ),
+        ),
+      );
+      expect(result.modelLabel, 'gemini-2.5-flash-001');
+      expect(cloudModelLabel('  ', requested: 'x'), 'requested: x');
     });
 
     test('an empty reply fails instead of passing as an answer', () async {

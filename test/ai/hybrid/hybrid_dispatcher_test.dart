@@ -77,6 +77,7 @@ class _Harness {
       cloudFallback: adapter,
       remoteRouting: () => remote,
       isOnline: () => online,
+      currentSession: () => current,
       newId: () => 'id-${++seq}',
     );
   }
@@ -86,6 +87,7 @@ class _Harness {
   final privacy = _Privacy();
   final consent = _Consent();
   var online = true;
+  var current = 's1';
   final ledger = InferenceLedger(
     sessionId: 's1',
     clock: () => DateTime.utc(2026, 11, 25),
@@ -584,6 +586,87 @@ void main() {
       expect(h.ledger.entries, isEmpty);
     },
   );
+
+  // #227 review: `Image/JPEG` is an image for consent and the ledger.
+  test(
+    'a mixed-case, padded image MIME type is classified as an image',
+    () async {
+      final h = _Harness();
+      final task = HybridTask(
+        feature: 'local_watch_cloud_check',
+        parts: [
+          const HybridText('Is it browned?'),
+          HybridInlineData(Uint8List.fromList([1, 2, 3]), ' Image/JPEG '),
+        ],
+        maxOutputTokens: 64,
+        timeout: const Duration(seconds: 10),
+      );
+      expect(taskDataKinds(task), {DataKind.text, DataKind.image});
+      h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+      await h.run(task);
+      expect(h.consent.asks.single.kinds, {DataKind.text, DataKind.image});
+      expect(h.ledger.legs.single.kinds, {DataKind.text, DataKind.image});
+      final sent = h.bridge.requests.single.task.parts.last as HybridInlineData;
+      expect(sent.mimeType, 'image/jpeg');
+      expect(h.bridge.requests.single.task.hasImage, isTrue);
+    },
+  );
+
+  test('normalizeMimeType trims and lower-cases', () {
+    expect(normalizeMimeType(' Image/JPEG '), 'image/jpeg');
+    expect(normalizeMimeType('AUDIO/WAV'), 'audio/wav');
+    expect(
+      taskDataKinds(
+        HybridTask(
+          feature: 'pantry_voice',
+          parts: [HybridInlineData(Uint8List(1), 'Audio/Wav')],
+          maxOutputTokens: 8,
+          timeout: const Duration(seconds: 1),
+        ),
+      ),
+      {DataKind.audio},
+    );
+  });
+
+  // #227 review: approving meal A's photo prompt after meal B started must
+  // not send A's photo under B.
+  test('a prompt approved after the session changed sends nothing', () async {
+    final h = _Harness();
+    final prompt = Completer<ConsentGrant?>();
+    h.consent.answer = (_) => prompt.future;
+    final result = h.run(_photo('local_watch_cloud_check'));
+    await pumpEventQueue();
+    h.current = 'meal-b';
+    prompt.complete(h.consent.grantFor(h.consent.asks.single));
+    final r = await result;
+    expect(r.ok, isFalse);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.ledger.entries, isEmpty);
+  });
+
+  test('a request (and its grant) for a session that is no longer current '
+      'is never routed', () async {
+    final h = _Harness();
+    final task = _photo('local_watch_cloud_check');
+    final grant = await h.consent.grantFor(
+      ConsentAsk(
+        feature: 'local_watch_cloud_check',
+        kinds: taskDataKinds(task),
+        payloadDigest: hybridPayloadDigest(task),
+        sessionId: 's1',
+      ),
+    );
+    h.current = 'meal-b';
+    h.bridge.enqueueText('{"state":"ready"}', source: InferenceSource.cloud);
+    final r = await h.dispatcher
+        .start(task, sessionId: 's1', grant: grant)
+        .result;
+    expect(r.ok, isFalse);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.consent.asks, isEmpty);
+    expect(h.ledger.entries, isEmpty);
+  });
 
   test('remote routing cannot widen local_watch to preferOnDevice', () async {
     final h = _Harness(

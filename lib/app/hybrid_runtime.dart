@@ -135,17 +135,20 @@ class ConfiguredHybridInference implements HybridInference {
     var expired = false;
     var sent = false;
     final id = request.requestId;
-    _waiting.add(id);
+    final cancelled = Completer<void>();
+    _waiting[id] = cancelled;
 
     Future<HybridResult> run() async {
+      // Configure races cancellation (and, below, the deadline): a configure
+      // that never settles cannot hold a cancelled request.
       try {
-        await _configured;
+        await Future.any([_configured, cancelled.future]);
       } finally {
-        _waiting.remove(id);
+        if (identical(_waiting[id], cancelled)) _waiting.remove(id);
       }
       // Cancelled while waiting for configure: the backend never had this
       // request, so it is never forwarded.
-      if (_cancelledWhileWaiting.remove(id)) {
+      if (cancelled.isCompleted) {
         throw const HybridException(
           HybridErrorCode.cancelled,
           'Cancelled before it was sent.',
@@ -185,8 +188,7 @@ class ConfiguredHybridInference implements HybridInference {
       budget,
       onTimeout: () {
         expired = true;
-        _waiting.remove(id);
-        _cancelledWhileWaiting.remove(id);
+        if (identical(_waiting[id], cancelled)) _waiting.remove(id);
         // A backend that overruns is stopped; its late answer or error is
         // dropped by the abandoned future.
         if (sent) {
@@ -219,14 +221,18 @@ class ConfiguredHybridInference implements HybridInference {
     'Hybrid inference ran past the request deadline.',
   );
 
-  /// Requests waiting for the startup configure, and those of them that were
-  /// cancelled meanwhile.
-  final Set<String> _waiting = {};
-  final Set<String> _cancelledWhileWaiting = {};
+  /// Requests still waiting for the startup configure, each with the signal
+  /// that cancels it.
+  final Map<String, Completer<void>> _waiting = {};
 
   @override
-  Future<void> cancel(String requestId) {
-    if (_waiting.contains(requestId)) _cancelledWhileWaiting.add(requestId);
+  Future<void> cancel(String requestId) async {
+    final waiting = _waiting.remove(requestId);
+    if (waiting != null) {
+      // Not forwarded yet: stop it here; the backend has no such request.
+      if (!waiting.isCompleted) waiting.complete();
+      return;
+    }
     return inner.cancel(requestId);
   }
 }
@@ -367,9 +373,9 @@ class FirebaseAiCloudSender implements CloudFallbackSender {
       responseMimeType: task.jsonSchema == null ? null : 'application/json',
       responseJsonSchema: task.jsonSchema,
     );
-    final String? text;
+    final CloudReply? reply;
     try {
-      text = await _generate(
+      reply = await _generate(
         model: model,
         systemInstruction: task.systemInstruction,
         content: content,
@@ -385,6 +391,7 @@ class FirebaseAiCloudSender implements CloudFallbackSender {
     if (_cancelled.remove(request.requestId)) {
       throw const HybridException(HybridErrorCode.cancelled, 'cancelled');
     }
+    final text = reply?.text;
     if (text == null || text.isEmpty) {
       throw const HybridException(HybridErrorCode.failed, 'empty cloud reply');
     }
@@ -392,7 +399,7 @@ class FirebaseAiCloudSender implements CloudFallbackSender {
       requestId: request.requestId,
       text: text,
       source: InferenceSource.cloud,
-      modelLabel: model,
+      modelLabel: cloudModelLabel(reply?.modelVersion, requested: model),
     );
   }
 
@@ -400,7 +407,23 @@ class FirebaseAiCloudSender implements CloudFallbackSender {
   Future<void> cancel(String requestId) async => _cancelled.add(requestId);
 }
 
-typedef CloudGenerate = Future<String?> Function({
+/// The ledger's model label for a cloud answer: the model version the SDK
+/// reported, else the configured alias marked as requested, never the alias
+/// presented as an observation.
+String cloudModelLabel(String? reported, {required String requested}) =>
+    (reported != null && reported.trim().isNotEmpty)
+    ? reported.trim()
+    : 'requested: $requested';
+
+/// A cloud answer and, when the SDK reports one, the model version that
+/// produced it.
+class CloudReply {
+  const CloudReply(this.text, {this.modelVersion});
+  final String? text;
+  final String? modelVersion;
+}
+
+typedef CloudGenerate = Future<CloudReply?> Function({
   required String model,
   required String? systemInstruction,
   required Content content,
@@ -408,7 +431,9 @@ typedef CloudGenerate = Future<String?> Function({
 });
 
 /// Call only after Firebase and App Check have been initialized by the app.
-Future<String?> _generateWithFirebase({
+/// `firebase_ai` 5.1's `GenerateContentResponse` exposes no model version,
+/// so none is reported and the label says `requested: <alias>`.
+Future<CloudReply?> _generateWithFirebase({
   required String model,
   required String? systemInstruction,
   required Content content,
@@ -421,7 +446,7 @@ Future<String?> _generateWithFirebase({
         : Content.system(systemInstruction),
     generationConfig: config,
   );
-  return (await generative.generateContent([content])).text;
+  return CloudReply((await generative.generateContent([content])).text);
 }
 
 /// The shared hybrid services for one app run.
@@ -475,7 +500,8 @@ class HybridRuntime {
       cloudModel: cloudModel,
       remoteRouting: remote?.routing,
     );
-    return HybridRuntime(
+    late final HybridRuntime runtime;
+    return runtime = HybridRuntime(
       inference: configured,
       privacy: prefs,
       cloudRoutes: routes,
@@ -494,6 +520,9 @@ class HybridRuntime {
             cloudFallback ?? FirebaseAiCloudSender(model: cloudModel),
         isOnline: online,
         remoteRouting: remote?.routing,
+        // A pending prompt or retry for meal A never sends once meal B (or
+        // a new pantry flow) is the session.
+        currentSession: () => runtime.sessionId,
       ),
     );
   }
