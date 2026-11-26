@@ -58,13 +58,15 @@ void main() {
       'minutes': 25,
       'cookName': 'Sam',
       'simulateOutcome': 'delivered',
+      'templateVersion': 2,
     });
     expect(result.status, 'submitted');
     expect(result.channel, 'Vonage', reason: 'missing channel defaults');
     expect(result.simulated, isTrue);
     expect(
       result.message,
-      'SousSight: Sam started Chickpea wraps. Dinner in about 25 min.',
+      "SousSight: Dinner's started, about 25 minutes to go. "
+      'Sam is making Chickpea wraps.',
     );
   });
 
@@ -158,7 +160,7 @@ void main() {
       cookName: '   ',
     );
     expect(blank.toJson().keys, isNot(contains('cookName')));
-    expect(blank.preview, startsWith('SousSight: Your cook started Soup.'));
+    expect(blank.preview, endsWith('Your cook is making Soup.'));
   });
 
   test('result explanations never claim delivery that was not confirmed', () {
