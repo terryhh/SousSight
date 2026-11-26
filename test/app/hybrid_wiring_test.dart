@@ -184,6 +184,7 @@ void main() {
       expect(where(rows, 'Watch: '), contains('allow that exact request'));
       expect(where(rows, 'Coach Lite'), contains('retried once in the cloud'));
       expect(where(rows, 'Grounded research'), contains('Google Search'));
+      expect(where(rows, 'Label check'), contains('typed text never does'));
     });
 
     test('aiLogic Live needs the live cloud route', () {

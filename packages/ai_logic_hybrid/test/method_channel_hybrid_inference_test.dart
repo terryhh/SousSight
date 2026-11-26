@@ -224,10 +224,11 @@ void main() {
         calls.add(call.method);
         return call.method == 'generate' ? hang.future : Future.value();
       });
-      final bridge = MethodChannelHybridInference(timeoutGrace: Duration.zero);
+      final bridge = MethodChannelHybridInference();
+      final clock = Stopwatch()..start();
       await expectLater(
         bridge.generate(
-          _request('r1', timeout: const Duration(milliseconds: 10)),
+          _request('r1', timeout: const Duration(milliseconds: 20)),
         ),
         throwsA(
           isA<HybridException>().having(
@@ -237,8 +238,13 @@ void main() {
           ),
         ),
       );
+      // The caller's deadline, with no grace period (it was 2 s).
+      expect(clock.elapsedMilliseconds, lessThan(1000));
       await Future<void>.delayed(Duration.zero);
       expect(calls, ['generate', 'cancel']);
+      // A native answer that arrives after the deadline goes nowhere.
+      hang.complete({'requestId': 'r1', 'text': 'late', 'source': 'onDevice'});
+      await Future<void>.delayed(Duration.zero);
     },
   );
 
