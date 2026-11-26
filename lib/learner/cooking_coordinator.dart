@@ -4,11 +4,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
+import '../app/online_status.dart';
 import '../app/services_scope.dart';
 import '../coach_lite/coach_lite.dart';
 import '../core/analytics.dart';
 import '../core/cooking_research.dart';
 import '../core/models.dart';
+import '../data/offline_ops.dart';
+import '../data/offline_ops_connectivity.dart' as connectivity;
 import '../genui/cooking_ui.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
@@ -43,9 +46,35 @@ class CookingCoordinator extends ChangeNotifier {
     this.onSessionReady,
     this.researchAllowed,
     this.recordCloudLeg,
+    bool Function()? isOnline,
+    Stream<void>? connectivityChanges,
+    StepOpStore? stepOps,
+    Duration stepSaveRetryDelay = const Duration(seconds: 5),
   }) : recipe = recipe ?? services.bundledRecipe,
        liveEnabled = transportFactory != null {
     ui = CookingUiController(onAction: _onUiAction, clock: services.clock);
+    // SS-072: step changes apply here at once and save when online. The same
+    // connectivity read as the dispatcher, Coach Lite and research.
+    _ops =
+        OfflineStepQueue(
+            store:
+                stepOps ??
+                switch (services.sessions) {
+                  final StepOpStore store => store,
+                  final sessions => RepositoryStepOpStore(
+                    sessions,
+                    clock: services.clock,
+                  ),
+                },
+            isOnline: isOnline ?? deviceOnline,
+            connectivityChanges:
+                connectivityChanges ?? connectivity.connectivityChanges(),
+            retryDelay: stepSaveRetryDelay,
+          )
+          ..onSettled = _onStepOpSettled
+          ..onSaveFailed = _onStepSaveFailed
+          ..saveTimer = _saveTimer
+          ..addListener(_notify);
     live = LiveCookingController(
       transportFactory: transportFactory ?? _noLiveTransport,
       media: media,
@@ -95,6 +124,16 @@ class CookingCoordinator extends ChangeNotifier {
   final CookingResearchClient research;
   final bool isDemo;
   late final CookingUiController ui;
+  late final OfflineStepQueue _ops;
+
+  /// The last saved session; [session] is this plus pending step changes.
+  CookingSession? _saved;
+
+  /// True while the device is offline (the cooking screen shows a banner).
+  bool get offline => !_ops.online;
+
+  /// Step changes made on this device that are not saved yet.
+  int get pendingStepSaves => _ops.pendingSteps;
   late final LiveCookingController live;
   Recipe recipe;
   CookingSession? session;
@@ -169,13 +208,16 @@ $cookingUiInstructions
           ? await services.sessions.createNew(uid, recipe)
           : await services.sessions.createOrResume(uid, recipe);
       if (_disposed) return;
-      session = saved;
+      _ops.bind(saved.id);
+      _setSaved(saved);
       onSessionReady?.call(saved.id);
       watchService?.onSessionChanged(saved.id);
       _subscriptions.addAll([
         services.sessions.watch(saved.id).listen((value) {
-          if (_disposed) return;
-          session = value;
+          if (_disposed || value.id != saved.id) return;
+          // Pending step changes are re-applied over every snapshot, so a
+          // cached or reconnect snapshot cannot roll the screen back.
+          _setSaved(value);
           _notify();
         }, onError: _onStreamError),
         services.recipes.watch(recipe.id).listen((value) {
@@ -433,50 +475,46 @@ $cookingUiInstructions
     );
   }
 
+  /// Shown while a step change is on screen but its save keeps failing.
+  static const unsavedStepError =
+      "Your step changed on this screen but isn't saved yet. We'll keep trying.";
+
+  /// Moves to the next step (or finishes the last) on this device at once,
+  /// then saves it: now when online, otherwise on reconnect (SS-072).
   Future<void> advanceStep() async {
-    if (session == null || advancing || complete) return;
-    advancing = true;
-    final completedStepNumber = stepIndex + 1;
-    _notify();
-    try {
-      await _save((current) {
-        final index = recipe.steps.indexWhere(
-          (s) => s.id == current.currentStepId,
-        );
-        return current.copyWith(
-          currentStepId:
-              recipe.steps[(index + 1).clamp(0, recipe.steps.length - 1)].id,
-          completedStepIds: {
-            ...current.completedStepIds,
-            current.currentStepId,
-          }.toList(),
-        );
-      });
-      if (_disposed) return;
-      // A pending question belongs to the previous step; text typed now is a
-      // new message, not an answer to the old question.
-      cookQuestion = null;
-      live.stopWatch();
-      watchService?.onStepChanged(step.id);
-      _resetCoachLite();
-      ui.applyToolPayload({
-        'components': [
-          {
-            'id': 'root',
-            'component': 'CookingColumn',
-            'children': ['step'],
-          },
-          _stepPanel,
-        ],
-      });
-      final finished = complete;
-      _track(AnalyticsEvents.stepCompleted, {
-        'recipe_id': _recipeLabel,
-        'step_number': completedStepNumber,
-      });
-      if (finished) {
-        _track(AnalyticsEvents.mealCompleted, {'recipe_id': _recipeLabel});
+    final saved = _saved;
+    if (saved == null || session == null || advancing || complete) return;
+    final from = step;
+    final index = stepIndex;
+    final last = index >= recipe.steps.length - 1;
+    _ops.enqueue(
+      kind: last ? StepOpKind.complete : StepOpKind.advance,
+      expectedStepId: from.id,
+      toStepId: last ? from.id : recipe.steps[index + 1].id,
+    );
+    _setSaved(saved);
+    // A double tap while the first save runs must not skip a step. Offline
+    // there is no save to wait for; the next tap is a new step change.
+    advancing = _ops.online;
+    _onStepShown();
+    final finished = complete;
+    _track(AnalyticsEvents.stepCompleted, {
+      'recipe_id': _recipeLabel,
+      'step_number': index + 1,
+    });
+    if (finished) {
+      _track(AnalyticsEvents.mealCompleted, {'recipe_id': _recipeLabel});
+      draftDinner();
+      // The meal is done: end the live session so no more camera frames,
+      // audio or follow-up turns reach Gemini. The cook can start it again.
+      if (live.isActive) {
+        unawaited(live.stop());
+        live.notice = mealCompleteCoachNote;
       }
+    }
+    _notify();
+    final saving = advancing ? _ops.flush() : null;
+    try {
       if (live.isActive && !finished) {
         await live.sendText(
           'The cook confirmed the previous step is finished. '
@@ -484,22 +522,64 @@ $cookingUiInstructions
           'Call show_cooking_ui with stepId=${step.id} to replace the workspace with useful cooking panels.',
         );
       }
-      if (finished) {
-        draftDinner();
-        // The meal is done: end the live session so no more camera frames,
-        // audio or follow-up turns reach Gemini. The cook can start it again.
-        if (live.isActive) {
-          unawaited(live.stop());
-          live.notice = mealCompleteCoachNote;
-        }
-      }
     } catch (_) {
-      error = 'Could not save the next step. Please try again.';
-    } finally {
-      advancing = false;
-      _notify();
+      if (!_disposed) {
+        error = 'The live coach missed the step change. Ask it to look again.';
+      }
     }
+    await saving;
+    if (_disposed) return;
+    advancing = false;
+    _notify();
   }
+
+  /// Resets step-scoped state for the step now on screen.
+  void _onStepShown() {
+    // A pending question belongs to the previous step; text typed now is a
+    // new message, not an answer to the old question.
+    cookQuestion = null;
+    live.stopWatch();
+    watchService?.onStepChanged(step.id);
+    _resetCoachLite();
+    ui.applyToolPayload({
+      'components': [
+        {
+          'id': 'root',
+          'component': 'CookingColumn',
+          'children': ['step'],
+        },
+        _stepPanel,
+      ],
+    });
+  }
+
+  void _setSaved(CookingSession saved) {
+    _saved = saved;
+    session = _ops.overlay(saved);
+  }
+
+  void _onStepOpSettled(StepOp op, StepOpCommit commit) {
+    if (_disposed || commit.session.id != _saved?.id) return;
+    final shown = step.id;
+    _setSaved(commit.session);
+    if (commit.outcome == StepOpOutcome.stale) {
+      alert =
+          'Your progress was changed somewhere else, so this screen now shows '
+          'the saved step.';
+      if (step.id != shown) _onStepShown();
+    }
+    if (!_ops.hasPendingWork && error == unsavedStepError) error = null;
+    _notify();
+  }
+
+  void _onStepSaveFailed(Object _) {
+    if (_disposed) return;
+    error = unsavedStepError;
+    _notify();
+  }
+
+  Future<void> _saveTimer(OpTimer timer) =>
+      _save((current) => withTimer(current, timer));
 
   Future<void> startStepTimer() {
     final seconds = step.timerSeconds;
@@ -522,18 +602,30 @@ $cookingUiInstructions
     final isNew = !ui.timers.any((t) => t.id == id);
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
     if (isNew) _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
+    final pending = OpTimer(
+      id: timer.id,
+      label: timer.label,
+      endsAt: timer.deadline,
+    );
+    // Offline, or behind unsaved step changes: the deadline is saved later,
+    // unchanged, with those changes (SS-072).
+    if (_queueTimer(pending)) return;
     try {
-      await _save(
-        (current) => current.copyWith(
-          timerDeadline: timer.deadline,
-          timerLabel: timer.label,
-          timerId: timer.id,
-        ),
-      );
+      await _save((current) => withTimer(current, pending));
     } catch (_) {
+      if (_disposed || _queueTimer(pending)) return;
       error = 'The timer is running here, but could not be saved for reload.';
       _notify();
     }
+  }
+
+  bool _queueTimer(OpTimer timer) {
+    final saved = _saved;
+    if (saved == null || (_ops.online && !_ops.hasPendingWork)) return false;
+    _ops.recordTimer(timer);
+    _setSaved(saved);
+    _notify();
+    return true;
   }
 
   /// Whether any watch (on-device or Live) is running.
@@ -932,7 +1024,11 @@ $cookingUiInstructions
       case 'timer_elapsed':
         alert = '${action.context['label']}: time is up. Check your food.';
       case 'timer_dismissed':
-        if (action.context['timerId'] == session?.timerId) {
+        final timerId = action.context['timerId'];
+        if (timerId is String && _ops.dismissTimer(timerId)) {
+          if (_saved case final saved?) _setSaved(saved);
+        }
+        if (timerId == _saved?.timerId) {
           await _save(
             (current) => current.copyWith(
               timerDeadline: null,
@@ -965,7 +1061,7 @@ $cookingUiInstructions
         current,
       ).copyWith(revision: current.revision + 1, updatedAt: services.clock()),
     );
-    if (!_disposed) session = next;
+    if (!_disposed && next.id == _saved?.id) _setSaved(next);
     _notify();
   }
 
@@ -998,6 +1094,9 @@ $cookingUiInstructions
   void dispose() {
     _resetCoachLite();
     _disposed = true;
+    _ops
+      ..removeListener(_notify)
+      ..dispose();
     _researchEpoch++;
     if (watchService case final service?) {
       service.removeListener(_onWatchChanged);
