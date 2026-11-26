@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import '../nearby/nearby_client.dart';
 import '../nearby/nearby_sheet.dart';
+import '../trust/ledger_source.dart';
+import '../trust/privacy_receipt_card.dart';
 import 'cooking_coordinator.dart';
 
 const _pantryFactPrefix = 'Pantry has (confirmed by the cook):';
@@ -39,11 +41,16 @@ class MealCompletePanel extends StatefulWidget {
     this.nearbyClient,
     this.locate,
     this.openLink,
+    this.ledger,
   });
 
   final CookingCoordinator cook;
   final bool isDemo;
   final VoidCallback onTextHousehold;
+
+  /// This session's inference ledger. When given, the panel shows tonight's
+  /// privacy receipt, counted only from its legs (SS-105).
+  final LedgerSource? ledger;
 
   /// Back to the pantry when the flow has one, otherwise a new cook. Null
   /// while a new cook is already starting.
@@ -163,6 +170,14 @@ class _MealCompletePanelState extends State<MealCompletePanel> {
             if (!cook.live.isActive) ...[
               const SizedBox(height: 4),
               _recapLine(Icons.pause_circle_outline, mealCompleteCoachNote),
+            ],
+            if (widget.ledger case final ledger?) ...[
+              const SizedBox(height: 16),
+              PrivacyReceiptCard(
+                ledger: ledger,
+                recipeTitle: cook.recipe.title,
+                clock: cook.services.clock,
+              ),
             ],
             const SizedBox(height: 18),
             FilledButton.icon(
