@@ -19,7 +19,9 @@ class NativeScreenWakeLock implements ScreenWakeLock {
   NativeScreenWakeLock([this._toggle = _pluginToggle]);
 
   final WakelockToggle _toggle;
-  Future<void> _queue = Future.value();
+
+  /// Created on first use, in the caller's zone.
+  Future<void>? _queue;
 
   @override
   Future<void> acquire() => _apply(true);
@@ -27,11 +29,12 @@ class NativeScreenWakeLock implements ScreenWakeLock {
   @override
   Future<void> release() => _apply(false);
 
-  Future<void> _apply(bool enable) => _queue = _queue.then((_) async {
-    try {
-      await _toggle(enable);
-    } catch (_) {
-      // Unsupported here: degrade silently.
-    }
-  });
+  Future<void> _apply(bool enable) =>
+      _queue = (_queue ?? Future.value()).then((_) async {
+        try {
+          await _toggle(enable);
+        } catch (_) {
+          // Unsupported here: degrade silently.
+        }
+      });
 }

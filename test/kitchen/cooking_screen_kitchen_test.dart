@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/cooking_research_client.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/fakes.dart';
-import 'package:soussight/core/models.dart';
 import 'package:soussight/data/dinner_status.dart';
 import 'package:soussight/kitchen/kitchen_mode.dart';
 import 'package:soussight/kitchen/kitchen_preferences.dart';
@@ -130,7 +129,7 @@ void main() {
   ) async {
     await pumpScreen(tester);
     expect(toggle, findsOneWidget);
-    expect(workspaceScaler(tester), TextScaler.noScaling);
+    expect(workspaceScaler(tester).scale(14), 14);
 
     await tester.ensureVisible(toggle);
     await tester.tap(toggle);
@@ -140,8 +139,9 @@ void main() {
     expect(workspaceScaler(tester).scale(42), 63, reason: 'the timer digits');
     // The camera column is not enlarged.
     expect(
-      MediaQuery.textScalerOf(tester.element(find.text(cook.recipe.title))),
-      TextScaler.noScaling,
+      MediaQuery.textScalerOf(tester.element(find.text(cook.recipe.title)))
+          .scale(14),
+      14,
     );
     expect(tester.takeException(), isNull);
   });
@@ -154,9 +154,7 @@ void main() {
     expect(workspaceScaler(tester), isA<KitchenTextScaler>());
   });
 
-  testWidgets('Big text sits on top of the system text scale', (
-    tester,
-  ) async {
+  testWidgets('Big text sits on top of the system text scale', (tester) async {
     prefs.bigText = true;
     await pumpScreen(tester, systemScale: 1.3);
     expect(workspaceScaler(tester).scale(10), closeTo(19.5, 1e-9));

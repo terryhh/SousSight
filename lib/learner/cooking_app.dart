@@ -397,6 +397,9 @@ class _CookingSessionScreen extends StatefulWidget {
 class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
+
+  /// Screen wake lock and Big text for this session (SS-107).
+  late final KitchenMode _kitchen;
   final _message = TextEditingController();
   final _dinnerAttempts = DinnerAttemptMemory();
   final _fakeDinner = FakeDinnerBackend();
@@ -431,8 +434,6 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
 
   /// Coach Lite read-aloud; only where Coach Lite exists (SS-077).
   CoachLiteSpeaker? _speaker;
-
-  late final KitchenMode _kitchen;
 
   @override
   void initState() {
@@ -1142,13 +1143,16 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 21),
             ),
           ),
-          KitchenBigTextToggle(mode: _kitchen),
-          const SizedBox(width: 12),
           Text(
             '${cook.stepIndex + 1} / ${cook.recipe.steps.length}',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ],
+      ),
+      const SizedBox(height: 8),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: KitchenBigTextToggle(mode: _kitchen),
       ),
       const SizedBox(height: 12),
       LinearProgressIndicator(

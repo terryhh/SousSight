@@ -23,17 +23,19 @@ void main() {
     expect(applied, [true, false]);
   });
 
-  test('platform errors degrade silently and do not block later calls',
-      () async {
-    final applied = <bool>[];
-    final lock = NativeScreenWakeLock((enable) async {
-      if (enable) throw StateError('no plugin');
-      applied.add(enable);
-    });
-    await lock.acquire();
-    await lock.release();
-    expect(applied, [false]);
-  });
+  test(
+    'platform errors degrade silently and do not block later calls',
+    () async {
+      final applied = <bool>[];
+      final lock = NativeScreenWakeLock((enable) async {
+        if (enable) throw StateError('no plugin');
+        applied.add(enable);
+      });
+      await lock.acquire();
+      await lock.release();
+      expect(applied, [false]);
+    },
+  );
 
   test('the plugin without a platform channel does not throw', () async {
     final lock = createScreenWakeLock();

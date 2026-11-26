@@ -95,19 +95,21 @@ void main() {
       mode.dispose();
     });
 
-    test('dispose releases, stops following the session, and is idempotent',
-        () {
-      final mode = make()..followSession(session, () => session.active);
-      session.active = true;
-      mode.dispose();
-      expect(lock.calls, [true, false]);
-      mode.dispose();
-      session.active = false;
-      session.active = true;
-      mode.followSession(session, () => true);
-      mode.setSessionActive(true);
-      expect(lock.calls, [true, false], reason: 'nothing after dispose');
-    });
+    test(
+      'dispose releases, stops following the session, and is idempotent',
+      () {
+        final mode = make()..followSession(session, () => session.active);
+        session.active = true;
+        mode.dispose();
+        expect(lock.calls, [true, false]);
+        mode.dispose();
+        session.active = false;
+        session.active = true;
+        mode.followSession(session, () => true);
+        mode.setSessionActive(true);
+        expect(lock.calls, [true, false], reason: 'nothing after dispose');
+      },
+    );
 
     test('following a new source drops the old one', () {
       final other = _Session();

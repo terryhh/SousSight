@@ -145,23 +145,25 @@ void main() {
     expect(lock.held, isFalse);
   });
 
-  test('release then acquire during a slow request keeps only the new lock',
-      () async {
-    final api = _Api()..autoGrant = false;
-    final lock = BrowserWakeLock(api);
-    final first = lock.acquire();
-    await lock.release();
-    final second = lock.acquire();
-    expect(api.requests, hasLength(2));
-    // The new request resolves first, then the stale one.
-    api.grant(api.requests[1]);
-    await second;
-    api.grant(api.requests[0]);
-    await first;
-    expect(api.granted[0].released, isFalse, reason: 'the new lock');
-    expect(api.granted[1].released, isTrue, reason: 'the stale one');
-    expect(lock.held, isTrue);
-  });
+  test(
+    'release then acquire during a slow request keeps only the new lock',
+    () async {
+      final api = _Api()..autoGrant = false;
+      final lock = BrowserWakeLock(api);
+      final first = lock.acquire();
+      await lock.release();
+      final second = lock.acquire();
+      expect(api.requests, hasLength(2));
+      // The new request resolves first, then the stale one.
+      api.grant(api.requests[1]);
+      await second;
+      api.grant(api.requests[0]);
+      await first;
+      expect(api.granted[0].released, isFalse, reason: 'the new lock');
+      expect(api.granted[1].released, isTrue, reason: 'the stale one');
+      expect(lock.held, isTrue);
+    },
+  );
 
   test('a refused request is swallowed and retried on the next show', () async {
     final api = _Api()..autoGrant = false;
@@ -188,7 +190,10 @@ void main() {
     final lock = BrowserWakeLock(api);
     await Future.wait([
       lock.acquire(),
-      Future(() => api.grant(api.requests.single, handle: _Handle(failRelease: true))),
+      Future(
+        () =>
+            api.grant(api.requests.single, handle: _Handle(failRelease: true)),
+      ),
     ]);
     await lock.release();
     expect(api.granted.single.releases, 1);

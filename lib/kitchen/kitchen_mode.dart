@@ -46,7 +46,9 @@ class KitchenMode extends ChangeNotifier {
   bool _foreground = true;
   bool _lockWanted = false;
   bool _disposed = false;
-  Future<void> _writes = Future.value();
+
+  /// Saves in order. Created on first use, in the caller's zone.
+  Future<void>? _writes;
 
   Listenable? _session;
   bool Function()? _sessionIsActive;
@@ -84,10 +86,10 @@ class KitchenMode extends ChangeNotifier {
   Future<void> setBigText(bool value) {
     if (_disposed) return Future.value();
     _chosen = true;
-    if (value == _bigText) return _writes;
+    if (value == _bigText) return _writes ?? Future.value();
     _bigText = value;
     notifyListeners();
-    return _writes = _writes.then((_) async {
+    return _writes = (_writes ?? Future.value()).then((_) async {
       try {
         await _prefs.writeBigText(value);
       } catch (_) {
@@ -155,7 +157,7 @@ class KitchenModeScope extends InheritedWidget {
   /// from `initState`.
   static KitchenMode createFor(BuildContext context) =>
       (context.getInheritedWidgetOfExactType<KitchenModeScope>()?.create ??
-          KitchenMode.device)();
+      KitchenMode.device)();
 
   @override
   bool updateShouldNotify(KitchenModeScope oldWidget) => false;

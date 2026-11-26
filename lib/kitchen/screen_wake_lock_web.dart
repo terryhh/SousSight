@@ -21,9 +21,9 @@ class _WebWakeLockApi implements BrowserWakeLockApi {
   bool get visible => web.document.visibilityState == 'visible';
 
   @override
-  Stream<void> get visibilityChanges => const web.EventStreamProvider<web.Event>(
-    'visibilitychange',
-  ).forTarget(web.document);
+  Stream<void> get visibilityChanges =>
+      const web.EventStreamProvider<web.Event>('visibilitychange')
+          .forTarget(web.document);
 
   @override
   Future<BrowserWakeLockHandle> request() async =>
