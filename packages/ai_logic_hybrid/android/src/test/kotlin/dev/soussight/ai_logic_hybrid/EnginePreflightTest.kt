@@ -100,4 +100,32 @@ internal class EnginePreflightTest {
         assertEquals(1, decodes.get())
         assertEquals(2, sdkCalls.get())
     }
+
+    @Test
+    fun aStalledModelBuildDoesNotBlockAnotherLookup() {
+        // The first build stalls (as a slow SDK factory might); later builds fail fast because
+        // there is no FirebaseApp. The second lookup must not wait for the first one's lock.
+        val first = java.util.concurrent.CountDownLatch(1)
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val builds = AtomicInteger()
+        val engine = FirebaseHybridEngine(codec) {
+            if (builds.getAndIncrement() == 0) {
+                entered.countDown()
+                first.await()
+            }
+            throw IllegalStateException("no FirebaseApp")
+        }
+        val stalled = Thread { runCatching { runBlocking { engine.availability(config, false) } } }.apply { start() }
+        try {
+            assertEquals(true, entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            val other = config.copy(androidModel = AndroidModelOption.PREVIEW)
+            val start = System.nanoTime()
+            val e = assertFailsWith<HybridError> { runBlocking { engine.availability(other, false) } }
+            assertEquals(HybridErrorCode.UNAVAILABLE, e.code)
+            assertEquals(true, (System.nanoTime() - start) / 1_000_000 < 1_000, "not blocked by the stalled build")
+        } finally {
+            first.countDown()
+            stalled.join(5_000)
+        }
+    }
 }

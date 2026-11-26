@@ -91,8 +91,21 @@ class AiLogicHybridPlugin internal constructor(
             "configure" -> try {
                 val parsed = Protocol.parseConfig(call.arguments)
                 config = parsed
-                engine?.configured(parsed)
-                reply.success(null)
+                val engine = engine
+                val scope = scope
+                if (engine == null || scope == null) {
+                    reply.success(null)
+                } else {
+                    // Answered once the engine is ready (auto: its bounded model selection), so
+                    // the app's first readiness read sees the final selection.
+                    scope.launch {
+                        try {
+                            engine.configured(parsed)
+                        } finally {
+                            reply.success(null)
+                        }
+                    }
+                }
             } catch (e: HybridError) {
                 reply.error(e.code.wire, e.message)
             }

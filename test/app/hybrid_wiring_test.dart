@@ -236,19 +236,22 @@ void main() {
             timeout: const Duration(seconds: 5),
           ),
         );
-        final pending = wrapper.generate(request);
+        // Two calls waiting under the same id: one cancel stops both.
+        final pending = [wrapper.generate(request), wrapper.generate(request)];
         await wrapper.cancel('r1');
         inner.release.complete();
-        await expectLater(
-          pending,
-          throwsA(
-            isA<HybridException>().having(
-              (e) => e.code,
-              'code',
-              HybridErrorCode.cancelled,
+        for (final call in pending) {
+          await expectLater(
+            call,
+            throwsA(
+              isA<HybridException>().having(
+                (e) => e.code,
+                'code',
+                HybridErrorCode.cancelled,
+              ),
             ),
-          ),
-        );
+          );
+        }
         expect(inner.requests, isEmpty, reason: 'nothing was forwarded');
         expect(inner.cancelled, ['r1']);
         // A later request with another id still goes through.

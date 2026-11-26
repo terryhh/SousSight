@@ -12,9 +12,14 @@ enum OnDeviceStatus { available, downloadable, downloading, unavailable }
 
 /// Android local model selection. Names are the wire values.
 enum AndroidModelOption {
-  /// Default. Once per app run, uses [preview] (Gemini Nano 4) only if it
-  /// answers a tiny on-device probe, else [stable]. A preview that fails
-  /// mid-session switches to [stable] and retries once, on-device only.
+  /// Default. `configure` completes once the model is selected (at most
+  /// about 5 s): [preview] (Gemini Nano 4) only if it is already available
+  /// and answers a tiny on-device probe, else [stable]. Auto never downloads
+  /// [preview]; `prepare` sets up the selected model, which is [stable] unless
+  /// [preview] is already ready. After that the only change is [preview] to
+  /// [stable], for the rest of the run, when [preview] stops being available
+  /// or a call on it fails. That failing call gets its own error (there is no
+  /// immediate retry); later requests use [stable].
   auto,
   preview,
   previewFast,
@@ -73,8 +78,8 @@ class LocalModelLimits {
 
   final String modelFamily;
 
-  /// Android: the concrete option in use (what [AndroidModelOption.auto]
-  /// chose); null before it has chosen and on other platforms.
+  /// Android: the concrete option in use (for [AndroidModelOption.auto],
+  /// the current selection). Null before `configure` and on other platforms.
   final AndroidModelOption? modelOption;
   final bool supportsImage;
   final bool supportsJsonSchema;

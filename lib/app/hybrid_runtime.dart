@@ -92,16 +92,17 @@ class ConfiguredHybridInference implements HybridInference {
 
   @override
   Future<HybridResult> generate(HybridRequest request) async {
-    final id = request.requestId;
-    _waiting.add(id);
+    // One marker per call: a cancel during the wait reaches the backend
+    // before it knows this request, so it is honoured here for every call
+    // waiting under that id, and nothing is forwarded.
+    final waiter = _Waiter(request.requestId);
+    _waiting.add(waiter);
     try {
       await _configured;
     } finally {
-      _waiting.remove(id);
+      _waiting.remove(waiter);
     }
-    // A cancel that arrived during the wait reached the backend before it
-    // knew this request; it is honoured here, so nothing is forwarded.
-    if (_cancelledWhileWaiting.remove(id)) {
+    if (waiter.cancelled) {
       throw const HybridException(
         HybridErrorCode.cancelled,
         'Cancelled before it was sent.',
@@ -119,14 +120,22 @@ class ConfiguredHybridInference implements HybridInference {
     return inner.generate(request);
   }
 
-  final Set<String> _waiting = {};
-  final Set<String> _cancelledWhileWaiting = {};
+  final List<_Waiter> _waiting = [];
 
   @override
   Future<void> cancel(String requestId) {
-    if (_waiting.contains(requestId)) _cancelledWhileWaiting.add(requestId);
+    for (final waiter in _waiting) {
+      if (waiter.requestId == requestId) waiter.cancelled = true;
+    }
     return inner.cancel(requestId);
   }
+}
+
+/// A `generate` call waiting for the startup configure.
+class _Waiter {
+  _Waiter(this.requestId);
+  final String requestId;
+  bool cancelled = false;
 }
 
 /// Lets the trust UI read the dispatcher's [InferenceLedger].

@@ -105,7 +105,7 @@ internal class PluginTest {
     }
 
     @Test
-    fun detachStopsAnAutoCheckInProgress() = runBlocking<Unit> {
+    fun detachStopsTheSelectionAndStillAnswersConfigure() = runBlocking<Unit> {
         val lookup = CompletableDeferred<Unit>()
         val generated = CopyOnWriteArrayList<AndroidModelOption>()
         val inner = object : HybridEngine {
@@ -120,14 +120,14 @@ internal class PluginTest {
             }
         }
         val plugin = attached({ _, scope -> AutoModelEngine(inner, scope) })
-        plugin.call("configure", mapOf("cloudModel" to "m"))
-        val result = FakeResult()
-        plugin.onMethodCall(MethodCall("availability", mapOf("withImage" to false)), result)
+        val configure = FakeResult()
+        plugin.onMethodCall(MethodCall("configure", mapOf("cloudModel" to "m")), configure)
         withTimeout(5_000) { lookup.await() }
+        assertFalse(configure.answer.isCompleted, "configure waits for the selection")
         plugin.detach()
+        assertEquals("success" to null, configure.await(), "the waiting configure is still answered")
         kotlinx.coroutines.delay(100)
-        assertTrue(generated.isEmpty())
-        assertFalse(result.answer.isCompleted, "a detached plugin answers nothing more")
+        assertTrue(generated.isEmpty(), "no probe after detach")
     }
 
     @Test
@@ -206,7 +206,7 @@ internal class PluginTest {
         val config = HybridConfig("m", AndroidModelOption.AUTO, listOf("en"))
         assertNull(plain.modelOption(config), "auto is never reported as a model")
         assertEquals(AndroidModelOption.PREVIEW_FAST, plain.modelOption(config.copy(androidModel = AndroidModelOption.PREVIEW_FAST)))
-        plain.configured(config) // default: nothing to start
+        runBlocking { plain.configured(config) } // default: nothing to do
     }
 
     @Test
@@ -214,7 +214,7 @@ internal class PluginTest {
         val seen = CopyOnWriteArrayList<HybridConfig>()
         val plugin = attached({ _, _ ->
             object : HybridEngine by StubEngine(null) {
-                override fun configured(config: HybridConfig) { seen += config }
+                override suspend fun configured(config: HybridConfig) { seen += config }
             }
         })
         plugin.call("configure", mapOf("cloudModel" to "m"))
@@ -239,5 +239,12 @@ internal class PluginTest {
         assertEquals(Reasons.NOT_CONFIGURED, message)
         assertNull(local(plugin.call("capabilities").second)["modelOption"])
         plugin.detach()
+    }
+
+    @Test
+    fun configureBeforeAttachIsAnsweredAtOnce() {
+        val plugin = AiLogicHybridPlugin { _, _ -> StubEngine(null) }
+        assertEquals("success" to null, plugin.call("configure", mapOf("cloudModel" to "m")))
+        assertNull(local(plugin.call("capabilities").second)["modelOption"])
     }
 }

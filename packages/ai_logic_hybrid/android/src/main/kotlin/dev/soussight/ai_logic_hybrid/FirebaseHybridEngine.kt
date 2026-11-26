@@ -240,11 +240,18 @@ class FirebaseHybridEngine(
         return GenerateResult(text, source, response.modelVersion?.takeIf { it.isNotBlank() })
     }
 
-    // Synchronized: auto's model check calls this off the main thread.
-    @Synchronized
+    private val cacheLock = Any()
+
+    /**
+     * The status model is cached per (cloud model, option). The lock guards only the cache:
+     * building a model can stall, and must never block another thread's lookup.
+     */
     private fun extension(config: HybridConfig, cache: Boolean = true): OnDeviceExtension? {
         val key = config.cloudModel to config.androidModel
-        if (cache) statusModel?.takeIf { statusModelKey == key }?.let { return it.onDeviceExtension }
+        if (cache) {
+            synchronized(cacheLock) { statusModel?.takeIf { statusModelKey == key } }
+                ?.let { return it.onDeviceExtension }
+        }
         val model = try {
             ai().generativeModel(
                 modelName = config.cloudModel,
@@ -258,8 +265,10 @@ class FirebaseHybridEngine(
             throw HybridError(HybridErrorCode.UNAVAILABLE, Reasons.BRIDGE_UNAVAILABLE, e)
         }
         if (cache) {
-            statusModelKey = key
-            statusModel = model
+            synchronized(cacheLock) {
+                statusModelKey = key
+                statusModel = model
+            }
         }
         return model.onDeviceExtension
     }

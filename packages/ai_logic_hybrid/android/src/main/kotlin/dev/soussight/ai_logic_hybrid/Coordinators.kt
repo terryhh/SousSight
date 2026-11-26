@@ -20,8 +20,8 @@ interface HybridEngine {
 
     suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult
 
-    /** Called after each `configure`; `auto` starts its background model check here. */
-    fun configured(config: HybridConfig) {}
+    /** Called after each `configure`, before it is answered; `auto` selects its model here. */
+    suspend fun configured(config: HybridConfig) {}
 
     /** The concrete option [config] runs on, or null while `auto` has not chosen one. */
     fun modelOption(config: HybridConfig): AndroidModelOption? =

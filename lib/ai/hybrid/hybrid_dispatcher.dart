@@ -6,7 +6,6 @@ import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 
-import 'attachment_limits.dart';
 import 'hybrid_types.dart';
 import 'inference_ledger.dart';
 import 'inference_policy.dart';
@@ -96,43 +95,31 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       const HybridCapabilities.none(),
     );
     if (op.cancelled) return run.cancelled();
-    // Shared attachment limits, before any route or send (bridge or adapter).
-    if (attachmentProblem(task, caps) != null) return run.result();
-    // Settings are read when called, so the input used for the decision is
-    // built after the availability wait, never from a snapshot taken before.
-    RouteInput input(OnDeviceStatus status) => RouteInput(
-      feature: task.feature,
-      hasImage: run.hasImage,
-      hasAudio: task.hasAudio,
-      estimatedTokens: estimateLocalTokens(
-        task,
-        imageTokenEstimate:
-            caps.local?.imageTokenEstimate ?? defaultImageTokenEstimate,
-      ),
-      languageTag: _language(),
-      localOnly: localOnlyFor(_privacy, task.feature),
-      online: _isOnline(),
-      cloudApproved: _routes.allows(CloudRoute.hybridFallback),
-      capabilities: caps,
-      status: status,
-      remote: _remote(),
+    final availability = await _safe(
+      () => _inference.availability(withImage: run.hasImage),
+      const HybridAvailability(status: OnDeviceStatus.unavailable),
     );
-    // When the route is the same whatever the local model's status (audio,
-    // too large, a cloud-only feature after defaults and remote routing,
-    // ...), don't wait for that status: on Android a cold check can take
-    // seconds. Either way the decision uses settings read after any wait.
-    final byStatus = {
-      for (final s in OnDeviceStatus.values) _routeKey(decideRoute(input(s))),
-    };
-    final status = byStatus.length == 1
-        ? OnDeviceStatus.unavailable
-        : (await _safe(
-            () => _inference.availability(withImage: run.hasImage),
-            const HybridAvailability(status: OnDeviceStatus.unavailable),
-          )).status;
     if (op.cancelled) return run.cancelled();
 
-    final decision = decideRoute(input(status));
+    final decision = decideRoute(
+      RouteInput(
+        feature: task.feature,
+        hasImage: run.hasImage,
+        hasAudio: task.hasAudio,
+        estimatedTokens: estimateLocalTokens(
+          task,
+          imageTokenEstimate:
+              caps.local?.imageTokenEstimate ?? defaultImageTokenEstimate,
+        ),
+        languageTag: _language(),
+        localOnly: localOnlyFor(_privacy, task.feature),
+        online: _isOnline(),
+        cloudApproved: _routes.allows(CloudRoute.hybridFallback),
+        capabilities: caps,
+        status: availability.status,
+        remote: _remote(),
+      ),
+    );
     final mode = decision.mode;
     if (mode == null) {
       return DispatchResult(legs: const [], blocked: decision.reason);
@@ -260,11 +247,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   bool _adapterApplies(_Failed failed, HybridMode mode, _Run run) {
     if (_adapter == null || mode == HybridMode.onlyOnDevice) return false;
     if (failed.code == HybridErrorCode.unavailable) return true;
-    // A valid image the bridge cannot carry, never an unreadable one.
     return failed.code == HybridErrorCode.unsupportedInput &&
         mode == HybridMode.onlyInCloud &&
-        run.task.parts.any((p) => p is HybridInlineData) &&
-        imagesReadable(run.task);
+        run.task.parts.any((p) => p is HybridInlineData);
   }
 
   /// Gate, ledger, send, record.
@@ -550,7 +535,3 @@ Object? _deepCopy(Object? value) => switch (value) {
   List() => List<Object?>.unmodifiable([for (final v in value) _deepCopy(v)]),
   _ => value,
 };
-
-/// What a route decision does, for comparing decisions.
-(HybridMode?, RouteReason, bool, bool) _routeKey(RouteDecision d) =>
-    (d.mode, d.reason, d.mayUpload, d.needsConsent);
