@@ -347,6 +347,8 @@ class _PantryScreenState extends State<PantryScreen> {
       setState(() => _error = pantryVoiceUnavailable);
       return;
     }
+    // A new clip replaces any earlier "skipped" notice.
+    if (_voiceSkipped != null) setState(() => _voiceSkipped = null);
     if (!await _ensureMedia(microphone: true) || !mounted) return;
     // The cook may have left Say it while permission was pending.
     if (_mode != PantryMode.say) {
@@ -429,6 +431,23 @@ class _PantryScreenState extends State<PantryScreen> {
     });
     // Release the camera and microphone as soon as the inputs are captured.
     await _stopMedia();
+    if (!mounted) return;
+    // Re-read the gate after the await: it may have closed meanwhile
+    // (Codex #221).
+    if (_audio != null && _voiceOff && !widget.isDemo) {
+      setState(() {
+        _audio = null;
+        _voiceSkipped = pantryVoiceSkipped;
+      });
+      if (!_hasInput) {
+        setState(() {
+          _thinking = false;
+          _error = pantryVoiceSkipped;
+          _matchError = false;
+        });
+        return;
+      }
+    }
     // The cook's submitted words, not whatever the field holds when the
     // answer arrives (Codex #221).
     final submitted = _text.text;
@@ -656,7 +675,9 @@ class _PantryScreenState extends State<PantryScreen> {
                     ),
                   ],
                 ),
-                if (_voiceSkipped case final skipped? when _error == null) ...[
+                // Shown only while the gate is still closed (Codex #221).
+                if (_voiceSkipped case final skipped?
+                    when _error == null && _voiceOff) ...[
                   const SizedBox(height: 14),
                   _notice(skipped, Icons.mic_off_outlined),
                 ],
