@@ -4,15 +4,17 @@
 // it goes and what SousSight keeps. The claims are deliberately narrow:
 // - "May": for a fallback route a yes permits one upload of this exact
 //   payload, but the request can still finish on the device
-//   (preferOnDevice), so the copy never says it was sent. A cloud-only
-//   feature (an explicit watch cloud check: onlyInCloud, no local attempt)
-//   says plainly that a yes sends it.
+//   (preferOnDevice), so the copy never says it was sent. Only a feature
+//   whose effective mode is cloud-primary (the explicit watch cloud check,
+//   unless Remote Config moves it on-device) says plainly that a yes sends.
 // - Storage (verified): SousSight writes no photo or voice clip to device
 //   storage, Firestore or analytics; the ledger records kinds, never content.
 //   In-memory retention is stated without a lifetime: previews go through
 //   Flutter's shared ImageCache, which can outlive the screen.
 // - What Google keeps is governed by Google's terms; nothing is promised on
 //   Google's behalf.
+
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_policy.dart';
@@ -70,18 +72,30 @@ String consentCompanion(ConsentAsk ask) {
   return _textWithMedia[ask.feature] ?? "SousSight's short instructions";
 }
 
+/// Whether a yes sends the payload straight to the cloud: the feature's
+/// effective mode (its default, after a Remote Config override, which can
+/// only move it on-device) is cloud-primary, so there is no local attempt.
+/// Anything else uses "may … if this device can't answer by itself", which
+/// stays true whatever the route decides.
+bool consentSendsDirectly(String feature, {RemoteRouting? remote}) {
+  final route = featureRouteFor(feature);
+  if (!route.cloudOnly) return false;
+  final wanted = remote?.modeFor(feature) ?? route.defaultMode;
+  return wanted == HybridMode.onlyInCloud || wanted == HybridMode.preferInCloud;
+}
+
 /// What the consent dialog shows. Pure, so it is testable without a widget.
+/// [remote] is the live Remote Config routing, read when the dialog opens.
 ({String title, String body, String allow, String decline}) consentCopy(
-  ConsentAsk ask,
-) {
+  ConsentAsk ask, {
+  RemoteRouting? remote,
+}) {
   final subject = consentSubject(ask);
   final companion = consentCompanion(ask);
   final withText = companion.isEmpty ? '' : ', with $companion,';
   final media =
       ask.kinds.contains(DataKind.image) || ask.kinds.contains(DataKind.audio);
-  // A cloud-only route (the explicit watch cloud check) has no local
-  // attempt: a yes sends it, so say so rather than "if needed".
-  final direct = featureRouteFor(ask.feature).cloudOnly;
+  final direct = consentSendsDirectly(ask.feature, remote: remote);
   final label = _featureNames[ask.feature] ?? featureLabel(ask.feature);
   final check = ask.feature == 'local_watch_cloud_check';
   final request = !direct

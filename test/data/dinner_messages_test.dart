@@ -166,6 +166,38 @@ void main() {
     },
   );
 
+  test('accented names in the GSM-7 alphabet keep the message GSM-7', () {
+    // Same fixture as functions/test/dinner-ready.test.js.
+    const gsm7 =
+        '@£\$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?'
+        '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà';
+    List<String> outside(String text) => text.runes
+        .map(String.fromCharCode)
+        .where((c) => !gsm7.contains(c))
+        .toList();
+    final message = composeDinnerMessage(
+      kind: DinnerKind.started,
+      recipeTitle: 'Paella',
+      minutes: 25,
+      cookName: 'René',
+    );
+    expect(
+      message,
+      "SousSight: Dinner's started, about 25 minutes to go. "
+      'René is making Paella.',
+    );
+    expect(outside(message), isEmpty);
+    expect(message.length, lessThanOrEqualTo(160));
+    final brulee = composeDinnerMessage(
+      kind: DinnerKind.started,
+      recipeTitle: 'Crème brûlée',
+      minutes: 25,
+      cookName: 'René',
+    );
+    // û is outside GSM-7: that title alone makes the SMS UCS-2.
+    expect(outside(brulee), ['û']);
+  });
+
   test('Unicode names and titles pass through; only fixed text is GSM-7', () {
     // Same fixture as functions/test/dinner-ready.test.js.
     const gsm7 =

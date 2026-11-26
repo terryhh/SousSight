@@ -74,6 +74,18 @@ test('the fixed template text is GSM-7 only; with ASCII slots one message is one
   }
 });
 
+test('accented names in the GSM-7 alphabet keep the whole message GSM-7', () => {
+  // Same fixture as test/data/dinner_messages_test.dart.
+  const request = validateDinnerRequest(started({ cookName: 'René', recipeTitle: 'Crème brûlée', minutes: 25 }),
+    settings.allowedRecipients);
+  const message = composeDinnerMessage({ kind: 'started', recipeTitle: 'Paella', minutes: 25, cookName: 'René' });
+  assert.equal(message, "SousSight: Dinner's started, about 25 minutes to go. René is making Paella.");
+  assert.deepEqual(outsideGsm7(message), []);
+  assert.ok(message.length <= 160);
+  // û is outside GSM-7: that title alone makes the SMS UCS-2.
+  assert.deepEqual(outsideGsm7(request.message), ['û']);
+});
+
 test('Unicode names and titles pass through; only the fixed text is guaranteed GSM-7', () => {
   // Same fixture as test/data/dinner_messages_test.dart.
   const cookName = '豆腐'.repeat(15);

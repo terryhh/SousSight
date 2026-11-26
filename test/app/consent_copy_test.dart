@@ -11,7 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
+import 'package:soussight/ai/hybrid/inference_policy.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
+import 'package:soussight/config/remote_policy.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/pantry/pantry_client.dart';
 
@@ -635,4 +637,119 @@ void main() {
     expect(result?.text, 'cloud answer');
     expect(cloud.sends, 1);
   });
+
+  group('the watch check follows the effective route', () {
+    const watchAsk = ConsentAsk(
+      feature: 'local_watch_cloud_check',
+      kinds: {DataKind.image, DataKind.text},
+      payloadDigest: 'digest',
+      sessionId: 'session',
+    );
+    const onDevice = RemoteRouting(
+      modes: {'local_watch_cloud_check': HybridMode.onlyOnDevice},
+    );
+
+    test('a Remote Config on-device override drops the "sends" promise', () {
+      expect(consentSendsDirectly('local_watch_cloud_check'), isTrue);
+      expect(
+        consentSendsDirectly('local_watch_cloud_check', remote: onDevice),
+        isFalse,
+      );
+      // A cloud-primary override value is ignored by routing, and here too.
+      expect(
+        consentSendsDirectly(
+          'local_watch_cloud_check',
+          remote: const RemoteRouting(
+            modes: {'local_watch_cloud_check': HybridMode.onlyInCloud},
+          ),
+        ),
+        isTrue,
+      );
+      expect(consentSendsDirectly('pantry_scan'), isFalse);
+      final copy = consentCopy(watchAsk, remote: onDevice);
+      expect(copy.title, 'Send this photo to Google if needed?');
+      expect(copy.body, startsWith('Watch my food may need help from Google.'));
+      expect(copy.body, contains("this device can't answer by itself"));
+      expect(copy.body, isNot(contains('second look')));
+    });
+
+    testWidgets('the dialog reads the live routing when it opens', (
+      tester,
+    ) async {
+      final key = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: key, home: const SizedBox()),
+      );
+      RemoteRouting? routing;
+      final gate = DialogConsentGate(
+        navigatorKey: key,
+        cloudModel: 'm',
+        remoteRouting: () => routing,
+      );
+      Future<void> openAndDecline() async {
+        unawaited(gate.request(watchAsk));
+        await tester.pumpAndSettle();
+      }
+
+      await openAndDecline();
+      expect(find.text('Send this photo to Google?'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('consent-decline')));
+      await tester.pumpAndSettle();
+
+      routing = onDevice; // Remote Config changes while the app runs.
+      await openAndDecline();
+      expect(find.text('Send this photo to Google if needed?'), findsOneWidget);
+      expect(find.textContaining('second look'), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('consent-decline')));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('HybridRuntime wires Remote Config into the prompt', (
+      tester,
+    ) async {
+      final remote = (await tester.runAsync(
+        () => RemotePolicy.load(
+          _Source({'hybrid_mode_local_watch_cloud_check': 'onlyOnDevice'}),
+          compiledCloudModel: 'test-cloud-model',
+        ),
+      ))!;
+      final hybrid = HybridRuntime.create(
+        inference: FakeHybridInference(),
+        cloudRoutes: CloudRoutes.parse('hybridFallback'),
+        cloudFallback: _CountingCloud(),
+        isOnline: () => true,
+        remote: remote,
+      );
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: hybrid.navigatorKey, home: const SizedBox()),
+      );
+      unawaited(hybrid.consent.request(watchAsk));
+      await tester.pumpAndSettle();
+      expect(find.text('Send this photo to Google if needed?'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('consent-decline')));
+      await tester.pumpAndSettle();
+    });
+  });
+}
+
+/// Remote Config values, active once fetched. No network.
+class _Source implements RemoteConfigSource {
+  _Source(this.values);
+  final Map<String, String> values;
+  Map<String, Object> _defaults = {};
+  bool _active = false;
+
+  @override
+  Future<void> configure({
+    required Duration fetchTimeout,
+    required Duration minimumFetchInterval,
+    required Map<String, Object> defaults,
+  }) async => _defaults = defaults;
+
+  @override
+  Future<void> fetchAndActivate() async => _active = true;
+
+  @override
+  String getString(String key) =>
+      (_active ? values[key] : null) ?? '${_defaults[key] ?? ''}';
 }

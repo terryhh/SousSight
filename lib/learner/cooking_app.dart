@@ -1289,9 +1289,13 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             children: [
               const Icon(Icons.sms_outlined),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
+                // Matches the message the button opens (SS-100).
                 child: Text(
-                  'Call everyone to the table.\nReview a dinner-ready message before sending.',
+                  _dinnerDraft().kind == DinnerKind.ready
+                      ? 'Call everyone to the table.\nReview a dinner-ready message before sending.'
+                      : "Let everyone know dinner's started.\nReview a household message before sending.",
+                  key: const Key('dinner-card-copy'),
                 ),
               ),
               IconButton(
@@ -1339,6 +1343,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     now: cook.services.clock(),
     timers: cook.ui.timers,
     pastTimers: _dinnerTimers.pastTimers,
+    finishedStepIds: cook.session?.finishedTimerStepIds ?? const [],
   );
 
   Future<void> _reviewDinner() {

@@ -122,10 +122,18 @@ class InferenceLedgerSource implements LedgerSource {
 /// to whom, then [kConsentAllowLabel] or [kConsentDeclineLabel]. No context,
 /// a dismissed dialog, or anything but [kConsentAllowLabel] is a decline.
 class DialogConsentGate implements ConsentGate {
-  DialogConsentGate({required this.navigatorKey, required this.cloudModel});
+  DialogConsentGate({
+    required this.navigatorKey,
+    required this.cloudModel,
+    this.remoteRouting,
+  });
 
   final GlobalKey<NavigatorState> navigatorKey;
   final String cloudModel;
+
+  /// The live Remote Config routing, read each time the prompt opens, so the
+  /// copy follows the route the dispatcher will take.
+  final RemoteRouting? Function()? remoteRouting;
 
   @override
   Future<ConsentGrant?> request(ConsentAsk ask) =>
@@ -138,7 +146,7 @@ class DialogConsentGate implements ConsentGate {
   ) async {
     final context = navigatorKey.currentContext;
     if (context == null || !context.mounted) return null;
-    final copy = consentCopy(ask);
+    final copy = consentCopy(ask, remote: remoteRouting?.call());
     final allowed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -331,6 +339,7 @@ class HybridRuntime {
     final consent = DialogConsentGate(
       navigatorKey: key,
       cloudModel: cloudModel,
+      remoteRouting: remote?.routing,
     );
     return HybridRuntime(
       inference: configured,

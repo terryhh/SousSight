@@ -114,8 +114,10 @@ free-form client or model text reaches the household:
 ```
 
 Templates (`kind`). The fixed template text is GSM-7 only, so with ASCII slots a
-message is one SMS segment; a name or title with other Unicode letters (kept by
-the sanitizer below) makes the SMS UCS-2, which can take more than one segment.
+message is one SMS segment. Accented letters that are in the GSM-7 alphabet
+(for example `René`, `é`, `ñ`, `ü`) keep it GSM-7. Only a character outside the
+GSM-7 repertoire (for example `豆腐`, `ç` or `ő`, which the sanitizer below keeps
+as letters) makes the SMS UCS-2, which can then take more than one segment.
 
 Idempotency fingerprints hash the stable request fields, not the rendered
 `message`, so a template change never turns a replay into a conflict; records

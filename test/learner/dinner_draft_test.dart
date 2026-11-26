@@ -2,6 +2,8 @@
 // step, with a "minutes to go" estimate from the remaining step and timer
 // durations. The cook reviews and edits it; simulated mode never sends an SMS.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/core/models.dart';
@@ -122,6 +124,65 @@ void main() {
         pastTimers: [_timer('lite-1-0', const Duration(minutes: 30))],
       );
       expect(lite.minutes, 25);
+    });
+
+    test('a saved finished-step marker counts the step as done', () {
+      DinnerDraft withMarker({List<CookingTimerState> timers = const []}) =>
+          dinnerDraftFor(
+            steps: steps,
+            currentStepId: 'simmer',
+            complete: false,
+            now: _now,
+            timers: timers,
+            finishedStepIds: const ['simmer'],
+          );
+      expect(withMarker().minutes, 5);
+      // A step timer restarted after that runs again and counts.
+      expect(
+        withMarker(
+          timers: [_timer('step-simmer-9-9', const Duration(minutes: 4))],
+        ).minutes,
+        4 + 5,
+      );
+      // Another step's marker does not count for this one.
+      expect(
+        dinnerDraftFor(
+          steps: steps,
+          currentStepId: 'simmer',
+          complete: false,
+          now: _now,
+          finishedStepIds: const ['prep'],
+        ).minutes,
+        25,
+      );
+    });
+
+    test('the marker is saved with the session', () {
+      final session = CookingSession(
+        id: 's',
+        learnerId: 'l',
+        recipeId: 'r',
+        recipeVersion: 1,
+        ingredients: const {},
+        substitutions: const [],
+        currentStepId: 'simmer',
+        completedStepIds: const [],
+        revision: 0,
+        createdAt: _now,
+        updatedAt: _now,
+        finishedTimerStepIds: const ['simmer'],
+      );
+      final map = session.toMap();
+      expect(map['finishedTimerStepIds'], ['simmer']);
+      expect(CookingSession.fromMap('s', map).finishedTimerStepIds, ['simmer']);
+      expect(
+        CookingSession.fromMap(
+          's',
+          {...map}..remove('finishedTimerStepIds'),
+        ).finishedTimerStepIds,
+        isEmpty,
+      );
+      expect(session.copyWith(revision: 1).finishedTimerStepIds, ['simmer']);
     });
 
     test('a restarted step timer: the latest one counts', () {
@@ -502,40 +563,105 @@ void main() {
       expect(sent, hasLength(1));
     });
 
-    testWidgets('a validation rejection unlocks the fields again', (
-      tester,
-    ) async {
-      final memory = DinnerAttemptMemory();
-      final fake = FakeDinnerBackend();
-      addTearDown(fake.dispose);
+    Future<void> pumpOpener(
+      WidgetTester tester, {
+      required DinnerAttemptMemory memory,
+      required DinnerMessageSender send,
+      required FakeDinnerBackend fake,
+      required int? Function() estimate,
+    }) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(
-            body: DinnerReviewDialog(
-              kind: DinnerKind.started,
-              sessionId: 'session-1',
-              recipeTitle: 'Chickpea wrap',
-              send: (_) async =>
-                  throw const DinnerValidationException('Fix the minutes.'),
-              statusSource: fake,
-              memory: memory,
-              isDemo: true,
-              initialMinutes: 25,
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => showDinnerReview(
+                  context,
+                  kind: DinnerKind.started,
+                  sessionId: 'session-1',
+                  recipeTitle: 'Chickpea wrap',
+                  send: send,
+                  statusSource: fake,
+                  memory: memory,
+                  isDemo: true,
+                  initialMinutes: estimate(),
+                ),
+                child: const Text('open'),
+              ),
             ),
           ),
         ),
       );
-      await tester.enterText(
-        find.byWidgetPredicate(
-          (w) => w is TextField && w.decoration?.labelText == 'Recipient',
-        ),
-        '+14075550123',
+    }
+
+    Finder field(String label) => find.byWidgetPredicate(
+      (w) => w is TextField && w.decoration?.labelText == label,
+    );
+    String preview(WidgetTester tester) =>
+        tester.widget<Text>(find.byKey(const Key('dinner-preview'))).data!;
+
+    testWidgets('dismissed while sending, a reopen is locked to what was '
+        'confirmed', (tester) async {
+      final memory = DinnerAttemptMemory();
+      final fake = FakeDinnerBackend();
+      addTearDown(fake.dispose);
+      final pending = Completer<DinnerMessageResult>();
+      final sent = <DinnerMessageRequest>[];
+      var estimate = 25;
+      await pumpOpener(
+        tester,
+        memory: memory,
+        fake: fake,
+        estimate: () => estimate,
+        send: (request) {
+          sent.add(request);
+          return pending.future;
+        },
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Rehearse send'));
+      await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      expect(find.text('Fix the minutes.'), findsOneWidget);
-      expect(memory.current(DinnerKind.started).confirmed, isNull);
-      expect(memory.current(DinnerKind.started).claimed, isFalse);
+      await tester.enterText(field('Recipient'), '+14075550123');
+      await tester.tap(find.widgetWithText(FilledButton, 'Rehearse send'));
+      await tester.pump();
+      expect(sent.single.minutes, 25);
+      // The cook dismisses the dialog (barrier tap) while the send is pending.
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+
+      estimate = 40;
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(field('Minutes until dinner')).enabled,
+        isFalse,
+      );
+      expect(
+        tester
+            .widget<TextField>(field('Minutes until dinner'))
+            .controller!
+            .text,
+        '25',
+      );
+      expect(preview(tester), contains('about 25 minutes to go'));
+      expect(find.byKey(const Key('dinner-pending')), findsOneWidget);
+      final confirm = find.widgetWithText(FilledButton, 'Rehearse send');
+      expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+      await tester.tap(confirm, warnIfMissed: false);
+      await tester.pump();
+      expect(sent, hasLength(1));
+
+      // The original send succeeds: the reopened dialog shows its status.
+      pending.complete(
+        const DinnerMessageResult('submitted', 'sms', message: 'confirmed'),
+      );
+      await tester.pumpAndSettle();
+      final attempt = memory.current(DinnerKind.started);
+      expect(attempt.claimed, isTrue);
+      expect(attempt.outcome, isNull);
+      expect(find.byKey(const Key('dinner-pending')), findsNothing);
+      expect(find.byKey(const Key('dinner-status')), findsOneWidget);
+      expect(preview(tester), 'confirmed');
     });
   });
 

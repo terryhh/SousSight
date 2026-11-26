@@ -10,6 +10,9 @@ import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../genui/cooking_ui_controller.dart'
     show CookingTimerState, CookingUiController;
+import 'step_timers.dart';
+
+export 'step_timers.dart' show isStepTimerFor;
 
 /// Which household message fits where the cook is (SS-100), and a suggested
 /// "minutes to go" for it. The cook still reviews and edits it; nothing here
@@ -25,17 +28,6 @@ class DinnerDraft {
 /// The longest estimate the message template accepts (server: 1-120).
 const kMaxDinnerMinutes = 120;
 
-/// Whether [timerId] is [stepId]'s step timer. Step timers are named
-/// `step-<stepId>` (a restored timer) or `step-<stepId>-<millis>-<seq>` (see
-/// `CookingCoordinator.startStepTimer`); the step ID must match exactly, so
-/// `step-prep-sauce-…` never counts as step `prep`'s timer.
-bool isStepTimerFor(String timerId, String stepId) {
-  final prefix = 'step-$stepId';
-  if (timerId == prefix) return true;
-  if (!timerId.startsWith('$prefix-')) return false;
-  return RegExp(r'^\d+-\d+$').hasMatch(timerId.substring(prefix.length + 1));
-}
-
 /// Picks the message from the cook's step: before the final step it is
 /// "Dinner's started" with an estimate; on the final step, or once the
 /// recipe is complete, it is "Dinner is ready!".
@@ -44,7 +36,8 @@ bool isStepTimerFor(String timerId, String stepId) {
 /// durations of the steps after it. The current step's time is its step
 /// timer's remaining time (zero once it has finished, even if the cook has
 /// since dismissed it: pass timers removed after they ran out in
-/// [pastTimers], e.g. [DinnerTimerMemory.pastTimers]; its own timer
+/// [pastTimers], e.g. [DinnerTimerMemory.pastTimers], and the session's saved
+/// [finishedStepIds], which survive a reload; its own timer
 /// duration if it never started), and never less than the longest running
 /// timer. Durations are summed at full precision and rounded up to whole
 /// minutes once. Steps with no duration add nothing; if nothing is known at
@@ -58,6 +51,7 @@ DinnerDraft dinnerDraftFor({
   required DateTime now,
   Iterable<CookingTimerState> timers = const [],
   Iterable<CookingTimerState> pastTimers = const [],
+  Iterable<String> finishedStepIds = const [],
 }) {
   if (complete) return const DinnerDraft(DinnerKind.ready);
   final index = steps.indexWhere((s) => s.id == currentStepId);
@@ -70,16 +64,30 @@ DinnerDraft dinnerDraftFor({
     final left = timer.remaining(now);
     if (left > longestRunning) longestRunning = left;
   }
-  // The step's own timer: the latest started one, running or dismissed.
-  CookingTimerState? stepTimer;
-  for (final timer in [...timers, ...pastTimers]) {
-    if (!isStepTimerFor(timer.id, current.id)) continue;
-    if (stepTimer == null || timer.startedAt.isAfter(stepTimer.startedAt)) {
-      stepTimer = timer;
+  // The step's own timer: a running one (the latest started) wins; else a
+  // saved "finished" marker (it ran out and was dismissed, even before a
+  // reload); else the latest dismissed-after-finishing timer on this screen.
+  CookingTimerState? latest(Iterable<CookingTimerState> candidates) {
+    CookingTimerState? found;
+    for (final timer in candidates) {
+      if (!isStepTimerFor(timer.id, current.id)) continue;
+      if (found == null || timer.startedAt.isAfter(found.startedAt)) {
+        found = timer;
+      }
     }
+    return found;
   }
-  final currentLeft =
-      stepTimer?.remaining(now) ?? _duration(current.timerSeconds);
+
+  final running = latest(timers);
+  final Duration currentLeft;
+  if (running != null) {
+    currentLeft = running.remaining(now);
+  } else if (finishedStepIds.contains(current.id)) {
+    currentLeft = Duration.zero;
+  } else {
+    currentLeft =
+        latest(pastTimers)?.remaining(now) ?? _duration(current.timerSeconds);
+  }
   var total = currentLeft > longestRunning ? currentLeft : longestRunning;
   for (final step in steps.skip(index + 1)) {
     total += _duration(step.timerSeconds);
@@ -141,18 +149,28 @@ class DinnerTimerMemory {
 
 /// The latest cook-confirmed attempt of each kind. Reopening the review shows
 /// that attempt's live status instead of minting a stale or duplicate send.
-class DinnerAttempt {
+///
+/// It outlives the dialog: a send the cook confirmed keeps going after the
+/// dialog is dismissed, and a reopened dialog listens for its outcome.
+class DinnerAttempt extends ChangeNotifier {
   DinnerAttempt({required this.notificationId});
   final String notificationId;
   String recipient = '';
   bool claimed = false;
 
   /// The request the cook confirmed, snapshotted before the send is awaited.
-  /// A reopened attempt shows these slots, never a fresh estimate, even when
+  /// From then on the attempt is locked to it: a reopened dialog shows these
+  /// slots (and its preview), never a fresh estimate or an edit, even when
   /// the response was lost and [result] is null.
   DinnerMessageRequest? confirmed;
   DinnerMessageResult? result;
   String? outcome;
+
+  /// Confirmed, and the send has not finished yet.
+  bool get pending => confirmed != null && !claimed;
+
+  /// Tells an open dialog that the attempt changed.
+  void changed() => notifyListeners();
 }
 
 class DinnerAttemptMemory {
@@ -254,17 +272,25 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
 
   bool get _started => widget.kind == DinnerKind.started;
   bool get _simulated => widget.mode == DinnerMode.simulated;
-  bool get _locked => _attempt.claimed || _sending;
+  bool get _locked => _attempt.claimed || _attempt.pending || _sending;
 
   @override
   void initState() {
     super.initState();
     _minutes.addListener(_refresh);
     _cookName.addListener(_refresh);
+    _attempt.addListener(_onAttempt);
     if (_attempt.claimed) _watch();
   }
 
   void _refresh() => setState(() {});
+
+  /// A send confirmed in an earlier (dismissed) dialog finished.
+  void _onAttempt() {
+    if (!mounted) return;
+    if (_attempt.claimed && _subscription == null) _watch();
+    setState(() {});
+  }
 
   void _watch() {
     unawaited(_subscription?.cancel());
@@ -282,6 +308,7 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
 
   @override
   void dispose() {
+    _attempt.removeListener(_onAttempt);
     unawaited(_subscription?.cancel());
     _recipient.dispose();
     _minutes.dispose();
@@ -339,7 +366,9 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     if (_simulated) simulate ??= DinnerSimulation.delivered;
     final attempt = _attempt;
     final request = _request(simulate: simulate);
-    attempt.confirmed = request;
+    attempt
+      ..confirmed = request
+      ..changed();
     setState(() {
       _sending = true;
       _validationError = null;
@@ -351,7 +380,6 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
         ..recipient = request.recipient
         ..result = result;
       if (!_simulated) widget.memory.lastRecipient = request.recipient;
-      if (mounted && identical(attempt, _attempt)) _watch();
     } on DinnerValidationException catch (error) {
       // Nothing was claimed; the same ID may be confirmed again after edits.
       attempt.confirmed = null;
@@ -360,14 +388,14 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
       attempt
         ..claimed = true
         ..outcome = error.explanation;
-      if (mounted) _watch();
     } catch (_) {
       attempt
         ..claimed = true
         ..outcome = 'Message status could not be confirmed. No automatic resend will occur.';
-      if (mounted) _watch();
     } finally {
       if (mounted) setState(() => _sending = false);
+      // Open dialogs on this attempt (this one or a reopened one) watch it.
+      attempt.changed();
     }
   }
 
@@ -391,8 +419,10 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     // Explicit cook action after a KNOWN failure: a new notification ID, never
     // a resend of the old one, and nothing is sent until the cook confirms.
     unawaited(_subscription?.cancel());
+    _subscription = null;
+    _attempt.removeListener(_onAttempt);
     setState(() {
-      _attempt = widget.memory.startNew(widget.kind);
+      _attempt = widget.memory.startNew(widget.kind)..addListener(_onAttempt);
       _status = null;
       _validationError = null;
     });
@@ -482,6 +512,15 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(_validationError!),
+              ),
+            if (_attempt.pending && !_sending)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  'Sending the message you confirmed. It will not be sent '
+                  'again.',
+                  key: Key('dinner-pending'),
+                ),
               ),
             if (status != null)
               Padding(
