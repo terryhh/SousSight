@@ -624,7 +624,7 @@ void main() {
       );
       expect(
         illustrationBlockText(IllustrationBlock.noPicture),
-        kIllustrationNoDonenessCopy,
+        kIllustrationNotOfferedCopy,
       );
     },
   );
@@ -748,6 +748,65 @@ void main() {
         );
       },
     );
+  });
+
+  group('codex round 4', () {
+    test('a ledger rotated during admission: no dispatch, no charge', () async {
+      final h = bound(cap: 1);
+      h.ledger.addListener(() {
+        if (h.ledger.entries.isNotEmpty && h.ledger.entries.last.pending) {
+          h.ledger.startSession('another-run');
+        }
+      });
+      await h.controller.request(recipe, grate);
+      expect(h.generator.prompts, isEmpty);
+      expect(h.controller.remaining, 1);
+      expect(h.ledger.entries, isEmpty);
+      expect(
+        (h.controller.stateFor(grate) as IllustrationFailed).code,
+        HybridErrorCode.cancelled,
+      );
+    });
+
+    test(
+      'a stale plate callback from an older binding starts nothing',
+      () async {
+        final h = Harness()
+          ..controller.bind(sessionId: 's1', recipe: recipe, stepId: 'stir');
+        final builtFor = h.controller.bindingEpoch; // plate shown on last step
+        h.controller.bind(sessionId: 's1', recipe: recipe, stepId: 'grate');
+        await h.controller.request(
+          recipe,
+          const PlateTarget(),
+          fromEpoch: builtFor,
+        );
+        expect(h.consent.asks, isEmpty);
+        expect(h.generator.prompts, isEmpty);
+        // The current binding's callback works.
+        await h.controller.request(
+          recipe,
+          const PlateTarget(),
+          fromEpoch: h.controller.bindingEpoch,
+        );
+        expect(h.generator.prompts, hasLength(1));
+      },
+    );
+
+    test('connectivity is known by default and can be declared unknown', () {
+      expect(Harness().controller.connectivityKnown, isTrue);
+      final h = Harness();
+      final native = IllustrationController(
+        cloudRoutes: h.routes,
+        privacy: h.privacy,
+        isOnline: () => true,
+        consent: h.consent,
+        ledger: InferenceLedgerIllustrations(h.ledger),
+        generator: h.generator,
+        connectivityKnown: false,
+      );
+      expect(native.connectivityKnown, isFalse);
+      native.dispose();
+    });
   });
 }
 

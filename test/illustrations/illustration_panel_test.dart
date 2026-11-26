@@ -193,6 +193,33 @@ void main() {
     expect(find.textContaining('need the cloud'), findsOneWidget);
   });
 
+  testWidgets('unknown connectivity is said, not hidden', (tester) async {
+    final h = Harness();
+    final controller = IllustrationController(
+      cloudRoutes: h.routes,
+      privacy: h.privacy,
+      isOnline: () => true,
+      consent: h.consent,
+      ledger: InferenceLedgerIllustrations(h.ledger),
+      generator: h.generator,
+      connectivityKnown: false,
+    );
+    addTearDown(controller.dispose);
+    final r = draftRecipe();
+    await tester.pumpWidget(
+      host(
+        StepIllustrations(
+          recipe: r,
+          step: r.steps.first,
+          sessionId: 's1',
+          showPlate: false,
+          controller: controller,
+        ),
+      ),
+    );
+    expect(find.textContaining("can't check its connection"), findsOneWidget);
+  });
+
   testWidgets('used-up is explained', (tester) async {
     final h = Harness(cap: 0);
     await pumpPanel(tester, recipe: draftRecipe(), stepId: 'grate', harness: h);
@@ -289,7 +316,9 @@ void main() {
     expect(find.text('Nothing was sent.'), findsOneWidget);
   });
 
-  testWidgets('heated steps keep the thermometer disclaimer', (tester) async {
+  testWidgets('a heated draft step gets no picture, only the reason', (
+    tester,
+  ) async {
     final r = draftRecipe(
       steps: const [
         RecipeStep(
@@ -302,69 +331,46 @@ void main() {
     );
     final h = Harness();
     await pumpPanel(tester, recipe: r, stepId: 'toast', harness: h);
-    await tester.tap(find.text(askLabel));
-    await tester.pumpAndSettle();
-    expect(find.text(kIllustrationLabel), findsOneWidget);
-    expect(find.text(kIllustrationHeatCopy), findsOneWidget);
+    expect(find.byType(OutlinedButton), findsNothing);
+    expect(find.byKey(const ValueKey('step_toast-no-picture')), findsOneWidget);
+    expect(find.text(kIllustrationNotOfferedCopy), findsOneWidget);
+    expect(h.consent.asks, isEmpty);
   });
 
-  testWidgets(
-    'meat: raw prep is laid out; heated steps and plate say why not',
-    (tester) async {
-      final r = draftRecipe(
-        ingredients: const [
-          Ingredient(id: 'c', name: 'Chicken thighs', qty: '2'),
-          Ingredient(id: 'o', name: 'Olive oil', qty: '1 tbsp'),
-        ],
-        steps: const [
-          RecipeStep(
-            id: 'season',
-            title: 'Season',
-            instruction: 'Rub the chicken with olive oil.',
-            cue: 'Evenly coated.',
-          ),
-          RecipeStep(
-            id: 'sear',
-            title: 'Sear',
-            instruction: 'Cook them in a hot pan.',
-            cue: 'Golden outside.',
-          ),
-        ],
-      );
-      final h = Harness();
-      await pumpPanel(tester, recipe: r, stepId: 'season', harness: h);
-      expect(find.text(askLabel), findsNothing);
-      expect(find.text('Show me the ingredients laid out'), findsOneWidget);
-      await tester.tap(find.text('Show me the ingredients laid out'));
-      await tester.pumpAndSettle();
-      expect(h.generator.prompts.single, contains('before any cooking'));
-      expect(h.generator.prompts.single, isNot(contains('Evenly coated')));
-      expect(find.text('The ingredients, laid out'), findsOneWidget);
-      expect(find.text(kIllustrationNoDonenessCopy), findsOneWidget);
-
-      // The heated step and the plate: no button, a reason instead.
-      await tester.pumpWidget(
-        host(
-          StepIllustrations(
-            recipe: r,
-            step: r.steps.last,
-            sessionId: 's1',
-            showPlate: true,
-            controller: h.controller,
-          ),
+  testWidgets('a draft with animal protein: no step or plate picture at all', (
+    tester,
+  ) async {
+    final r = draftRecipe(
+      ingredients: const [
+        Ingredient(id: 'c', name: 'Chicken thighs', qty: '2'),
+        Ingredient(id: 'o', name: 'Olive oil', qty: '1 tbsp'),
+      ],
+      steps: const [
+        RecipeStep(
+          id: 'season',
+          title: 'Season',
+          instruction: 'Rub the chicken with olive oil.',
+          cue: 'Evenly coated.',
         ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byType(OutlinedButton), findsNothing);
-      expect(
-        find.byKey(const ValueKey('step_sear-no-picture')),
-        findsOneWidget,
-      );
-      expect(find.byKey(const ValueKey('plate-no-picture')), findsOneWidget);
-      expect(find.text(kIllustrationNoDonenessCopy), findsNWidgets(2));
-      expect(h.generator.prompts, hasLength(1));
-    },
-  );
+      ],
+    );
+    final h = Harness();
+    await pumpPanel(
+      tester,
+      recipe: r,
+      stepId: 'season',
+      harness: h,
+      showPlate: true,
+    );
+    expect(find.byType(OutlinedButton), findsNothing);
+    expect(
+      find.byKey(const ValueKey('step_season-no-picture')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('plate-no-picture')), findsOneWidget);
+    expect(find.text(kIllustrationNotOfferedCopy), findsNWidgets(2));
+    expect(h.generator.prompts, isEmpty);
+  });
 
   testWidgets('offline during consent: reconnecting offers the button again', (
     tester,

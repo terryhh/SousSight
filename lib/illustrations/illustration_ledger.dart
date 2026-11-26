@@ -23,6 +23,11 @@ class IllustrationReceipt {
 }
 
 abstract class IllustrationSend {
+  /// The leg is still pending in the active ledger. False when a listener
+  /// rotated the ledger (a new session) during admission: there is then no
+  /// record to send under, so the send must not happen.
+  bool get admitted;
+
   /// The cloud answered. Returns the settled leg's receipt, or null when
   /// the ledger no longer holds this leg (a new session replaced it), in
   /// which case nothing may claim the send.
@@ -69,6 +74,9 @@ class _Send implements IllustrationSend {
   final LedgerEntry _entry;
 
   bool get _open => _ledger.entries.contains(_entry) && _entry.pending;
+
+  @override
+  bool get admitted => _open;
 
   @override
   IllustrationReceipt? confirmed(String modelLabel) {

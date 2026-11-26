@@ -309,4 +309,33 @@ void main() {
       contains('failed'),
     );
   });
+
+  test('two candidates abstain, even if both hold an image', () {
+    final two = GenerateContentResponse([
+      Candidate(
+        Content('model', [InlineDataPart('image/png', png())]),
+        null,
+        null,
+        FinishReason.stop,
+        null,
+      ),
+      Candidate(
+        Content('model', [InlineDataPart('image/png', png())]),
+        null,
+        null,
+        FinishReason.stop,
+        null,
+      ),
+    ], null);
+    expect(
+      () => illustrationFromResponse(two, model: 'm'),
+      throwsA(
+        isA<IllustrationException>().having(
+          (e) => e.code,
+          'code',
+          HybridErrorCode.failed,
+        ),
+      ),
+    );
+  });
 }

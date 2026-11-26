@@ -471,4 +471,162 @@ void main() {
     );
     expect(illustrationRevision(edited), isNot(illustrationRevision(a)));
   });
+
+  group('on-demand allowlist (AI drafts)', () {
+    RecipeStep st(String id, String instruction, String cue) =>
+        RecipeStep(id: id, title: 'Step', instruction: instruction, cue: cue);
+
+    test(
+      'rabbit with a temperature claim: no step, no plate, either builder',
+      () {
+        final r = recipe(
+          ingredients: const [
+            Ingredient(id: 'r', name: 'Rabbit legs', qty: '2'),
+          ],
+          steps: [
+            st(
+              'crust',
+              'Brown in a pan.',
+              'A brown crust means the center has reached 165°F.',
+            ),
+          ],
+        );
+        expect(recipeHasAnimalProtein(r), isTrue);
+        expect(assertsDoneness('the center has reached 165°F'), isTrue);
+        for (final build in [illustrationPrompt, onDemandIllustrationPrompt]) {
+          expect(build(r, const StepTarget('crust')), isNull);
+          expect(build(r, const PlateTarget()), isNull);
+        }
+      },
+    );
+
+    test('the shelf-stable exemption reads the full name', () {
+      expect(
+        isAnimalProtein(
+          const Ingredient(
+            id: 'c',
+            name: 'Crackers (langoustines)',
+            qty: '',
+            allergens: ['shellfish'],
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isAnimalProtein(
+          const Ingredient(
+            id: 'm',
+            name: 'Mayonnaise',
+            qty: '',
+            allergens: ['egg'],
+          ),
+        ),
+        isFalse,
+        reason: 'reviewed builder only',
+      );
+    });
+
+    test('drafts get no exemption: any fish, shellfish or egg tag blocks', () {
+      final r = recipe(
+        ingredients: const [
+          Ingredient(id: 'm', name: 'Mayonnaise', qty: '', allergens: ['egg']),
+          Ingredient(id: 'c', name: 'Cucumber', qty: '1'),
+        ],
+        steps: [st('mix', 'Stir the cucumber into the mayonnaise.', 'Even.')],
+      );
+      expect(draftHasAnimalProtein(r), isTrue);
+      expect(onDemandIllustrationPrompt(r, const StepTarget('mix')), isNull);
+      expect(onDemandIllustrationPrompt(r, const PlateTarget()), isNull);
+    });
+
+    test('minced garlic is not protein', () {
+      final r = recipe(
+        ingredients: const [
+          Ingredient(id: 'g', name: 'Garlic, minced', qty: '2 cloves'),
+          Ingredient(id: 'w', name: 'Water', qty: '1 cup'),
+        ],
+        steps: [
+          st('stir', 'Stir the garlic into the water.', 'Flecks of garlic.'),
+        ],
+      );
+      expect(recipeHasAnimalProtein(r), isFalse);
+      expect(draftHasAnimalProtein(r), isFalse);
+      expect(
+        onDemandIllustrationPrompt(r, const StepTarget('stir'))!.subject,
+        IllustrationSubject.stepLook,
+      );
+      expect(onDemandIllustrationPrompt(r, const PlateTarget()), isNotNull);
+    });
+
+    test('any heat blocks the step; any heated step blocks the plate', () {
+      for (final instruction in [
+        'Warm the tortilla.',
+        'Microwave for 20 seconds.',
+        'Put it in the oven.',
+        'Cook gently.',
+        'Bring to a boil.',
+        'Sauté the onions.',
+        'Grill the peppers.',
+        'Toast the bread.',
+      ]) {
+        final r = recipe(
+          steps: [
+            st('prep', 'Stir the yogurt.', 'Smooth.'),
+            st('hot', instruction, 'Soft.'),
+          ],
+        );
+        expect(
+          onDemandIllustrationPrompt(r, const StepTarget('hot')),
+          isNull,
+          reason: instruction,
+        );
+        expect(
+          onDemandIllustrationPrompt(r, const PlateTarget()),
+          isNull,
+          reason: instruction,
+        );
+        expect(
+          onDemandIllustrationPrompt(r, const StepTarget('prep')),
+          isNotNull,
+          reason: 'a no-heat step of a cooked recipe may still be shown',
+        );
+      }
+    });
+
+    test('the step prompt carries only its cue and its own ingredients', () {
+      final r = recipe(
+        ingredients: const [
+          Ingredient(id: 'l', name: 'Lemon juice', qty: '1 tbsp'),
+          Ingredient(id: 'o', name: 'Red onion', qty: '1'),
+          Ingredient(id: 'c', name: 'Chickpeas', qty: '1 can'),
+        ],
+        steps: [
+          st('pickle', 'Put the onion in lemon juice.', 'Bright pink.'),
+          st('mash', 'Mash the chickpeas.', 'Chunky, not a paste.'),
+        ],
+      );
+      final p = onDemandIllustrationPrompt(r, const StepTarget('mash'))!.text;
+      expect(p, contains('Chunky, not a paste.'));
+      expect(p, contains('Ingredients in this step: Chickpeas.'));
+      expect(p, isNot(contains('Lemon')));
+      expect(p, isNot(contains('onion')));
+      expect(p, isNot(contains('earlier')));
+      expect(
+        p,
+        isNot(contains('Mash the chickpeas')),
+        reason: 'no instruction',
+      );
+    });
+
+    test('doneness and safety text never reaches an on-demand prompt', () {
+      final r = recipe(
+        steps: [st('s', 'Stir the yogurt.', 'Smooth and safe to eat.')],
+      );
+      expect(onDemandIllustrationPrompt(r, const StepTarget('s')), isNull);
+      expect(onDemandIllustrationPrompt(r, const PlateTarget()), isNull);
+      expect(onDemandIllustrationPrompt(r, const StepTarget('nope')), isNull);
+      final empty = recipe(steps: [st('e', 'Stir the yogurt.', '')]);
+      expect(onDemandIllustrationPrompt(empty, const StepTarget('e')), isNull);
+    });
+  });
 }

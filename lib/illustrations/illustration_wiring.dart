@@ -43,5 +43,8 @@ IllustrationController illustrationControllerFor(
     generator: generator ?? FirebaseAiIllustrationGenerator(),
     settingsChanges: hybrid.privacy,
     usage: illustrationUsageFor(hybrid),
+    // Native connectivity is not wired yet (#224): deviceOnline reports
+    // online on Android and iOS, so say so rather than claim a check.
+    connectivityKnown: kIsWeb,
   );
 }

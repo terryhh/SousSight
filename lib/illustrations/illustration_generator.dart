@@ -136,10 +136,14 @@ GeneratedIllustration illustrationFromResponse(
       'Prompt was blocked',
     );
   }
-  final candidate = response.candidates.firstOrNull;
-  if (candidate == null) {
-    throw const IllustrationException(HybridErrorCode.failed, 'No candidate');
+  // Exactly one candidate: a second one is not "the" image asked for.
+  if (response.candidates.length != 1) {
+    throw IllustrationException(
+      HybridErrorCode.failed,
+      'Expected one candidate, got ${response.candidates.length}',
+    );
   }
+  final candidate = response.candidates.single;
   // Only a normal finish may show an image: every block, including the
   // image-specific ones, is "blocked", and anything else (no reason, cut
   // short, no image, unknown) abstains.

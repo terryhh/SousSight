@@ -59,7 +59,7 @@ String illustrationBlockText(IllustrationBlock block) => switch (block) {
   IllustrationBlock.capReached =>
     "You've used this cook's illustrations. Check the step text and your "
         'own eyes instead.',
-  IllustrationBlock.noPicture => kIllustrationNoDonenessCopy,
+  IllustrationBlock.noPicture => kIllustrationNotOfferedCopy,
   IllustrationBlock.noSession =>
     'Available once your cooking session has started.',
 };
@@ -142,6 +142,7 @@ class IllustrationController extends ChangeNotifier {
     Future<bool> Function(Uint8List bytes)? decodes,
     this._settingsChanges,
     IllustrationUsage? usage,
+    this.connectivityKnown = true,
   }) : _routes = cloudRoutes,
        _decodes = decodes ?? imageDecodes,
        _usage = usage ?? IllustrationUsage() {
@@ -167,6 +168,15 @@ class IllustrationController extends ChangeNotifier {
 
   /// On-demand illustrations per cooking session.
   final int cap;
+
+  /// Whether [_isOnline] can actually tell. On Android and iOS it cannot
+  /// yet (it reports online until native connectivity lands, #224), so the
+  /// panel says a failed try still counts instead of claiming a check.
+  final bool connectivityKnown;
+
+  /// The binding a button was built for. A callback built for an older
+  /// binding (another step, recipe revision or session) starts nothing.
+  int get bindingEpoch => _epoch;
 
   String? _sessionId;
   String? _revision;
@@ -263,14 +273,20 @@ class IllustrationController extends ChangeNotifier {
   /// returned without a call; a request already in flight is not repeated.
   /// A request from a stale button (another step, an older recipe
   /// revision) is ignored.
-  Future<void> request(Recipe recipe, IllustrationTarget target) async {
+  Future<void> request(
+    Recipe recipe,
+    IllustrationTarget target, {
+    int? fromEpoch,
+  }) async {
     final session = _sessionId;
     if (_disposed || session == null) return;
+    // Any target, plate included: a callback from an older binding is stale.
+    if (fromEpoch != null && fromEpoch != _epoch) return;
     if (illustrationRevision(recipe) != _revision) return;
     if (target case StepTarget(:final stepId) when stepId != _stepId) return;
     final key = target.key;
     if (_cache.containsKey(key) || _states[key] is IllustrationLoading) return;
-    final prompt = illustrationPrompt(recipe, target);
+    final prompt = onDemandIllustrationPrompt(recipe, target);
     if (prompt == null) {
       _set(key, const IllustrationBlocked(IllustrationBlock.noPicture));
       return;
@@ -319,6 +335,14 @@ class IllustrationController extends ChangeNotifier {
     // after admission. A send stopped here is withdrawn (recorded as not
     // sent) and costs nothing; the cap is charged only at dispatch.
     final send = _ledger.begin();
+    // A listener may have rotated the ledger during admission: with no
+    // pending leg in the active ledger there is no record to send under.
+    if (!send.admitted) {
+      if (_current(epoch)) {
+        _set(key, const IllustrationFailed(HybridErrorCode.cancelled));
+      }
+      return;
+    }
     final late = _current(epoch) ? availability() : null;
     if (!_current(epoch) || late != null) {
       send.withdrawn();

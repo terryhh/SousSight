@@ -124,9 +124,11 @@ class _IllustrationSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final prompt = illustrationPrompt(recipe, target);
-    final asset = premadeIllustrationAsset(recipe, target);
-    if (asset != null && prompt != null) {
+    if (!isDraftRecipe(recipe)) {
+      // A reviewed recipe shows only its human-reviewed bundled image.
+      final prompt = illustrationPrompt(recipe, target);
+      final asset = premadeIllustrationAsset(recipe, target);
+      if (asset == null || prompt == null) return const SizedBox.shrink();
       return IllustrationFrame(
         title: _title(target, prompt.subject),
         prompt: prompt,
@@ -139,18 +141,17 @@ class _IllustrationSlot extends StatelessWidget {
         ),
       );
     }
-    if (prompt == null) {
-      // Meat, poultry, fish and eggs are never pictured where doneness could
-      // be implied; say why instead of showing nothing.
-      return recipeHasAnimalProtein(recipe)
-          ? _Note(
-              kIllustrationNoDonenessCopy,
-              key: ValueKey('${target.key}-no-picture'),
-            )
-          : const SizedBox.shrink();
-    }
     final controller = this.controller;
     if (controller == null) return const SizedBox.shrink();
+    // AI drafts: on demand, by allowlist only (no heat, no animal protein,
+    // no doneness or safety claim). Anything else says why there is none.
+    final prompt = onDemandIllustrationPrompt(recipe, target);
+    if (prompt == null) {
+      return _Note(
+        kIllustrationNotOfferedCopy,
+        key: ValueKey('${target.key}-no-picture'),
+      );
+    }
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) => _onDemand(context, controller, prompt),
@@ -226,6 +227,9 @@ class _IllustrationSlot extends StatelessWidget {
     String? lastOutcome,
   }) {
     final block = controller.availability();
+    // The button belongs to this binding; a press after the cook moved on
+    // (another step, recipe revision or session) starts nothing.
+    final epoch = controller.bindingEpoch;
     return _Ask(
       label:
           label ??
@@ -238,7 +242,7 @@ class _IllustrationSlot extends StatelessWidget {
       notice: block != null ? illustrationBlockText(block) : lastOutcome,
       detail: _detail(controller, prompt),
       onPressed: block == null
-          ? () => controller.request(recipe, target)
+          ? () => controller.request(recipe, target, fromEpoch: epoch)
           : null,
     );
   }
@@ -251,6 +255,9 @@ class _IllustrationSlot extends StatelessWidget {
         '${controller.remaining} of ${controller.cap} left this cook.',
     if (prompt.subject == IllustrationSubject.ingredientsLaidOut)
       kIllustrationNoDonenessCopy,
+    if (!controller.connectivityKnown)
+      "This device can't check its connection, so a try that fails "
+          'offline still counts.',
   ].join(' ');
 }
 

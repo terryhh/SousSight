@@ -313,4 +313,16 @@ void main() {
     );
     expect(illustrationUsageFor(other).used('session-1'), 0);
   });
+
+  test('native connectivity is declared unknown until #224 lands', () {
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+    );
+    final controller = illustrationControllerFor(hybrid);
+    // The test VM is not the web, so this is the native answer.
+    expect(controller.connectivityKnown, isFalse);
+    controller.dispose();
+  });
 }
