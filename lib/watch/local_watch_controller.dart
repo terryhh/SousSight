@@ -4,10 +4,10 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/payload_digest.dart';
 import '../core/models.dart';
 import '../live/live_types.dart';
 import 'capture_owner.dart';
-import 'frame_digest.dart';
 import 'watch_verdict.dart';
 
 /// The ids a check was asked for. A result is applied only while all three
@@ -96,6 +96,10 @@ class LocalWatchController extends ChangeNotifier {
   bool get isChecking => _inFlight != null;
   bool get awaitingConsent => _consentFrame != null;
 
+  /// The latest camera frame while a local watch runs, for the on-screen
+  /// preview only. Cleared when the watch stops. Never sent anywhere.
+  Uint8List? previewFrame;
+
   /// The exact frame the cook is being asked about, so the prompt can show it.
   CapturedFrame? get consentFrame => _consentFrame;
 
@@ -173,6 +177,9 @@ class LocalWatchController extends ChangeNotifier {
     _frames = capture.framesFor(lease).listen((frame) {
       if (_token != token) return;
       _latest = frame;
+      // The cook sees what the watch sees. The frame stays on this device.
+      previewFrame = frame.bytes;
+      _notify();
       if (!_checkedOnce) unawaited(_check(token));
     });
     _errors = capture.media.errors.listen((message) {
@@ -211,6 +218,7 @@ class LocalWatchController extends ChangeNotifier {
     _inFlight?.operation.cancel();
     _inFlight = null;
     _latest = null;
+    previewFrame = null;
     _consentFrame = null;
     if (notice != null) this.notice = notice;
     if (token != null) _notify();
@@ -338,18 +346,17 @@ class LocalWatchController extends ChangeNotifier {
       (privacy?.localOnly(kLocalWatchFeature) ?? false) ||
       (privacy?.localOnly(kWatchCloudCheckFeature) ?? false);
 
-  /// The digest a consent grant names. When the trunk exports
-  /// `hybridPayloadDigest(HybridTask)`, return that here instead.
-  String _payloadDigest(HybridTask task) =>
-      frameDigest(task.parts.whereType<HybridInlineData>().single.bytes);
+  /// The digest a consent grant names: the dispatcher's own digest of the
+  /// whole task (prompt and frame), so the grant passed with the send matches
+  /// and the dispatcher does not ask the cook a second time.
+  String _payloadDigest(HybridTask task) => hybridPayloadDigest(task);
 
-  /// The only call into the dispatcher. When `HybridDispatcher.start` gains
-  /// `ConsentGrant? grant`, pass `grant: grant` here.
+  /// The only call into the dispatcher.
   HybridOperation _dispatch(
     HybridTask task,
     String sessionId, {
     ConsentGrant? grant,
-  }) => dispatcher.start(task, sessionId: sessionId);
+  }) => dispatcher.start(task, sessionId: sessionId, grant: grant);
 
   CapturedFrame? _freshFrame() {
     final frame = _latest;

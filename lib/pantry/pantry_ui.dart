@@ -6,6 +6,7 @@ import 'package:json_schema_builder/json_schema_builder.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
 import 'pantry_client.dart' show kPantryScanFeature, kPantryVoiceFeature;
+import '../trust/inference_source_badge.dart';
 import 'pantry_models.dart';
 import 'recipe_draft.dart' show kRecipeDraftFeature;
 
@@ -537,12 +538,7 @@ class _MealCard extends StatelessWidget {
 /// The source is reported, never inferred; an error on a send that was
 /// allowed to upload says that data may have left the device.
 String pantryLegLabel(InferenceLeg leg) {
-  final what = switch (leg.feature) {
-    kPantryVoiceFeature => 'Voice list',
-    kPantryScanFeature => 'Meal match',
-    kRecipeDraftFeature => 'Recipe draft',
-    _ => leg.feature,
-  };
+  final what = pantryLegWhat(leg);
   final where = switch (leg.provenance) {
     Provenance.sdkOnDevice => 'on this device',
     Provenance.sdkCloud => 'Google cloud',
@@ -555,9 +551,16 @@ String pantryLegLabel(InferenceLeg leg) {
   return '$what · $where$failed';
 }
 
-/// Simple per-leg provenance list for a pantry result.
-// TODO(SS-070): swap for the lib/trust provenance badge widget once it lands;
-// keep one entry per leg, never one merged badge.
+/// What a pantry leg did, for the row label ("Voice list", "Meal match").
+String pantryLegWhat(InferenceLeg leg) => switch (leg.feature) {
+  kPantryVoiceFeature => 'Voice list',
+  kPantryScanFeature => 'Meal match',
+  kRecipeDraftFeature => 'Recipe draft',
+  _ => leg.feature,
+};
+
+/// Per-leg provenance for a pantry result: one row per leg, each with the
+/// trust surface's source badge. Never one merged badge.
 class PantryLegList extends StatelessWidget {
   const PantryLegList({super.key, required this.legs});
 
@@ -575,25 +578,15 @@ class PantryLegList extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 4),
             child: Row(
               children: [
-                Icon(
-                  switch (leg.provenance) {
-                    Provenance.sdkOnDevice => Icons.smartphone_outlined,
-                    Provenance.simulated => Icons.science_outlined,
-                    _ => Icons.cloud_outlined,
-                  },
-                  size: 16,
-                  color: const Color(0xFF6B5A3E),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    pantryLegLabel(leg),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF3B3328),
-                    ),
+                Text(
+                  pantryLegWhat(leg),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF3B3328),
                   ),
                 ),
+                const SizedBox(width: 8),
+                Flexible(child: InferenceSourceBadge(legs: [leg])),
               ],
             ),
           ),

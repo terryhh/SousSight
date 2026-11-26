@@ -441,14 +441,13 @@ class LabelCheckController extends ChangeNotifier {
     );
   }
 
-  /// The only call into the dispatcher. When `HybridDispatcher.start` gains
-  /// `ConsentGrant? grant` (PR #186), pass `grant: grant` here so the
-  /// dispatcher uses this grant instead of asking its own ConsentGate again.
+  /// The only call into the dispatcher. The grant travels with the send so
+  /// the dispatcher does not ask its own ConsentGate again.
   HybridOperation _dispatch(
     HybridTask task,
     String sessionId, {
     ConsentGrant? grant,
-  }) => dispatcher.start(task, sessionId: sessionId);
+  }) => dispatcher.start(task, sessionId: sessionId, grant: grant);
 
   void _finish(
     _Token token, {

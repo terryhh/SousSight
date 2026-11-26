@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import 'live_backend_guard.dart' show LiveUnavailable;
 import 'live_tools.dart';
 import 'live_types.dart';
 
@@ -220,6 +221,9 @@ class LiveCookingController extends ChangeNotifier {
         'invite me to show the ingredients or current cooking step.',
       );
       _notify();
+    } on LiveUnavailable catch (e) {
+      // Route, privacy or reservation said no; no socket opened. Say why.
+      if (_current(epoch)) await _fail(e.message, forEpoch: epoch);
     } catch (_) {
       if (_current(epoch)) {
         await _fail(

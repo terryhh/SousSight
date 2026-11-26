@@ -49,8 +49,7 @@ class DemoCookingResearchClient implements CookingResearchClient {
       case ResearchDemoScenario.noCitationsReturned:
         await Future<void>.delayed(simulatedDelay);
         return const CookingResearchResult(
-          answer:
-              '[Scripted demo · No live Google call] For mild acidity in a chickpea wrap dressing, a small splash of mild vinegar can stand in for lemon juice, starting with half the amount and tasting as you go.',
+          answer: '[Scripted demo · No live Google call] For mild acidity in a chickpea wrap dressing, a small splash of mild vinegar can stand in for lemon juice, starting with half the amount and tasting as you go.',
           citations: <CookingCitation>[],
         );
 
@@ -73,8 +72,7 @@ class DemoCookingResearchClient implements CookingResearchClient {
               ),
             ),
           ],
-          searchSuggestionsHtml:
-              '<div class="google-search-suggestions"><span>Scripted demo attribution preview: lemon juice substitution vinegar</span></div>',
+          searchSuggestionsHtml: '<div class="google-search-suggestions"><span>Scripted demo attribution preview: lemon juice substitution vinegar</span></div>',
         );
 
       case ResearchDemoScenario.lateResponseStaleRejection:
@@ -91,7 +89,9 @@ class DemoCookingResearchClient implements CookingResearchClient {
           citations: <CookingCitation>[
             CookingCitation(
               title: 'USDA Seasonal Produce & Spice Guide',
-              uri: Uri.parse('https://snaped.fns.usda.gov/resources/nutrition-education-materials'),
+              uri: Uri.parse(
+                'https://snaped.fns.usda.gov/resources/nutrition-education-materials',
+              ),
             ),
           ],
         );
@@ -111,10 +111,8 @@ class DemoCookingResearchClient implements CookingResearchClient {
 
     if (!hasVinegarKind) {
       return const CookingResearchResult(
-        answer:
-            '[Scripted demo · Step 1: Clarification needed] Vinegar works well to replace the brightness of lemon juice in spiced chickpeas, but the ratio depends on which vinegar you have on hand.',
-        clarifyingQuestion:
-            'Which vinegar do you have in your kitchen (for example, apple cider, white wine, rice, or distilled white vinegar)?',
+        answer: '[Scripted demo · Step 1: Clarification needed] Vinegar works well to replace the brightness of lemon juice in spiced chickpeas, but the ratio depends on which vinegar you have on hand.',
+        clarifyingQuestion: 'Which vinegar do you have in your kitchen (for example, apple cider, white wine, rice, or distilled white vinegar)?',
         citations: <CookingCitation>[],
       );
     }
@@ -124,8 +122,11 @@ class DemoCookingResearchClient implements CookingResearchClient {
           '[Scripted demo · Step 2: Cited answer using your confirmed facts] With your confirmed pantry ingredients (${query.confirmedIngredients.join(", ")}), use an equal amount (1:1 ratio, such as 1 tbsp vinegar for 1 tbsp lemon juice) if using apple cider or white wine vinegar, or 3/4 tbsp plus 1/4 tbsp water if using sharper distilled white vinegar.',
       citations: <CookingCitation>[
         CookingCitation(
-          title: 'Clemson Cooperative Extension — Common Ingredient Substitutions',
-          uri: Uri.parse('https://hgic.clemson.edu/factsheet/common-ingredient-substitutions/'),
+          title:
+              'Clemson Cooperative Extension — Common Ingredient Substitutions',
+          uri: Uri.parse(
+            'https://hgic.clemson.edu/factsheet/common-ingredient-substitutions/',
+          ),
         ),
         CookingCitation(
           title: 'USDA MyPlate Kitchen — Healthy Seasoning & Acid Swaps',
@@ -138,8 +139,7 @@ class DemoCookingResearchClient implements CookingResearchClient {
           uri: Uri.parse('http://insecure.example.com/recipe'),
         ),
       ],
-      searchSuggestionsHtml:
-          '<div style="font-family:sans-serif;font-size:13px;padding:8px;background:#f8f9fa;border-radius:8px;"><strong>Google Search suggestions (scripted demo preview):</strong> lemon juice to apple cider vinegar ratio chickpea dressing</div>',
+      searchSuggestionsHtml: '<div style="font-family:sans-serif;font-size:13px;padding:8px;background:#f8f9fa;border-radius:8px;"><strong>Google Search suggestions (scripted demo preview):</strong> lemon juice to apple cider vinegar ratio chickpea dressing</div>',
     );
   }
 }
