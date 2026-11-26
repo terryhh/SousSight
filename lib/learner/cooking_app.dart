@@ -1111,7 +1111,6 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         MealCompletePanel(
           cook: cook,
           isDemo: widget.isDemo,
-          ledger: widget.hybrid?.ledgerSource,
           onTextHousehold: _reviewDinner,
           onCookSomethingElse: switch (widget.onBackToPantry) {
             final back? => () {
@@ -1120,6 +1119,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             },
             null => widget.onNewCook,
           },
+          ledger: widget.hybrid?.ledgerSource,
         ),
         const SizedBox(height: 24),
       ],
