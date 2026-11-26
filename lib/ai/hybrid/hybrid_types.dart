@@ -106,10 +106,13 @@ abstract class ConsentGate {
       mode: ask.mode,
       imageDigests: Set.unmodifiable(ask.imageDigests),
     );
+    // The gate's own copy of the preview, taken now: it is hashed and the
+    // same copy is shown, so the caller cannot swap the bytes afterwards.
     // A preview that is not one of this payload's own photos is never shown.
+    final copy = preview == null ? null : Uint8List.fromList(preview);
     final shownPreview =
-        preview != null && shown.imageDigests.contains(sha256Hex(preview))
-        ? preview
+        copy != null && shown.imageDigests.contains(sha256Hex(copy))
+        ? copy
         : null;
     try {
       return await confirm(shown, preview: shownPreview)

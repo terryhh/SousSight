@@ -1024,7 +1024,7 @@ void main() {
       imageDigests: {sha256Hex(frame)},
     );
     final grant = await preview.request(ask);
-    expect(dialog.previews, [same(frame)]);
+    expect(dialog.previews, [frame]); // the gate's own copy of the frame
     expect(grant!.ask, _sameAskAs(ask));
     expect(dialog.issued(grant), isTrue);
     expect(preview.issued(grant), isTrue);
@@ -1066,6 +1066,26 @@ void main() {
 
   // Codex #224 (65/100) P1: a caller-supplied preview of another photo is
   // never shown for photo A's grant.
+  test('the gate shows its own copy of the preview: mutating the caller\'s '
+      'buffer after request() changes nothing', () async {
+    final photoA = Uint8List.fromList([1, 2, 3]);
+    final buffer = Uint8List.fromList(photoA);
+    final gateOpen = Completer<bool>();
+    final dialog = _HeldDialog(gateOpen.future);
+    final ask = ConsentAsk(
+      feature: 'local_watch_cloud_check',
+      kinds: const {DataKind.image},
+      payloadDigest: 'd',
+      sessionId: 's1',
+      imageDigests: {sha256Hex(photoA)},
+    );
+    final pending = dialog.request(ask, preview: buffer);
+    buffer.setAll(0, [9, 9, 9]); // the caller swaps the bytes
+    gateOpen.complete(true);
+    await pending;
+    expect(dialog.shown.single, photoA);
+  });
+
   test(
     'the prompt shows a preview only if it is one of the payload photos',
     () async {
@@ -1122,3 +1142,18 @@ Matcher _sameAskAs(ConsentAsk a) => isA<ConsentAsk>()
     .having((x) => x.kinds, 'kinds', a.kinds)
     .having((x) => x.payloadDigest, 'payloadDigest', a.payloadDigest)
     .having((x) => x.sessionId, 'sessionId', a.sessionId);
+
+/// Holds its prompt open until [answer] completes, then reads the preview.
+class _HeldDialog extends DialogConsentGate {
+  _HeldDialog(this.answer)
+    : super(navigatorKey: GlobalKey<NavigatorState>(), cloudModel: 'm');
+  final Future<bool> answer;
+  final shown = <Uint8List?>[];
+
+  @override
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async {
+    final allowed = await answer;
+    shown.add(preview == null ? null : Uint8List.fromList(preview));
+    return allowed;
+  }
+}
