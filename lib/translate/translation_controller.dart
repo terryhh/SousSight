@@ -105,7 +105,12 @@ class TranslationController extends ChangeNotifier {
       _notify();
       return;
     }
-    if (!_current(epoch) || result.status == TranslationStatus.cancelled) {
+    if (!_current(epoch)) return;
+    if (result.status == TranslationStatus.cancelled) {
+      // Cancelled under the current request (the backend or a session
+      // change): nothing to show, and no longer translating.
+      _busy = false;
+      _notify();
       return;
     }
     _translation = result;

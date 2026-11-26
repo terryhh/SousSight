@@ -4,6 +4,7 @@
 
 import '../ai/hybrid/hybrid_types.dart';
 import '../app/hybrid_runtime.dart';
+import 'cook_language.dart';
 import 'language_dispatcher.dart';
 import 'recipe_translator.dart';
 import 'translation_controller.dart';
@@ -14,7 +15,11 @@ final _controllers = Expando<TranslationController>('cook-language');
 /// It lives as long as the runtime (one app run), so the cache does too.
 TranslationController translationFor(HybridRuntime hybrid) =>
     _controllers[hybrid] ??= TranslationController(
-      translator: RecipeTranslator(dispatcher: hybrid.dispatcher),
+      translator: RecipeTranslator(
+        dispatcher: hybrid.dispatcher,
+        // A translation belongs to the cooking session it started in.
+        sessionIsCurrent: (id) => hybrid.sessionId == id,
+      ),
       localTokenBudget: () async =>
           (await hybrid.inference.capabilities()).local?.maxTotalTokens,
     );
@@ -39,3 +44,7 @@ String? cookLanguageTagFor(HybridRuntime hybrid, String feature) =>
     cookLanguageFeatures.contains(feature)
     ? _controllers[hybrid]?.language.code
     : null;
+
+/// Every cook language, for `HybridConfig.languages` (Chrome's
+/// `expectedInputs` / `expectedOutputs`).
+List<String> get cookLanguageCodes => [for (final l in cookLanguages) l.code];

@@ -1,15 +1,14 @@
 // The languages a cook can choose for recipe content and AI answers (SS-106).
 //
-// Adding a language is one entry in [cookLanguages]. Without a
-// [CookLanguage.unitWords] entry its translations must keep every unit word
-// exactly as the English source wrote it, and without a
-// [CookLanguage.certificationPattern] it relies on the English checks only,
-// so a new entry starts strict and can be relaxed with care.
+// Adding a language is one entry in [cookLanguages]. Without
+// [CookLanguage.unitWords] its translations must keep every unit word exactly
+// as the English source wrote it, and without [CookLanguage.numberWords] a
+// written number ("two") must stay a digit or an English word, so a new entry
+// starts strict. Its safety-claim patterns belong in the shared gate,
+// lib/safety/cook_safety.dart, before the language is offered to cooks.
 //
 // The shell's own strings stay English; only recipe content and AI answers
 // use the chosen language.
-
-import 'spanish_certification.dart';
 
 /// One language a cook can cook in.
 class CookLanguage {
@@ -18,7 +17,7 @@ class CookLanguage {
     required this.nativeName,
     required this.modelName,
     this.unitWords = const {},
-    this.certificationPattern,
+    this.numberWords = const {},
   });
 
   /// BCP 47 primary tag, e.g. `es`. Also what the dispatcher's language
@@ -35,9 +34,9 @@ class CookLanguage {
   /// A translation may use these or the English source's own unit word.
   final Map<String, List<String>> unitWords;
 
-  /// Phrases in this language that would certify doneness, temperature or
-  /// safety. Model text that matches is never shown.
-  final String? certificationPattern;
+  /// Written numbers in this language, by value ("dos" → 2). Articles that
+  /// double as "one" are left out.
+  final Map<String, int> numberWords;
 
   /// The recipe's own language: nothing to translate.
   bool get isSource => code == sourceLanguage.code;
@@ -83,7 +82,20 @@ const spanish = CookLanguage(
     'pint': ['pinta', 'pintas'],
     'gallon': ['galón', 'galones'],
   },
-  certificationPattern: spanishCertificationPattern,
+  numberWords: {
+    'dos': 2,
+    'tres': 3,
+    'cuatro': 4,
+    'cinco': 5,
+    'seis': 6,
+    'siete': 7,
+    'ocho': 8,
+    'nueve': 9,
+    'diez': 10,
+    'once': 11,
+    'doce': 12,
+    'docena': 12,
+  },
 );
 
 /// Every language a cook can choose, in display order. Add one entry here.

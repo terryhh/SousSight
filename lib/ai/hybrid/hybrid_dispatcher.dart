@@ -278,6 +278,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       if (!_routes.allows(CloudRoute.hybridFallback)) {
         return RouteReason.cloudNotApproved;
       }
+      // Connectivity is read again at the send, like privacy and routes: a
+      // retry or fallback decided while online must not upload once offline.
+      if (!_isOnline()) return RouteReason.offline;
       return null;
     }
 

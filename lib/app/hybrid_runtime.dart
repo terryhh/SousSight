@@ -332,7 +332,12 @@ class HybridRuntime {
     final routes = remote?.gate(compiledRoutes) ?? compiledRoutes;
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
-      HybridConfig(cloudModel: cloudModel),
+      HybridConfig(
+        cloudModel: cloudModel,
+        // SS-106: the on-device model may be asked for any cook language,
+        // so Chrome's expectedInputs/expectedOutputs must list them all.
+        languages: cookLanguageCodes,
+      ),
       // The same checks the dispatcher made, read again after the wait.
       mayForward: (request) =>
           routes.allows(CloudRoute.hybridFallback) &&

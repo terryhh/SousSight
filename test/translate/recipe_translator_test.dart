@@ -189,7 +189,14 @@ void main() {
         );
         expect(translationValidator(ids)(bad), isNotNull);
       }
-      expect(translationValidator(ids)('{"lines":[]}'), isNull);
+      // Every expected line must come back (Codex #10).
+      expect(translationValidator(ids)('{"lines":[]}'), isNotNull);
+      expect(
+        translationValidator(ids)(
+          '{"lines":[{"id":"a","text":"uno"},{"id":"b","text":"dos"}]}',
+        ),
+        isNull,
+      );
     });
   });
 
@@ -222,9 +229,12 @@ void main() {
         spanish,
         sessionId: 's1',
       );
-      expect(t.status, TranslationStatus.complete);
+      // Salt was left out of the answer: the chunk is not fully answered,
+      // so the result is partial and never cached (Codex #10).
+      expect(t.status, TranslationStatus.partial);
+      expect(translator.cache.length, 0);
       expect(t.key, const TranslationKey('pb', 1, 'es'));
-      expect(t.keptCount, 1); // salt: the answer left it out
+      expect(t.keptCount, 1);
       expect(
         t.lines[RecipeLineIds.ingredientName('salt')]!.rejection,
         LineRejection.noTranslation,
@@ -420,6 +430,97 @@ void main() {
       expect(done.status, TranslationStatus.complete);
       expect(done.key.version, 2);
     });
+
+    test('an answer missing lines is partial and never cached', () async {
+      dispatcher.enqueue('{"lines":[]}');
+      final t = await translator.translate(
+        testRecipe(),
+        spanish,
+        sessionId: 's1',
+      );
+      expect(t.status, TranslationStatus.partial);
+      expect(t.translatedCount, 0);
+      expect(translator.cache.length, 0);
+    });
+
+    test(
+      'a newer call answered from the cache still stops the older one',
+      () async {
+        final gated = _GatedDispatcher();
+        final t = RecipeTranslator(dispatcher: gated);
+        final key = TranslationKey.of(testRecipe(version: 2), spanish);
+        t.cache[key] = RecipeTranslation(
+          key: key,
+          language: spanish,
+          status: TranslationStatus.complete,
+        );
+        final older = t.translate(testRecipe(), spanish, sessionId: 's1');
+        await Future<void>.delayed(Duration.zero);
+        final hit = await t.translate(
+          testRecipe(version: 2),
+          spanish,
+          sessionId: 's1',
+        );
+        expect(hit.key, key);
+        expect(gated.cancelled, [0]);
+        gated.pending.single.complete(
+          okResult(gated.starts.single, answerFor(gated.starts.single)),
+        );
+        expect((await older).status, TranslationStatus.cancelled);
+
+        // An English selection does too.
+        final again = t.translate(testRecipe(), spanish, sessionId: 's1');
+        await Future<void>.delayed(Duration.zero);
+        await t.translate(testRecipe(), sourceLanguage, sessionId: 's1');
+        expect(gated.cancelled, [0, 1]);
+        gated.pending.last.complete(
+          okResult(gated.starts.last, answerFor(gated.starts.last)),
+        );
+        expect((await again).status, TranslationStatus.cancelled);
+      },
+    );
+
+    test('a new cooking session stops the remaining chunks', () async {
+      var session = 's1';
+      final gated = _GatedDispatcher();
+      final t = RecipeTranslator(
+        dispatcher: gated,
+        sessionIsCurrent: (id) => id == session,
+      );
+      final run = t.translate(
+        testRecipe(extraSteps: 40),
+        spanish,
+        sessionId: 's1',
+        maxTotalTokens: 4000,
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(gated.starts, hasLength(1));
+      session = 's2'; // New cook.
+      gated.pending.single.complete(
+        okResult(gated.starts.single, answerFor(gated.starts.single)),
+      );
+      final result = await run;
+      expect(result.status, TranslationStatus.cancelled);
+      expect(gated.starts, hasLength(1), reason: 'no chunk sent into s2');
+      expect(t.cache.length, 0);
+    });
+
+    test(
+      'a session that changed before the first send sends nothing',
+      () async {
+        final t = RecipeTranslator(
+          dispatcher: dispatcher,
+          sessionIsCurrent: (_) => false,
+        );
+        final result = await t.translate(
+          testRecipe(),
+          spanish,
+          sessionId: 'old',
+        );
+        expect(result.status, TranslationStatus.cancelled);
+        expect(dispatcher.tasks, isEmpty);
+      },
+    );
 
     test('a cancelled operation result stops the run', () async {
       dispatcher.enqueueBlocked(RouteReason.cancelled);

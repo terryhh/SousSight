@@ -23,8 +23,7 @@ InferenceLeg _leg(Provenance p, {bool transfer = true}) => InferenceLeg(
 
 void main() {
   group('translationOriginSentence (claims from legs)', () {
-    test('each outcome', () {
-      expect(translationOriginSentence(const []), 'Saved translation.');
+    test('success wording needs an accepted translation and provenance', () {
       expect(
         translationOriginSentence([_leg(Provenance.sdkOnDevice)]),
         'Translated on this device.',
@@ -51,12 +50,46 @@ void main() {
         translationOriginSentence([_leg(Provenance.simulated)]),
         'Practice mode: a pretend translation, not a real model.',
       );
+      // Codex #11: an unknown leg that did not finish is not "on device",
+      // and no legs is not a "saved" translation.
+      expect(
+        translationOriginSentence([_leg(Provenance.unknown, transfer: false)]),
+        "Translated by AI; where it ran isn't known.",
+      );
+      expect(
+        translationOriginSentence(const []),
+        "Translated by AI; where it ran isn't known.",
+      );
+    });
+
+    test('attempt wording when nothing was translated', () {
+      expect(
+        translationOriginSentence(const [], translated: false),
+        'Nothing was translated.',
+      );
+      expect(
+        translationOriginSentence([
+          _leg(Provenance.unknown, transfer: false),
+        ], translated: false),
+        'Nothing was translated, and nothing left this device.',
+      );
+      expect(
+        translationOriginSentence([
+          _leg(Provenance.sdkCloud),
+        ], translated: false),
+        'Nothing was translated. Recipe text was sent to the cloud.',
+      );
+      expect(
+        translationOriginSentence([
+          _leg(Provenance.unknown),
+        ], translated: false),
+        'Nothing was translated. Recipe text may have been sent to the cloud.',
+      );
       expect(
         translationOriginSentence([
           _leg(Provenance.simulated),
-          _leg(Provenance.unknown, transfer: false),
-        ]),
-        'Translated by AI.',
+        ], translated: false),
+        'Practice mode: nothing was translated.',
       );
     });
   });

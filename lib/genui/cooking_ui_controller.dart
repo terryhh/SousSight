@@ -5,6 +5,7 @@ import 'package:a2ui_core/a2ui_core.dart' as a2ui;
 import 'package:flutter/foundation.dart';
 import 'package:genui/genui.dart';
 
+import '../safety/cook_safety.dart';
 import 'cooking_catalog.dart';
 import 'cooking_ui_contract.dart';
 
@@ -90,6 +91,11 @@ class CookingUiController extends ChangeNotifier {
     final decoded = jsonDecode(json);
     if (decoded is! Map<String, dynamic>) {
       throw const FormatException('Cooking UI must be an object.');
+    }
+    // Model-written panels (the Live coach) pass the shared safety gate, in
+    // every cook language, before anything is replaced.
+    if (payloadCertifiesFoodSafety(decoded)) {
+      throw const UnsafeClaimException();
     }
     applyToolPayload(decoded);
   }

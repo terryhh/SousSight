@@ -114,11 +114,16 @@ abstract final class RecipeLineIds {
 /// comma or parenthesis ("Flour tortillas (10 inch)" → "Flour tortillas").
 String allergenKeyName(String name) => name.split(RegExp(r'[,(]')).first.trim();
 
-/// The English names of ingredients that carry an allergen.
-List<String> allergenIngredientNames(Recipe recipe) => [
+/// The recipe's allergen ingredients, each with its English aliases.
+List<AllergenIngredient> allergenIngredients(Recipe recipe) => [
   for (final i in recipe.ingredients)
     if (i.allergens.isNotEmpty && allergenKeyName(i.name).isNotEmpty)
-      allergenKeyName(i.name),
+      allergenIngredient(allergenKeyName(i.name)),
+];
+
+/// Every English name the model must keep for allergen ingredients.
+List<String> allergenIngredientNames(Recipe recipe) => [
+  for (final a in allergenIngredients(recipe)) ...a.aliases,
 ];
 
 /// Every non-empty line of [recipe], in reading order.
@@ -300,7 +305,10 @@ Map<String, String> parseTranslationResponse(
 /// single cloud retry. Per-line problems are handled by the app instead.
 ResultValidator translationValidator(Set<String> expected) => (text) {
   try {
-    parseTranslationResponse(text, expected);
+    final parsed = parseTranslationResponse(text, expected);
+    if (!parsed.keys.toSet().containsAll(expected)) {
+      return 'Translation is missing lines.';
+    }
     return null;
   } on FormatException catch (e) {
     return e.message;
@@ -431,9 +439,15 @@ class RecipeTranslator {
     required this.dispatcher,
     TranslationCache? cache,
     this.timeout = const Duration(seconds: 30),
+    this.sessionIsCurrent,
   }) : cache = cache ?? TranslationCache();
 
   final HybridDispatcher dispatcher;
+
+  /// Whether the cooking session a translation started in is still the
+  /// current one. Checked before every chunk is sent and after each one
+  /// returns; a translation never sends into another session.
+  final bool Function(String sessionId)? sessionIsCurrent;
   final TranslationCache cache;
   final Duration timeout;
 
@@ -458,6 +472,8 @@ class RecipeTranslator {
     int maxTotalTokens = translateDefaultMaxTotalTokens,
   }) async {
     final key = TranslationKey.of(recipe, language);
+    // Any newer call replaces a running one, even one answered at once.
+    cancel();
     if (language.isSource) {
       return RecipeTranslation(
         key: key,
@@ -467,14 +483,14 @@ class RecipeTranslator {
     }
     if (cache[key] case final hit?) return hit;
 
-    cancel();
     final generation = _generation;
     final source = recipeSourceLines(recipe);
-    final allergens = allergenIngredientNames(recipe);
+    final allergens = allergenIngredients(recipe);
+    final allergenNames = allergenIngredientNames(recipe);
     final chunks = chunkSourceLines(
       source,
       language: language,
-      allergenNames: allergens,
+      allergenNames: allergenNames,
       maxTotalTokens: maxTotalTokens.clamp(1000, translateMaxTotalTokens),
     );
     final lines = <String, TranslatedLine>{};
@@ -503,8 +519,15 @@ class RecipeTranslator {
       );
     }
 
+    bool current() =>
+        generation == _generation &&
+        (sessionIsCurrent?.call(sessionId) ?? true);
+
     for (final chunk in chunks) {
-      if (generation != _generation) {
+      // Checked before every send: a cancel, a newer request or a new
+      // cooking session stops the rest of the recipe.
+      if (!current()) {
+        if (generation == _generation) cancel();
         return finish(TranslationStatus.cancelled);
       }
       final expected = {for (final l in chunk) l.id};
@@ -512,7 +535,7 @@ class RecipeTranslator {
       DispatchResult result;
       try {
         op = dispatcher.start(
-          translationTask(chunk, language, allergens, timeout: timeout),
+          translationTask(chunk, language, allergenNames, timeout: timeout),
           sessionId: sessionId,
           validate: translationValidator(expected),
         );
@@ -522,9 +545,9 @@ class RecipeTranslator {
       } catch (_) {
         result = const DispatchResult(legs: []);
       }
-      // A newer translation or a cancel replaced this one while it ran.
-      if (generation != _generation ||
-          result.blocked == RouteReason.cancelled) {
+      // A newer translation, a cancel or a new session replaced this one
+      // while it ran.
+      if (!current() || result.blocked == RouteReason.cancelled) {
         legs.addAll(result.legs);
         return finish(TranslationStatus.cancelled);
       }
@@ -550,6 +573,8 @@ class RecipeTranslator {
       for (final line in chunk) {
         lines[line.id] = _checked(line, parsed[line.id], language, allergens);
       }
+      // A chunk counts as answered only when every line came back.
+      if (!parsed.keys.toSet().containsAll(expected)) incomplete = true;
     }
 
     if (blocked != null) {
@@ -572,7 +597,7 @@ TranslatedLine _checked(
   SourceLine line,
   String? candidate,
   CookLanguage language,
-  List<String> allergens,
+  List<AllergenIngredient> allergens,
 ) {
   if (candidate == null) {
     return TranslatedLine(
@@ -592,7 +617,7 @@ TranslatedLine _checked(
     source: line.text,
     translated: text,
     language: language,
-    allergenNames: allergens,
+    allergens: allergens,
   );
   return rejection == null
       ? TranslatedLine(id: line.id, original: line.text, translated: text)

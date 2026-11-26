@@ -382,7 +382,9 @@ void main() {
       await flush();
       expect(live.errors, isEmpty);
       expect(
-        live.events.whereType<LiveConnectionNotice>().map((e) => e.reconnecting),
+        live.events.whereType<LiveConnectionNotice>().map(
+          (e) => e.reconnecting,
+        ),
         [true, false],
       );
     });
@@ -404,7 +406,9 @@ void main() {
       original.incoming.addError(StateError('network dropped'));
       await flush();
       expect(live.opened(), 2);
-      replacement.receive({'error': {'code': 503}});
+      replacement.receive({
+        'error': {'code': 503},
+      });
       await flush();
       expect(live.errors, hasLength(1));
       expect(live.errors.single.toString(), contains('Could not resume'));

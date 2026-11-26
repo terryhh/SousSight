@@ -13,7 +13,7 @@ LineRejection? _check(
   source: source,
   translated: translated,
   language: language,
-  allergenNames: allergens,
+  allergens: [for (final a in allergens) allergenIngredient(a)],
 );
 
 void main() {
@@ -82,10 +82,6 @@ void main() {
         const Quantity('2', 'cup').hashCode,
         const Quantity('2', 'cup').hashCode,
       );
-      expect(
-        const Quantity('1', null).compareTo(const Quantity('2', null)),
-        lessThan(0),
-      );
       expect('${const Quantity('2', 'cup')}', '2 cup');
       expect('${const Quantity('2', null)}', '2');
     });
@@ -118,7 +114,11 @@ void main() {
         LineRejection.numbersChanged,
       );
       expect(
-        _check('Add two eggs', 'Agrega 2 huevos'),
+        _check('Add two eggs', 'Agrega 3 huevos'),
+        LineRejection.numbersChanged,
+      );
+      expect(
+        _check('Add eggs', 'Agrega 2 huevos'),
         LineRejection.numbersChanged,
       );
       expect(
@@ -182,6 +182,14 @@ void main() {
         LineRejection.certifies,
       );
       expect(
+        _check('Cook the chicken.', 'Si se ve blanco por dentro está cocido.'),
+        LineRejection.certifies,
+      );
+      expect(
+        _check('Serve.', 'Este plato es apto para celíacos.'),
+        LineRejection.certifies,
+      );
+      expect(
         _check('Serve.', 'Es seguro para comer.'),
         LineRejection.certifies,
       );
@@ -200,18 +208,120 @@ void main() {
       );
     });
 
-    test(
-      'a certification already in the source is not the model adding it',
-      () {
-        expect(
-          _check(
-            'The sauce is done when it coats a spoon; it is safe to eat.',
-            'La salsa: es seguro para comer.',
-          ),
-          isNull,
-        );
-      },
-    );
+    test('a disclaimer in the source never exempts the translation', () {
+      // Codex #1: the reversed camera disclaimer.
+      expect(
+        _check(
+          'The camera cannot tell whether this is safe to eat. Use a '
+              'thermometer.',
+          'La cámara confirma que es seguro para comer.',
+        ),
+        LineRejection.certifies,
+      );
+      expect(
+        _check(
+          'The camera cannot tell whether this is safe to eat. Use a '
+              'thermometer.',
+          'La cámara no puede saber si es seguro para comer. Usa un '
+              'termómetro.',
+        ),
+        isNull,
+      );
+    });
+
+    test('signs are kept, and a range is not a sign', () {
+      expect(
+        _check('Freeze at -18°C', 'Congela a 18°C'),
+        LineRejection.numbersChanged,
+      );
+      expect(_check('Freeze at -18°C', 'Congela a −18°C'), isNull);
+      expect(_check('Freeze at −18°C', 'Congela a -18 °C'), isNull);
+      expect(_check('Bake 3-4 minutes', 'Hornea 3-4 minutos'), isNull);
+      expect(_check('Bake 3-4 minutes', 'Hornea 3 a 4 minutos'), isNull);
+      expect(
+        _check('Bake 3-4 minutes', 'Hornea 3 a -4 minutos'),
+        LineRejection.numbersChanged,
+      );
+      expect(extractQuantities('at -18°C, 3-4 min, 3 - 4 min'), const [
+        Quantity('-18', 'temp_c'),
+        Quantity('3', null),
+        Quantity('4', 'minute'),
+        Quantity('3', null),
+        Quantity('4', 'minute'),
+      ]);
+    });
+
+    test('each quantity stays with its own instruction', () {
+      // Codex #8: durations swapped between two actions.
+      expect(
+        _check(
+          'Cool for 20 minutes, then bake for 5 minutes.',
+          'Hornea 5 minutos y luego enfría 20 minutos.',
+        ),
+        LineRejection.numbersChanged,
+      );
+      expect(
+        _check(
+          'Cool for 20 minutes, then bake for 5 minutes.',
+          'Enfría 20 minutos y luego hornea 5 minutos.',
+        ),
+        isNull,
+      );
+    });
+
+    test('written numbers keep their value', () {
+      expect(
+        _check('Place two slices.', 'Pon diez rebanadas.'),
+        LineRejection.numbersChanged,
+      );
+      expect(_check('Place two slices.', 'Pon dos rebanadas.'), isNull);
+      expect(_check('Place two slices.', 'Pon 2 rebanadas.'), isNull);
+      // "Ten" is Spanish for "have", not 10.
+      expect(_check('Have it ready.', 'Ten todo listo a la mano.'), isNull);
+      expect(
+        extractQuantities(
+          'dos tazas',
+          units: unitWordsFor(spanish),
+          numberWords: numberWordsFor(spanish),
+        ),
+        const [Quantity('2', 'cup')],
+      );
+    });
+
+    test('allergen aliases need the English too', () {
+      // Codex #9: "mayo" and "mustard" in the chickpea wrap step.
+      const ingredients = ['Mayonnaise', 'Dijon mustard', 'Flour tortillas'];
+      expect(
+        _check(
+          'Add mayo, mustard and lemon juice.',
+          'Agrega mayonesa, mostaza y jugo de limón.',
+          allergens: ingredients,
+        ),
+        LineRejection.allergenNameMissing,
+      );
+      expect(
+        _check(
+          'Add mayo, mustard and lemon juice.',
+          'Agrega mayonesa (mayo), mostaza (mustard) y jugo de limón.',
+          allergens: ingredients,
+        ),
+        isNull,
+      );
+      // The same word in both languages already shows the English.
+      expect(
+        _check(
+          'Roll the tortilla.',
+          'Enrolla la tortilla.',
+          allergens: ingredients,
+        ),
+        isNull,
+      );
+      expect(
+        allergenIngredient('Tortilla chips or tortillas').aliases,
+        containsAll(['Tortilla chips', 'tortillas', 'tortilla']),
+      );
+      expect(allergenIngredient('Mayonnaise').aliases, ['Mayonnaise', 'mayo']);
+    });
 
     test('rejects empty, runaway and markup output', () {
       expect(_check('Stir.', '   '), LineRejection.empty);

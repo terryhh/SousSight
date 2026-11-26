@@ -15,7 +15,11 @@ void main() {
   test('only a submitted (Vonage-accepted) send is counted', () {
     final analytics = RecordingAnalytics();
     for (final status in ['failed', 'skipped', 'unknown', 'rejected']) {
-      trackHouseholdSend(analytics, request, DinnerMessageResult(status, 'sms'));
+      trackHouseholdSend(
+        analytics,
+        request,
+        DinnerMessageResult(status, 'sms'),
+      );
     }
     expect(analytics.events, isEmpty);
 
@@ -25,6 +29,9 @@ void main() {
       const DinnerMessageResult('submitted', 'sms', simulated: true),
     );
     expect(analytics.names, [AnalyticsEvents.householdMessageSent]);
-    expect(analytics.events.single.parameters, {'kind': 'ready', 'simulated': 1});
+    expect(analytics.events.single.parameters, {
+      'kind': 'ready',
+      'simulated': 1,
+    });
   });
 }

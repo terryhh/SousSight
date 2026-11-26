@@ -812,8 +812,9 @@ void main() {
         });
         final id = live.startWatch('Evenly mixed');
         expect(id, isNotNull);
-        int checks() =>
-            guardTransport.texts.where((t) => t.startsWith('Watch check')).length;
+        int checks() => guardTransport.texts
+            .where((t) => t.startsWith('Watch check'))
+            .length;
         async.elapse(const Duration(seconds: 14));
         expect(checks(), 0);
         async.elapse(const Duration(seconds: 1));

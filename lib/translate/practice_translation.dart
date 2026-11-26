@@ -37,7 +37,7 @@ const practiceSpanish = <String, String>{
       '¿Quieres mermelada, o solo mantequilla de maní?',
   'Both slices lie flat with their upper surfaces visible and room to '
           'spread. Jam is a cook choice, not an assumed ingredient.':
-      'Las dos rebanadas quedan planas, con la cara de arriba a la vista y '
+      'Ambas rebanadas quedan planas, con la cara de arriba a la vista y '
       'espacio para untar. La mermelada es opcional; tú decides.',
   'Spread the peanut butter': 'Unta la mantequilla de maní (peanut butter)',
   'Put some peanut butter on one slice. Use the back of a spoon or a butter '
@@ -143,6 +143,24 @@ const practiceSpanish = <String, String>{
           'roll.':
       'Una cucharada mantiene su forma. Si se aplana o suelta líquido, '
       'tiene demasiada humedad para enrollar.',
+
+  // Current bundled text (trunk at SS-106 merge).
+  "Lemon juice, fresh or bottled":
+      "Jugo de limón amarillo, fresco o embotellado",
+  "Celery, diced": "Apio, en cubitos",
+  "Red bell pepper, diced": "Pimiento rojo, en cubitos",
+  "Add mayo, mustard, 1 tbsp lemon juice, the drained onion, salt and pepper, plus whichever vegetables you have: celery, red bell pepper, drained canned corn or shredded carrot. Fold from the bottom up until evenly mixed.": "Agrega la mayonesa (mayo), la mostaza (mustard), 1 cda de jugo de limón amarillo, la cebolla escurrida, sal y pimienta, más las verduras que tengas: apio, pimiento rojo, maíz de lata escurrido o zanahoria rallada. Mezcla de abajo hacia arriba hasta que todo quede parejo.",
+  "Vegetable pieces spread through the whole bowl, everything lightly coated, no white streaks of dressing.": "Trozos de verdura repartidos por todo el tazón, todo ligeramente cubierto, sin vetas blancas de aderezo.",
+  "Warm the tortilla 15–20 seconds in the microwave or a dry pan so it bends without cracking. Spoon about half the filling in a line across the lower third of the tortilla. Fold in the sides, then roll away from you.": "Calienta la tortilla 15–20 segundos en el microondas o en un sartén seco para que se doble sin romperse. Pon con una cuchara más o menos la mitad del relleno en una línea sobre el tercio inferior de la tortilla. Dobla los lados hacia adentro y enrolla alejándola de ti.",
+  "about 2 tbsp": "unas 2 cdas",
+  "Jam": "Mermelada",
+  "about 1 tbsp": "aproximadamente 1 cda",
+  "Both slices lie flat with room to spread.":
+      "Ambas rebanadas quedan planas, con espacio para untar.",
+  "With jam, the second slice has a thin, even layer rather than a large mound. Without jam, the second slice stays plain.": "Con mermelada, la segunda rebanada tiene una capa delgada y pareja, no un montón grande. Sin mermelada, la segunda rebanada se queda sola.",
+  "Turn the second slice onto the first with any spread facing inward. Line up the edges and press gently with your hand. Cut in half if you like.": "Voltea la segunda rebanada sobre la primera, con lo untado hacia adentro. Alinea los bordes y presiona suavemente con la mano. Córtalo por la mitad si quieres.",
+  "Cilantro, chopped": "Cilantro picado",
+  "Cut the tomato and red onion into small, even pieces, about the size of a corn kernel. Curl the fingertips of your holding hand under, like a claw, so the side of the knife rests against your knuckles. Add the pieces to the bowl. Chop the cilantro too if you are using it.": "Corta el tomate y la cebolla morada en trozos pequeños y parejos, del tamaño de un grano de maíz. Dobla las yemas de los dedos de la mano que sostiene el tomate hacia adentro, como una garra, para que el lado del cuchillo se apoye en tus nudillos. Agrega los trozos al tazón. Pica también el cilantro si lo vas a usar.",
 
   // black_bean_corn_salsa_v1
   'Black Bean & Corn Salsa': 'Salsa de frijoles negros y maíz',

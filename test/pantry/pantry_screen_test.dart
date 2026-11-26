@@ -484,8 +484,10 @@ class _SlowMedia extends _FakeMedia {
 
 /// One leg row: what ran, and the trust badge's chip for where it ran.
 void expectLeg(String what, String where) {
-  Finder inLegs(Finder f) =>
-      find.descendant(of: find.byKey(const ValueKey('pantry-legs')), matching: f);
+  Finder inLegs(Finder f) => find.descendant(
+    of: find.byKey(const ValueKey('pantry-legs')),
+    matching: f,
+  );
   expect(inLegs(find.text(what)), findsOneWidget);
   expect(inLegs(find.text(where)), findsWidgets);
 }

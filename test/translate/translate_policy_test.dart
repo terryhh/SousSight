@@ -71,13 +71,27 @@ class _Adapter implements CloudFallbackSender {
   Future<void> cancel(String requestId) async {}
 }
 
+/// Runs [onCapabilities] on each capability read, to change the world in
+/// the middle of a dispatch.
+class _CapsHook extends FakeHybridInference {
+  _CapsHook({super.capabilities});
+  void Function(int call)? onCapabilities;
+  int _calls = 0;
+
+  @override
+  Future<HybridCapabilities> capabilities() async {
+    onCapabilities?.call(++_calls);
+    return super.capabilities();
+  }
+}
+
 class _Harness {
   _Harness({
     HybridCapabilities caps = fakeWebCapabilities,
     String routes = 'hybridFallback',
     String language = 'es',
     String? Function(String feature)? featureLanguage,
-  }) : bridge = FakeHybridInference(capabilities: caps) {
+  }) : bridge = _CapsHook(capabilities: caps) {
     var seq = 0;
     dispatcher = DefaultHybridDispatcher(
       inference: bridge,
@@ -88,12 +102,14 @@ class _Harness {
       cloudFallback: adapter,
       languageTag: () => language,
       featureLanguageTag: featureLanguage,
+      isOnline: () => online,
       newId: () => 'id-${++seq}',
     );
     translator = RecipeTranslator(dispatcher: dispatcher);
   }
 
-  final FakeHybridInference bridge;
+  final _CapsHook bridge;
+  bool online = true;
   final adapter = _Adapter();
   final privacy = _Privacy();
   final consent = _Consent();
@@ -377,6 +393,25 @@ void main() {
           .result;
       expect(other.text, 'ok');
       expect(h.bridge.requests.last.mode, _local);
+    });
+
+    test('connectivity is re-read before the retry is sent', () async {
+      // Codex #5: offline during the retry's capability lookup.
+      final h = _Harness();
+      h.answer(text: (_) => 'not json');
+      h.answer(source: InferenceSource.cloud);
+      h.bridge.onCapabilities = (call) {
+        if (call == 2) h.online = false;
+      };
+      final t = await h.translator.translate(
+        testRecipe(),
+        spanish,
+        sessionId: 's1',
+      );
+      expect([for (final r in h.bridge.requests) r.mode], [_prefer]);
+      expect(h.adapter.requests, isEmpty);
+      expect(t.blocked, RouteReason.offline);
+      expect(t.legs.last.transferPermitted, isFalse);
     });
 
     test('an unapproved route never reaches the cloud', () async {

@@ -14,7 +14,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
 import '../genui/cooking_ui_contract.dart';
-import '../translate/spanish_certification.dart';
+import '../safety/cook_safety.dart';
 
 const coachLiteFeature = 'coach_lite';
 
@@ -123,15 +123,29 @@ final _safetyPattern = RegExp(
   r'allerg\w*|gluten|nut[- ]free|dairy[- ]free|contains?|'
   r'expired|spoil\w*|gone bad|go bad|mou?ldy?|smells? off|'
   r'leftovers?|room temperature|how long can|refrigerat\w*|fridge|reheat\w*|'
-  r'pregnan\w*|infant|baby)\b|°',
+  r'pregnan\w*|infant|baby)\b|°|'
+  // Spanish (SS-106): the cook may ask in their language.
+  r'(?<![\p{L}])(segur[oa]s?|peligro\w*|bacterias?|crud[oa]s?|'
+  r'cocid[oa]s?|list[oa]s?|hech[oa]s?|temperatura|termómetro|termometro|'
+  r'grados|alerg\w*|alérg\w*|gluten|celíac\w*|celiac\w*|maní|mani|'
+  r'cacahuates?|nueces|lácteos|lacteos|huevos?|trigo|ajonjolí|sésamo|'
+  r'contiene\w*|caducad\w*|vencid\w*|echad[oa]s?\s+a\s+perder|podrid\w*|'
+  r'huele\s+mal|moho|sobras|refri\w*|nevera|recalent\w*|embarazada|'
+  r'bebés?|bebes?)(?![\p{L}])',
   caseSensitive: false,
+  unicode: true,
 );
 
 final _substitutionPattern = RegExp(
   r'\b(substitut\w*|instead of|swap\w*|replace\w*|replacement|'
   r'in place of|alternative|can i use|could i use|do i have to use|'
-  r'(i )?(don.?t|do not) have|(ran|run|running) out|without)\b',
+  r'(i )?(don.?t|do not) have|(ran|run|running) out|without)\b|'
+  // Spanish (SS-106).
+  r'(?<![\p{L}])(sustitu\w*|reemplaz\w*|en\s+vez\s+de|en\s+lugar\s+de|'
+  r'cambiar\s+\w+\s+por|puedo\s+usar|podría\s+usar|podria\s+usar|'
+  r'no\s+tengo|se\s+me\s+acab\w*|sin)(?![\p{L}])',
   caseSensitive: false,
+  unicode: true,
 );
 
 /// The safety topics a question touches. Classification and the safety note
@@ -323,29 +337,12 @@ anything cooked through. If a fact is missing, ask the cook with a stepCue whose
 action is ask_cook. Suggest a timer only if this step needs one.
 ''';
 
-/// Phrases that would certify doneness, temperature or safety. App-authored
-/// notices never pass through this check; model answers always do.
-final _certification = RegExp(
-  r"\bsafe to (eat|serve|consume)\b|"
-  // "is done" / "it's safe", unless it is a condition ("stir until it is
-  // done", "it's done when it coats a spoon").
-  r"(?<!\b(when|once|until|till|if|after|before|whether)\b[^.,;:!?]{0,40})"
-  r"\b(is|are|['\u2019]s|['\u2019]re)\s+"
-  r"(now\s+|definitely\s+|fully\s+|already\s+|completely\s+)*"
-  r"(safe|cooked through|fully cooked|ready to eat|"
-  r"done(?!\s+(when|once|if|after|before|in)\b))\b|"
-  r"\b(is|are)\s+(allergen|gluten|nut|peanut|dairy|egg)[- ]free\b|"
-  r"\breached\s+(a\s+|an\s+|the\s+)?(safe|internal)\b|"
-  r"\bno risk\b",
-  caseSensitive: false,
-);
-
-/// True when [text] would certify doneness, temperature or safety, in
-/// English or in Spanish (SS-106, the cook's language): the same check every
+/// True when [text] would certify doneness, temperature, freshness,
+/// allergen absence or dietary suitability, in English or Spanish: the
+/// shared cook-facing safety gate (lib/safety/cook_safety.dart) that every
 /// model answer must pass. The read-aloud path (SS-077) applies it again to
 /// each sentence it speaks.
-bool coachLiteCertifies(String text) =>
-    _certification.hasMatch(text) || spanishCertifies(text);
+bool coachLiteCertifies(String text) => certifiesFoodSafety(text);
 
 /// Parses and validates model output. Throws [FormatException].
 ({List<Map<String, dynamic>> components, CoachLiteTimerSuggestion? timer})
@@ -390,7 +387,11 @@ parseCoachLiteResponse(String text) {
       throw const FormatException('IDs starting with app_ are reserved.');
     }
   }
-  if (coachLiteCertifies(jsonEncode(cleaned))) {
+  // Every cook-facing string, the timer label included.
+  if (payloadCertifiesFoodSafety({
+    'components': cleaned,
+    'timerSuggestion': decoded['timerSuggestion'],
+  })) {
     throw const FormatException(
       'Coach Lite must not certify doneness, temperature or safety.',
     );

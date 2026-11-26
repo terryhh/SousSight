@@ -160,7 +160,11 @@ void main() {
     expect(cookLanguageTagFor(hybrid, 'coach_lite'), isNull);
     final controller = translationFor(hybrid);
     expect(cookLanguageTagFor(hybrid, 'coach_lite'), 'en');
-    await controller.select(spanish, recipe: testRecipe(), sessionId: 's');
+    await controller.select(
+      spanish,
+      recipe: testRecipe(),
+      sessionId: hybrid.sessionId,
+    );
     // Not validated on this device and the cloud route is off: blocked,
     // nothing sent.
     expect(controller.translation?.blocked, RouteReason.cloudNotApproved);
@@ -228,6 +232,22 @@ void main() {
     // Reset the shared practice choice for other tests.
     await tester.tap(find.byKey(const ValueKey('language-en')));
     await tester.pumpAndSettle();
+  });
+
+  test('the bridge is configured for every cook language', () async {
+    // Codex #6: Chrome's expectedOutputs must include Spanish.
+    final inference = FakeHybridInference();
+    final hybrid = HybridRuntime.create(
+      inference: inference,
+      cloudRoutes: CloudRoutes.parse(''),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+      cloudModel: 'test-cloud-model',
+    );
+    await hybrid.inference.capabilities();
+    await Future<void>.delayed(Duration.zero);
+    expect(inference.config?.languages, containsAll(['en', 'es']));
+    expect(inference.config?.toMap()['languages'], cookLanguageCodes);
   });
 
   test('privacy switch and ledger label exist for recipe_translate', () {

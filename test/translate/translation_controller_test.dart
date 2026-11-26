@@ -179,6 +179,8 @@ void main() {
     );
     await run;
     expect(controller.translation, isNull);
+    // Codex #12: a cancellation of the current request ends "Translating…".
+    expect(controller.busy, isFalse);
   });
 
   test('blocked results are kept for the notice but not shown', () async {

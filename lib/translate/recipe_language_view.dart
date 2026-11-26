@@ -16,26 +16,44 @@ import 'recipe_translator.dart';
 import 'translation_controller.dart';
 import 'translation_guard.dart';
 
-/// Where a translation ran, derived only from its legs.
-String translationOriginSentence(List<InferenceLeg> legs) {
-  if (legs.isEmpty) return 'Saved translation.';
-  final outcomes = {for (final leg in legs) legOutcome(leg)};
-  if (outcomes.every((o) => o == LegOutcome.simulated)) {
+/// Where a translation ran, derived only from its legs. Success wording
+/// ("Translated on this device") needs an accepted translation
+/// ([translated]) and a leg whose provenance says where it ran; a failed or
+/// unknown attempt never earns it.
+String translationOriginSentence(
+  List<InferenceLeg> legs, {
+  bool translated = true,
+}) {
+  final outcomes = [for (final leg in legs) legOutcome(leg)];
+  final cloud = outcomes.any(
+    (o) => o == LegOutcome.cloudSdk || o == LegOutcome.cloudAdapter,
+  );
+  final maybe = outcomes.contains(LegOutcome.maybeSent);
+  if (!translated) {
+    if (cloud) {
+      return 'Nothing was translated. Recipe text was sent to the cloud.';
+    }
+    if (maybe) {
+      return 'Nothing was translated. Recipe text may have been sent to the '
+          'cloud.';
+    }
+    if (outcomes.contains(LegOutcome.simulated)) {
+      return 'Practice mode: nothing was translated.';
+    }
+    return legs.isEmpty
+        ? 'Nothing was translated.'
+        : 'Nothing was translated, and nothing left this device.';
+  }
+  if (cloud) return 'Some or all of this was translated in the cloud.';
+  if (maybe) return 'Some recipe text may have been sent to the cloud.';
+  final ran = outcomes.where((o) => o != LegOutcome.notFinishedLocal).toList();
+  if (ran.isNotEmpty && ran.every((o) => o == LegOutcome.simulated)) {
     return 'Practice mode: a pretend translation, not a real model.';
   }
-  if (outcomes.contains(LegOutcome.cloudSdk) ||
-      outcomes.contains(LegOutcome.cloudAdapter)) {
-    return 'Some or all of this was translated in the cloud.';
-  }
-  if (outcomes.contains(LegOutcome.maybeSent)) {
-    return 'Some recipe text may have been sent to the cloud.';
-  }
-  if (outcomes.every(
-    (o) => o == LegOutcome.onDevice || o == LegOutcome.notFinishedLocal,
-  )) {
+  if (ran.isNotEmpty && ran.every((o) => o == LegOutcome.onDevice)) {
     return 'Translated on this device.';
   }
-  return 'Translated by AI.';
+  return "Translated by AI; where it ran isn't known.";
 }
 
 const translationSafetyNote =
@@ -360,7 +378,14 @@ class _AiLabel extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(translationOriginSentence(translation.legs))),
+          Expanded(
+            child: Text(
+              translationOriginSentence(
+                translation.legs,
+                translated: translation.translatedCount > 0,
+              ),
+            ),
+          ),
         ],
       ),
       if (translation.legs.isNotEmpty)
