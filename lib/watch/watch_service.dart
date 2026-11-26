@@ -119,6 +119,17 @@ class WatchService extends ChangeNotifier {
       );
     }
     if (liveActive) {
+      // "Keep Watch my food on this device" never becomes a cloud watch
+      // through Live: ask the cook to stop Live first (Codex #221).
+      if (local.privacy?.localOnly(kLocalWatchFeature) ?? false) {
+        return _result(
+          const WatchStart(
+            message:
+                'You chose to keep Watch my food on this device. Tap Stop to '
+                'end the Live coach, then start the watch.',
+          ),
+        );
+      }
       await local.stop();
       if (!current()) return superseded;
       final id = startLiveWatch(cue);

@@ -30,8 +30,9 @@ typedef PantryRecipeChosen = void Function(
 /// result's badge says where it actually ran.
 const pantryPrivacyLine =
     "Each result shows whether it was worked out on this device or sent "
-    "online to Google's AI. Photos and voice clips aren't stored; your "
-    'cooking session is saved so you can come back.';
+    "online to Google's AI. Photos and voice clips aren't stored. When you "
+    'start cooking, the items you confirmed and your answer are saved with '
+    'your cooking session.';
 
 /// Items found that no suggested meal uses, so nothing the cook typed is
 /// silently dropped (SS-089). Empty when there are no meals.
@@ -188,8 +189,15 @@ class _PantryScreenState extends State<PantryScreen> {
 
   // ---- media ---------------------------------------------------------------
 
-  Future<bool> _ensureMedia() async {
-    if (_media != null) return true;
+  /// Whether the running capture includes the microphone.
+  bool _mediaHasMic = false;
+
+  /// Scan needs only the camera; Record asks for the microphone too
+  /// (Codex #221). A camera-only capture is restarted with the microphone
+  /// when Record needs it.
+  Future<bool> _ensureMedia({bool microphone = false}) async {
+    if (_media != null && (!microphone || _mediaHasMic)) return true;
+    if (_media != null) await _stopMedia();
     final factory = widget.mediaFactory;
     if (factory == null || _mediaStarting) return false;
     setState(() => _mediaStarting = true);
@@ -198,10 +206,16 @@ class _PantryScreenState extends State<PantryScreen> {
     _pendingMedia = media;
     try {
       _subscriptions.addAll([
-        media.frames.listen((frame) {
-          if (mounted) setState(() => _preview = frame);
-        }),
-        media.microphone.listen((chunk) => _recording?.add(chunk)),
+        if (microphone)
+          media.frames.listen((frame) {
+            if (mounted) setState(() => _preview = frame);
+          })
+        else
+          media.timedFrames.listen((frame) {
+            if (mounted) setState(() => _preview = frame.bytes);
+          }),
+        if (microphone)
+          media.microphone.listen((chunk) => _recording?.add(chunk)),
         media.errors.listen((message) {
           if (!mounted) return;
           setState(() {
@@ -211,12 +225,13 @@ class _PantryScreenState extends State<PantryScreen> {
           });
         }),
       ]);
-      await media.start();
+      await (microphone ? media.start() : media.startCameraOnly());
       if (!mounted || epoch != _mediaEpoch) {
         await media.stop();
         return false;
       }
       _media = media;
+      _mediaHasMic = microphone;
       return true;
     } catch (_) {
       for (final subscription in _subscriptions) {
@@ -253,6 +268,7 @@ class _PantryScreenState extends State<PantryScreen> {
     _subscriptions.clear();
     final media = _media;
     _media = null;
+    _mediaHasMic = false;
     _preview = null;
     await media?.stop();
   }
@@ -270,6 +286,8 @@ class _PantryScreenState extends State<PantryScreen> {
       _mode = mode;
       _error = null;
     });
+    // Release capture when leaving the mode that needed it (Codex #221).
+    if (mode != PantryMode.scan || _mediaHasMic) await _stopMedia();
     if (mode == PantryMode.scan && !widget.isDemo && _photo == null) {
       await _ensureMedia();
     }
@@ -291,7 +309,7 @@ class _PantryScreenState extends State<PantryScreen> {
       setState(() => _simulatedAudio = true);
       return;
     }
-    if (!await _ensureMedia() || !mounted) return;
+    if (!await _ensureMedia(microphone: true) || !mounted) return;
     _media?.setMicrophoneMuted(false);
     setState(() {
       _audio = null;

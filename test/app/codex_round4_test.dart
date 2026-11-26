@@ -80,6 +80,9 @@ class _Failing implements PantryClient {
 class _DeniedMedia extends DemoLiveMedia {
   @override
   Future<void> start() async => throw StateError('NotAllowedError');
+  @override
+  Future<void> startCameraOnly() async =>
+      throw StateError('NotAllowedError');
 }
 
 Future<void> _phone(WidgetTester tester) async {

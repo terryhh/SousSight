@@ -47,6 +47,9 @@ class _NoCloud implements CloudFallbackSender {
 class _DeniedMedia extends DemoLiveMedia {
   @override
   Future<void> start() async => throw StateError('NotAllowedError');
+  @override
+  Future<void> startCameraOnly() async =>
+      throw StateError('NotAllowedError');
 }
 
 void main() {

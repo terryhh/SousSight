@@ -84,8 +84,11 @@ class _FakeMedia implements LiveMedia {
   Stream<Uint8List> get microphone => mic$.stream;
   @override
   Stream<String> get errors => const Stream.empty();
+  /// Scan is camera-only (SS-089): its preview comes from timed frames.
   @override
-  Stream<CapturedFrame> get timedFrames => const Stream.empty();
+  Stream<CapturedFrame> get timedFrames => frames$.stream.map(
+    (bytes) => CapturedFrame(bytes: bytes, capturedAt: DateTime.now()),
+  );
   @override
   Future<void> start() async => started = true;
   @override
@@ -520,6 +523,9 @@ class _SlowMedia extends _FakeMedia {
     await gate;
     started = true;
   }
+
+  @override
+  Future<void> startCameraOnly() => start();
 
   @override
   Future<void> stop() async {
