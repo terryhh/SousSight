@@ -250,9 +250,11 @@ class DinnerReviewDialog extends StatefulWidget {
 class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
   late DinnerAttempt _attempt = widget.memory.current(widget.kind);
   late final _recipient = TextEditingController(
-    text: _attempt.recipient.isNotEmpty
-        ? _attempt.recipient
-        : widget.memory.lastRecipient,
+    text:
+        _attempt.confirmed?.recipient ??
+        (_attempt.recipient.isNotEmpty
+            ? _attempt.recipient
+            : widget.memory.lastRecipient),
   );
   late final _minutes = TextEditingController(
     text:
@@ -364,22 +366,27 @@ class _DinnerReviewDialogState extends State<DinnerReviewDialog> {
     }
     // Simulated mode: a plain confirm is a simulated delivery, never a send.
     if (_simulated) simulate ??= DinnerSimulation.delivered;
+    // Everything the continuation needs is captured now: the dialog may be
+    // dismissed (and its widget gone) before the sender answers.
     final attempt = _attempt;
     final request = _request(simulate: simulate);
+    final simulated = _simulated;
+    final memory = widget.memory;
+    final send = widget.send;
     attempt
       ..confirmed = request
+      ..recipient = request.recipient
       ..changed();
     setState(() {
       _sending = true;
       _validationError = null;
     });
     try {
-      final result = await widget.send(request);
+      final result = await send(request);
       attempt
         ..claimed = true
-        ..recipient = request.recipient
         ..result = result;
-      if (!_simulated) widget.memory.lastRecipient = request.recipient;
+      if (!simulated) memory.lastRecipient = request.recipient;
     } on DinnerValidationException catch (error) {
       // Nothing was claimed; the same ID may be confirmed again after edits.
       attempt.confirmed = null;

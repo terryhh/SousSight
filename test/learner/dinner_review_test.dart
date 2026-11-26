@@ -589,6 +589,37 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('startStepTimer matches the exact step, never a prefix', (
+      tester,
+    ) async {
+      await pumpScreen(tester, recipeId: 'chickpea_wrap_v1');
+      final stepId = cook.step.id;
+      // Another step's timer whose ID shares this step's prefix.
+      final other = cook.ui.startTimer(
+        id: 'step-$stepId-sauce-1-0',
+        label: 'Sauce',
+        seconds: 60,
+      );
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      expect(cook.ui.timers, hasLength(2));
+      final mine = cook.ui.timers.singleWhere((t) => t.id != other.id);
+      expect(isStepTimerFor(mine.id, stepId), isTrue);
+      expect(mine.deadline, isNot(other.deadline));
+      // Starting it again reuses this step's own timer.
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      expect(cook.ui.timers, hasLength(2));
+      for (final t in [...cook.ui.timers]) {
+        cook.ui.dismissTimer(t.id);
+      }
+      await tester.pumpAndSettle();
+      // Cancelled with time left: no step is saved as finished.
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      expect(cook.session?.finishedTimerStepIds, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('a cancelled step timer still counts after its time passes', (
       tester,
     ) async {

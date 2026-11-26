@@ -642,8 +642,9 @@ $cookingUiInstructions
     final seconds = step.timerSeconds;
     if (seconds == null || seconds <= 0) return Future<void>.value();
     final prefix = 'step-${step.id}';
+    // Exact step match: step `prep` never reuses step `prep-sauce`'s timer.
     for (final timer in ui.timers) {
-      if (timer.id == prefix || timer.id.startsWith('$prefix-')) {
+      if (isStepTimerFor(timer.id, step.id)) {
         return startTimer(timer.id, timer.label, seconds);
       }
     }
