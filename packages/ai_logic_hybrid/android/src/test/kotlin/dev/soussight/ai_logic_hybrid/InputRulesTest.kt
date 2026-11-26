@@ -57,7 +57,7 @@ internal class InputRulesTest {
             schema = mapOf("type" to "string"),
             maxOutputTokens = 100,
         )
-        assertEquals(1109, InputRules.estimateLocalTokens(r))
+        assertEquals(1109L, InputRules.estimateLocalTokens(r))
     }
 
     @Test
@@ -70,5 +70,12 @@ internal class InputRulesTest {
         // Exactly at the limit is allowed: 3744 + 256 = 4000.
         InputRules.validate(request(parts = listOf(HybridPart.Text("x".repeat(4 * 3744)))))
         rejected(request(parts = listOf(HybridPart.Text("x".repeat(4 * 3744 + 1)))))
+    }
+
+    @Test
+    fun aHugeOutputReservationCannotWrapPastTheBudget() {
+        val huge = request(parts = listOf(HybridPart.Text("hi")), maxOutputTokens = Int.MAX_VALUE)
+        assertEquals(Int.MAX_VALUE.toLong() + 1, InputRules.estimateLocalTokens(huge))
+        rejected(huge)
     }
 }
