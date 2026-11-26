@@ -36,7 +36,7 @@ slow take doesn't push it over.
 | Label | Device | Used for |
 |---|---|---|
 | **D1** | Terry's desktop Chrome, on-device model downloaded, multimodal flag on, webcam on a stand over the counter | Every main shot (G2b, G2c passed here) |
-| **D2** | Pixel 9, signed release APK | Montage only, and only if G4 passed <!-- VERIFY: gate G4. The Pixel 9 reports Gemini Nano 4 (PREVIEW) unavailable / not_enrolled; do not show or say "Nano 4" --> |
+| **D2** | Pixel 9, signed release APK | Montage only, and only if G4 passed <!-- VERIFY: gate G4. The enrolled Pixel 9 reports nano-v4-full available but generate fails (ErrorCode 8); do not show or say "Nano 4" --> |
 | **D3** | iPhone with Apple Intelligence on | Montage only, and only if G5 passed <!-- VERIFY: gate G5 --> |
 | **Screen capture** | OBS or QuickTime on D1, 1080p, cursor highlighted | All D1 shots |
 | **Phone camera** | Second phone on a tripod | Wide shots of the counter and the hand-over-the-bowl moment |
@@ -62,7 +62,7 @@ a lemon, celery, a red onion (sliced), tortillas, a small cup, a bowl and a fork
 | Time | Beat | On screen | Device | Card |
 |---|---|---|---|---|
 | 0:00–0:12 | **Hook** | Wide shot of the counter: hands unpack the paper bag (chickpeas, lemon, celery, red onion, mayonnaise, tortillas) next to a bowl, with the laptop propped beside it. | Phone camera | 1 |
-| 0:12–0:34 | **Scan, on-device, while online** | Wi-Fi icon visibly **connected**. Type `canned chickpeas, mayonnaise, lemon, celery, red onion, tortillas`, tap **Find my meal**. Items appear. Zoom on the badge: **On this device · Gemini Nano**. | D1 | 2 |
+| 0:12–0:34 | **Scan, on-device, while online** | Wi-Fi icon visibly **connected**. Type `canned chickpeas, mayonnaise, lemon, celery, red onion, tortillas`, tap **Find my meal**. Items appear. Zoom on the badge: **On this device** (the web SDK reports no model name). | D1 | 2 |
 | 0:34–0:50 | **Cook in the loop, start the onion** | Tap to confirm items, open *Smashed Chickpea Salad Wrap*, answer the allergy check. Step 1, *Quick-pickle the onion*: onion into the cup with lemon and salt (counter cutaway), tap **Start 5-minute timer**, then **Next step →**. The timer keeps running. | D1 + phone camera cutaway | — |
 | 0:50–1:18 | **Private watch: asks instead of guessing** | Live coach **off** (otherwise *Watch my food* uses Live's cloud watch). On *Mash the chickpeas*, tap **Watch my food**. Camera opens with **no microphone prompt**; status shows the on-device watch. Mash. Hold a hand flat over the bowl: the app says it's unsure and asks for a better view. Move the hand; the next check updates (*not yet* or *ready*). Onion timer still counting in the corner. | D1 + 3 s phone camera cutaway | 3 |
 | 1:18–1:40 | **Wi-Fi off, Coach Lite still answers** | Click Wi-Fi **off** in the macOS menu bar. Status shows offline. Type "How smooth should this be?" Coach Lite's panel appears with an **On this device** badge. Target answer, from the step's own cue: *"Chunky, like tuna salad — a few whole chickpeas are fine."* No timer suggestion: this step has none. The onion timer is still ticking. | D1 | 4 |
@@ -75,7 +75,7 @@ Gate notes for the shots above:
 
 - **0:12 scan:** <!-- VERIFY: G2c passed for the typed scan, which is what is scripted. Film a photo scan only if the on-device photo scan passes in the production path first --> Default to the typed scan.
 - **0:50 watch:** <!-- VERIFY: SS-075 evidence and a rehearsed take on the hosted build; G2b covered the obscured frame in the gate harness only --> Never edit a verdict in post. If the covered bowl returns *ready*, retake and log the miss for SS-075.
-- **1:18 offline:** <!-- VERIFY: SS-072 scope; offline Coach Lite answer inside an already-open session on the hosted build --> The model's wording will vary. Keep a take whose answer matches the step's cue (chunky, a few whole chickpeas, not a paste). If an answer offers a timer or describes a different texture, don't use it: retake and note it against Coach Lite's prompt.
+- **1:18 offline:** <!-- VERIFY: SS-072 (#203) merged and an offline Coach Lite answer inside an already-open session on the hosted build. If not, keep Wi-Fi on, film the same on-device Coach Lite answer online, cut card 4 and the 1:18 "Wi-Fi drops" line, and drop "Wi-Fi back on" at 1:54 --> The model's wording will vary. Keep a take whose answer matches the step's cue (chunky, a few whole chickpeas, not a paste). If an answer offers a timer or describes a different texture, don't use it: retake and note it against Coach Lite's prompt.
 - **1:40 ledger:** if any row appears under *May have been sent* or *Reported as sent*, keep it in shot and don't narrate "every AI request stayed on this device".
 - **1:54 cloud:** <!-- VERIFY: gate G1 approved the research route. Alternative if G1 did not approve research but G3 passed: tap Start (tooltip "Cook with me") for a 20 s Live coach exchange through Firebase AI Logic, narrated as a continuous cloud camera and microphone stream the cook started, not as a per-frame or on-device feature; re-record that voice-over line -->
 - **2:14 bridge:** <!-- VERIFY: gates G4 and G5 for the D2/D3 inserts; cut each platform that did not pass. Optional insert of an automatic cloud fallback on a Chrome profile with no local model only if gate G2 passed --> If neither phone passed, film D1 only.
@@ -116,7 +116,7 @@ Six short cards, timed to the shot list, written to read on mute.
 | # | Time | Placement | Primary | Secondary |
 |---|---|---|---|---|
 | 1 | 0:00–0:04 | Lower third over the counter wide shot | **SousSight: Counter Intelligence** | An AI sous-chef for pantry cooks |
-| 2 | 0:28–0:32 | Callout beside the zoomed badge | **On this device · Gemini Nano** | Reported by Firebase AI Logic, not a setting |
+| 2 | 0:28–0:32 | Callout beside the zoomed badge | **On this device** | Chrome's Gemini Nano, as reported by Firebase AI Logic, not a setting |
 | 3 | 1:04–1:08 | Beside the *unsure* verdict | **Unsure? It asks. It doesn't guess.** | Camera only · no mic · never calls food done or safe |
 | 4 | 1:19–1:23 | Corner pill right after Wi-Fi goes off | **Wi-Fi off. Still cooking.** | On-device coaching when the signal drops |
 | 5 | 2:00–2:04 | Callout as the badge reads *Cloud · Gemini* | **Cloud only when it earns it** | Grounded with Google Search · in the ledger |
