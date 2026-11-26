@@ -133,7 +133,15 @@ CoachLiteQuestionKind classifyCoachLiteQuestion(String question) {
 }
 
 /// Why grounded research is not available for a factual question.
-enum CoachLiteSourcesUnavailable { offline, localOnly, notApproved }
+enum CoachLiteSourcesUnavailable {
+  offline,
+  localOnly,
+  notApproved,
+
+  /// The Coach Lite operation was declined, blocked, cancelled or failed, so
+  /// it cannot authorize a research hand-off.
+  notRun,
+}
 
 enum CoachLiteStatus {
   /// A validated model answer.
@@ -179,8 +187,13 @@ class CoachLiteAnswer {
   final List<InferenceLeg> legs;
   final RouteReason? blocked;
 
-  /// True when the question is factual and an upload to grounded research is
-  /// allowed right now. The coordinator then hands the question to research.
+  /// True when the question is factual, the Coach Lite operation actually ran
+  /// (it was not declined, blocked, cancelled or failed), and privacy, routes
+  /// and connectivity allowed research when the answer arrived.
+  ///
+  /// This is a hint, not an authorization: settings can change before the
+  /// coordinator acts. The coordinator must call [CoachLite.researchBlocker]
+  /// immediately before sending to research and send only when it is null.
   final bool researchAllowed;
 
   /// Set for a factual question that cannot be checked against sources.
@@ -406,9 +419,9 @@ class CoachLite {
       sequence: ++_sequence,
     );
     final kind = classifyCoachLiteQuestion(question);
-    final sourcesUnavailable = kind.isFactual ? _sourcesUnavailable() : null;
-    final researchAllowed = kind.isFactual && sourcesUnavailable == null;
 
+    // Research permission is decided when the answer arrives, from the
+    // settings as they are then, and only for an operation that actually ran.
     CoachLiteAnswer finish(
       CoachLiteStatus status,
       List<Map<String, dynamic>> modelComponents, {
@@ -416,23 +429,28 @@ class CoachLite {
       List<InferenceLeg> legs = const [],
       RouteReason? blocked,
       String? error,
-    }) => CoachLiteAnswer(
-      stamp: stamp,
-      status: status,
-      kind: kind,
-      components: _withNotices(
-        modelComponents,
+    }) {
+      final ran =
+          status == CoachLiteStatus.answered ||
+          status == CoachLiteStatus.invalid;
+      final sourcesUnavailable = !kind.isFactual
+          ? null
+          : researchBlocker() ??
+                (ran ? null : CoachLiteSourcesUnavailable.notRun);
+      final researchAllowed = kind.isFactual && sourcesUnavailable == null;
+      return _answer(
+        stamp: stamp,
+        status: status,
         kind: kind,
+        modelComponents: modelComponents,
+        timer: timer,
+        legs: legs,
+        blocked: blocked,
+        error: error,
         researchAllowed: researchAllowed,
         sourcesUnavailable: sourcesUnavailable,
-      ),
-      timerSuggestion: timer,
-      legs: legs,
-      blocked: blocked,
-      researchAllowed: researchAllowed,
-      sourcesUnavailable: sourcesUnavailable,
-      error: error,
-    );
+      );
+    }
 
     final task = HybridTask(
       feature: coachLiteFeature,
@@ -525,7 +543,10 @@ class CoachLite {
     return (budget - fixed).clamp(1200, 1 << 20);
   }
 
-  CoachLiteSourcesUnavailable? _sourcesUnavailable() {
+  /// Why grounded research may not be sent right now, or null when it may.
+  /// Reads privacy, routes and connectivity live. The coordinator must call
+  /// this immediately before every research send for a Coach Lite hand-off.
+  CoachLiteSourcesUnavailable? researchBlocker() {
     if (privacy.localOnly(coachLiteFeature) ||
         privacy.localOnly(coachLiteResearchFeature)) {
       return CoachLiteSourcesUnavailable.localOnly;
@@ -637,6 +658,46 @@ const coachLiteSafetyNotice =
     'temperature, freshness or allergens. Check with a food thermometer and '
     'trusted guidance.';
 
+CoachLiteAnswer _answer({
+  required CoachLiteStamp stamp,
+  required CoachLiteStatus status,
+  required CoachLiteQuestionKind kind,
+  required List<Map<String, dynamic>> modelComponents,
+  required CoachLiteTimerSuggestion? timer,
+  required List<InferenceLeg> legs,
+  required RouteReason? blocked,
+  required String? error,
+  required bool researchAllowed,
+  required CoachLiteSourcesUnavailable? sourcesUnavailable,
+}) => CoachLiteAnswer(
+  stamp: stamp,
+  status: status,
+  kind: kind,
+  components: _withNotices(
+    modelComponents,
+    kind: kind,
+    legs: legs,
+    researchAllowed: researchAllowed,
+    sourcesUnavailable: sourcesUnavailable,
+  ),
+  timerSuggestion: timer,
+  legs: legs,
+  blocked: blocked,
+  researchAllowed: researchAllowed,
+  sourcesUnavailable: sourcesUnavailable,
+  error: error,
+);
+
+/// Where the shown answer came from, derived from the returned legs. Makes a
+/// locality claim only when every leg reports the on-device model.
+String coachLiteOriginSentence(List<InferenceLeg> legs) {
+  if (legs.isEmpty) return "This shows the recipe's own step text.";
+  if (legs.every((leg) => leg.provenance == Provenance.sdkOnDevice)) {
+    return 'This answer uses only the recipe and the on-device model.';
+  }
+  return 'This answer was not checked against sources.';
+}
+
 String coachLiteSourcesSentence(CoachLiteSourcesUnavailable reason) =>
     switch (reason) {
       CoachLiteSourcesUnavailable.offline =>
@@ -646,6 +707,8 @@ String coachLiteSourcesSentence(CoachLiteSourcesUnavailable reason) =>
       CoachLiteSourcesUnavailable.notApproved =>
         "Source checking isn't available in this build, so I can't check "
             'sources for this.',
+      CoachLiteSourcesUnavailable.notRun =>
+        "I couldn't check sources for this.",
     };
 
 /// Adds app-authored notices to a validated lite workspace and validates the
@@ -653,6 +716,7 @@ String coachLiteSourcesSentence(CoachLiteSourcesUnavailable reason) =>
 List<Map<String, dynamic>> _withNotices(
   List<Map<String, dynamic>> components, {
   required CoachLiteQuestionKind kind,
+  required List<InferenceLeg> legs,
   required bool researchAllowed,
   required CoachLiteSourcesUnavailable? sourcesUnavailable,
 }) {
@@ -663,15 +727,17 @@ List<Map<String, dynamic>> _withNotices(
         'component': 'stepCue',
         'title': "Can't check sources",
         'body':
-            '${coachLiteSourcesSentence(sourcesUnavailable)} This answer uses '
-            'only the recipe and the on-device model.',
+            '${coachLiteSourcesSentence(sourcesUnavailable)} '
+            '${coachLiteOriginSentence(legs)}',
       }
     else if (researchAllowed)
       {
         'id': 'app_sources',
         'component': 'stepCue',
-        'title': 'Checking sources',
-        'body': 'Grounded research is checking this question.',
+        'title': 'Needs a source check',
+        'body':
+            'This is a factual question. Grounded research can check it '
+            'while your settings allow.',
       },
     if (kind == CoachLiteQuestionKind.safety)
       {

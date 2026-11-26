@@ -497,6 +497,111 @@ void main() {
     });
   });
 
+  group('research hand-off needs current authorization', () {
+    const factualQuestion = 'Can I use butter instead of oil?';
+
+    test('a declined consent never authorizes a hand-off', () async {
+      dispatcher.enqueueBlocked(RouteReason.consentDeclined);
+      final answer = await ask(coach(), factualQuestion);
+      expect(answer.status, CoachLiteStatus.blocked);
+      expect(answer.researchAllowed, isFalse);
+      expect(answer.handOffToResearch, isFalse);
+      expect(answer.sourcesUnavailable, CoachLiteSourcesUnavailable.notRun);
+      final notice = answer.components.firstWhere(
+        (c) => c['id'] == 'app_sources',
+      );
+      expect(notice['body'], startsWith("I couldn't check sources for this."));
+      expect(notice['body'], isNot(contains('on-device model')));
+    });
+
+    test('a cancelled operation never authorizes a hand-off', () async {
+      final gated = _GatedDispatcher();
+      final lite = coach(gated);
+      final pending = ask(lite, factualQuestion);
+      lite.cancel();
+      gated.answer(0, answerJson());
+      final answer = await pending;
+      expect(answer.status, CoachLiteStatus.cancelled);
+      expect(answer.handOffToResearch, isFalse);
+    });
+
+    test('privacy turned on during dispatch blocks the hand-off', () async {
+      final gated = _GatedDispatcher();
+      final lite = coach(gated);
+      final pending = ask(lite, factualQuestion);
+      // The cook switches research to on-device only while the answer runs.
+      privacy.localOnlyFeatures.add(coachLiteResearchFeature);
+      gated.answer(0, answerJson());
+      final answer = await pending;
+      expect(answer.status, CoachLiteStatus.answered);
+      expect(answer.handOffToResearch, isFalse);
+      expect(answer.sourcesUnavailable, CoachLiteSourcesUnavailable.localOnly);
+    });
+
+    test('going offline during dispatch blocks the hand-off', () async {
+      final gated = _GatedDispatcher();
+      final lite = coach(gated);
+      final pending = ask(lite, factualQuestion);
+      online = false;
+      gated.answer(0, answerJson());
+      expect((await pending).handOffToResearch, isFalse);
+    });
+
+    test('the coordinator re-check sees changes after the answer', () async {
+      dispatcher.enqueue(answerJson());
+      final lite = coach();
+      final answer = await ask(lite, factualQuestion);
+      expect(answer.handOffToResearch, isTrue);
+      expect(lite.researchBlocker(), isNull);
+      privacy.localOnlyFeatures.add(coachLiteResearchFeature);
+      expect(lite.researchBlocker(), CoachLiteSourcesUnavailable.localOnly);
+      privacy.localOnlyFeatures.clear();
+      routes = const CloudRoutes({});
+      expect(
+        coach().researchBlocker(),
+        CoachLiteSourcesUnavailable.notApproved,
+      );
+    });
+  });
+
+  group('the sources notice makes no false locality claim', () {
+    String sourcesBody(CoachLiteAnswer answer) =>
+        answer.components.firstWhere((c) => c['id'] == 'app_sources')['body']
+            as String;
+
+    test('a cloud answer is not labelled on-device', () async {
+      // Hybrid fallback approved, research not: the answer can come from the
+      // cloud model and still be unable to check sources.
+      routes = const CloudRoutes({CloudRoute.hybridFallback});
+      dispatcher.enqueue(answerJson(), provenance: Provenance.sdkCloud);
+      final answer = await ask(coach(), 'Can I use butter instead of oil?');
+      expect(answer.legs.single.provenance, Provenance.sdkCloud);
+      expect(
+        answer.sourcesUnavailable,
+        CoachLiteSourcesUnavailable.notApproved,
+      );
+      expect(sourcesBody(answer), contains('not checked against sources'));
+      expect(sourcesBody(answer), isNot(contains('on-device')));
+    });
+
+    test('an unknown provenance is not labelled on-device', () async {
+      routes = const CloudRoutes({CloudRoute.hybridFallback});
+      dispatcher.enqueue(answerJson(), provenance: Provenance.unknown);
+      final answer = await ask(coach(), 'Can I use butter instead of oil?');
+      expect(sourcesBody(answer), isNot(contains('on-device')));
+    });
+
+    test('an on-device answer says so', () async {
+      online = false;
+      dispatcher.enqueue(answerJson());
+      final answer = await ask(coach(), 'Can I use butter instead of oil?');
+      expect(
+        sourcesBody(answer),
+        endsWith('This answer uses only the recipe and the on-device model.'),
+      );
+    });
+  });
+
   test('a blocked dispatch shows the recipe step, labelled with why', () async {
     dispatcher.enqueueBlocked(RouteReason.noLocalModel);
     final answer = await ask(coach(), 'How often should I stir?');
