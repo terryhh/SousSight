@@ -284,15 +284,21 @@ void main() {
       expect(states.first.whatISee, startsWith('Practice camera:'));
     });
 
-    test('label: typed text names allergens; a photo is unreadable', () {
-      final typed = parseLabelReading(
-        practiceLabelAnswer(buildTypedPrompt('Contains: PEANUTS, wheat.')),
-      );
-      expect(typed.readable, isTrue);
-      expect(typed.allergensMentioned, containsAll(['peanut', 'wheat']));
-      final photo = parseLabelReading(practiceLabelAnswer(buildPhotoPrompt()));
-      expect(photo.readable, isFalse);
-    });
+    test(
+      'label: typed text names allergens; a photo gives a pretend reading',
+      () {
+        final typed = parseLabelReading(
+          practiceLabelAnswer(buildTypedPrompt('Contains: PEANUTS, wheat.')),
+        );
+        expect(typed.readable, isTrue);
+        expect(typed.allergensMentioned, containsAll(['peanut', 'wheat']));
+        final photo = parseLabelReading(
+          practiceLabelAnswer(buildPhotoPrompt()),
+        );
+        expect(photo.readable, isTrue);
+        expect(photo.allergensMentioned, ['wheat']);
+      },
+    );
 
     test('an unscripted feature fails as unavailable', () async {
       final inference = RehearsalHybridInference(answerDelay: Duration.zero);
@@ -460,18 +466,9 @@ void main() {
       });
     });
 
-    test('the frame is a valid PNG the engine can decode', () async {
+    test('the frame is a JPEG (like a camera) the engine can decode', () async {
       final png = practiceCameraFrame(0, width: 32, height: 24);
-      expect(png.sublist(0, 8), [
-        0x89,
-        0x50,
-        0x4e,
-        0x47,
-        0x0d,
-        0x0a,
-        0x1a,
-        0x0a,
-      ]);
+      expect(png.sublist(0, 2), [0xff, 0xd8]);
       final codec = await ui.instantiateImageCodec(png);
       final frame = await codec.getNextFrame();
       expect(frame.image.width, 32);

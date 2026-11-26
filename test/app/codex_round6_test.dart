@@ -288,7 +288,7 @@ void main() {
       await media.startCameraOnly(); // a new watch
       await media.stop();
       expect(await check(), WatchState.notYet);
-      final answer = practiceWatchAnswer(2, cue: stepA.cue);
+      final answer = practiceWatchAnswer(0, cue: stepA.cue);
       expect(answer, contains(stepA.cue));
     },
   );

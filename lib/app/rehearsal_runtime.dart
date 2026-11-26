@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
+import 'package:image/image.dart' as img;
 import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_dispatcher.dart';
@@ -29,7 +30,7 @@ import '../pantry/recipe_draft.dart';
 import '../pantry/pantry_ui.dart' show pantrySameItem, pantryTypedEntries;
 import '../trust/privacy_preferences.dart';
 import '../label/label_check.dart' show kLabelAllergens, kLabelCheckFeature;
-import '../watch/watch_verdict.dart' show kLocalWatchFeature;
+import '../watch/watch_verdict.dart' show claimsUnsupported, kLocalWatchFeature;
 import 'hybrid_runtime.dart';
 
 /// What the trust sheets call the practice "model". Never a real model name.
@@ -295,7 +296,22 @@ String practiceCoachAnswer(String prompt) {
   });
 }
 
-/// Watch verdicts in a fixed cycle: not yet, unsure, then the visible cue.
+String _visibleCuePart(String? cue) {
+  // Clauses ("Salsa is mixed evenly" / "ready to serve") so a claim in one
+  // clause doesn't hide the visible part of the sentence.
+  final sentences = [
+    for (final part in (cue ?? '').split(
+      RegExp(r'(?<=[.!?;])\s+|\s+and\s+|,\s*'),
+    ))
+      if (part.trim().replaceAll(RegExp(r'[.!?;]+$'), '') case final clause
+          when clause.isNotEmpty && !claimsUnsupported(clause))
+        '$clause.',
+  ];
+  if (sentences.isEmpty) return "Practice camera: this looks like the step.";
+  final text = sentences.first;
+  return 'Practice camera: ${text.length <= 120 ? text : '${text.substring(0, 119)}…'}';
+}
+
 /// Watch verdicts in a fixed cycle: not yet, unsure, then the visible cue.
 /// Observations name the current step's [cue] when known.
 String practiceWatchAnswer(int turn, {String? cue}) {
@@ -313,9 +329,10 @@ String practiceWatchAnswer(int turn, {String? cue}) {
     _ => {
       'state': 'ready',
       'direction': 'none',
-      'whatISee': target == null
-          ? 'Practice camera: this looks like the step.'
-          : 'Practice camera: looks like "${short(target)}".',
+      // Names what the cue shows (a ready must relate to the cue) using only
+      // the cue's sentences that make no doneness or safety claim, so the
+      // safety filter never turns it into unsure (Codex #221).
+      'whatISee': _visibleCuePart(target),
     },
   });
 }
@@ -325,10 +342,11 @@ String practiceWatchAnswer(int turn, {String? cue}) {
 String practiceLabelAnswer(String prompt) {
   final typed = RegExp(r'"""\n([\s\S]*?)\n"""').firstMatch(prompt)?.group(1);
   if (typed == null || typed.trim().isEmpty) {
+    // A photo: a pretend reading of a pretend label (Codex #221).
     return jsonEncode({
-      'readable': false,
-      'allergensMentioned': [],
-      'quote': '',
+      'readable': true,
+      'allergensMentioned': ['wheat'],
+      'quote': 'Practice label: Contains wheat.',
     });
   }
   final lower = typed.toLowerCase();
@@ -645,7 +663,14 @@ Uint8List practiceCameraFrame(int frame, {int width = 160, int height = 120}) {
       }
     }
   }
-  return encodePng(width, height, rgb);
+  // JPEG, like a real camera frame: the label check accepts only JPEG.
+  final image = img.Image.fromBytes(
+    width: width,
+    height: height,
+    bytes: rgb.buffer,
+    numChannels: 3,
+  );
+  return Uint8List.fromList(img.encodeJpg(image, quality: 80));
 }
 
 /// Minimal PNG encoder (8-bit RGB, stored deflate blocks). Enough for small

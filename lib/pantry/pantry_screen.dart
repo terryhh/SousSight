@@ -53,6 +53,10 @@ const pantryVoiceDisclosure =
     'Voice lists need online processing: when you tap Find my meal, the clip '
     "is sent to Google's AI. Leaving Say it deletes the clip.";
 
+/// Said when a recorded clip is dropped because voice went off before send.
+const pantryVoiceSkipped =
+    'Your voice clip was skipped: online processing is off in this build.';
+
 /// The same, in a build where online processing is off.
 const pantryVoiceUnavailable =
     'Voice lists need online processing, which is off in this build. Type '
@@ -286,6 +290,9 @@ class _PantryScreenState extends State<PantryScreen> {
   /// Read live at render, at Record and at send (Codex #221).
   bool get _voiceOff => widget.voiceOnline?.call() == false;
 
+  /// Shown once a clip was dropped at send because voice went off.
+  String? _voiceSkipped;
+
   /// Bumped by every mode switch; an older switch's work stops after any
   /// await once this has moved on (Codex #221).
   int _modeEpoch = 0;
@@ -309,7 +316,7 @@ class _PantryScreenState extends State<PantryScreen> {
     // for permission: stopping bumps the epoch so it never activates
     // (Codex #221).
     if (changed) await _stopMedia();
-    if (!mounted || epoch != _modeEpoch) return;
+    if (!mounted || epoch != _modeEpoch || !_onScreen) return;
     if (mode == PantryMode.scan && !widget.isDemo && _photo == null) {
       await _ensureMedia();
       // A later switch while the camera started: release it.
@@ -331,12 +338,13 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _record() async {
     if (_recording != null) return;
-    if (_voiceOff) {
-      setState(() => _error = pantryVoiceUnavailable);
-      return;
-    }
+    // A pretend clip needs no online processing (Codex #221).
     if (widget.isDemo) {
       setState(() => _simulatedAudio = true);
+      return;
+    }
+    if (_voiceOff) {
+      setState(() => _error = pantryVoiceUnavailable);
       return;
     }
     if (!await _ensureMedia(microphone: true) || !mounted) return;
@@ -392,6 +400,21 @@ class _PantryScreenState extends State<PantryScreen> {
 
   Future<void> _analyze() async {
     if (_thinking) return;
+    // Re-read the voice gate at send: a closed gate drops the clip, and the
+    // cook is told (Codex #221).
+    if (_audio != null && _voiceOff && !widget.isDemo) {
+      setState(() {
+        _audio = null;
+        _voiceSkipped = pantryVoiceSkipped;
+      });
+      if (!_hasInput) {
+        setState(() {
+          _error = pantryVoiceSkipped;
+          _matchError = false;
+        });
+        return;
+      }
+    }
     if (!_hasInput && !widget.isDemo) {
       setState(() {
         _error = 'Show, say, or type what you got first.';
@@ -545,9 +568,20 @@ class _PantryScreenState extends State<PantryScreen> {
     if (recipe != null) _choose(recipe);
   }
 
+  /// False once another route (cooking) covers the pantry.
+  bool get _onScreen => ModalRoute.of(context)?.isCurrent ?? true;
+
   void _choose(Recipe recipe, {bool skipped = false}) {
     final question = _result?.question;
     final answer = _answer.text.trim();
+    // Leaving the pantry: any pending mode switch is superseded, so it never
+    // opens a camera behind the cooking screen, and no clip is kept
+    // (Codex #221).
+    _modeEpoch++;
+    _recordTimer?.cancel();
+    _recording = null;
+    _audio = null;
+    _simulatedAudio = false;
     unawaited(_stopMedia());
     widget.onChooseRecipe(
       recipe,
@@ -622,6 +656,10 @@ class _PantryScreenState extends State<PantryScreen> {
                     ),
                   ],
                 ),
+                if (_voiceSkipped case final skipped? when _error == null) ...[
+                  const SizedBox(height: 14),
+                  _notice(skipped, Icons.mic_off_outlined),
+                ],
                 if (_error case final error?) ...[
                   const SizedBox(height: 14),
                   Semantics(
@@ -979,7 +1017,8 @@ class _PantryScreenState extends State<PantryScreen> {
                 ? 'Record again ($seconds s)'
                 : 'Record $seconds seconds',
           ),
-          onPressed: recording || _mediaStarting
+          onPressed:
+              recording || _mediaStarting || (_voiceOff && !widget.isDemo)
               ? null
               : () => unawaited(_record()),
         ),

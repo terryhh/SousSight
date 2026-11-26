@@ -127,11 +127,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(findMeal);
     await tester.pumpAndSettle();
-    expect(
-      client.inputs.single.audioWav,
-      isNull,
-      reason: 'gate re-read at send',
-    );
+    // Gate re-read at send: the clip is dropped and the cook is told.
+    expect(client.inputs, isEmpty);
+    expect(find.text(pantryVoiceSkipped), findsOneWidget);
     // And the render reads it live too.
     await tester.ensureVisible(find.byKey(const ValueKey('mode-say')));
     await tester.tap(find.byKey(const ValueKey('mode-type')));
@@ -139,9 +137,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('mode-say')));
     await tester.pumpAndSettle();
     expect(find.text(pantryVoiceUnavailable), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('record-voice')));
-    await tester.pump();
-    expect(find.text(pantryVoiceUnavailable), findsWidgets);
+    // Record is disabled while online processing is off.
+    final record = tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.byIcon(Icons.mic),
+        matching: find.byWidgetPredicate((w) => w is FilledButton),
+      ),
+    );
+    expect(record.onPressed, isNull);
   });
 
   testWidgets('#2 a superseded Scan never opens the camera after Type', (
