@@ -322,6 +322,11 @@ void main() {
       final line = await intro(tester, text: _available, practice: true);
       expect(line, startsWith('Practice mode (pretend answers)'));
       expect(line, contains('no AI runs here'));
+      expect(find.text('Ready on this device.'), findsNothing);
+      expect(
+        find.text('Pretend answers only (practice mode).'),
+        findsNWidgets(2),
+      );
     });
 
     testWidgets('technical names only under Details', (tester) async {

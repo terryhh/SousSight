@@ -241,15 +241,22 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
           key: const ValueKey('on-device-text-status'),
           icon: Icons.notes,
           label: 'Text',
-          status: onDeviceStatusText(_text, image: false, local: local),
-          ok: _text.status == OnDeviceStatus.available,
+          status: widget.practice
+              ? _practiceStatus
+              : onDeviceStatusText(_text, image: false, local: local),
+          ok: !widget.practice && _text.status == OnDeviceStatus.available,
         ),
         _StatusRow(
           key: const ValueKey('on-device-image-status'),
           icon: Icons.photo_camera_outlined,
           label: 'Photos',
-          status: onDeviceStatusText(_image, image: true, local: local),
-          ok: _imageCapable && _image.status == OnDeviceStatus.available,
+          status: widget.practice
+              ? _practiceStatus
+              : onDeviceStatusText(_image, image: true, local: local),
+          ok:
+              !widget.practice &&
+              _imageCapable &&
+              _image.status == OnDeviceStatus.available,
         ),
         const SizedBox(height: 12),
         _setupControls(theme),
@@ -300,6 +307,9 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
       ],
     );
   }
+
+  /// Practice mode never claims a ready model (SS-089).
+  static const _practiceStatus = 'Pretend answers only (practice mode).';
 
   /// The plain first line. It never contradicts the status rows below it.
   String get _intro {
