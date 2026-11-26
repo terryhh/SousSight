@@ -3,12 +3,14 @@ package dev.soussight.ai_logic_hybrid
 import android.content.pm.ApplicationInfo
 import android.util.Log
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,17 +25,10 @@ import kotlinx.coroutines.launch
  * app's dispatcher decides the mode.
  */
 class AiLogicHybridPlugin internal constructor(
-    private val engineFactory: (debuggable: Boolean) -> HybridEngine,
+    private val engineFactory: (debuggable: Boolean, scope: CoroutineScope) -> HybridEngine,
 ) : FlutterPlugin, MethodCallHandler, EventChannel.StreamHandler {
 
-    constructor() : this({ debuggable ->
-        AutoModelEngine(
-            FirebaseHybridEngine(),
-            // Debug builds also confirm the chosen model answers, for device verification.
-            verifyChoice = debuggable,
-            log = { Log.i(LOG_TAG, it) },
-        )
-    })
+    constructor() : this({ debuggable, scope -> defaultEngine(debuggable, scope) })
 
     private var channel: MethodChannel? = null
     private var prepareChannel: EventChannel? = null
@@ -44,24 +39,38 @@ class AiLogicHybridPlugin internal constructor(
 
     @Volatile private var config: HybridConfig? = null
 
+    /** The engine while attached (tests). */
+    internal val currentEngine: HybridEngine? get() = engine
+
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val debuggable =
-            (binding.applicationContext.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        val engine = engineFactory(debuggable)
+        val flags = binding.applicationContext.applicationInfo.flags
+        attach(binding.binaryMessenger, debuggable = (flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+    }
+
+    /** Everything [onAttachedToEngine] does once it has read the binding. */
+    internal fun attach(
+        messenger: BinaryMessenger,
+        debuggable: Boolean,
+        dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
+    ) {
+        val scope = CoroutineScope(SupervisorJob() + dispatcher)
+        // The engine's own background work (auto's model check) lives and dies with this scope.
+        val engine = engineFactory(debuggable, scope)
         this.scope = scope
         this.engine = engine
         generator = GenerateCoordinator(scope, engine, { config })
         preparer = PrepareCoordinator(scope, engine, { config })
-        channel = MethodChannel(binding.binaryMessenger, Protocol.METHOD_CHANNEL).also {
+        channel = MethodChannel(messenger, Protocol.METHOD_CHANNEL).also {
             it.setMethodCallHandler(this)
         }
-        prepareChannel = EventChannel(binding.binaryMessenger, Protocol.PREPARE_CHANNEL).also {
+        prepareChannel = EventChannel(messenger, Protocol.PREPARE_CHANNEL).also {
             it.setStreamHandler(this)
         }
     }
 
-    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
+    override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) = detach()
+
+    internal fun detach() {
         channel?.setMethodCallHandler(null)
         prepareChannel?.setStreamHandler(null)
         generator?.cancelAll()
@@ -83,9 +92,7 @@ class AiLogicHybridPlugin internal constructor(
             } catch (e: HybridError) {
                 reply.error(e.code.wire, e.message)
             }
-            "capabilities" -> reply.success(
-                Protocol.capabilities(config?.let { engine?.modelOption(it) }),
-            )
+            "capabilities" -> reply.success(capabilities(config, engine))
             "availability" -> availability(call.arguments, reply)
             "generate" -> generator?.start(call.arguments, reply)
                 ?: reply.error(HybridErrorCode.UNAVAILABLE.wire, Reasons.BRIDGE_UNAVAILABLE)
@@ -147,7 +154,24 @@ class AiLogicHybridPlugin internal constructor(
         override fun error(code: String, message: String?) = this@asReply.error(code, message, null)
     }
 
-    private companion object {
+    internal companion object {
         const val LOG_TAG = "AiLogicHybrid"
+
+        /** Production engine: `auto` selection over Firebase AI Logic, logging to logcat. */
+        fun defaultEngine(
+            debuggable: Boolean,
+            scope: CoroutineScope,
+            log: (String) -> Unit = { Log.i(LOG_TAG, it) },
+        ): HybridEngine = AutoModelEngine(
+            FirebaseHybridEngine(),
+            scope,
+            // Debug builds also confirm the chosen model answers, for device verification.
+            verifyChoice = debuggable,
+            log = log,
+        )
+
+        /** Capabilities with the option in use: null until configured and, for auto, chosen. */
+        fun capabilities(config: HybridConfig?, engine: HybridEngine?): Map<String, Any?> =
+            Protocol.capabilities(config?.let { engine?.modelOption(it) })
     }
 }

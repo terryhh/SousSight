@@ -4,7 +4,10 @@ import com.google.firebase.ai.type.FirebaseAIOnDeviceNotAvailableException
 import com.google.firebase.ai.type.PublicPreviewAPI
 import com.google.mlkit.genai.common.GenAiException
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -13,7 +16,10 @@ import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
@@ -30,6 +36,12 @@ import com.google.firebase.ai.ondevice.interop.FirebaseAIOnDeviceNotAvailableExc
 @OptIn(PublicPreviewAPI::class)
 internal class AutoModelEngineTest {
     private val auto = HybridConfig("cloud-model", AndroidModelOption.AUTO, listOf("en"))
+
+    /** Stands in for the plugin's scope: the engine's lifetime. */
+    private val lifetime = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    @AfterTest
+    fun tearDown() = lifetime.cancel()
 
     /** What firebase-ai 18.2.0 throws when ML Kit reports NOT_AVAILABLE (8). */
     private fun code8(): Throwable = FirebaseAIOnDeviceNotAvailableException(
@@ -101,13 +113,26 @@ internal class AutoModelEngineTest {
         timeoutMs = 5_000,
     )
 
-    private fun engine(inner: HybridEngine, log: MutableList<String> = mutableListOf(), probeTimeoutMs: Long = 2_000, verify: Boolean = false) =
-        AutoModelEngine(inner, probeTimeoutMs = probeTimeoutMs, verifyChoice = verify, log = { log += it })
+    private fun engine(
+        inner: HybridEngine,
+        log: MutableList<String> = CopyOnWriteArrayList(),
+        probeTimeoutMs: Long = 2_000,
+        verify: Boolean = false,
+        statusTimeoutMs: Long = 2_000,
+        scope: CoroutineScope = lifetime,
+    ) = AutoModelEngine(
+        inner,
+        scope,
+        probeTimeoutMs = probeTimeoutMs,
+        statusTimeoutMs = statusTimeoutMs,
+        verifyChoice = verify,
+        log = { log += it },
+    )
 
     @Test
     fun previewThatAnswersTheProbeIsChosen() = runBlocking {
         val inner = FakeEngine()
-        val log = mutableListOf<String>()
+        val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log)
 
         val a = e.availability(auto, withImage = false)
@@ -132,7 +157,7 @@ internal class AutoModelEngineTest {
     @Test
     fun previewThatFailsTheProbeFallsBackToStable() = runBlocking {
         val inner = pixel9()
-        val log = mutableListOf<String>()
+        val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log)
 
         val a = e.availability(auto, withImage = true)
@@ -199,7 +224,7 @@ internal class AutoModelEngineTest {
             if (option == AndroidModelOption.PREVIEW) withContext(NonCancellable) { delay(3_000) }
             GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
         })
-        val log = mutableListOf<String>()
+        val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log, probeTimeoutMs = 100)
         val start = System.nanoTime()
         assertEquals(AndroidModelOption.STABLE, e.resolve(auto))
@@ -269,7 +294,7 @@ internal class AutoModelEngineTest {
             if (option == AndroidModelOption.PREVIEW && previewWorks.getAndDecrement() <= 0) throw code8()
             GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
         })
-        val log = mutableListOf<String>()
+        val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log)
         assertEquals(AndroidModelOption.PREVIEW, e.resolve(auto))
 
@@ -469,7 +494,7 @@ internal class AutoModelEngineTest {
     @Test
     fun prepareDownloadsTheChosenModel() = runBlocking {
         val inner = pixel9()
-        val log = mutableListOf<String>()
+        val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log)
         assertNull(e.modelOption(auto), "not chosen until checked")
         assertEquals(listOf(0.5, 1.0), e.prepare(auto, withImage = true).toList())
@@ -480,7 +505,7 @@ internal class AutoModelEngineTest {
     @Test
     fun debugBuildsAlsoProbeTheStableChoice() = runBlocking {
         val inner = pixel9()
-        val log = mutableListOf<String>()
+        val log = CopyOnWriteArrayList<String>()
         val e = engine(inner, log, verify = true)
         assertEquals(AndroidModelOption.STABLE, e.resolve(auto))
         assertEquals(listOf(AndroidModelOption.PREVIEW, AndroidModelOption.STABLE), inner.probes.map { it.option })
@@ -496,8 +521,169 @@ internal class AutoModelEngineTest {
             },
             onGenerate = { _, _ -> throw code8() },
         )
-        val log = mutableListOf<String>()
+        val log = CopyOnWriteArrayList<String>()
         assertEquals(AndroidModelOption.STABLE, engine(inner, log, verify = true).resolve(auto))
         assertTrue(log.any { "stable did not answer the debug probe" in it }, "$log")
+    }
+
+    // --- Codex review of f420fcd ---
+
+    @Test
+    fun aHungStatusLookupSelectsStableAndItsLateAnswerIsDiscarded() = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        val first = AtomicInteger(0)
+        val inner = FakeEngine(status = {
+            // Only the first preview lookup hangs (ignoring cancellation), then says available.
+            if (it == AndroidModelOption.PREVIEW && first.getAndIncrement() == 0) {
+                runBlocking { withContext(NonCancellable) { release.await() } }
+            }
+            AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = FakeEngine.label(it))
+        })
+        val log = CopyOnWriteArrayList<String>()
+        val e = engine(inner, log, statusTimeoutMs = 100)
+        val start = System.nanoTime()
+
+        val a = withTimeout(2_000) { e.availability(auto, false) }
+
+        assertTrue((System.nanoTime() - start) / 1_000_000 < 2_000)
+        assertEquals(AndroidModelOption.STABLE, a.modelOption)
+        assertEquals("nano-v3", a.modelLabel)
+        assertTrue(log.any { "no answer within 100 ms" in it }, "$log")
+        release.complete(Unit)
+        delay(100)
+        assertEquals(AndroidModelOption.STABLE, e.decision, "the late preview answer is discarded")
+        assertTrue(inner.probes.isEmpty(), "no probe after the deadline")
+        e.generate(auto, request())
+        assertEquals(listOf(AndroidModelOption.STABLE), inner.work.map { it.option })
+    }
+
+    @Test
+    fun previewThatBecomesUnavailableGivesWayToStable() = runBlocking {
+        val previewStatus = AtomicReference(OnDeviceStatus.AVAILABLE)
+        val inner = FakeEngine(status = {
+            if (it == AndroidModelOption.PREVIEW) AvailabilityResult(previewStatus.get(), Reasons.MODEL_NOT_READY, "nano-v4-full")
+            else AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v3")
+        })
+        val e = engine(inner)
+        assertEquals(AndroidModelOption.PREVIEW, e.availability(auto, false).modelOption)
+
+        previewStatus.set(OnDeviceStatus.UNAVAILABLE)
+        val a = e.availability(auto, false)
+
+        assertEquals(OnDeviceStatus.AVAILABLE, a.status)
+        assertEquals(AndroidModelOption.STABLE, a.modelOption)
+        assertEquals("nano-v3", a.modelLabel)
+        assertEquals(AndroidModelOption.STABLE, e.decision)
+        assertEquals(AndroidModelOption.STABLE, e.modelOption(auto))
+        e.generate(auto, request())
+        assertEquals(AndroidModelOption.STABLE, inner.work.last().option)
+    }
+
+    @Test
+    fun previewUnavailableWithStableUnavailableIsReportedAsIs() = runBlocking {
+        val previewStatus = AtomicReference(OnDeviceStatus.AVAILABLE)
+        val inner = FakeEngine(status = {
+            if (it == AndroidModelOption.PREVIEW) AvailabilityResult(previewStatus.get(), Reasons.NOT_ENROLLED)
+            else AvailabilityResult(OnDeviceStatus.DOWNLOADABLE, Reasons.MODEL_NOT_READY)
+        })
+        val e = engine(inner)
+        e.resolve(auto)
+        previewStatus.set(OnDeviceStatus.UNAVAILABLE)
+        val a = e.availability(auto, false)
+        assertEquals(OnDeviceStatus.UNAVAILABLE, a.status)
+        assertEquals(Reasons.NOT_ENROLLED, a.reason)
+        assertEquals(AndroidModelOption.PREVIEW, a.modelOption)
+        assertEquals(AndroidModelOption.PREVIEW, e.decision, "stable is not ready, so no switch")
+    }
+
+    @Test
+    fun availabilityReportsADowngradeThatLandsDuringItsAwait() = runBlocking {
+        val hold = CompletableDeferred<Unit>()
+        val holding = CompletableDeferred<Unit>()
+        val decided = AtomicBoolean(false)
+        val previewWorks = AtomicInteger(1)
+        val inner = FakeEngine(
+            status = {
+                if (it == AndroidModelOption.PREVIEW && decided.get()) {
+                    holding.complete(Unit)
+                    runBlocking { hold.await() }
+                }
+                AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = FakeEngine.label(it))
+            },
+            onGenerate = { option, _ ->
+                if (option == AndroidModelOption.PREVIEW && previewWorks.getAndDecrement() <= 0) throw code8()
+                GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
+            },
+        )
+        val e = engine(inner)
+        assertEquals(AndroidModelOption.PREVIEW, e.resolve(auto))
+        decided.set(true)
+
+        val inFlight = async(Dispatchers.Default) { e.availability(auto, false) }
+        holding.await()
+        e.generate(auto, request()) // code 8 on preview: downgrade to stable
+        assertEquals(AndroidModelOption.STABLE, e.decision)
+        hold.complete(Unit)
+        val a = inFlight.await()
+
+        assertEquals(AndroidModelOption.STABLE, a.modelOption, "never the superseded preview")
+        assertEquals("nano-v3", a.modelLabel)
+        assertEquals(e.modelOption(auto), a.modelOption, "availability and capabilities agree")
+    }
+
+    @Test
+    fun cancellingTheEngineLifetimeStopsTheCheck() = runBlocking {
+        val release = CompletableDeferred<Unit>()
+        val lookup = CompletableDeferred<Unit>()
+        val inner = FakeEngine(status = {
+            if (it == AndroidModelOption.PREVIEW) {
+                lookup.complete(Unit)
+                runBlocking { withContext(NonCancellable) { release.await() } }
+            }
+            AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = FakeEngine.label(it))
+        })
+        val owner = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val e = engine(inner, scope = owner)
+        val caller = async(Dispatchers.Default) { runCatching { e.resolve(auto) } }
+        lookup.await()
+
+        owner.cancel() // the plugin detaches
+        release.complete(Unit)
+        val outcome = caller.await()
+
+        assertTrue(outcome.exceptionOrNull() is kotlinx.coroutines.CancellationException, "$outcome")
+        delay(200)
+        assertTrue(inner.generateCalls.isEmpty(), "no native generation after teardown")
+        assertNull(e.decision)
+    }
+
+    @Test
+    fun aColdInvalidRequestMakesNoBackendCall() = runBlocking {
+        val inner = FakeEngine()
+        val e = engine(inner)
+        val photo = HybridPart.InlineData(ByteArray(16), "image/jpeg")
+        for (mode in HybridMode.entries) {
+            val twoPhotos = request(mode).copy(parts = listOf(HybridPart.Text("which?"), photo, photo))
+            val error = assertFailsWith<HybridError> { e.generate(auto, twoPhotos) }
+            assertEquals(HybridErrorCode.UNSUPPORTED_INPUT, error.code, "$mode")
+        }
+        val audio = request().copy(parts = listOf(HybridPart.InlineData(ByteArray(4), "audio/wav")))
+        assertEquals(HybridErrorCode.UNSUPPORTED_INPUT, assertFailsWith<HybridError> { e.generate(auto, audio) }.code)
+        assertTrue(inner.availabilityCalls.isEmpty())
+        assertTrue(inner.generateCalls.isEmpty())
+        assertNull(e.decision)
+    }
+
+    @Test
+    fun aBlankOnDeviceProbeAnswerDoesNotSelectPreview() = runBlocking {
+        for (text in listOf("", "  \n")) {
+            val inner = FakeEngine(onGenerate = { option, _ ->
+                val answer = if (option == AndroidModelOption.PREVIEW) text else "OK"
+                GenerateResult(answer, InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
+            })
+            val log = CopyOnWriteArrayList<String>()
+            assertEquals(AndroidModelOption.STABLE, engine(inner, log).resolve(auto), "'$text'")
+            assertTrue(log.any { "blank answer" in it }, "$log")
+        }
     }
 }
