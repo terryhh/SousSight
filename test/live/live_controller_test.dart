@@ -25,10 +25,15 @@ class TestMedia implements LiveMedia {
   @override
   Stream<String> get errors => failures.stream;
   @override
+  Stream<CapturedFrame> get timedFrames => const Stream.empty();
+  @override
   Future<void> start() async {
     starts++;
     active = true;
   }
+
+  @override
+  Future<void> startCameraOnly() async {}
 
   @override
   Future<void> stop() async {
