@@ -51,6 +51,7 @@ class _RetryingDispatcher implements HybridDispatcher {
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   }) {
     tasks.add(task);
     Future<DispatchResult> run() async {
