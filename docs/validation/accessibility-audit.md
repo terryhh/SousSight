@@ -25,6 +25,25 @@ after the next promotion. That was a code search, not a run of the trunk build.
 alone and every control has a name, so nothing blocks a user outright. The biggest problems are a focus
 indicator you can barely see, and a cook step that changes without telling a screen-reader user.
 
+### Defect cards
+
+All 12 are filed unassigned with the `buildhybridai` label, for Terry's session to route.
+
+| ID | Severity | Finding | Card |
+|---|---|---|---|
+| A11Y-01 | HIGH | Keyboard focus indicator is almost invisible — all screens | [SS-113 (#251)](https://github.com/terryhh/SousSight/issues/251) |
+| A11Y-02 | HIGH | Moving to the next cook step is silent for screen readers — cook screen | [SS-114 (#252)](https://github.com/terryhh/SousSight/issues/252) |
+| A11Y-03 | MEDIUM | Keyboard focus lands off-screen or behind the Coach Lite box — home, cook | [SS-115 (#253)](https://github.com/terryhh/SousSight/issues/253) |
+| A11Y-04 | MEDIUM | The Coach Lite box keeps re-entering the Tab order — cook screen | [SS-116 (#254)](https://github.com/terryhh/SousSight/issues/254) |
+| A11Y-05 | MEDIUM | No headings or landmarks on the home and cook screens | [SS-117 (#255)](https://github.com/terryhh/SousSight/issues/255) |
+| A11Y-06 | MEDIUM | Semantics are off by default, so voice control and automated checks see an empty page — all screens | [SS-118 (#256)](https://github.com/terryhh/SousSight/issues/256) |
+| A11Y-07 | MEDIUM | At 200% text the title breaks mid-word and the Coach Lite box cuts off text — home, cook | [SS-119 (#257)](https://github.com/terryhh/SousSight/issues/257) |
+| A11Y-08 | MEDIUM | The pantry text field has no lasting label — home | [SS-120 (#258)](https://github.com/terryhh/SousSight/issues/258) |
+| A11Y-09 | MEDIUM | The yellow "GARDEN · PANTRY · PLATE" text fails contrast on the green hero — home | [SS-121 (#259)](https://github.com/terryhh/SousSight/issues/259) |
+| A11Y-10 | LOW | The "How does your food look?" choices are read as checkboxes — cook screen | [SS-122 (#260)](https://github.com/terryhh/SousSight/issues/260) |
+| A11Y-11 | LOW | The step progress bar announces a bare number — cook screen | [SS-123 (#261)](https://github.com/terryhh/SousSight/issues/261) |
+| A11Y-12 | LOW | The allergen chip is 44 px tall — cook screen header | [SS-124 (#262)](https://github.com/terryhh/SousSight/issues/262) |
+
 Severity scale used here:
 
 - **BLOCKER**: a user group cannot finish the hero journey.
@@ -89,7 +108,7 @@ No credentials were entered and no cloud upload was agreed to.
 
 Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
-### A11Y-01 · HIGH · Keyboard focus indicator is almost invisible — all screens · [SS-113](#)
+### A11Y-01 · HIGH · Keyboard focus indicator is almost invisible — all screens · [SS-113 (#251)](https://github.com/terryhh/SousSight/issues/251)
 
 - **Steps:** Load the home screen at 360 px. Press Tab once, which focuses *On-device AI*. Press Tab five more
   times, which focuses the *Scan* tile.
@@ -110,7 +129,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Focus indicator](accessibility-audit/01-focus-indicator.png)
 
-### A11Y-02 · HIGH · Moving to the next cook step is silent for screen readers — cook screen · [SS-114](#)
+### A11Y-02 · HIGH · Moving to the next cook step is silent for screen readers — cook screen · [SS-114 (#252)](https://github.com/terryhh/SousSight/issues/252)
 
 - **Steps:** Turn semantics on (screen reader running), open a recipe, and activate *Next step →*.
 - **Result:**
@@ -135,7 +154,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Step change silent](accessibility-audit/02-step-change-silent.png)
 
-### A11Y-03 · MEDIUM · Keyboard focus lands off-screen or behind the Coach Lite box — home, cook · [SS-115](#)
+### A11Y-03 · MEDIUM · Keyboard focus lands off-screen or behind the Coach Lite box — home, cook · [SS-115 (#253)](https://github.com/terryhh/SousSight/issues/253)
 
 - **Steps, cook screen:** Scroll to the bottom and open *Review dinner message*. Press Escape.
 - **Result, cook screen:** Focus goes back to the *Review dinner message* button at y = 710–758, which sits
@@ -155,7 +174,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Focus hidden](accessibility-audit/05-focus-hidden.png)
 
-### A11Y-04 · MEDIUM · The Coach Lite box keeps re-entering the Tab order — cook screen · [SS-116](#)
+### A11Y-04 · MEDIUM · The Coach Lite box keeps re-entering the Tab order — cook screen · [SS-116 (#254)](https://github.com/terryhh/SousSight/issues/254)
 
 - **Steps:** Open a recipe and Tab from the top.
 - **Result:** The sequence runs:
@@ -177,7 +196,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Composer tab order](accessibility-audit/04-composer-tab-order.png)
 
-### A11Y-05 · MEDIUM · No headings or landmarks on the home and cook screens · [SS-117](#)
+### A11Y-05 · MEDIUM · No headings or landmarks on the home and cook screens · [SS-117 (#255)](https://github.com/terryhh/SousSight/issues/255)
 
 - **Steps:** Turn semantics on and list `h1–h6`, `[role=heading]` and landmark roles in the DOM.
 - **Result:**
@@ -200,7 +219,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![No headings](accessibility-audit/03-no-headings.png)
 
-### A11Y-06 · MEDIUM · Semantics are off by default, so voice control and automated checks see an empty page — all screens · [SS-118](#)
+### A11Y-06 · MEDIUM · Semantics are off by default, so voice control and automated checks see an empty page — all screens · [SS-118 (#256)](https://github.com/terryhh/SousSight/issues/256)
 
 - **Steps:** Load the site and look at the DOM before any assistive technology acts.
 - **Result:**
@@ -220,7 +239,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Lighthouse 100 with 44 n/a](accessibility-audit/06-lighthouse-hollow-100.png)
 
-### A11Y-07 · MEDIUM · At 200% text the title breaks mid-word and the Coach Lite box cuts off text — home, cook · [SS-119](#)
+### A11Y-07 · MEDIUM · At 200% text the title breaks mid-word and the Coach Lite box cuts off text — home, cook · [SS-119 (#257)](https://github.com/terryhh/SousSight/issues/257)
 
 - **Steps:** Set Chrome's font size to 32 px (*Settings → Appearance → Font size*, or `html { font-size: 32px }`
   before load; Flutter reads it as 2.0× text scale), then reload at 360 px.
@@ -243,7 +262,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Text at 200%](accessibility-audit/07-text-200.png)
 
-### A11Y-08 · MEDIUM · The pantry text field has no lasting label — home · [SS-120](#)
+### A11Y-08 · MEDIUM · The pantry text field has no lasting label — home · [SS-120 (#258)](https://github.com/terryhh/SousSight/issues/258)
 
 - **Steps:** On home, focus the text field and type "rice, canned tuna".
 - **Result:**
@@ -259,7 +278,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Field label](accessibility-audit/09-field-label.png)
 
-### A11Y-09 · MEDIUM · The yellow "GARDEN · PANTRY · PLATE" text fails contrast on the green hero — home · [SS-121](#)
+### A11Y-09 · MEDIUM · The yellow "GARDEN · PANTRY · PLATE" text fails contrast on the green hero — home · [SS-121 (#259)](https://github.com/terryhh/SousSight/issues/259)
 
 - **Steps:** Look at the hero card on home at desktop width.
 - **Result:**
@@ -276,7 +295,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Eyebrow contrast](accessibility-audit/08-eyebrow-contrast.png)
 
-### A11Y-10 · LOW · The "How does your food look?" choices are read as checkboxes — cook screen · [SS-122](#)
+### A11Y-10 · LOW · The "How does your food look?" choices are read as checkboxes — cook screen · [SS-122 (#260)](https://github.com/terryhh/SousSight/issues/260)
 
 - **Steps:** Turn semantics on and inspect *Ready / Not yet / Not sure*.
 - **Result:** Each is exposed as `role=checkbox` with `aria-checked`. "Not sure" starts checked. The choice is
@@ -289,7 +308,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Chips](accessibility-audit/10-chips-as-checkboxes.png)
 
-### A11Y-11 · LOW · The step progress bar announces a bare number — cook screen · [SS-123](#)
+### A11Y-11 · LOW · The step progress bar announces a bare number — cook screen · [SS-123 (#261)](https://github.com/terryhh/SousSight/issues/261)
 
 - **Steps:** On step 3 of 5, inspect the progress bar under "Your cooking space".
 - **Result:** `role=progressbar aria-valuenow=40 aria-label="40"`. A screen reader says "40, progress bar",
@@ -302,7 +321,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ![Progress](accessibility-audit/11-progress-label.png)
 
-### A11Y-12 · LOW · The allergen chip is 44 px tall — cook screen header · [SS-124](#)
+### A11Y-12 · LOW · The allergen chip is 44 px tall — cook screen header · [SS-124 (#262)](https://github.com/terryhh/SousSight/issues/262)
 
 - **Steps:** Open a recipe that contains wheat and measure the *Contains: wheat* chip.
 - **Result:** 152×44 px. WCAG 2.5.8 (24 px) and 2.5.5 AAA (44 px) pass, but the chip misses the card's
