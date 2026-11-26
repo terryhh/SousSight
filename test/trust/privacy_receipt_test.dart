@@ -332,7 +332,7 @@ void main() {
     );
   });
 
-  test('a run whose result was rejected still ran, and says so', () {
+  test('a run that ended in an error still ran, and says so', () {
     // The dispatcher's widened-mode case: a real cloud result rejected by
     // policy. It ran in the cloud (data left); its result was not used.
     final r = PrivacyReceipt.fromLegs([
@@ -350,50 +350,65 @@ void main() {
     expect(r.onDeviceRuns, 1);
     expect(r.practiceRuns, 1);
     expect(r.runs, 3);
-    expect(r.notUsed, 3);
+    expect(r.endedInError, 3);
     expect(r.unfinished, 0);
     expect(r.photoRequestsSent, 1);
     expect(r.sent.single.count, 1);
     expect(
       r.sent.single.why,
       'Ran on Gemini in the cloud · asked for this device only · '
-      'result not used',
+      'ended in an error',
     );
     expect(r.practiceOnly, isFalse);
   });
 
-  test('a photo the bridge rejected before sending is not a possible send', () {
+  test('an error code alone never proves nothing was sent', () {
+    // The web SDK can reach the cloud before failing locally and report
+    // unsupportedInput, so an allowed request with any error stays uncertain.
     for (final code in [
       HybridErrorCode.unsupportedInput,
       HybridErrorCode.unsupportedMode,
+      HybridErrorCode.network,
     ]) {
-      final rejected = leg(
-        Provenance.unknown,
-        feature: 'label_check',
-        kinds: _photo,
-        transferPermitted: true,
-        error: code,
-      );
-      expect(rejectedBeforeSend(rejected), isTrue);
       final r = PrivacyReceipt.fromLegs([
-        rejected,
-        // The adapter then sent it once.
+        leg(
+          Provenance.unknown,
+          feature: 'label_check',
+          kinds: _photo,
+          transferPermitted: true,
+          error: code,
+        ),
         leg(Provenance.cloudAdapter, feature: 'label_check', kinds: _photo),
       ]);
       expect(r.photoRequestsSent, 1);
-      expect(r.photoRequestsMaybeSent, 0);
-      expect(r.maybeSent, isEmpty);
-      expect(r.unfinished, 1);
+      expect(r.photoRequestsMaybeSent, 1);
+      expect(r.maybeSent.single.pending, isFalse);
     }
-    // A network failure after it was allowed to leave stays uncertain.
-    final network = leg(
-      Provenance.unknown,
-      kinds: _photo,
-      transferPermitted: true,
-      error: HybridErrorCode.network,
-    );
-    expect(rejectedBeforeSend(network), isFalse);
-    expect(PrivacyReceipt.fromLegs([network]).photoRequestsMaybeSent, 1);
+    // Only a leg that was not allowed to leave proves no transfer.
+    final local = PrivacyReceipt.fromLegs([
+      leg(
+        Provenance.unknown,
+        kinds: _photo,
+        transferPermitted: false,
+        error: HybridErrorCode.unsupportedInput,
+      ),
+    ]);
+    expect(local.photoRequestsMaybeSent, 0);
+    expect(local.maybeSent, isEmpty);
+    expect(local.unfinished, 1);
+  });
+
+  test('a semantic rejection leaves no error, so it is not claimed', () {
+    // The dispatcher rejected both the local result and its cloud retry
+    // (text == null) but the legs carry no error: the receipt counts two
+    // runs and makes no "ended in an error" claim it cannot establish.
+    final r = PrivacyReceipt.fromLegs([
+      leg(Provenance.sdkOnDevice, feature: 'pantry_scan'),
+      leg(Provenance.sdkCloud, feature: 'pantry_scan'),
+    ]);
+    expect(r.runs, 2);
+    expect(r.endedInError, 0);
+    expect(r.sent.single.why, isNot(contains('error')));
   });
 
   test('photo numbers count requests, whatever their attachments', () {

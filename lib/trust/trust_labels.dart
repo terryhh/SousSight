@@ -53,9 +53,23 @@ String outcomeLabel(LegOutcome outcome, {String? localModel}) =>
       LegOutcome.simulated => 'Simulated',
     };
 
+/// A leg the ledger wrote before its send and has not completed yet:
+/// `unknown` provenance and no error (`InferenceLedger.begin`).
+bool legPending(InferenceLeg leg) =>
+    leg.provenance == Provenance.unknown && leg.error == null;
+
 /// Short label for one leg.
 String legLabel(InferenceLeg leg, {String? localModel}) =>
     outcomeLabel(legOutcome(leg), localModel: leg.modelLabel ?? localModel);
+
+/// The details-sheet explanation for one leg. A pending leg is described as
+/// running, never as stopped.
+String legExplanation(InferenceLeg leg) => legPending(leg)
+    ? (leg.transferPermitted
+          ? 'This is still running. It is allowed to leave this device, so it '
+                'may be sent; this updates when it finishes.'
+          : 'This is still running. It is not allowed to leave this device.')
+    : outcomeExplanation(legOutcome(leg));
 
 /// Longer explanation used in the details sheet.
 String outcomeExplanation(LegOutcome outcome) => switch (outcome) {

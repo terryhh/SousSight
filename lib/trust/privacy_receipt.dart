@@ -10,15 +10,18 @@
 // - "sent" needs `sdkCloud` or `cloudAdapter`. An `unknown` leg that was
 //   allowed to leave is "may have been sent": still running if it has no
 //   error yet, unclear if it stopped.
-// - A leg with an observed source is a "run", not an "answer": the feature
-//   may still have rejected its output ("result not used").
+// - A leg with an observed source is a "run", not an "answer". The ledger
+//   records an error after a run (e.g. a policy rejection), shown as "ended
+//   in an error"; it does not record a feature's semantic rejection of a
+//   result (that leg has no error), so the receipt never claims every run
+//   was used.
 // - Legs record data kinds, not attachment counts, so photo numbers count
 //   requests that carried photos.
-// - A request the bridge rejected before any send (`unsupportedInput`,
-//   `unsupportedMode`) is never a possible send.
+// - Only `transferPermitted == false` proves nothing left. An error code
+//   alone (even `unsupportedInput`) does not: the SDK may have reached the
+//   cloud first, so such a leg stays "may have been sent".
 
-import 'package:ai_logic_hybrid/ai_logic_hybrid.dart'
-    show HybridErrorCode, HybridMode;
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridMode;
 
 import '../ai/hybrid/hybrid_types.dart';
 import 'trust_labels.dart';
@@ -69,7 +72,7 @@ class PrivacyReceipt {
     required this.practiceCameraChecks,
     required this.photoRequestsSent,
     required this.photoRequestsMaybeSent,
-    required this.notUsed,
+    required this.endedInError,
     required this.unfinished,
     required this.inProgress,
     required this.sent,
@@ -87,7 +90,7 @@ class PrivacyReceipt {
     var cameraPractice = 0;
     var photoRequests = 0;
     var photoRequestsMaybe = 0;
-    var notUsed = 0;
+    var endedInError = 0;
     var unfinished = 0;
     var inProgress = 0;
     final sent = <String, ReceiptSend>{};
@@ -130,11 +133,11 @@ class PrivacyReceipt {
         } else {
           if (image) photoRequests++;
           cloud++;
-          if (!ok) notUsed++;
+          if (!ok) endedInError++;
         }
         continue;
       }
-      if (outcome == LegOutcome.maybeSent && !rejectedBeforeSend(leg)) {
+      if (outcome == LegOutcome.maybeSent) {
         // No error yet means the request has not finished: still running.
         group(maybe, leg, outcome, pending: ok);
         if (!isLive) {
@@ -149,7 +152,7 @@ class PrivacyReceipt {
       }
       if (isLive) continue;
       if (leg.provenance == Provenance.unknown) {
-        // Not allowed to leave, or rejected before any send.
+        // Not allowed to leave (`transferPermitted == false`).
         if (ok) {
           inProgress++;
         } else {
@@ -165,7 +168,7 @@ class PrivacyReceipt {
         practice++;
         if (image) cameraPractice++;
       }
-      if (!ok) notUsed++;
+      if (!ok) endedInError++;
     }
 
     return PrivacyReceipt._(
@@ -179,7 +182,7 @@ class PrivacyReceipt {
       practiceCameraChecks: cameraPractice,
       photoRequestsSent: photoRequests,
       photoRequestsMaybeSent: photoRequestsMaybe,
-      notUsed: notUsed,
+      endedInError: endedInError,
       unfinished: unfinished,
       inProgress: inProgress,
       sent: sent.values.toList(),
@@ -193,8 +196,8 @@ class PrivacyReceipt {
   /// There is at least one leg and every leg is `Provenance.simulated`.
   final bool allSimulated;
 
-  /// The SDK reported an on-device run. The feature may still have rejected
-  /// the output ([notUsed]).
+  /// The SDK reported an on-device run. Its result may still have been
+  /// rejected; see [endedInError].
   final int onDeviceRuns;
 
   /// The SDK or SousSight's own client reported a cloud run, so the request
@@ -225,9 +228,10 @@ class PrivacyReceipt {
   /// A request rejected before any send is not counted.
   final int photoRequestsMaybeSent;
 
-  /// Runs that happened (an observed source) whose result the app did not
-  /// use: it failed validation or policy.
-  final int notUsed;
+  /// Runs that happened (an observed source) and then ended in an error the
+  /// ledger recorded (for example a policy rejection). A feature's semantic
+  /// rejection leaves no error on the leg, so it is not counted here.
+  final int endedInError;
 
   /// Non-Live legs that stopped without an observed run and were not
   /// possibly sent.
@@ -307,17 +311,9 @@ String _why(InferenceLeg leg, LegOutcome outcome, {required bool pending}) {
     HybridMode.onlyInCloud => ' · asked for the cloud',
     null => '',
   };
-  final used = leg.error == null ? '' : ' · result not used';
-  return '$observed$purpose$asked$used';
+  final ended = leg.error == null ? '' : ' · ended in an error';
+  return '$observed$purpose$asked$ended';
 }
-
-/// The bridge refused the request before calling any SDK (an attachment or
-/// mode it cannot take), so nothing was sent, even though it was allowed to
-/// leave.
-bool rejectedBeforeSend(InferenceLeg leg) =>
-    leg.provenance == Provenance.unknown &&
-    (leg.error == HybridErrorCode.unsupportedInput ||
-        leg.error == HybridErrorCode.unsupportedMode);
 
 String _liveMedia(Set<DataKind> kinds) {
   final words = [

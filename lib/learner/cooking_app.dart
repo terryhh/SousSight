@@ -405,7 +405,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   PrivacyReceiptBinding? _receipt;
   PrivacyReceiptBinding? _receiptBinding() => switch (widget.hybrid) {
     final hybrid? => _receipt ??= PrivacyReceiptBinding(
-      session: () => hybrid.ledger.sessionId,
+      generation: () => hybrid.ledger.generation,
       clock: cook.services.clock,
     ),
     null => null,

@@ -8,6 +8,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
+import 'package:soussight/ai/hybrid/inference_ledger.dart';
 import 'package:soussight/trust/ledger_source.dart';
 import 'package:soussight/trust/privacy_receipt.dart';
 import 'package:soussight/trust/privacy_receipt_card.dart';
@@ -37,6 +38,18 @@ class _Ledger extends ChangeNotifier implements LedgerSource {
     _legs = legs;
     notifyListeners();
   }
+}
+
+/// The trust UI's view of a real [InferenceLedger].
+class _InferenceSource implements LedgerSource {
+  _InferenceSource(this.ledger);
+  final InferenceLedger ledger;
+  @override
+  List<InferenceLeg> get legs => ledger.legs;
+  @override
+  void addListener(VoidCallback listener) => ledger.addListener(listener);
+  @override
+  void removeListener(VoidCallback listener) => ledger.removeListener(listener);
 }
 
 InferenceLeg _leg(
@@ -85,6 +98,7 @@ Future<void> _pump(
   _Saver? saver,
   int? timersRun,
   bool reduceMotion = false,
+  bool settle = true,
   Size size = const Size(360, 1600),
 }) async {
   tester.view.physicalSize = size;
@@ -102,9 +116,9 @@ Future<void> _pump(
               binding:
                   binding ??
                   PrivacyReceiptBinding(
-                    session: ledger is _Ledger
+                    generation: ledger is _Ledger
                         ? () => ledger.session
-                        : () => 's1',
+                        : () => 1,
                     clock: () => DateTime(2026, 11, 26, 19, 42),
                   ),
               recipeTitle: 'Peanut Butter Sandwich',
@@ -116,7 +130,11 @@ Future<void> _pump(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
 }
 
 /// Taps "Save image" and lets the real PNG encode finish.
@@ -268,6 +286,11 @@ void main() {
       find.textContaining("it can't vouch for anything it didn't record"),
       findsOneWidget,
     );
+    // The timers line is not an inference number, and the footer says so.
+    expect(
+      find.textContaining('Timers come from this cooking screen'),
+      findsOneWidget,
+    );
     expect(find.byKey(const ValueKey('receipt-sent-list')), findsNothing);
     expect(find.byKey(const ValueKey('receipt-maybe-list')), findsNothing);
     expect(tester.takeException(), isNull);
@@ -416,7 +439,7 @@ void main() {
     tester,
   ) async {
     final ledger = _Ledger([_leg('first', Provenance.sdkOnDevice)]);
-    final binding = PrivacyReceiptBinding(session: () => ledger.session);
+    final binding = PrivacyReceiptBinding(generation: () => ledger.session);
     await _pump(tester, ledger, binding: binding);
     expect(_receipt, findsOneWidget);
     ledger.startSession();
@@ -431,21 +454,37 @@ void main() {
     expect(binding.isCurrent, isFalse);
   });
 
+  testWidgets('A to B to A between frames still retires the receipt', (
+    tester,
+  ) async {
+    final ledger = InferenceLedger(sessionId: 'A');
+    final source = _InferenceSource(ledger);
+    final binding = PrivacyReceiptBinding(generation: () => ledger.generation);
+    await _pump(tester, source, binding: binding);
+    expect(_receipt, findsOneWidget);
+    // No frame in between: same session ID again, then a new meal's photo.
+    ledger
+      ..startSession('B')
+      ..startSession('A');
+    ledger.record(_leg('next', Provenance.sdkCloud, kinds: _photo));
+    await tester.pump();
+    expect(_receipt, findsNothing);
+    expect(binding.isCurrent, isFalse);
+  });
+
   testWidgets('a binding remembers when it printed', (tester) async {
     final binding = PrivacyReceiptBinding(
-      session: () => 's',
+      generation: () => 7,
       clock: () => DateTime(2026, 11, 26, 19, 42),
     );
     await _pump(tester, ListLedgerSource(), binding: binding);
     await tester.pumpWidget(const SizedBox());
     await _pump(tester, ListLedgerSource(), binding: binding);
     expect(find.text('Thu 26 Nov · 7:42 pm'), findsOneWidget);
-    expect(binding.session, 's');
+    expect(binding.generation, 7);
   });
 
-  testWidgets('a run whose result was not used is shown as such', (
-    tester,
-  ) async {
+  testWidgets('a run that ended in an error is shown as such', (tester) async {
     await _pump(
       tester,
       ListLedgerSource([
@@ -459,11 +498,11 @@ void main() {
       ]),
     );
     expect(_count(tester, 'receipt-cloud'), '1');
-    expect(_count(tester, 'receipt-not-used'), '1');
+    expect(_count(tester, 'receipt-ended-in-error'), '1');
     expect(
       find.text(
         'Ran on Gemini in the cloud · asked to prefer this device · '
-        'result not used',
+        'ended in an error',
       ),
       findsOneWidget,
     );
@@ -484,7 +523,7 @@ void main() {
           body: SingleChildScrollView(
             child: PrivacyReceiptCard(
               ledger: ledger,
-              binding: PrivacyReceiptBinding(session: () => 's'),
+              binding: PrivacyReceiptBinding(generation: () => 1),
             ),
           ),
         ),
@@ -662,6 +701,27 @@ void main() {
         expect(find.byType(SnackBar), findsNothing);
         await tester.pumpWidget(const SizedBox());
       }
+    });
+
+    testWidgets('an in-flight save is bound to the meal it started for', (
+      tester,
+    ) async {
+      final saver = _Saver()..gate = Completer();
+      final ledger = _Ledger([_leg('first', Provenance.sdkOnDevice)]);
+      final mealA = PrivacyReceiptBinding(generation: () => ledger.session);
+      await _pump(tester, ledger, saver: saver, binding: mealA);
+      await _tapSave(tester);
+      expect(saver.isCurrent!(), isTrue);
+      // Meal A retires and the same card slot now shows meal B's binding.
+      ledger.startSession();
+      final mealB = PrivacyReceiptBinding(generation: () => ledger.session);
+      await _pump(tester, ledger, saver: saver, binding: mealB, settle: false);
+      expect(_receipt, findsOneWidget);
+      // A's save must not fall back to downloading A's image.
+      expect(saver.isCurrent!(), isFalse);
+      saver.gate!.complete(ReceiptSaveResult.downloaded);
+      await _settleSave(tester);
+      expect(find.byType(SnackBar), findsNothing);
     });
 
     testWidgets('a retired receipt cannot be saved by a stale handler', (

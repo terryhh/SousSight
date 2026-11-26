@@ -44,6 +44,11 @@ class InferenceLedger extends ChangeNotifier {
   final List<LedgerEntry> _entries = [];
 
   String get sessionId => _sessionId;
+
+  /// Advances on every [startSession], even one that reuses a session ID, so
+  /// a reader bound to one session can tell that the ledger moved on.
+  int get generation => _generation;
+  int _generation = 0;
   List<LedgerEntry> get entries => List.unmodifiable(_entries);
   List<InferenceLeg> get legs => [for (final e in _entries) e.leg];
 
@@ -54,6 +59,7 @@ class InferenceLedger extends ChangeNotifier {
 
   /// A new cooking session starts an empty ledger.
   void startSession(String sessionId) {
+    _generation++;
     _sessionId = sessionId;
     _entries.clear();
     notifyListeners();

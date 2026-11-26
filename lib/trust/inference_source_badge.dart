@@ -295,7 +295,7 @@ class _LegDetail extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(outcomeExplanation(outcome)),
+                    Text(legExplanation(leg)),
                     Text('Used: $kinds. $permission'),
                     if (leg.error case final error?)
                       Text("This attempt didn't finish: ${errorLabel(error)}."),

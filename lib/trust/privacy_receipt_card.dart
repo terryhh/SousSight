@@ -34,27 +34,28 @@ const kReceiptFileName = 'soussight-privacy-receipt.png';
 /// Owned by whoever owns the cooking session (the cooking screen's state),
 /// not by the card, so it survives the card being rebuilt or remounted, for
 /// example when a layout breakpoint moves the panel from a column to a row.
-/// It binds to the ledger's session identity (`InferenceLedger.sessionId`) at
-/// creation; once that changes, even from an empty ledger to another empty
-/// one, the binding retires for good and any save in flight is dropped.
+/// It binds to the ledger's generation (`InferenceLedger.generation`), which
+/// advances on every session reset, including one that reuses a session ID
+/// and a quick A to B to A. Once it moves, the binding retires for good and
+/// any save in flight is dropped.
 class PrivacyReceiptBinding {
   PrivacyReceiptBinding({
-    required Object? Function() session,
+    required int Function() generation,
     DateTime Function() clock = DateTime.now,
-  }) : _read = session,
-       session = session(),
+  }) : _read = generation,
+       generation = generation(),
        printedAt = clock();
 
-  final Object? Function() _read;
+  final int Function() _read;
 
-  /// The ledger session this receipt was printed for.
-  final Object? session;
+  /// The ledger generation this receipt was printed for.
+  final int generation;
   final DateTime printedAt;
   bool _retired = false;
 
-  /// Whether the ledger is still on [session]. Latches false.
+  /// Whether the ledger is still on [generation]. Latches false.
   bool get isCurrent {
-    if (!_retired && _read() != session) _retired = true;
+    if (!_retired && _read() != generation) _retired = true;
     return !_retired;
   }
 }
@@ -69,7 +70,8 @@ class PrivacyReceiptCard extends StatefulWidget {
     this.saveImage = saveReceiptImage,
   });
 
-  /// This session's ledger. Every number comes from its legs.
+  /// This session's ledger. Every inference number comes from its legs; the
+  /// timers line is cooking-screen activity ([timersRun]).
   final LedgerSource ledger;
 
   /// The meal this receipt belongs to; see [PrivacyReceiptBinding].
@@ -93,12 +95,17 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
   bool _current() => widget.binding.isCurrent;
 
   Future<void> _save() async {
-    if (_saving || !_current()) return;
+    // The save belongs to the meal it started for: that exact binding must
+    // stay installed on this card, and current, through every step.
+    final binding = widget.binding;
+    bool stillThisMeal() =>
+        mounted && identical(widget.binding, binding) && binding.isCurrent;
+    if (_saving || !stillThisMeal()) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     setState(() => _saving = true);
     // Feedback only while the receipt is on screen and still tonight's.
     void say(String text) {
-      if (!mounted || !_current()) return;
+      if (!stillThisMeal()) return;
       messenger
         ?..hideCurrentSnackBar()
         ..showSnackBar(SnackBar(content: Text(text)));
@@ -117,11 +124,11 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
         image.dispose();
       }
       // The receipt must still be tonight's, and still on screen.
-      if (!mounted || bytes == null || !_current()) return;
+      if (bytes == null || !stillThisMeal()) return;
       final result = await widget.saveImage(
         bytes.buffer.asUint8List(),
         kReceiptFileName,
-        isCurrent: () => mounted && _current(),
+        isCurrent: stillThisMeal,
       );
       switch (result) {
         case ReceiptSaveResult.shared ||
@@ -296,13 +303,13 @@ class _ReceiptPaper extends StatelessWidget {
                   label: "Didn't finish",
                   value: r.unfinished,
                 ),
-              if (r.notUsed > 0)
+              if (r.endedInError > 0)
                 _Line(
-                  key: const ValueKey('receipt-not-used'),
+                  key: const ValueKey('receipt-ended-in-error'),
                   icon: Icons.do_not_disturb_on_outlined,
                   color: _muted,
-                  label: 'Ran, result not used',
-                  value: r.notUsed,
+                  label: 'Ran, then ended in an error',
+                  value: r.endedInError,
                 ),
               if (r.inProgress > 0)
                 _Line(
@@ -369,9 +376,10 @@ class _ReceiptPaper extends StatelessWidget {
               _Barcode(seed: r.summary),
               const SizedBox(height: 10),
               const Text(
-                'Counted only from the AI requests SousSight recorded '
+                'AI numbers come only from the requests SousSight recorded '
                 "tonight on this device; it can't vouch for anything it "
-                "didn't record. Made here; saving it uploads nothing.",
+                "didn't record. Timers come from this cooking screen. Made "
+                'here; saving it uploads nothing.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11.5, color: _muted),
               ),

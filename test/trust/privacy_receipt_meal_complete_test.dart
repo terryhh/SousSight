@@ -75,7 +75,7 @@ void main() {
         leg(Provenance.simulated, kinds: {DataKind.image}),
       ]),
       receiptBinding: PrivacyReceiptBinding(
-        session: () => 'session-1',
+        generation: () => 1,
         clock: () => DateTime(2026, 11, 26, 19, 42),
       ),
     );
