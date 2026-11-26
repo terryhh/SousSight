@@ -30,7 +30,7 @@ String composeDinnerMessage({
   if (kind == DinnerKind.started) {
     final name = cleanTemplateText(cookName ?? '', 30);
     // No estimate (null): the time is left out rather than guessed.
-    final time = minutes == null ? '' : ' — about $minutes minutes to go';
+    final time = minutes == null ? '' : ', about $minutes minutes to go';
     return "SousSight: Dinner's started$time. "
         '${name.isEmpty ? 'Your cook' : name} is making $title.';
   }

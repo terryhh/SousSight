@@ -35,9 +35,9 @@ const mirror = (db, id = 'notice-123') => db.docs.get(`sessions/meal-1/notificat
 test('server templates compose started and ready messages from validated slots only', () => {
   assert.equal(validateDinnerRequest(input(), settings.allowedRecipients).message, READY_TEXT);
   assert.equal(validateDinnerRequest(started(), settings.allowedRecipients).message,
-    "SousSight: Dinner's started — about 25 minutes to go. Your cook is making Chickpea wraps.");
+    "SousSight: Dinner's started, about 25 minutes to go. Your cook is making Chickpea wraps.");
   assert.equal(validateDinnerRequest(started({ cookName: 'Terry' }), settings.allowedRecipients).message,
-    "SousSight: Dinner's started — about 25 minutes to go. Terry is making Chickpea wraps.");
+    "SousSight: Dinner's started, about 25 minutes to go. Terry is making Chickpea wraps.");
   // Unknown time: left out, never guessed.
   for (const minutes of [undefined, null]) {
     const request = validateDinnerRequest(started({ minutes }), settings.allowedRecipients);
@@ -52,6 +52,22 @@ test('server templates compose started and ready messages from validated slots o
   const request = validateDinnerRequest(input({ recipeTitle: 'Mac & cheese!\nvisit evil.example' }),
     settings.allowedRecipients);
   assert.equal(request.recipeTitle, 'Mac & cheese! visit evil example');
+});
+
+test('every template is GSM-7 only, so one SMS stays one segment', () => {
+  // GSM 03.38 basic set: no em dash or curly quotes (they force UCS-2).
+  const gsm7 = new Set([...'@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?' +
+    '¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà']);
+  const messages = [composeDinnerMessage({ kind: 'ready', recipeTitle: 'Soup' })];
+  for (const minutes of [null, 1, 25, 120]) {
+    for (const cookName of [null, 'Terry']) {
+      messages.push(composeDinnerMessage({ kind: 'started', recipeTitle: 'Chickpea wraps', minutes, cookName }));
+    }
+  }
+  for (const message of messages) {
+    assert.deepEqual([...message].filter((c) => !gsm7.has(c)), [], message);
+    assert.ok(message.length <= 160, message);
+  }
 });
 
 test('rejects free-form messages, bad kinds, minutes and recipients', () => {

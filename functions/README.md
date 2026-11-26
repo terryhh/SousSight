@@ -114,7 +114,7 @@ free-form client or model text reaches the household:
 
 Templates (`kind`):
 
-- `started`: `SousSight: Dinner's started — about {minutes} minutes to go. {cookName or 'Your cook'} is making {recipeTitle}.`
+- `started`: `SousSight: Dinner's started, about {minutes} minutes to go. {cookName or 'Your cook'} is making {recipeTitle}.`
   (`minutes` optional, integer 1-120; when absent or null the time is left out:
   `SousSight: Dinner's started. {cookName or 'Your cook'} is making {recipeTitle}.`)
 - `ready`: `SousSight: Dinner is ready! {recipeTitle} is on the table.` (no `minutes`)

@@ -205,7 +205,7 @@ void main() {
       await pumpDialog(tester, kind: DinnerKind.started, initialMinutes: 25);
       expect(
         preview(tester),
-        "SousSight: Dinner's started — about 25 minutes to go. "
+        "SousSight: Dinner's started, about 25 minutes to go. "
         'Your cook is making Chickpea wrap.',
       );
       expect(fake.sent, isEmpty);

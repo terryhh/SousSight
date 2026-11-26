@@ -50,7 +50,7 @@ export function cleanTemplateText(value, maxLength) {
 export function composeDinnerMessage({ kind, recipeTitle, minutes, cookName }) {
   if (kind === 'started') {
     // No estimate (null): the time is left out rather than guessed.
-    const time = minutes == null ? '' : ` — about ${minutes} minutes to go`;
+    const time = minutes == null ? '' : `, about ${minutes} minutes to go`;
     return `SousSight: Dinner's started${time}. ${cookName || 'Your cook'} is making ${recipeTitle}.`;
   }
   return `SousSight: Dinner is ready! ${recipeTitle} is on the table.`;

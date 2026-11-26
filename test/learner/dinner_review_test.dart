@@ -9,6 +9,7 @@ import 'package:soussight/data/dinner_status.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
+import 'package:soussight/learner/dinner_review.dart';
 import 'package:soussight/live/live_types.dart';
 
 class _DraftTransport extends DemoLiveTransport {
@@ -76,8 +77,20 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget);
   }
 
+  /// Advances the cook to the recipe's final step (not completing it).
+  Future<void> toFinalStep(WidgetTester tester) async {
+    while (cook.stepIndex < cook.recipe.steps.length - 1) {
+      await tester.runAsync(cook.advanceStep);
+      await tester.pumpAndSettle();
+    }
+    expect(cook.step.id, cook.recipe.steps.last.id);
+    expect(cook.complete, isFalse);
+  }
+
   Future<void> openDraft(WidgetTester tester) async {
     await pumpScreen(tester);
+    // "Dinner is ready!" belongs to the final step (SS-100).
+    await toFinalStep(tester);
     await cook.connect();
     transport.source.add(
       const LiveToolCall(
@@ -402,6 +415,59 @@ void main() {
     );
   }
 
+  group('the dinner button follows the step (SS-100)', () {
+    String preview(WidgetTester tester) =>
+        tester.widget<Text>(find.byKey(const Key('dinner-preview'))).data!;
+
+    testWidgets('on an early step it says started, with the time to go', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      expect(cook.stepIndex, 0);
+      final expected = dinnerDraftFor(
+        steps: cook.recipe.steps,
+        currentStepId: cook.session?.currentStepId,
+        complete: false,
+        now: cook.services.clock(),
+        timers: cook.ui.timers,
+      );
+      expect(expected.kind, DinnerKind.started);
+      await open(tester, 'Review dinner message');
+      expect(find.text('Text household: started cooking'), findsWidgets);
+      final minutes = tester
+          .widget<TextField>(field('Minutes until dinner'))
+          .controller!
+          .text;
+      expect(minutes, expected.minutes?.toString() ?? '');
+      final time = expected.minutes == null
+          ? ''
+          : ', about ${expected.minutes} minutes to go';
+      expect(
+        preview(tester),
+        "SousSight: Dinner's started$time. "
+        'Your cook is making ${cook.recipe.title}.',
+      );
+      expect(find.text(readyText()), findsNothing);
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('on the final step it says Dinner is ready!', (tester) async {
+      await pumpScreen(tester);
+      await toFinalStep(tester);
+      await open(tester, 'Review dinner message');
+      expect(find.text('Dinner is ready'), findsOneWidget);
+      expect(preview(tester), readyText());
+      expect(field('Minutes until dinner'), findsNothing);
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
   testWidgets(
     'started-cooking text is opt-in, previewed and keeps its ID on reopen',
     (tester) async {
@@ -414,7 +480,7 @@ void main() {
       await tester.pump();
       expect(
         find.text(
-          "SousSight: Dinner's started — about 25 minutes to go. "
+          "SousSight: Dinner's started, about 25 minutes to go. "
           'Terry is making ${cook.recipe.title}.',
         ),
         findsOneWidget,
