@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
+
 enum PantryConfidence { low, medium, high }
 
 /// A candidate ingredient. Only the cook can confirm it is really there.
@@ -29,6 +31,8 @@ class PantryResult {
     required this.meals,
     this.question,
     this.simulated = false,
+    this.legs = const [],
+    this.notice,
   });
   final List<PantryItem> items;
   final List<PantryMeal> meals;
@@ -36,6 +40,28 @@ class PantryResult {
 
   /// True for the rehearsal client. The UI must label simulated results.
   final bool simulated;
+
+  /// Every inference attempt behind this result, in order (DESIGN.md §5). A
+  /// scan built from a local photo leg and a cloud voice leg carries both;
+  /// the screen shows each one, never one merged badge.
+  final List<InferenceLeg> legs;
+
+  /// Cook-facing note about an input that could not be used, for example a
+  /// voice clip whose list could not be read. Null when everything was used.
+  final String? notice;
+
+  PantryResult copyWith({
+    List<PantryItem>? items,
+    List<InferenceLeg>? legs,
+    String? notice,
+  }) => PantryResult(
+    items: items ?? this.items,
+    meals: meals,
+    question: question,
+    simulated: simulated,
+    legs: legs ?? this.legs,
+    notice: notice ?? this.notice,
+  );
 }
 
 /// What the cook shared. Media stays in memory for one request only.
@@ -66,22 +92,7 @@ PantryResult parsePantryResult(String? text, Set<String> allowedRecipeIds) {
   if (rawItems is! List || rawMeals is! List) {
     throw const FormatException('items and meals are required lists');
   }
-  final items = <PantryItem>[];
-  final seenItems = <String>{};
-  for (final raw in rawItems.take(30)) {
-    // Skip unusable entries instead of discarding the whole answer.
-    if (raw is! Map || raw['name'] is! String) continue;
-    final name = _text(raw['name'], 80);
-    if (name.isEmpty) continue;
-    final level = '${raw['confidence'] ?? ''}'.trim().toLowerCase();
-    final confidence = PantryConfidence.values.firstWhere(
-      (value) => value.name == level,
-      orElse: () => PantryConfidence.low,
-    );
-    if (seenItems.add(name.toLowerCase())) {
-      items.add(PantryItem(name: name, confidence: confidence));
-    }
-  }
+  final items = _items(rawItems);
   final meals = <PantryMeal>[];
   final seenMeals = <String>{};
   for (final raw in rawMeals.take(10)) {
@@ -105,10 +116,46 @@ PantryResult parsePantryResult(String? text, Set<String> allowedRecipeIds) {
   }
   final trimmed = (question as String?)?.trim();
   return PantryResult(
-    items: List.unmodifiable(items),
+    items: items,
     meals: List.unmodifiable(meals),
     question: trimmed == null || trimmed.isEmpty ? null : _text(trimmed, 300),
   );
+}
+
+/// Parses the items-only answer to a voice clip (`{"items": [...]}`). It is
+/// validated on its own, before any ranking, so a bad voice answer can be
+/// dropped without losing the photo or typed list.
+List<PantryItem> parsePantryItems(String? text) {
+  if (text == null || text.isEmpty || text.length > 8000) {
+    throw const FormatException('Missing or oversized voice item list');
+  }
+  final data = jsonDecode(text);
+  if (data is! Map<String, dynamic>) {
+    throw const FormatException('Expected a JSON object');
+  }
+  final rawItems = data['items'];
+  if (rawItems is! List) throw const FormatException('items is required');
+  return _items(rawItems);
+}
+
+List<PantryItem> _items(List<Object?> rawItems) {
+  final items = <PantryItem>[];
+  final seenItems = <String>{};
+  for (final raw in rawItems.take(30)) {
+    // Skip unusable entries instead of discarding the whole answer.
+    if (raw is! Map || raw['name'] is! String) continue;
+    final name = _text(raw['name'], 80);
+    if (name.isEmpty) continue;
+    final level = '${raw['confidence'] ?? ''}'.trim().toLowerCase();
+    final confidence = PantryConfidence.values.firstWhere(
+      (value) => value.name == level,
+      orElse: () => PantryConfidence.low,
+    );
+    if (seenItems.add(name.toLowerCase())) {
+      items.add(PantryItem(name: name, confidence: confidence));
+    }
+  }
+  return List.unmodifiable(items);
 }
 
 /// Display text from the model. Structure is strict (must be a string), but
