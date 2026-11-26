@@ -19,7 +19,6 @@ class MethodChannelHybridInference implements HybridInference {
     MethodChannel? methodChannel,
     String prepareChannelName = prepareChannel,
     BinaryMessenger? binaryMessenger,
-    this.timeoutGrace = const Duration(seconds: 2),
   }) : _method = methodChannel ?? const MethodChannel(methodChannelName),
        _prepareName = prepareChannelName,
        _messenger = binaryMessenger;
@@ -29,10 +28,6 @@ class MethodChannelHybridInference implements HybridInference {
 
   /// Reason reported when no native plugin answered.
   static const bridgeUnavailable = 'bridge_unavailable';
-
-  /// How long past `task.timeout` the Dart side waits before giving up on a
-  /// native call that did not honour its own timeout.
-  final Duration timeoutGrace;
 
   final MethodChannel _method;
   final String _prepareName;
@@ -158,7 +153,9 @@ class MethodChannelHybridInference implements HybridInference {
     final Map<Object?, Object?>? map;
     try {
       map = await call.timeout(
-        request.task.timeout + timeoutGrace,
+        // Exactly the caller's deadline (§4). Native cancel is best effort
+        // and asynchronous; a late native result is discarded.
+        request.task.timeout,
         onTimeout: () {
           unawaited(cancel(request.requestId));
           throw const HybridException(

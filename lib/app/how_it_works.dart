@@ -250,9 +250,12 @@ List<RoutingRow> hybridRoutingRows({
       case HybridMode.onlyOnDevice when !route.cloudWhenLocalCannot:
         return 'On this device only.$retry';
       case HybridMode.onlyOnDevice:
-        return cloudOk
-            ? 'On this device. If this device cannot run it, $_cloud.$ask'
-            : 'On this device only.';
+        if (!cloudOk) return 'On this device only.';
+        return route.cloudOnlyWithImage
+            ? 'On this device. A photo this device cannot read goes to '
+                  '$_cloud only after you allow that exact photo; typed text '
+                  'never does.'
+            : 'On this device. If this device cannot run it, $_cloud.$ask';
       case HybridMode.preferOnDevice:
         return cloudOk
             ? 'On this device when the on-device model is ready; otherwise '

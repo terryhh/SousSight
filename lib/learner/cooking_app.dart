@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../ai/hybrid/hybrid_types.dart';
+import '../app/cloud_send_recorder.dart';
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
 import '../app/services_scope.dart';
@@ -17,9 +18,10 @@ import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../genui/cooking_ui.dart';
-import '../live/browser_live_media.dart';
+import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
 import '../live/live_controller.dart';
+import '../live/live_types.dart';
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
 import '../trust/inference_source_badge.dart';
@@ -152,6 +154,38 @@ class CookingScreen extends StatefulWidget {
   State<CookingScreen> createState() => _CookingScreenState();
 }
 
+/// The Live transport for this build, wrapped so each connect attempt and each
+/// resume is exactly one leg in the session ledger. The AI Logic transport
+/// (SS-074) opens its legs through its guard (`recordCloudLeg`), right before
+/// each socket opens; [LedgeredLiveTransport] settles them. Rehearsal (no
+/// runtime) is left as is. [build] replaces [liveTransportFactory] in tests.
+@visibleForTesting
+LiveTransportFactory? ledgeredLiveFactory({
+  required bool isDemo,
+  HybridRuntime? hybrid,
+  bool selfRecording = kLiveAiLogic,
+  LiveTransportFactory? Function(LiveLegRecorder? recordCloudLeg)? build,
+}) {
+  LiveTransportFactory? make(LiveLegRecorder? record) => build != null
+      ? build(record)
+      : liveTransportFactory(
+          isDemo: isDemo,
+          cloudRoutes: hybrid?.cloudRoutes,
+          privacy: hybrid?.privacy,
+          recordCloudLeg: record,
+        );
+  if (isDemo || hybrid == null) return make(null);
+  if (make(null) == null) return null; // no Live coach in this build
+  return () {
+    final legs = LiveLegTracker(hybrid.cloudSends);
+    return LedgeredLiveTransport(
+      make(legs.admitted)!(),
+      legs,
+      selfRecording: selfRecording,
+    );
+  };
+}
+
 /// The one "Watch my food" service for a cooking session: an on-device watch
 /// over a camera-only capture of [live]'s media, or the Live watch when Live
 /// is connected (SS-067).
@@ -199,12 +233,12 @@ class _CookingScreenState extends State<CookingScreen> {
       recipe: widget.recipe,
       research: widget.isDemo
           ? FakeCookingResearchClient()
-          : GeminiCookingResearchClient(),
-      transportFactory: liveTransportFactory(
+          : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
+      transportFactory: ledgeredLiveFactory(
         isDemo: widget.isDemo,
-        cloudRoutes: hybrid?.cloudRoutes,
+        hybrid: hybrid,
       ),
-      media: widget.isDemo ? DemoLiveMedia() : createBrowserLiveMedia(),
+      media: widget.isDemo ? DemoLiveMedia() : createLiveMedia(),
       coachLite: hybrid == null
           ? null
           : CoachLite(
@@ -221,7 +255,6 @@ class _CookingScreenState extends State<CookingScreen> {
       researchAllowed: hybrid == null
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
-      recordCloudLeg: hybrid?.recordCloudLeg,
     );
   }
 
@@ -696,8 +729,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         borderRadius: BorderRadius.circular(26),
         child: Stack(
           children: [
-            if (cook.live.latestFrame ??
-                    cook.watchService?.local.previewFrame
+            if (cook.live.latestFrame ?? cook.watchService?.local.previewFrame
                 case final frame?)
               AspectRatio(
                 aspectRatio: 4 / 3,

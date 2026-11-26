@@ -9,7 +9,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 Object? toFirestore(Object? value) {
   if (value is Uint8List) return Blob(value);
   if (value is Map) {
-    return {for (final e in value.entries) e.key as String: toFirestore(e.value)};
+    return {
+      for (final e in value.entries) e.key as String: toFirestore(e.value),
+    };
   }
   if (value is List) return [for (final v in value) toFirestore(v)];
   return value;

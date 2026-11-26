@@ -155,23 +155,25 @@ class FakeHybridDispatcher implements HybridDispatcher {
   int _seq = 0;
 
   void enqueue(String text, {Provenance provenance = Provenance.sdkOnDevice}) =>
-      script.add((task) => DispatchResult(
-        text: text,
-        legs: [
-          InferenceLeg(
-            requestId: 'fake-$_seq',
-            feature: task.feature,
-            mode: HybridMode.preferOnDevice,
-            kinds: {
-              DataKind.text,
-              if (task.hasImage) DataKind.image,
-              if (task.hasAudio) DataKind.audio,
-            },
-            transferPermitted: provenance != Provenance.sdkOnDevice,
-            provenance: provenance,
-          ),
-        ],
-      ));
+      script.add(
+        (task) => DispatchResult(
+          text: text,
+          legs: [
+            InferenceLeg(
+              requestId: 'fake-$_seq',
+              feature: task.feature,
+              mode: HybridMode.preferOnDevice,
+              kinds: {
+                DataKind.text,
+                if (task.hasImage) DataKind.image,
+                if (task.hasAudio) DataKind.audio,
+              },
+              transferPermitted: provenance != Provenance.sdkOnDevice,
+              provenance: provenance,
+            ),
+          ],
+        ),
+      );
 
   void enqueueBlocked(RouteReason reason) =>
       script.add((_) => DispatchResult(legs: const [], blocked: reason));

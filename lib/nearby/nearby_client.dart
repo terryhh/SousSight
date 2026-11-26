@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show debugPrint;
+
 import 'dart:async';
 
 import 'package:firebase_ai/firebase_ai.dart';
@@ -272,7 +273,10 @@ class GeminiNearbyClient implements NearbyClient {
       // Console-only diagnostics; keys/tokens redacted, never shown to cooks.
       final detail = '$error'
           .replaceAll(RegExp(r'AIza[0-9A-Za-z_-]{20,}'), '[key]')
-          .replaceAll(RegExp(r'ey[A-Za-z0-9_-]{20,}\.[A-Za-z0-9._-]+'), '[token]');
+          .replaceAll(
+            RegExp(r'ey[A-Za-z0-9_-]{20,}\.[A-Za-z0-9._-]+'),
+            '[token]',
+          );
       debugPrint(
         'Nearby request failed (${error.runtimeType}, '
         'location=${cleaned.coordinates != null}): '
