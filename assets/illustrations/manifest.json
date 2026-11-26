@@ -162,12 +162,13 @@
       "key": "step_prep",
       "file": "peanut_butter_sandwich_v1/step_prep.jpg",
       "subject": "stepLook",
-      "prompt": "Show what the food should look like at this point: Both slices lie flat with room to spread. Ingredients in this step: Bread; Peanut butter; Jam. Show nothing from later steps. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
+      "promptOverride": "The builder prompt drew the slices already spread; the cue is bare bread with room to spread (flagged in the PR #243 review, Nov 26).",
+      "prompt": "Show what the food should look like at this point: two plain slices of bread lying flat side by side on a wooden cutting board, bare, with nothing spread on them yet and room to spread. A closed jar of peanut butter and a closed jar of jam stand nearby with their lids on. Ingredients in this step: Bread; Peanut butter; Jam. Show nothing from later steps: no peanut butter or jam on the bread. Style: a clean, friendly instructional food illustration for a home cooking app, clearly drawn and not photorealistic. Soft natural light, plain kitchen counter, overhead or three-quarter view. No people, no hands, no text, no labels, no logos, no brand names, no packaging.",
       "model": "gemini-nano-banana-2.1",
-      "generatedAt": "2026-11-26T10:20:02.545Z",
+      "generatedAt": "2026-11-26T10:25:20.546Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "c3c1862e53aa5cae62dc2945e321262b910d1bfd0942f670539a82efd0ee3c6f"
+      "sha256": "7725e00a801ac94c8ab1bb9c6dac4febb1c52f69190eed05c52795430c5b07cf"
     },
     {
       "recipe": "peanut_butter_sandwich_v1",

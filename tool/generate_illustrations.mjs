@@ -176,6 +176,7 @@ function writePremade(list) {
       key: img.key,
       file: `${img.recipe}/${img.key}.jpg`,
       subject: img.subject,
+      ...(img.promptOverride ? { promptOverride: img.promptOverride } : {}),
       prompt: img.prompt,
       model: img.model,
       generatedAt: img.generatedAt,

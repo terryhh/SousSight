@@ -305,7 +305,8 @@ bool _touchesProtein(Recipe recipe, int index) {
       recipe.ingredients.any((i) => isAnimalProtein(i) && _named(i, step));
 }
 
-const _style =
+/// The drawing style every prompt ends with.
+const kIllustrationStyle =
     'Style: a clean, friendly instructional food illustration for a home '
     'cooking app, clearly drawn and not photorealistic. Soft natural light, '
     'plain kitchen counter, overhead or three-quarter view. No people, no '
@@ -339,7 +340,7 @@ IllustrationPrompt? illustrationPrompt(
         text:
             'Show the finished dish, "${recipe.title}", served on a plate or '
             'in a bowl and ready to eat. Ingredients: '
-            '${_ingredients(recipe.ingredients)}. $_style',
+            '${_ingredients(recipe.ingredients)}. $kIllustrationStyle',
       );
     case StepTarget(:final stepId):
       final index = recipe.steps.indexWhere((s) => s.id == stepId);
@@ -381,7 +382,7 @@ IllustrationPrompt? illustrationPrompt(
                 'Show these ingredients laid out separately on a cutting '
                 'board before any cooking, each in its own small pile or '
                 'bowl: ${_ingredients(used.now)}. Show no cooked food and no '
-                'finished dish. $_style',
+                'finished dish. $kIllustrationStyle',
           );
         }
       }
@@ -399,7 +400,7 @@ IllustrationPrompt? illustrationPrompt(
             '${earlier.isEmpty ? '' : ' Prepared in earlier steps, and '
                       'shown only where the description above includes '
                       'them: $earlier.'}'
-            ' Show nothing from later steps. $_style',
+            ' Show nothing from later steps. $kIllustrationStyle',
       );
   }
 }

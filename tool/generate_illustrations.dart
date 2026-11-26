@@ -42,6 +42,25 @@ const _max = int.fromEnvironment('ILLUSTRATION_MAX');
 const _only = String.fromEnvironment('ILLUSTRATION_TARGETS');
 const _gate = bool.fromEnvironment('ILLUSTRATION_GATE');
 
+/// Hand-tightened prompts for pre-made images whose builder prompt drew the
+/// wrong moment, each with the reason. Still only the step's visible cue and
+/// ingredients, in more literal words; recorded in the manifest.
+const promptOverrides = <String, ({String reason, String text})>{
+  'peanut_butter_sandwich_v1/step_prep': (
+    reason:
+        'The builder prompt drew the slices already spread; the cue is bare '
+        'bread with room to spread (flagged in the PR #243 review, Nov 26).',
+    text:
+        'Show what the food should look like at this point: two plain slices '
+        'of bread lying flat side by side on a wooden cutting board, bare, '
+        'with nothing spread on them yet and room to spread. A closed jar of '
+        'peanut butter and a closed jar of jam stand nearby with their lids '
+        'on. Ingredients in this step: Bread; Peanut butter; Jam. Show '
+        'nothing from later steps: no peanut butter or jam on the bread. '
+        '$kIllustrationStyle',
+  ),
+};
+
 void _emit(String tag, Map<String, Object?> data) =>
     // ignore: avoid_print
     print('$tag ${jsonEncode(data)}');
@@ -147,12 +166,15 @@ class _GeneratorAppState extends State<_GeneratorApp> {
         setState(() => _status = 'Generating ${recipe.id}/$key ($made)…');
         final started = DateTime.now().toUtc();
         try {
-          final image = await generator.generate(prompt.text);
+          final override = promptOverrides['${recipe.id}/$key'];
+          final text = override?.text ?? prompt.text;
+          final image = await generator.generate(text);
           _emit('ILLUSTRATION', {
             'recipe': recipe.id,
             'key': key,
             'subject': prompt.subject.name,
-            'prompt': prompt.text,
+            'prompt': text,
+            if (override != null) 'promptOverride': override.reason,
             'model': image.model,
             'mimeType': image.mimeType,
             'generatedAt': started.toIso8601String(),

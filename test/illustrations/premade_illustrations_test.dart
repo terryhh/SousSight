@@ -67,11 +67,19 @@ void main() {
         expect(entry!['file'], '$recipeId/$key.jpg');
         expect(entry['model'], isNotEmpty);
         expect(DateTime.tryParse(entry['generatedAt'] as String), isNotNull);
-        // 'prompt' records what was actually sent. If the reviewed recipe
+        // 'prompt' records what was actually sent. If it was hand-tightened,
+        // or the reviewed recipe
         // changed since, the entry must say so (and Terry re-approves or
         // regenerates); otherwise it must be exactly today's prompt.
         final today = illustrationPrompt(recipe, target)!.text;
-        if (entry['recipeChangedSinceGeneration'] case final String note) {
+        if (entry['promptOverride'] case final String reason) {
+          // A recorded, hand-tightened prompt (tool/generate_illustrations.dart
+          // promptOverrides): it must say why and keep the house style.
+          expect(reason, isNotEmpty);
+          expect(entry['prompt'], endsWith(kIllustrationStyle));
+          expect(entry['prompt'], isNot(today));
+        } else if (entry['recipeChangedSinceGeneration']
+            case final String note) {
           expect(note, contains('Re-approve or regenerate'));
           expect(entry['prompt'], isNot(today), reason: '$recipeId/$key');
         } else {
