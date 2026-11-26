@@ -11,6 +11,7 @@ import 'package:soussight/kitchen/kitchen_mode.dart';
 import 'package:soussight/kitchen/kitchen_preferences.dart';
 import 'package:soussight/kitchen/kitchen_text.dart';
 import 'package:soussight/kitchen/screen_wake_lock.dart';
+import 'package:soussight/kitchen/shared_wake_lock.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
@@ -27,6 +28,7 @@ void main() {
     WidgetTester tester, {
     Size size = const Size(1200, 900),
     double systemScale = 1,
+    ScreenWakeLock Function()? wakeLock,
   }) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = size;
@@ -43,7 +45,8 @@ void main() {
         bundledRecipe: recipe,
       );
     }))!;
-    cook = CookingCoordinator(
+    // A fresh coordinator per screen, as "New cook" creates.
+    CookingCoordinator create() => cook = CookingCoordinator(
       services: services,
       research: FakeCookingResearchClient(),
       transportFactory: DemoLiveTransport.new,
@@ -52,13 +55,14 @@ void main() {
     );
     await tester.pumpWidget(
       KitchenModeScope(
-        create: () => KitchenMode(wakeLock: lock, preferences: prefs),
+        create: () =>
+            KitchenMode(wakeLock: wakeLock?.call() ?? lock, preferences: prefs),
         child: MaterialApp(
           theme: cookingTheme,
           home: CookingScreen(
             services: services,
             isDemo: true,
-            createCoordinator: () => cook,
+            createCoordinator: create,
             dinnerStatus: FakeDinnerBackend(),
           ),
         ),
@@ -167,5 +171,33 @@ void main() {
     await tester.pumpAndSettle();
     expect(workspaceScaler(tester), isA<KitchenTextScaler>());
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('New cook keeps the screen on for the replacement session', (
+    tester,
+  ) async {
+    // Both screens lease one device lock, as KitchenMode.device() does.
+    final shared = SharedScreenWakeLock(lock);
+    await pumpScreen(tester, wakeLock: shared.lease);
+    final first = cook;
+    expect(lock.calls, [true]);
+
+    final newCook = find.byKey(const ValueKey('new-cook'));
+    await tester.ensureVisible(newCook);
+    await tester.tap(newCook);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start new cook'));
+    await tester.pumpAndSettle();
+
+    expect(cook, isNot(same(first)), reason: 'the screen was replaced');
+    expect(cook.session, isNotNull);
+    // The old screen's dispose did not turn the device lock off.
+    expect(lock.calls, [true]);
+    expect(lock.held, isTrue);
+    expect(shared.holders, 1);
+
+    await tester.pumpWidget(const SizedBox());
+    expect(lock.calls, [true, false]);
+    expect(shared.holders, 0);
   });
 }

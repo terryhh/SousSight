@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 
 import 'kitchen_preferences.dart';
 import 'screen_wake_lock.dart';
+import 'shared_wake_lock.dart';
 
 /// Holds the screen wake lock while a cooking session is active and the app
 /// is in the foreground, and the per-device "Big text" choice.
@@ -30,9 +31,11 @@ class KitchenMode extends ChangeNotifier {
     }
   }
 
-  /// This device's wake lock and preferences.
+  /// This device's preferences and a lease on the app's one wake lock, so
+  /// disposing a replaced cooking screen never turns off the lock that the
+  /// new screen holds.
   factory KitchenMode.device() => KitchenMode(
-    wakeLock: createScreenWakeLock(),
+    wakeLock: appScreenWakeLock.lease(),
     preferences: DeviceKitchenPreferences(),
   );
 
