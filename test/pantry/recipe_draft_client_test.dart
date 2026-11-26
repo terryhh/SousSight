@@ -459,6 +459,7 @@ void main() {
         ('Fry the black bean patties', ''),
         ('Fry the vegan sausages', 'Pork sausage'),
         ('Fry the plant-based burgers', 'Ground beef'),
+        ('Warm the hamburger buns in the oven', 'Ground beef'),
       ];
       for (final (stepText, recipe) in abstain) {
         test('"$stepText" with "$recipe" names no number', () {

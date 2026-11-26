@@ -786,8 +786,25 @@ const _warmOnly = {
 
 const _reheatedTarget = 'leftovers and reheated food 165°F (74°C)';
 
-const _shapeWords =
-    r'(hamburgers?|burgers?|patty|patties|sausages?|meatballs?|meatloaf)';
+// A meat, cheese or plant word joined to a burger-style shape, with or
+// without a space or hyphen ("turkeyburgers", "turkey-burgers").
+final _joinedShape = RegExp(
+  r'\b(beef|pork|lamb|veal|chicken|turkey|duck|cheese|veggie|vegan|bean|tofu)'
+  r'[\s-]*'
+  r'(hamburgers?|burgers?|patty|patties|sausages?|meatballs?|meatloaf)\b',
+  caseSensitive: false,
+);
+// Plant-based burgers, patties and sausages: not meat.
+final _plantShape = RegExp(
+  r'\b(veggie|vegetable|vegan|vegetarian|plant[\s-]*based|meatless|bean|'
+  r'black\s+bean|lentil|chickpea|mushroom|tofu|tempeh|quinoa|falafel)\s+'
+  r'(hamburgers?|burgers?|patty|patties|sausages?|meatballs?|meatloaf)\b',
+  caseSensitive: false,
+);
+final _burgerBuns = RegExp(
+  r'\b(hamburgers?|burgers?)\s+(buns?|rolls?|bread)\b',
+  caseSensitive: false,
+);
 
 /// Spells burger-style foods the same way before they are classified:
 /// "turkeyburgers", "turkey-burgers" and "turkey  burgers" become
@@ -796,34 +813,9 @@ const _shapeWords =
 /// and burger buns lose their meat shape word, so none of them is read as
 /// meat of unknown kind.
 String _normalizeShapes(String text) => text
-    .replaceAllMapped(
-      RegExp(
-        r'\b(beef|pork|lamb|veal|chicken|turkey|duck|cheese|veggie|vegan|'
-                r'bean|tofu)[\s-]*' +
-            _shapeWords +
-            r'\b',
-        caseSensitive: false,
-      ),
-      (m) => '${m[1]} ${m[2]}',
-    )
-    .replaceAll(
-      RegExp(
-        r'\b(veggie|vegetable|vegan|vegetarian|plant[\s-]*based|meatless|'
-                r'bean|black\s+bean|lentil|chickpea|mushroom|tofu|tempeh|quinoa|'
-                r'falafel)\s+' +
-            _shapeWords +
-            r'\b',
-        caseSensitive: false,
-      ),
-      'plant-based food',
-    )
-    .replaceAll(
-      RegExp(
-        r'\b(hamburgers?|burgers?)\s+(buns?|rolls?|bread)\b',
-        caseSensitive: false,
-      ),
-      'buns',
-    );
+    .replaceAllMapped(_joinedShape, (m) => '${m[1]} ${m[2]}')
+    .replaceAll(_plantShape, 'plant-based food')
+    .replaceAll(_burgerBuns, 'buns');
 
 /// The thermometer note for a heated step with animal food. [proteins] is
 /// the text that names the food (the step, or the recipe's ingredients when
