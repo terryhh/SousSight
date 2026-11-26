@@ -8,8 +8,8 @@ No code was changed. Each real defect is filed as its own `buildhybridai` card f
 | **Date** | 2026-11-26 |
 | **Site** | https://devfest-flutter-a59e8.web.app |
 | **Build audited** | `/version.json`: `commit 57209d1f6ed71501d0210d4a066d1e7c7a2d9169`, `ref main`, `LIVE_BACKEND none`, `DINNER_MODE simulated`, `CLOUD_ROUTES hybridFallback,research` |
-| **Evidence level** | Live hosted build, driven in headless Chrome. No fakes, emulators or physical devices. No real screen reader was used (see [What a person still needs to check](#what-a-person-still-needs-to-check)). |
-| **Browser** | Google Chrome 158.0.8127.38, headless (`--headless=new`), macOS |
+| **Evidence level** | Live hosted build, driven in headless Chrome, with a spot check of A11Y-03 in the Claude desktop app's built-in (non-headless) browser. No fakes, emulators or physical devices. No real screen reader was used: every "would announce" below is read from the semantics DOM, not heard (see [What a person still needs to check](#what-a-person-still-needs-to-check)). |
+| **Browser** | Google Chrome 158.0.8127.38, headless (`--headless=new`), macOS. Headless Chrome reports the on-device model as available, so home shows a *Set up on-device AI* banner; the built-in browser shows "This device can't run on-device AI" with *Show me how* instead. Focus-stop numbers below are for headless Chrome. |
 | **Tools** | Lighthouse 12.8.2 (via `npx lighthouse@12`); axe-core 4.14.1 via `@axe-core/puppeteer` 4.14.1; puppeteer-core 24.43.1 for scripted keyboard, semantics-tree and pixel-contrast checks |
 | **Viewports** | Phone: 360×780 CSS px (DPR 1 for the manual pass; Lighthouse mobile used 360×780 at DPR 2). Desktop: 1440×900 (manual and axe); Lighthouse `--preset=desktop` (1350×940). |
 | **Standard** | WCAG 2.2 level AA, plus the card's own bar of 48 px touch targets |
@@ -21,8 +21,8 @@ after the next promotion. That was a code search, not a run of the trunk build.
 
 ## Summary
 
-**12 findings: 0 BLOCKER · 2 HIGH · 7 MEDIUM · 3 LOW.** The hero journey can be completed with a keyboard
-alone and every control has a name, so nothing blocks a user outright. The biggest problems are a focus
+**12 findings: 0 BLOCKER · 2 HIGH · 7 MEDIUM · 3 LOW.** The cloud-free parts of the hero journey can be
+completed with a keyboard alone and every control checked has a name, so nothing blocks a user outright. The biggest problems are a focus
 indicator you can barely see, and a cook step that changes without telling a screen-reader user.
 
 ### Defect cards
@@ -33,7 +33,7 @@ All 12 are filed unassigned with the `buildhybridai` label, for Terry's session 
 |---|---|---|---|
 | A11Y-01 | HIGH | Keyboard focus indicator is almost invisible — all screens | [SS-113 (#251)](https://github.com/terryhh/SousSight/issues/251) |
 | A11Y-02 | HIGH | Moving to the next cook step is silent for screen readers — cook screen | [SS-114 (#252)](https://github.com/terryhh/SousSight/issues/252) |
-| A11Y-03 | MEDIUM | Keyboard focus lands off-screen or behind the Coach Lite box — home, cook | [SS-115 (#253)](https://github.com/terryhh/SousSight/issues/253) |
+| A11Y-03 | MEDIUM | After Tab passes the last control, focus lands off-screen — home | [SS-115 (#253)](https://github.com/terryhh/SousSight/issues/253) |
 | A11Y-04 | MEDIUM | The Coach Lite box keeps re-entering the Tab order — cook screen | [SS-116 (#254)](https://github.com/terryhh/SousSight/issues/254) |
 | A11Y-05 | MEDIUM | No headings or landmarks on the home and cook screens | [SS-117 (#255)](https://github.com/terryhh/SousSight/issues/255) |
 | A11Y-06 | MEDIUM | Semantics are off by default, so voice control and automated checks see an empty page — all screens | [SS-118 (#256)](https://github.com/terryhh/SousSight/issues/256) |
@@ -48,8 +48,9 @@ Severity scale used here:
 
 - **BLOCKER**: a user group cannot finish the hero journey.
 - **HIGH**: a serious barrier in the hero journey for a user group, though there is a workaround.
-- **MEDIUM**: a WCAG 2.2 AA failure with a workaround, or limited in scope.
-- **LOW**: a best-practice gap, or the card's 48 px bar missed while WCAG still passes.
+- **MEDIUM**: a WCAG 2.2 level A or AA failure that makes a task noticeably harder, with a workaround.
+- **LOW**: a WCAG failure with small impact because the same information is next to it (A11Y-10,
+  A11Y-11), or the card's 48 px bar missed while WCAG still passes (A11Y-12).
 
 ### Automated results
 
@@ -106,7 +107,8 @@ No credentials were entered and no cloud upload was agreed to.
 
 ## Findings
 
-Each finding links its card. Steps assume a fresh load of the site in Chrome.
+Each finding links its card. Steps assume a fresh load (site data cleared) in Chrome at 360×780 unless they
+say otherwise; the app restores an unfinished cook from local storage, which changes Tab stops.
 
 ### A11Y-01 · HIGH · Keyboard focus indicator is almost invisible — all screens · [SS-113 (#251)](https://github.com/terryhh/SousSight/issues/251)
 
@@ -131,62 +133,75 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ### A11Y-02 · HIGH · Moving to the next cook step is silent for screen readers — cook screen · [SS-114 (#252)](https://github.com/terryhh/SousSight/issues/252)
 
-- **Steps:** Turn semantics on (screen reader running), open a recipe, and activate *Next step →*.
+- **Steps:** Turn semantics on (click the hidden *Enable accessibility* button, as a screen reader would),
+  open *Black Bean & Corn Salsa*, scroll to the step card, and activate *Next step →*.
 - **Result:**
   - The step card's text changes and the progress counter moves from "1 / 5" to "2 / 5".
   - Focus stays on *Next step →*.
-  - Nothing is announced. Both live-region hosts stayed empty: a MutationObserver on every `aria-live`
-    element recorded no text.
-  - Starting the 5-minute timer is also silent.
-  - A blind cook with busy hands has to swipe back up to find the new instruction.
+  - Nothing would be announced: a MutationObserver on every `aria-live` element (Flutter's two announcement
+    hosts and any live-region nodes) recorded no text in the 2.5 s after the press. The same observer did
+    record the timer-finished text (below), so the method catches announcements when they happen.
+  - Starting the 5-minute timer on step 4 also recorded no text.
+  - So a blind cook with busy hands would have to move back up to find the new instruction.
 - **WCAG:** 4.1.3 Status Messages (AA).
 - **Evidence:** [02-step-change-silent.png](accessibility-audit/02-step-change-silent.png). Step 2 is shown;
-  the screen reader announced nothing.
+  no live-region text was recorded.
 - **Suggested fix:** When the step changes, either
   - call `SemanticsService.announce('Step 2 of 5. Chop the tomato and onion. …', TextDirection.ltr)`, or
   - mark the step card `Semantics(liveRegion: true)`.
 
   Also announce "5-minute timer started" when a timer starts. Moving focus to the step title is an
   alternative, but announcing keeps the cook's place on the button.
-- **What passed here:** timer *completion* is announced. A polite live region spoke "TIME TO CHECK. Let the
-  flavors meld. Let the flavors meld timer finished. Check your food. 0:00" when the timer ran out
+- **What passed here:** timer *completion* goes to a polite live region. When the timer ran out, the region's
+  text became "TIME TO CHECK / Let the flavors meld / Let the flavors meld timer finished. Check your food. /
+  0:00"
   (`lib/genui/cooking_catalog.dart`, `_TimerPanel`).
 
 ![Step change silent](accessibility-audit/02-step-change-silent.png)
 
-### A11Y-03 · MEDIUM · Keyboard focus lands off-screen or behind the Coach Lite box — home, cook · [SS-115 (#253)](https://github.com/terryhh/SousSight/issues/253)
+### A11Y-03 · MEDIUM · After Tab passes the last control, focus lands off-screen — home · [SS-115 (#253)](https://github.com/terryhh/SousSight/issues/253)
 
-- **Steps, cook screen:** Scroll to the bottom and open *Review dinner message*. Press Escape.
-- **Result, cook screen:** Focus goes back to the *Review dinner message* button at y = 710–758, which sits
-  fully behind the sticky Coach Lite box (y = 660–780). The page does not scroll it into view.
-- **Steps, home:** Press Tab 15 times, past the last recipe card, so focus wraps to the header.
-- **Result, home:** The next eight focus stops (the header icons, *Set up on-device AI*, Scan, Say it,
-  Type it) are about 600 px above the viewport. The page stays scrolled to the bottom, so the user sees no
-  focus at all.
-- **WCAG:** 2.4.11 Focus Not Obscured (Minimum) (AA, WCAG 2.2); 2.4.7 Focus Visible (AA).
-- **Evidence:** [05-focus-hidden.png](accessibility-audit/05-focus-hidden.png). Left: after Escape, focus is
-  under the composer. Right: home after the Tab wrap; nothing focused is visible.
-- **Suggested fix:**
-  - Let focus changes scroll the focused control into view, using `Scrollable.ensureVisible` from a
-    `Focus(onFocusChange:)` or from the dialog's close handler.
-  - Leave room for the composer at the bottom of the cook screen's scroll view. Padding equal to the
-    composer's height, or `MediaQuery.viewPadding`, lets `ensureVisible` keep controls above it.
+- **Steps (headless Chrome, semantics on or off):** Fresh load at 360×780. Press Tab 14 times: focus is on
+  the last recipe card, *Black Bean & Corn Salsa*, and the page has scrolled to the bottom. Tab 15 focuses the
+  page itself (`flutter-view`). Press Tab twice more.
+- **Result:** Tabs 16–23 focus the header icons, *Set up on-device AI*, Scan, Say it and Type it, which are
+  above the viewport (`getBoundingClientRect().y` from −602 for the header icons to −88 for the tiles). The page does
+  not scroll back, so for eight presses the user sees no focused control. Tab 24 (the text field) finally
+  scrolls it into view.
+- **Spot check in a non-headless browser:** in the Claude desktop app's built-in browser (about 800×600), after
+  21 Tab presses the page also stayed scrolled to the bottom with no visible focus. Desktop Chrome first sends
+  Tab to its own toolbar after the last control; what it does when focus comes back was **not checked**.
+- **Not reproduced (removed in review):** an earlier draft also said closing the dinner dialog returns focus
+  behind the Coach Lite box. That only happened after opening the dialog with the mouse after a wheel scroll.
+  Keyboard-only (Tab to *Review dinner message*, Enter, Escape), focus returns to the button at y = 616–660,
+  just above the box, so it is not a finding.
+- **WCAG:** 2.4.7 Focus Visible (AA).
+- **Evidence:** [05-focus-hidden.png](accessibility-audit/05-focus-hidden.png). Left: Tab 14, last recipe
+  focused. Right: Tab 17, focus is on *What was sent* off-screen and nothing visible is focused.
+- **Suggested fix:** Scroll the focused control into view when focus enters a control outside the viewport:
+  `Scrollable.ensureVisible` from a `Focus(onFocusChange:)` on the home list items, or a
+  `FocusTraversalPolicy` whose `requestFocusCallback` always calls `ensureVisible`, including when traversal
+  wraps.
 
-![Focus hidden](accessibility-audit/05-focus-hidden.png)
+![Focus off-screen](accessibility-audit/05-focus-hidden.png)
 
 ### A11Y-04 · MEDIUM · The Coach Lite box keeps re-entering the Tab order — cook screen · [SS-116 (#254)](https://github.com/terryhh/SousSight/issues/254)
 
-- **Steps:** Open a recipe and Tab from the top.
+- **Steps:** Fresh load, open *Black Bean & Corn Salsa*, and press Tab 40 times from the top.
 - **Result:** The sequence runs:
   - *Back to pantry* → *New cook* → the four header icons
   - → **Ask Coach Lite → Send → Research**
   - → *Watch my food* → **Ask Coach Lite → Send → Research**
   - → the first seven ingredients → **Ask Coach Lite**
   - → the last ingredient → **Ask Coach Lite → Send → Research**
-  - → *Am I doing this right?* …
+  - → *Am I doing this right?* → Ready → Not yet → Not sure → *Check my food* → *Next step* → *Ingredients*
+  - → **Ask Coach Lite → Send** → *Review dinner message* → *Text household* → **Ask Coach Lite → Send → Research**
 
-  The composer comes up 4–5 times per pass, between content sections, because traversal follows on-screen
-  position and the composer is pinned to the bottom. *New cook* also needs two Tab presses (stops 2 and 3).
+  The composer is entered **6 times in 40 stops**, between content sections, because traversal follows
+  on-screen position and the composer is pinned to the bottom.
+- **Related:** Tab 3 visibly focuses the *Contains: wheat* chip, but the chip's semantics node has no
+  `tabindex`, so `document.activeElement` (what a screen reader follows) stays on *New cook*. The DOM log
+  therefore shows *New cook* twice; the chip itself is reachable by keyboard.
 - **WCAG:** 2.4.3 Focus Order (A).
 - **Evidence:** [04-composer-tab-order.png](accessibility-audit/04-composer-tab-order.png). Tab 7 is on
   *How it works*; Tab 8 jumps into the composer at the bottom.
@@ -225,13 +240,14 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 - **Result:**
   - The only accessible element is `<flt-semantics-placeholder role="button" aria-label="Enable accessibility">`,
     1×1 px at (−1, −1). There are 0 `flt-semantics` nodes.
-  - Screen readers that find and press that button get the full tree.
-  - Voice-control users (macOS Voice Control, Dragon) and switch users don't: "Click Scan" has nothing to
-    target.
+  - By Flutter's design, a screen reader that finds and presses that button turns the full tree on (seen here
+    by clicking it from script; not tried with a real screen reader).
+  - Tools that don't press it, such as voice control (macOS Voice Control, Dragon) and switch access, are
+    expected to find no named controls, so "Click Scan" would have nothing to target. This is inferred
+    from the DOM, **not tested** with those tools.
   - Lighthouse and axe likewise score the empty page 100 / 0 violations (44 Lighthouse audits not applicable).
     A judge who runs Lighthouse sees a number that proves nothing.
-- **WCAG:** 4.1.2 Name, Role, Value (A), for anything that doesn't press the placeholder; 2.5.3 Label in Name
-  (A), for voice control.
+- **WCAG:** 4.1.2 Name, Role, Value (A), for assistive technology that doesn't press the placeholder.
 - **Evidence:** [06-lighthouse-hollow-100.png](accessibility-audit/06-lighthouse-hollow-100.png).
 - **Suggested fix:** On web, call `SemanticsBinding.instance.ensureSemantics()` once at startup, in `main()`
   behind `kIsWeb`. The cost is some performance on large trees; measure on a low-end Android phone. Then re-run
@@ -241,15 +257,19 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ### A11Y-07 · MEDIUM · At 200% text the title breaks mid-word and the Coach Lite box cuts off text — home, cook · [SS-119 (#257)](https://github.com/terryhh/SousSight/issues/257)
 
-- **Steps:** Set Chrome's font size to 32 px (*Settings → Appearance → Font size*, or `html { font-size: 32px }`
-  before load; Flutter reads it as 2.0× text scale), then reload at 360 px.
+- **Steps:** Before the page loads, set the root font size to 32 px (the audit injected
+  `html { font-size: 32px }` with `evaluateOnNewDocument`; Flutter read it as 2.0× text scale, and the
+  *Scan* tile's text doubled). Chrome's *Settings → Appearance → Customize fonts → Font size* set to 32
+  should do the same but was **not tried**. Changing the size after load had no effect until reload.
 - **Result:**
   - The home header shows **"So / usS / ight"** over three lines, and the tagline wraps one word per line.
     Even at 100% the title already breaks as "SousSi / ght" at 360 px.
   - On the cook screen, the sticky composer grows to about 235 px, roughly 30% of the screen. Its notice is cut
-    to "Live coach is off in this build · type a question f…" and its hint to "Ask Coach Lite (on-device)…",
-    because of `maxLines: 2` with ellipsis (`cooking_app.dart` around line 941).
-  - The rest of the screens reflow without loss.
+    to "Live coach is off in this build · type a question f…" because of `maxLines: 2` with ellipsis
+    (`cooking_app.dart` lines 939–942). At 100% the full sentence shows. (The hint's "…" is part of the
+    string, `'Ask Coach Lite (on-device)…'`, so it is not a loss.)
+  - The rest of home and the cook screen reflowed without loss. The sheets and the dinner dialog were not
+    checked at 200%.
 - **WCAG:** 1.4.4 Resize Text (AA). Content is lost at 200%.
 - **Evidence:** [07-text-200.png](accessibility-audit/07-text-200.png). Left: home at 200%. Right: cook screen
   at 200%.
@@ -268,9 +288,10 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 - **Result:**
   - Before typing, the field's accessible name is its example text: "e.g. canned black beans, corn, 2 tomatoes,
     bread, peanut butter".
-  - After typing, Flutter removes the `aria-label`. The only name left is that same placeholder example, and
-    nothing visible says what the field is for.
-  - A screen reader announces an example list, not "What's in your pantry".
+  - After typing, Flutter removes the `aria-label` and sets `placeholder` to the same example, so Chrome's
+    computed name falls back to the example. Nothing visible names the field once text is in it; only the
+    selected *Type it* tile above hints at its purpose.
+  - So a screen reader would read an example list, not "What's in your pantry".
 - **WCAG:** 3.3.2 Labels or Instructions (A); 1.3.1 Info and Relationships (A).
 - **Evidence:** [09-field-label.png](accessibility-audit/09-field-label.png). After typing, there is no label.
 - **Suggested fix:** Give the `TextField` in `pantry_screen.dart` (around line 790) a
@@ -284,8 +305,9 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 - **Result:**
   - The 12 px, w800 text is in `pantryMustard` `#F2B84B` on a gradient that runs from `#2C6A4F` (top-left,
     where the text sits) to `#173F30`.
-  - The token pair is **3.58:1**. On-screen pixels measured 4.29:1 at 1440 px and 4.88:1 at 360 px (the text
-    lands on a darker part of the gradient on phones).
+  - The token pair is **3.58:1**. On screen, the *best* pair inside the text's box (the mustard against the
+    darkest green behind it) measured 4.29:1 at 1440 px and 4.88:1 at 360 px; lighter greens behind the same
+    text are lower. So it fails at desktop width for certain, and at phone width on parts of the text.
   - Small text needs 4.5:1.
 - **WCAG:** 1.4.3 Contrast (Minimum) (AA).
 - **Evidence:** [08-eyebrow-contrast.png](accessibility-audit/08-eyebrow-contrast.png) (1440 px).
@@ -299,7 +321,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 - **Steps:** Turn semantics on and inspect *Ready / Not yet / Not sure*.
 - **Result:** Each is exposed as `role=checkbox` with `aria-checked`. "Not sure" starts checked. The choice is
-  single-select, but a screen reader says "checkbox, checked" and gives no group name.
+  single-select, but a screen reader would say "checkbox, checked", and there is no group name.
 - **WCAG:** 4.1.2 Name, Role, Value (A); 1.3.1 Info and Relationships (A).
 - **Evidence:** [10-chips-as-checkboxes.png](accessibility-audit/10-chips-as-checkboxes.png).
 - **Suggested fix:** Wrap the `ChoiceChip`s (`cooking_app.dart` around line 1143) in
@@ -311,7 +333,7 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 ### A11Y-11 · LOW · The step progress bar announces a bare number — cook screen · [SS-123 (#261)](https://github.com/terryhh/SousSight/issues/261)
 
 - **Steps:** On step 3 of 5, inspect the progress bar under "Your cooking space".
-- **Result:** `role=progressbar aria-valuenow=40 aria-label="40"`. A screen reader says "40, progress bar",
+- **Result:** `role=progressbar aria-valuenow=40 aria-label="40"`. A screen reader would read "40, progress bar",
   with no unit or context. The "3 / 5" text next to it is a separate node.
 - **WCAG:** 4.1.2 Name, Role, Value (A); 1.3.1 (A).
 - **Evidence:** [11-progress-label.png](accessibility-audit/11-progress-label.png).
@@ -335,7 +357,8 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 
 ## What passed
 
-- **Keyboard reachability:** every control in the journey can be reached with Tab. Enter activates a focused
+- **Keyboard reachability:** every control on the cloud-free journey can be reached with Tab, including the
+  ones that weren't pressed (see A11Y-04 for the allergen chip's semantics). Enter activates a focused
   recipe card with semantics off. The home Tab order matches reading order (header → banner → Scan / Say it /
   Type it → field → *Find my meal* → nearby → recipes).
 - **Names:** every icon-only button has a name: *On-device AI*, *What was sent*, *Check a label*, *How it
@@ -345,12 +368,14 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
 - **Dinner review dialog:**
   - It is exposed as `alertdialog`.
   - Tab cycles only within it (Close → Simulate failed delivery → Confirm simulated send).
-  - Escape closes it and returns focus to the button that opened it (but see A11Y-03).
+  - Escape closes it and returns focus to the button that opened it. Keyboard-only, that button stays visible
+    above the Coach Lite box.
   - "Simulated — no SMS sent" and "Recipient: Demo household (fictional)" are in the text at 14:1.
 - **Sheets:** How it works, What was sent, On-device AI and Check a label all expose `<h2>` headings. Escape
-  closes each one, and the first Tab lands on *Dismiss*.
-- **Timer:** the countdown isn't a live region, so it doesn't speak every second. Completion is announced
-  politely.
+  closes each one (their headings leave the DOM), and the first Tab goes into the sheet: its content group,
+  or its first control (*Set up on-device AI*, the *milk* chip). They are not exposed with `role=dialog`.
+- **Timer:** the countdown isn't a live region, so it won't be read every second. Completion goes to a polite
+  live region (A11Y-02).
 - **Text contrast:** all body and button text measured at least 4.5:1, apart from A11Y-09. Examples:
   - `#285B43` on cream: 6.98:1
   - white on `#C4472B` (*Type it*, *Find my meal*): 4.90:1
@@ -358,15 +383,16 @@ Each finding links its card. Steps assume a fresh load of the site in Chrome.
   - field hint `#404943` on `#FFF8EC`: 8.83:1
   - icon glyphs `#404943`: 8.2:1
 - **Touch targets:** header icon buttons 48×48. Scan / Say it / Type it 103×84. Food-look chips 73–108×48.
-  Ingredient rows at least 48 tall. Composer buttons 48×48. Dinner dialog buttons 48 tall. The only one under
-  48 is A11Y-12.
+  Ingredient rows at least 48 tall. Composer buttons 48×48. Dinner dialog buttons 48 tall. Label-check allergen chips
+  48 tall. On-device AI sheet rows 56–80 tall. Of the controls measured fully on screen, the only one under 48
+  is A11Y-12.
 - **Motion:**
   - With `prefers-reduced-motion: reduce`, Flutter sets `disableAnimations` and the sheets open instantly.
     Measured: frames identical to the settled frame from about 100 ms, against about 230 ms of animation
     without the setting.
-  - There is no looping, flashing or auto-moving decorative content; the only animations are loading
-    spinners and route/sheet transitions.
-- **Reflow at 100%:** no horizontal scrolling at 360 px. The viewport meta allows zoom up to 5×.
+  - No looping, flashing or auto-moving decorative content was seen, and a source search found no
+    `AnimationController`; the only animations are loading spinners and route/sheet transitions.
+- **Reflow at 100%:** no horizontal scrolling at 360 px (`scrollWidth` 360 = `innerWidth`). The viewport meta allows zoom up to 5×.
 - **Page basics:** `lang="en-US"` and `<title>SousSight</title>`.
 
 ## What a person still needs to check
