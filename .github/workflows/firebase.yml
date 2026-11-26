@@ -59,7 +59,7 @@ jobs:
       - name: Validate Flutter and browser media
         run: |
           flutter analyze --no-pub
-          flutter test --no-pub
+          flutter test --no-pub --coverage
           node --test test/live/browser_media_test.cjs
       - name: Validate hybrid bridge JavaScript
         shell: bash
@@ -76,13 +76,24 @@ jobs:
         # The plugin is a library and keeps no pubspec.lock.
         run: |
           flutter pub get
-          flutter test --no-pub
+          flutter test --no-pub --coverage
+      # Same gate as tool/verify_all.sh (SS-088): line coverage of lib/ and the
+      # plugin's lib/ must not fall below tool/coverage/baseline.json.
+      - name: Coverage gate
+        shell: bash
+        run: |
+          status=0
+          python3 -I tool/coverage/coverage_gate.py || status=$?
+          if [[ -f build/verify/coverage.txt ]]; then
+            { echo '### Line coverage'; echo '```'; cat build/verify/coverage.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
       - name: Validate backend and project publisher
         run: |
           npm --prefix functions run check
           npm --prefix functions test
-          python3 -m unittest discover -s test/tool -p 'test_publish_backlog.py'
-          node --test test/tool/ci_scripts_test.cjs
+          python3 -m unittest discover -s test/tool -p 'test_*.py'
+          node --test test/tool/*.cjs
       - name: Verify private Firestore rules in emulator
         run: npm --prefix test/rules test
       - name: Build visibly simulated rehearsal
