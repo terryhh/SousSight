@@ -62,11 +62,31 @@ typedef LiveToolHandler = Future<Map<String, Object?>> Function(
   LiveToolCall call,
 );
 
+/// One JPEG camera frame, stamped when the browser or device acquired it, not
+/// when Dart received it. Consumers judge freshness from [capturedAt].
+class CapturedFrame {
+  const CapturedFrame({required this.bytes, required this.capturedAt});
+  final Uint8List bytes;
+  final DateTime capturedAt;
+}
+
 abstract class LiveMedia {
   Stream<Uint8List> get microphone;
+
+  /// Frames for the Live coach. Only emitted while capture was started with
+  /// [start] (camera and microphone); never during [startCameraOnly].
   Stream<Uint8List> get frames;
+
+  /// Every captured frame with its acquisition time, in both modes.
+  Stream<CapturedFrame> get timedFrames;
   Stream<String> get errors;
+
+  /// Camera and microphone, for the Live coach.
   Future<void> start();
+
+  /// Camera only: no microphone request and no audio graph, so it works when
+  /// the microphone is denied or absent. Frames arrive on [timedFrames] only.
+  Future<void> startCameraOnly();
   Future<void> stop();
   void setMicrophoneMuted(bool muted);
   void playAudio(Uint8List pcm24khz);
