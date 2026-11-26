@@ -80,6 +80,7 @@ class ManualDispatcher implements HybridDispatcher {
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   }) {
     final index = tasks.length;
     tasks.add(task);

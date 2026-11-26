@@ -4,10 +4,10 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/foundation.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/payload_digest.dart';
 import '../core/models.dart';
 import '../live/live_types.dart';
 import 'capture_owner.dart';
-import 'frame_digest.dart';
 import 'watch_verdict.dart';
 
 /// The ids a check was asked for. A result is applied only while all three
@@ -338,18 +338,17 @@ class LocalWatchController extends ChangeNotifier {
       (privacy?.localOnly(kLocalWatchFeature) ?? false) ||
       (privacy?.localOnly(kWatchCloudCheckFeature) ?? false);
 
-  /// The digest a consent grant names. When the trunk exports
-  /// `hybridPayloadDigest(HybridTask)`, return that here instead.
-  String _payloadDigest(HybridTask task) =>
-      frameDigest(task.parts.whereType<HybridInlineData>().single.bytes);
+  /// The digest a consent grant names: the dispatcher's own digest of the
+  /// whole task (prompt and frame), so the grant passed with the send matches
+  /// and the dispatcher does not ask the cook a second time.
+  String _payloadDigest(HybridTask task) => hybridPayloadDigest(task);
 
-  /// The only call into the dispatcher. When `HybridDispatcher.start` gains
-  /// `ConsentGrant? grant`, pass `grant: grant` here.
+  /// The only call into the dispatcher.
   HybridOperation _dispatch(
     HybridTask task,
     String sessionId, {
     ConsentGrant? grant,
-  }) => dispatcher.start(task, sessionId: sessionId);
+  }) => dispatcher.start(task, sessionId: sessionId, grant: grant);
 
   CapturedFrame? _freshFrame() {
     final frame = _latest;

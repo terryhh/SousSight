@@ -303,6 +303,10 @@ void main() {
       final fake = FakeHybridInference();
       registerHybridInferenceBackend(() => fake);
       expect(defaultHybridInference(), same(fake));
+      // Clearing the override restores the platform default (the VM has no
+      // web backend, so the method channel).
+      registerHybridInferenceBackend(null);
+      expect(defaultHybridInference(), isA<MethodChannelHybridInference>());
     },
   );
 }

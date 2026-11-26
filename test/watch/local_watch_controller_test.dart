@@ -4,6 +4,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
+import 'package:soussight/ai/hybrid/payload_digest.dart';
 import 'package:soussight/watch/capture_owner.dart';
 import 'package:soussight/watch/frame_digest.dart';
 import 'package:soussight/watch/local_watch_controller.dart';
@@ -375,7 +376,7 @@ void main() {
         expect(ask.feature, kWatchCloudCheckFeature);
         expect(ask.sessionId, 's1');
         expect(ask.kinds, {DataKind.image, DataKind.text});
-        expect(ask.payloadDigest, frameDigest(rig.watch.consentFrame!.bytes));
+        expect(ask.payloadDigest, isNotEmpty);
         expect(rig.watch.consentFrame!.bytes, [4, 5, 6]);
         expect(rig.watch.statusText, contains('Waiting for your OK'));
         // No local check runs while the prompt is open.
@@ -391,7 +392,11 @@ void main() {
         final sent = rig.fake.tasks.last;
         expect(sent.feature, kWatchCloudCheckFeature);
         final image = sent.parts.whereType<HybridInlineData>().single;
-        expect(frameDigest(image.bytes), ask.payloadDigest);
+        expect(image.bytes, [4, 5, 6]);
+        // The digest is the dispatcher's own, and the grant travels with
+        // the send so the dispatcher does not prompt again.
+        expect(hybridPayloadDigest(sent), ask.payloadDigest);
+        expect(rig.fake.grants.last?.ask, same(ask));
         expect(cloud!.source, WatchVerdictSource.cloud);
         expect(cloud!.message, contains('cloud check of one photo'));
       });

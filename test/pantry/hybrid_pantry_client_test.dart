@@ -26,6 +26,7 @@ class _ScriptedDispatcher implements HybridDispatcher {
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   }) {
     tasks.add(task);
     validators.add(validate);
