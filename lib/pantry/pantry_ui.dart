@@ -162,8 +162,39 @@ List<String> pantryTypedEntries(String typed) => [
       entry,
 ];
 
+/// Describing words that never make two foods the same ("canned corn" is
+/// not "canned beans").
+const _notFoodWords = {
+  'canned',
+  'can',
+  'cans',
+  'fresh',
+  'frozen',
+  'dried',
+  'jar',
+  'bag',
+  'box',
+  'red',
+  'green',
+  'white',
+  'black',
+  'yellow',
+  'large',
+  'small',
+  'sliced',
+  'diced',
+  'chopped',
+  'whole',
+  'the',
+  'and',
+  'with',
+  'some',
+  'pre',
+};
+
 /// Whether a typed entry and an item name are the same food: one contains
-/// the other, or (ignoring a plural "s") they share a word of 3+ letters.
+/// the other, or (ignoring a plural "s") they share a food word of 3+
+/// letters.
 bool pantryNamesMatch(String typed, String item) {
   final a = typed.toLowerCase().trim();
   final b = item.toLowerCase().trim();
@@ -171,7 +202,7 @@ bool pantryNamesMatch(String typed, String item) {
   if (a.contains(b) || b.contains(a)) return true;
   Set<String> words(String s) => {
     for (final w in s.split(RegExp(r'[^a-z]+')))
-      if (w.length > 2)
+      if (w.length > 2 && !_notFoodWords.contains(w))
         w.length > 3 && w.endsWith('s') ? w.substring(0, w.length - 1) : w,
   };
   return words(a).intersection(words(b)).isNotEmpty;

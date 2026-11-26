@@ -265,9 +265,19 @@ class FakePantryClient implements PantryClient {
       ),
       PantryMeal(
         recipeId: 'chickpea_wrap_v1',
-        why: 'Possible later if you pick up chickpeas and a few fresh vegetables.',
+        why: 'Possible later if you pick up chickpeas, mayo and tortillas.',
+        // Kept in step with assets/recipes/chickpea_wrap_v1.json after the
+        // chef fixes (#215): red onion, celery and red bell pepper are
+        // optional; mustard is required.
         matched: ['red onion'],
-        missing: ['chickpeas', 'mayonnaise', 'celery', 'tortillas'],
+        missing: [
+          'chickpeas',
+          'mayonnaise',
+          'dijon mustard',
+          'lemon juice',
+          'tortillas',
+          'red bell pepper or celery (optional)',
+        ],
       ),
     ];
     return PantryResult(

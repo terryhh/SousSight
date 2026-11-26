@@ -157,7 +157,7 @@ void main() {
     expect(drafts.request!.confirmedItems, ['rice']);
     expect(drafts.request!.note, 'I want a bowl');
     expect(find.text('Pantry Bean Bowl'), findsWidgets);
-    expect(find.text('Back to pantry'), findsOneWidget);
+    expect(find.byKey(const ValueKey('back-to-pantry')), findsOneWidget);
     expect(find.byKey(const ValueKey('draft-recipe-chip')), findsOneWidget);
     expect(find.text(kDraftRecipeLabel), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -169,7 +169,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // The pantry result keeps the labelled draft after returning.
-    await tester.tap(find.text('Back to pantry'));
+    await tester.tap(find.byKey(const ValueKey('back-to-pantry')));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.byKey(const ValueKey('cook-drafted')));
     expect(find.text(kDraftRecipeLabel), findsOneWidget);
@@ -191,7 +191,7 @@ void main() {
     );
     await tapVisible(tester, find.byKey(const ValueKey('draft-recipe')));
     expect(find.text('Could not draft that safely.'), findsOneWidget);
-    expect(find.text('Back to pantry'), findsNothing);
+    expect(find.byKey(const ValueKey('back-to-pantry')), findsNothing);
     expect(draftButton(tester).onPressed, isNotNull);
   });
 

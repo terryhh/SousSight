@@ -156,17 +156,22 @@ void main() {
       await tester.pumpWidget(app(client: client));
       await tester.pumpAndSettle();
       expect(find.text('What did you get from the pantry?'), findsOneWidget);
-      expect(find.textContaining('Rehearsal mode'), findsOneWidget);
+      expect(
+        find.textContaining('Practice mode (pretend answers)'),
+        findsOneWidget,
+      );
       expect(find.text(pantryPrivacyLine), findsOneWidget);
 
+      // Typed text that names no candidate: every candidate is a guess.
+      // (Typed items start confirmed; see the SS-089 test below.)
       await tester.enterText(
         find.byKey(const ValueKey('pantry-text')),
-        'beans',
+        'a bag of groceries',
       );
       await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
-      expect(client.input!.text, 'beans');
+      expect(client.input!.text, 'a bag of groceries');
       expect(find.byType(Surface), findsOneWidget);
-      expect(find.text('SIMULATED'), findsOneWidget);
+      expect(find.text('PRACTICE MODE'), findsOneWidget);
       expect(find.text('BEST MATCH'), findsOneWidget);
 
       // Nothing is confirmed until the cook taps it; model confidence is
@@ -366,9 +371,9 @@ void main() {
       find.byKey(const ValueKey('cook-black_bean_corn_salsa_v1')),
     );
     expect(find.text('Black Bean & Corn Salsa'), findsWidgets);
-    expect(find.text('Back to pantry'), findsOneWidget);
+    expect(find.byKey(const ValueKey('back-to-pantry')), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Back to pantry'));
+    await tester.tap(find.byKey(const ValueKey('back-to-pantry')));
     await tester.pumpAndSettle();
     expect(find.text('Your pantry haul'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -380,7 +385,11 @@ void main() {
     await setUp360(tester);
     await tester.pumpWidget(app(client: _RecordingClient()));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
+    // Nothing typed names a candidate, so every candidate is a guess.
+    await tester.enterText(
+      find.byKey(const ValueKey('pantry-text')),
+      'a bag of groceries',
+    );
     await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
     await tapVisible(
       tester,
@@ -395,6 +404,43 @@ void main() {
       session.confirmedFacts.where((f) => f.startsWith('Pantry has')),
       isEmpty,
     );
+  });
+
+  testWidgets('SS-089: items the cook typed start confirmed; guesses do not', (
+    tester,
+  ) async {
+    await setUp360(tester);
+    await tester.pumpWidget(app(client: _RecordingClient()));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('pantry-text')),
+      '2 cans black beans, corn',
+    );
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    expect(
+      find.textContaining('Items you typed are already ticked'),
+      findsOneWidget,
+    );
+    final confirmed = tester
+        .widgetList<Semantics>(find.byType(Semantics))
+        .where((s) => s.properties.toggled == true)
+        .map((s) => s.properties.label)
+        .toSet();
+    expect(
+      confirmed,
+      containsAll(['canned black beans, clear', 'canned corn, clear']),
+    );
+    expect(confirmed, isNot(contains('lime, not sure')));
+    expect(confirmed, isNot(contains('tomato, likely')));
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('cook-black_bean_corn_salsa_v1')),
+    );
+    final uid = await services.auth.signInLearner();
+    final session = (await tester.runAsync(
+      () => services.sessions.createOrResume(uid, recipes.last),
+    ))!;
+    expect(session.ingredients, isNotEmpty);
   });
 
   testWidgets('each inference leg and a dropped-voice notice are shown', (

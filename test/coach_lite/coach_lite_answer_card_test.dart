@@ -10,6 +10,8 @@ CoachLiteAnswer answer({
   int sequence = 1,
   List<InferenceLeg> legs = const [],
   CoachLiteTimerSuggestion? timer,
+  CoachLiteStatus status = CoachLiteStatus.answered,
+  RouteReason? blocked,
 }) => CoachLiteAnswer(
   stamp: CoachLiteStamp(
     sessionId: 's1',
@@ -17,7 +19,8 @@ CoachLiteAnswer answer({
     stepId: 'a',
     sequence: sequence,
   ),
-  status: CoachLiteStatus.answered,
+  status: status,
+  blocked: blocked,
   kind: CoachLiteQuestionKind.stepHelp,
   components: const [],
   timerSuggestion: timer,
@@ -67,7 +70,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('coach-lite-source')), findsOneWidget);
-    expect(find.text('On this device · Gemini Nano'), findsOneWidget);
+    expect(find.text('On this device'), findsOneWidget);
+    expect(find.textContaining('Gemini Nano'), findsNothing);
     expect(find.text('Simmer sauce'), findsOneWidget);
     expect(find.text('Suggested timer · 10 min'), findsOneWidget);
 
@@ -128,5 +132,88 @@ void main() {
     );
     expect(find.text('Start timer'), findsOneWidget);
     expect(find.text('Suggested timer · 2 min'), findsOneWidget);
+  });
+
+  group('SS-089: a typed question always gets a visible line', () {
+    test('status line per outcome; none for answers and cancels', () {
+      String? line(CoachLiteStatus status, [RouteReason? reason]) =>
+          coachLiteStatusLine(answer(status: status, blocked: reason));
+      expect(line(CoachLiteStatus.answered), isNull);
+      expect(line(CoachLiteStatus.cancelled), isNull);
+      expect(line(CoachLiteStatus.invalid), contains("couldn't show"));
+      expect(
+        line(CoachLiteStatus.failed),
+        "I can't answer that right now — try the recipe step text below.",
+      );
+      expect(
+        line(CoachLiteStatus.blocked, RouteReason.modelDownloading),
+        contains('still downloading'),
+      );
+      for (final r in [RouteReason.modelNotReady, RouteReason.noLocalModel]) {
+        expect(
+          line(CoachLiteStatus.blocked, r),
+          startsWith("I can't answer questions on this device right now."),
+        );
+      }
+      expect(
+        line(CoachLiteStatus.blocked, RouteReason.offline),
+        startsWith("You're offline"),
+      );
+      expect(
+        line(CoachLiteStatus.blocked, RouteReason.localOnlySetting),
+        contains('keep questions on this device'),
+      );
+      expect(
+        line(CoachLiteStatus.blocked, RouteReason.consentDeclined),
+        startsWith('OK — nothing was sent.'),
+      );
+      expect(
+        line(CoachLiteStatus.blocked, RouteReason.cloudNotApproved),
+        contains('try the recipe step text below'),
+      );
+      // Plain words only.
+      for (final status in CoachLiteStatus.values) {
+        for (final reason in [null, ...RouteReason.values]) {
+          final text = line(status, reason) ?? '';
+          expect(text, isNot(contains('Coach Lite')));
+          expect(text, isNot(contains('on-device coach')));
+        }
+      }
+    });
+
+    testWidgets('a blocked answer with no legs still shows the question and '
+        'why', (tester) async {
+      await pump(
+        tester,
+        CoachLiteAnswerFooter(
+          answer: answer(
+            status: CoachLiteStatus.blocked,
+            blocked: RouteReason.noLocalModel,
+          ),
+          question: '  Jam or not?  ',
+          onStartTimer: (_, _) {},
+        ),
+      );
+      expect(find.text('You asked: “Jam or not?”'), findsOneWidget);
+      expect(find.byKey(const ValueKey('coach-lite-status')), findsOneWidget);
+      expect(
+        find.textContaining("I can't answer questions on this device"),
+        findsOneWidget,
+      );
+      expect(find.text('COACH LITE'), findsNothing);
+    });
+
+    testWidgets('a cancelled answer with nothing to say renders nothing', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        CoachLiteAnswerFooter(
+          answer: answer(status: CoachLiteStatus.cancelled),
+          onStartTimer: (_, _) {},
+        ),
+      );
+      expect(find.byKey(const ValueKey('coach-lite-footer')), findsNothing);
+    });
   });
 }

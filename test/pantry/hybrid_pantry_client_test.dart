@@ -527,7 +527,7 @@ void main() {
     expect(result.legs.single.provenance, Provenance.simulated);
     expect(
       pantryLegLabel(result.legs.single),
-      'Meal match · simulated, no model used',
+      'Meal match · practice mode, pretend answer',
     );
   });
 
