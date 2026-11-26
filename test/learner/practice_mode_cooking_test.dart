@@ -1,12 +1,17 @@
 // The cooking screen in practice mode (rehearsal) with its simulated hybrid
 // runtime, at phone size (SS-089). Fakes only: no model, camera or network.
 
+import 'dart:async';
+
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/app/rehearsal_runtime.dart';
 import 'package:soussight/app/services_scope.dart';
+import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/learner/cooking_app.dart';
+import 'package:soussight/learner/cooking_coordinator.dart';
+import 'package:soussight/research/cooking_research_panel.dart';
 import 'package:soussight/watch/watch_verdict.dart';
 
 /// Refuses every watch check, like a device whose model can't see photos.
@@ -20,6 +25,13 @@ class _RefusingInference extends RehearsalHybridInference {
           const HybridException(HybridErrorCode.unavailable, 'no vision'),
         )
       : super.generate(request);
+}
+
+class _SlowResearch implements CookingResearchClient {
+  final pending = Completer<CookingResearchResult>();
+  @override
+  Future<CookingResearchResult> research(CookingResearchQuery query) =>
+      pending.future;
 }
 
 void main() {
@@ -249,4 +261,66 @@ void main() {
       findsOneWidget,
     );
   });
+
+  for (final still in [false, true]) {
+    testWidgets('research: "Checking sources…" in the dock, then the panel '
+        'scrolled into view (G2c, reduced motion: $still)', (tester) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final services = (await tester.runAsync(fakeServices))!;
+      final research = _SlowResearch();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: cookingTheme,
+          home: MediaQuery(
+            data: MediaQueryData(
+              size: const Size(412, 915),
+              disableAnimations: still,
+            ),
+            child: CookingScreen(
+              services: services,
+              isDemo: true,
+              createCoordinator: () => CookingCoordinator(
+                services: services,
+                isDemo: true,
+                research: research,
+                transportFactory: null,
+                media: RehearsalLiveMedia(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('cooking-message-input')),
+        'Can I use almond butter?',
+      );
+      await tester.tap(find.byKey(const ValueKey('research-question')));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('research-checking')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('research-checking')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        still ? findsNothing : findsOneWidget,
+      );
+      research.pending.complete(
+        const CookingResearchResult(answer: 'Yes, almond butter works.'),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('research-checking')), findsNothing);
+      final panel = tester.getRect(find.byType(CookingResearchPanel));
+      final dock = tester.getRect(
+        find.byKey(const ValueKey('cooking-control-dock')),
+      );
+      // The panel is on screen, above the dock.
+      expect(panel.bottom, greaterThan(0));
+      expect(panel.top, lessThan(dock.top));
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
 }

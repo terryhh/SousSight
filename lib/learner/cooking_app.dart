@@ -39,6 +39,7 @@ import 'cooking_coordinator.dart';
 import 'draft_recipe_chip.dart';
 import 'dinner_review.dart';
 import 'meal_complete.dart';
+import 'plain_research_text.dart';
 
 final cookingTheme = ThemeData(
   useMaterial3: true,
@@ -248,9 +249,12 @@ class _CookingScreenState extends State<CookingScreen> {
       services: widget.services,
       isDemo: widget.isDemo,
       recipe: widget.recipe,
-      research: widget.isDemo
-          ? FakeCookingResearchClient()
-          : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
+      // Answers arrive as plain text: the panel shows Markdown raw (G2c).
+      research: PlainTextResearchClient(
+        widget.isDemo
+            ? FakeCookingResearchClient()
+            : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
+      ),
       transportFactory: transport,
       media: widget.isDemo ? RehearsalLiveMedia() : createLiveMedia(),
       coachLite: hybrid == null
@@ -447,8 +451,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   final _alertKey = GlobalKey(debugLabel: 'cooking-alert');
   final _replyKey = GlobalKey(debugLabel: 'coach-reply');
   final _errorKey = GlobalKey(debugLabel: 'cooking-error');
+  final _researchKey = GlobalKey(debugLabel: 'research-panel');
   Object? _shownReply;
   String? _shownError;
+  Object? _shownResearch;
+  bool _wasResearching = false;
 
   /// Scrolls [key]'s widget near the top of the cooking scroll view after the
   /// next frame. Instant when the platform asks for reduced motion.
@@ -477,6 +484,15 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     _shownReply = reply;
     if (cook.error != null && cook.error != _shownError) _reveal(_errorKey);
     _shownError = cook.error;
+    // A new research panel, and again when its sources arrive (G2c).
+    final panel = cook.researchPanel;
+    if (panel != null &&
+        (!identical(panel, _shownResearch) ||
+            (_wasResearching && !cook.researching))) {
+      _reveal(_researchKey);
+    }
+    _shownResearch = panel;
+    _wasResearching = cook.researching;
   }
 
   void _onChange() {
@@ -1120,6 +1136,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                 ),
             ],
           ),
+          if (cook.researching) const _CheckingSources(),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -1340,6 +1357,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       ),
       if (cook.researchPanel case final panel?)
         Padding(
+          key: _researchKey,
           padding: const EdgeInsets.only(top: 20),
           child: CookingResearchPanel(
             key: ObjectKey(panel),
@@ -1452,4 +1470,39 @@ class _DockButton extends StatelessWidget {
       child: IconButton(onPressed: onPressed, icon: Icon(icon)),
     ),
   );
+}
+
+/// Shown in the dock, where the cook tapped "Research a cooking question",
+/// while sources are being checked (G2c). A still icon under reduced motion.
+class _CheckingSources extends StatelessWidget {
+  const _CheckingSources();
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    return Semantics(
+      liveRegion: true,
+      child: Padding(
+        key: const ValueKey('research-checking'),
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(
+          children: [
+            SizedBox.square(
+              dimension: 18,
+              child: still
+                  ? const Icon(Icons.travel_explore, size: 18)
+                  : const CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Checking sources… the answer will appear in your cooking '
+                'space.',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
