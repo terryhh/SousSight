@@ -591,10 +591,14 @@ Recipe buildDraftRecipe(
   required String seed,
   required List<String> confirmedItems,
 }) {
+  // SS-099: a draft whose cook-facing text certifies anything is rejected as
+  // a whole (never edited), so the dispatcher's retry or fallback runs.
+  if (draftCertifyingField(m) case final field?) {
+    throw FormatException('draft $field certifies safety');
+  }
   final title = _clip(_str(m['title']), 80);
   if (title.isEmpty) throw const FormatException('missing title');
-  // Certifying sentences never reach the cook (SS-099).
-  final summary = _clip(stripCertifyingSentences(_str(m['summary'])), 400);
+  final summary = _clip(_str(m['summary']), 400);
 
   final rawIngredients = m['ingredients'];
   if (rawIngredients is! List) throw const FormatException('no ingredients');
@@ -631,15 +635,8 @@ Recipe buildDraftRecipe(
   for (final raw in rawSteps) {
     if (raw is! Map) continue;
     final capped = _timerCapped(raw['timerSeconds']);
-    final rawInstruction = _str(raw['instruction']);
-    // Displayed instructions pass the same safety gate as cues: certifying
-    // sentences are removed, and a step that is only such a claim is unsafe.
-    final safeInstruction = stripCertifyingSentences(rawInstruction);
-    if (safeInstruction.isEmpty && rawInstruction.trim().isNotEmpty) {
-      throw const FormatException('a step only certifies safety');
-    }
     var instruction = _clip(
-      safeInstruction,
+      _str(raw['instruction']),
       capped ? 400 - kTimerCapNote.length - 1 : 400,
     );
     if (instruction.isEmpty) continue;
@@ -738,18 +735,19 @@ final _allergenAbsence = RegExp(
   caseSensitive: false,
 );
 
-// Claims that the food is safe, or that the camera can tell.
+// "Safe to eat" in any form, and crediting the camera.
 final _safeOrCameraClaim = RegExp(
-  r'safe to (?:eat|serve)|done when the camera|'
+  r'\bsafe[\s-]+(?:to|for)[\s-]+(?:eat|eating|serve|serving|consume|'
+  r'consumption)\b|\bfood[\s-]+safe\b|done when the camera|'
   r'camera (?:can |will )?(?:confirms?|tells?|verif(?:y|ies)|shows?)',
   caseSensitive: false,
 );
 
-// "It is cooked through" is a claim; "cook until it is cooked through" is an
-// instruction, so this only counts outside a condition (until, when, once,
-// if) and when the sentence does not send the cook to a thermometer.
+// "It is cooked through" stated as fact. "Cook until it is cooked through" is
+// an instruction, so this alone only counts outside a condition or a
+// thermometer check.
 final _doneClaim = RegExp(
-  r"\b(?:is|are|it's|they're) (?:now |definitely |fully )?"
+  r"\b(?:is|are|it's|they're) (?:now |definitely |completely |fully )?"
   r'(?:fully cooked|cooked through|done|safe)\b',
   caseSensitive: false,
 );
@@ -758,21 +756,70 @@ final _conditionOrCheck = RegExp(
   caseSensitive: false,
 );
 
-/// True when [text] certifies doneness, temperature or food safety, credits
-/// the camera with confirming it, or claims an allergen is absent. Drafted
-/// text that does is never shown. This is the existing English check; when
-/// the shared certification module lands, switch this one call site.
-bool draftTextCertifies(String text) =>
-    _allergenAbsence.hasMatch(text) ||
-    _safeOrCameraClaim.hasMatch(text) ||
-    (_doneClaim.hasMatch(text) && !_conditionOrCheck.hasMatch(text));
+// Appearance as a doneness test, conditional or not: "fully cooked when it
+// looks white", "done once golden", "no longer pink", "juices run clear".
+// Colour cannot establish internal doneness.
+final _doneness = RegExp(
+  r'\b(?:fully cooked|cooked through|done|doneness|safe|ready to eat)\b',
+  caseSensitive: false,
+);
+final _appearance = RegExp(
+  r'\b(?:looks?|appears?|turns?|colou?r|white|opaque|brown|browned|golden|'
+  r'pink|clear|firm)\b',
+  caseSensitive: false,
+);
+final _visualDonenessPhrase = RegExp(
+  r'\bno longer pink\b|\bjuices? runs? clear\b',
+  caseSensitive: false,
+);
 
-/// [text] without the sentences that [draftTextCertifies].
-String stripCertifyingSentences(String text) => text
-    .split(RegExp(r'(?<=[.!?])\s+'))
-    .where((sentence) => !draftTextCertifies(sentence))
-    .join(' ')
-    .trim();
+/// True when [text] certifies doneness, temperature or food safety, credits
+/// the camera, uses appearance as a doneness test, or claims an allergen is
+/// absent. The single call site for drafted text: when the shared
+/// certification module lands, switch this function.
+bool draftTextCertifies(String text) {
+  if (_allergenAbsence.hasMatch(text) ||
+      _safeOrCameraClaim.hasMatch(text) ||
+      _visualDonenessPhrase.hasMatch(text)) {
+    return true;
+  }
+  for (final sentence in text.split(RegExp(r'(?<=[.!?;])\s+'))) {
+    if (_doneness.hasMatch(sentence) && _appearance.hasMatch(sentence)) {
+      return true;
+    }
+    if (_doneClaim.hasMatch(sentence) &&
+        !_conditionOrCheck.hasMatch(sentence)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// The first cook-facing field of a raw draft that [draftTextCertifies]
+/// (title, summary, an ingredient's name or quantity, equipment, a step's
+/// title, instruction or cue), or null when every field passes.
+String? draftCertifyingField(Map<String, dynamic> m) {
+  bool bad(Object? v) => v is String && draftTextCertifies(v);
+  if (bad(m['title'])) return 'title';
+  if (bad(m['summary'])) return 'summary';
+  if (m['ingredients'] case final List<dynamic> items) {
+    for (final i in items) {
+      if (i is Map && (bad(i['name']) || bad(i['qty']))) return 'ingredient';
+    }
+  }
+  if (m['equipment'] case final List<dynamic> tools) {
+    if (tools.any(bad)) return 'equipment';
+  }
+  if (m['steps'] case final List<dynamic> steps) {
+    for (final st in steps) {
+      if (st is Map &&
+          (bad(st['title']) || bad(st['instruction']) || bad(st['cue']))) {
+        return 'step';
+      }
+    }
+  }
+  return null;
+}
 
 // Safe minimum internal temperatures (FoodSafety.gov chart), checked with a
 // thermometer. These are the app's own claims, so a number is named only

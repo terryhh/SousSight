@@ -237,7 +237,11 @@ class _Hero extends StatelessWidget {
           Semantics(
             header: true,
             child: Text(
-              recipe.title,
+              // Drafted text that certifies is never shown (the builder also
+              // rejects such drafts); the label stands in for the title.
+              data.isDraft && draftTextCertifies(recipe.title)
+                  ? 'AI-drafted recipe'
+                  : recipe.title,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 28,
@@ -638,6 +642,7 @@ class _AllergenCard extends StatelessWidget {
     final match = allergens.householdWarning;
     final householdLine = allergens.householdLine;
     final hintLine = allergens.hintLine;
+    final swapLine = allergens.swapLine;
     return _Card(
       key: const ValueKey('preview-allergens'),
       color: match ? const Color(0xFFFFF3EC) : Colors.white,
@@ -673,6 +678,15 @@ class _AllergenCard extends StatelessWidget {
             icon: Icons.menu_book_outlined,
             color: _muted,
           ),
+          if (swapLine != null) ...[
+            const SizedBox(height: 8),
+            _AllergenLine(
+              key: const ValueKey('preview-swap-allergen-line'),
+              text: swapLine,
+              icon: Icons.published_with_changes_rounded,
+              color: _terracotta,
+            ),
+          ],
           if (hintLine != null) ...[
             const SizedBox(height: 8),
             _AllergenLine(

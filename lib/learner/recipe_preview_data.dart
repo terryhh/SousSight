@@ -59,7 +59,10 @@ class PreviewIngredients {
   int get requiredHave => have.where((i) => !i.optional).length;
 
   /// Every required ingredient: the "N" of "You have X of N".
-  int get requiredTotal => requiredHave + missing.length + substituted.length;
+  int get requiredTotal =>
+      requiredHave +
+      missing.length +
+      substituted.where((s) => !s.ingredient.optional).length;
 }
 
 // ---- ingredient identity ----------------------------------------------------
@@ -247,10 +250,43 @@ Set<int> _forms(String phrase) {
   };
 }
 
+const _freshState = -1;
+
+/// Stated preparation states: the packaged forms plus "fresh".
+Set<int> _states(String phrase) => {
+  ..._forms(phrase),
+  if (RegExp(r'\bfresh\b', caseSensitive: false).hasMatch(phrase)) _freshState,
+};
+
+/// A leading amount and measuring unit on a confirmed item ("1 cup corn",
+/// "2 tbsp peanut butter", "½ lb of beef"). Containers ("a can of") are kept:
+/// they say what form the food is in.
+final _leadingAmount = RegExp(
+  r'^\s*(?:(?:\d+(?:[./]\d+)?|[½¼¾⅓⅔]|a|an|one|two|three|four|half|'
+  r'some|few)\s*)+'
+  r'(?:(?:cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|'
+  r'pounds?|g|grams?|kg|ml|l|liters?|litres?|pinch(?:es)?|handfuls?|'
+  r'cloves?|slices?|pieces?|sticks?)\b\.?\s*(?:of\s+)?)?',
+  caseSensitive: false,
+);
+
+String _withoutLeadingAmount(String item) =>
+    item.replaceFirst(_leadingAmount, '');
+
 /// Whether a cook-confirmed pantry item names the same food as [ingredient].
+/// A leading amount on the item is ignored; a stated preparation state that
+/// contradicts the ingredient's ("fresh" for "Canned black beans") is not
+/// the same food.
 bool previewItemMatches(String item, Ingredient ingredient) {
-  final words = previewFoodWords(item);
+  final words = previewFoodWords(_withoutLeadingAmount(item));
   if (words.isEmpty) return false;
+  final itemStates = _states(item);
+  final nameStates = _states(ingredient.name);
+  if (itemStates.isNotEmpty &&
+      nameStates.isNotEmpty &&
+      itemStates.intersection(nameStates).isEmpty) {
+    return false;
+  }
   return previewIngredientIdentities(ingredient)
       .any((identity) => setEquals(identity, words));
 }
@@ -328,11 +364,13 @@ PreviewIngredients previewIngredients(
   for (final ingredient in recipe.ingredients) {
     if (previewHasIngredient(recipe, ingredient, items)) {
       have.add(ingredient);
-    } else if (ingredient.optional) {
-      optional.add(ingredient);
     } else if (previewConfirmedSubstitution(recipe, ingredient, items)
         case final sub?) {
+      // Before the optional branch, so an optional ingredient's reviewed swap
+      // and its note are shown too (it stays out of the required count).
       substituted.add((ingredient: ingredient, substitution: sub));
+    } else if (ingredient.optional) {
+      optional.add(ingredient);
     } else {
       missing.add(ingredient);
     }
@@ -473,26 +511,78 @@ const kPreviewAllergenNameHints = <String, List<String>>{
   'sesame': ['sesame', 'tahini'],
 };
 
-// Plant "milks" and nut or seed "butters" are not dairy.
-final _notDairy = RegExp(
-  r'\b(?:peanut|nut|almond|cashew|seed|apple|coconut|oat|rice|soy|soya)\s+'
-  r'(?:butter|milk|cream|yogurt|cheese)\b',
-);
+// A plant word anywhere in a name ("Coconut milk", "Milk (coconut)",
+// "Sunflower seed butter") means its milk, butter or cream is not dairy.
+const _plantWords = {
+  'peanut',
+  'peanuts',
+  'nut',
+  'nuts',
+  'almond',
+  'cashew',
+  'seed',
+  'seeds',
+  'sunflower',
+  'apple',
+  'coconut',
+  'oat',
+  'oats',
+  'rice',
+  'soy',
+  'soya',
+};
+const _plantableDairyWords = {
+  'milk',
+  'butter',
+  'cream',
+  'yogurt',
+  'yoghurt',
+  'cheese',
+};
 
-/// [kLabelAllergens] that the ingredient names suggest, in label order.
-List<String> previewAllergenHints(Recipe recipe) {
-  Set<String> wordsOf(String text) => text.split(RegExp(r'[^a-z]+')).toSet();
+/// [kLabelAllergens] that [text] (one food's name) suggests, in label order.
+List<String> previewAllergenHintsFor(String text) {
+  final words = text.toLowerCase().split(RegExp(r'[^a-z]+')).toSet();
+  final plant = words.any(_plantWords.contains);
   final found = <String>{};
-  for (final ingredient in recipe.ingredients) {
-    final name = ingredient.name.toLowerCase();
-    final words = wordsOf(name);
-    final dairyWords = wordsOf(name.replaceAll(_notDairy, ' '));
-    for (final MapEntry(key: allergen, value: hints)
-        in kPreviewAllergenNameHints.entries) {
-      final pool = allergen == 'milk' ? dairyWords : words;
-      if (hints.any(pool.contains)) found.add(allergen);
-    }
+  for (final MapEntry(key: allergen, value: hints)
+      in kPreviewAllergenNameHints.entries) {
+    final pool = allergen == 'milk' && plant
+        ? words.difference(_plantableDairyWords)
+        : words;
+    if (hints.any(pool.contains)) found.add(allergen);
   }
+  return [
+    for (final a in kLabelAllergens)
+      if (found.contains(a)) a,
+  ];
+}
+
+/// [kLabelAllergens] that the recipe's ingredient names suggest.
+List<String> previewAllergenHints(Recipe recipe) {
+  final found = {
+    for (final i in recipe.ingredients) ...previewAllergenHintsFor(i.name),
+  };
+  return [
+    for (final a in kLabelAllergens)
+      if (found.contains(a)) a,
+  ];
+}
+
+// "Contains dairy." in a reviewer's note names an allergen of the swap.
+final _containsNote = RegExp(r'\bcontains?\s+([a-z ]+)', caseSensitive: false);
+
+/// Allergens a reviewed swap suggests: from its name, and from a "contains
+/// …" statement in the reviewer's note ("dairy" counts as milk, "gluten" as
+/// wheat). Other words in the note are advice, not contents.
+List<String> previewSwapAllergens(ReviewedSubstitution sub) {
+  final contains = [
+    for (final m in _containsNote.allMatches(sub.note)) m.group(1)!,
+  ].join(' ').replaceAll('dairy', 'milk').replaceAll('gluten', 'wheat');
+  final found = {
+    ...previewAllergenHintsFor(sub.substitute),
+    ...previewAllergenHintsFor(contains),
+  };
   return [
     for (final a in kLabelAllergens)
       if (found.contains(a)) a,
@@ -504,9 +594,12 @@ List<String> previewAllergenHints(Recipe recipe) {
 /// says or suggests; it never says a dish is free of an allergen or safe to
 /// eat, and when the app finds no match it says that rules nothing out.
 class PreviewAllergens {
-  PreviewAllergens(Recipe recipe, Set<String> household)
-    : mentioned = recipeAllergens(recipe),
-      household = household.toList()..sort() {
+  PreviewAllergens(
+    Recipe recipe,
+    Set<String> household, {
+    List<ReviewedSubstitution> swaps = const [],
+  }) : mentioned = recipeAllergens(recipe),
+       household = household.toList()..sort() {
     final saved = {for (final a in household) _normalizeAllergen(a)};
     householdMatches = [
       for (final a in mentioned)
@@ -521,7 +614,34 @@ class PreviewAllergens {
       for (final a in nameHints)
         if (saved.contains(_normalizeAllergen(a))) a,
     ];
+    swapAllergens = [
+      for (final sub in swaps)
+        if (previewSwapAllergens(sub) case final found when found.isNotEmpty)
+          (swap: sub.substitute, allergens: found),
+    ];
+    householdSwapHits = [
+      for (final s in swapAllergens)
+        for (final a in s.allergens)
+          if (saved.contains(_normalizeAllergen(a)))
+            (swap: s.swap, allergen: a),
+    ];
   }
+
+  /// Allergens suggested by the reviewed swaps the cook confirmed.
+  late final List<({String swap, List<String> allergens})> swapAllergens;
+
+  /// [swapAllergens] on the household list.
+  late final List<({String swap, String allergen})> householdSwapHits;
+
+  /// Each confirmed swap that suggests an allergen, named so the cook can
+  /// tell which warning comes from the swap, or null when none does.
+  String? get swapLine => swapAllergens.isEmpty
+      ? null
+      : [
+          for (final s in swapAllergens)
+            'Your reviewed swap, ${s.swap}, suggests '
+                '${_list(s.allergens)} — check its label yourself.',
+        ].join(' ');
 
   final List<RecipeAllergen> mentioned;
   final List<String> household;
@@ -537,7 +657,9 @@ class PreviewAllergens {
 
   /// True when a household allergen is tagged or suggested by a name.
   bool get householdWarning =>
-      householdMatches.isNotEmpty || householdHints.isNotEmpty;
+      householdMatches.isNotEmpty ||
+      householdHints.isNotEmpty ||
+      householdSwapHits.isNotEmpty;
 
   /// "The recipe mentions wheat and peanut — check labels yourself."
   String get mentionLine => mentioned.isEmpty
@@ -567,6 +689,15 @@ class PreviewAllergens {
       return 'An ingredient name suggests $names, which $verb on your '
           'household list — check the ingredients and labels yourself.';
     }
+    if (householdSwapHits.isNotEmpty) {
+      final names = _list(
+        {for (final h in householdSwapHits) h.allergen}.toList(),
+      );
+      final swaps = _list({for (final h in householdSwapHits) h.swap}.toList());
+      final verb = names.contains(' and ') ? 'are' : 'is';
+      return 'Your reviewed swap ($swaps) suggests $names, which $verb on '
+          'your household list — check its label yourself.';
+    }
     return 'The app found no match for your household allergens '
         '(${_list(household)}) in this recipe. That doesn’t rule them out — '
         'check the ingredients and labels yourself.';
@@ -585,7 +716,18 @@ class RecipePreviewData {
          confirmedItems,
          pantryChecked: pantryChecked,
        ),
-       allergens = PreviewAllergens(recipe, household),
+       allergens = PreviewAllergens(
+         recipe,
+         household,
+         swaps: [
+           for (final s in previewIngredients(
+             recipe,
+             confirmedItems,
+             pantryChecked: pantryChecked,
+           ).substituted)
+             s.substitution,
+         ],
+       ),
        time = previewTime(recipe);
 
   final Recipe recipe;

@@ -54,17 +54,25 @@ void main() {
       'The camera can confirm the chicken is fully cooked.',
       'The camera confirms the chicken has reached 165°F.',
       'This tahini is sesame-free.',
+      'Sesame-free tahini toast',
       'It is free of nuts.',
       'This dish has no allergens.',
       'It is safe to eat now.',
+      'Do not serve until it is safe to eat.',
+      'Safe-for-eating once warm.',
       'The chicken is cooked through.',
+      'The chicken is fully cooked when it looks white.',
+      'It is done once the edges turn golden.',
+      'Cook until no longer pink.',
+      'Done when the juices run clear.',
     ]) {
       test('flags "$claim"', () => expect(draftTextCertifies(claim), isTrue));
     }
     for (final guidance in [
-      'Cook until the chicken is cooked through.',
+      'Cook until a thermometer reads 165°F (74°C).',
       'It is done when a thermometer reads 165°F (74°C).',
       'Toast the bread for about 3 minutes.',
+      'Cook until golden brown on both sides.',
       'Check the label for sesame.',
     ]) {
       test(
@@ -74,32 +82,64 @@ void main() {
     }
   });
 
-  test('a certifying summary sentence is removed at build time', () {
-    final recipe = _build(
-      _draftJson(
-        summary:
-            'Warm toast with peanuts. The camera can confirm the chicken '
-            'is fully cooked.',
-      ),
-    );
-    expect(recipe.summary, 'Warm toast with peanuts.');
-  });
+  group('a draft is rejected whole, never edited', () {
+    Map<String, dynamic> withStep(String field, String text) {
+      final json = _draftJson();
+      final steps = [
+        for (final s in json['steps'] as List) Map<String, dynamic>.from(s),
+      ];
+      steps.first[field] = text;
+      return {...json, 'steps': steps};
+    }
 
-  test('a certifying instruction sentence is removed; a step that only '
-      'certifies rejects the draft', () {
-    final recipe = _build(
-      _draftJson(
-        bakeInstruction:
-            'Toast the bread for 3 minutes. The camera confirms it is safe.',
+    final cases = <String, Map<String, dynamic>>{
+      'title': {..._draftJson(), 'title': 'Sesame-free tahini toast'},
+      'summary': _draftJson(
+        summary: 'The chicken is fully cooked when it looks white.',
       ),
-    );
-    expect(recipe.steps.first.instruction, 'Toast the bread for 3 minutes.');
-    expect(
-      () => _build(
-        _draftJson(bakeInstruction: 'The camera confirms it is done.'),
+      'instruction': withStep(
+        'instruction',
+        'Do not serve until it is safe to eat. Serve immediately.',
       ),
-      throwsFormatException,
-    );
+      'cue': withStep('cue', 'This tahini is sesame-free.'),
+      'step title': withStep('title', 'Toast until safe to eat'),
+      'equipment': {
+        ..._draftJson(),
+        'equipment': ['Camera can confirm doneness'],
+      },
+    };
+    for (final MapEntry(key: field, value: json) in cases.entries) {
+      test('a certifying $field rejects the draft', () {
+        expect(draftCertifyingField(json), isNotNull);
+        expect(() => _build(json), throwsFormatException);
+      });
+    }
+
+    test('an ingredient quantity is checked too', () {
+      final json = _draftJson();
+      final ingredients = [
+        for (final i in json['ingredients'] as List)
+          Map<String, dynamic>.from(i),
+      ];
+      ingredients.last['qty'] = '2 tbsp, peanut-free';
+      expect(
+        draftCertifyingField({...json, 'ingredients': ingredients}),
+        'ingredient',
+      );
+    });
+
+    test('a safe draft passes unchanged', () {
+      final json = _draftJson(
+        bakeInstruction: 'Toast until golden. Do not leave it unattended.',
+      );
+      expect(draftCertifyingField(json), isNull);
+      final recipe = _build(json);
+      expect(
+        recipe.steps.first.instruction,
+        'Toast until golden. Do not leave it unattended.',
+      );
+      expect(recipe.summary, 'Warm toast with a crunchy topping.');
+    });
   });
 
   Future<void> pumpPreview(
@@ -124,8 +164,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('a drafted summary that certifies is never shown, even when it '
-      'reaches the preview unstripped', (tester) async {
+  testWidgets('drafted text that certifies is never shown, even if a draft '
+      'reaches the preview without the builder', (tester) async {
     final built = _build(_draftJson());
     final unsafe = Recipe(
       id: built.id,
@@ -142,6 +182,22 @@ void main() {
     await pumpPreview(tester, unsafe);
     expect(find.text('Peanut toast'), findsOneWidget);
     expect(find.textContaining('camera can confirm'), findsNothing);
+
+    final unsafeTitle = Recipe(
+      id: built.id,
+      version: 1,
+      title: 'Sesame-free tahini toast',
+      summary: built.summary,
+      ingredients: built.ingredients,
+      equipment: built.equipment,
+      steps: built.steps,
+      checkpoints: const [],
+      reviewedSubstitutions: const [],
+      adjustmentLabels: const {},
+    );
+    await pumpPreview(tester, unsafeTitle);
+    expect(find.textContaining('Sesame-free'), findsNothing);
+    expect(find.text('AI-drafted recipe'), findsOneWidget);
 
     await pumpPreview(tester, built);
     expect(find.text('Warm toast with a crunchy topping.'), findsOneWidget);

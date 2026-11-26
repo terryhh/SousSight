@@ -372,7 +372,9 @@ void main() {
           {
             'title': 'Scramble',
             'instruction': 'Cook the eggs in a pan, stirring.',
-            'cue': 'Eggs are fully cooked and safe to eat.',
+            // A certifying cue now rejects the whole draft (SS-099); this
+            // one does not certify, so the app's note is still appended.
+            'cue': 'Eggs are softly set.',
             'timerSeconds': 180,
           },
           {

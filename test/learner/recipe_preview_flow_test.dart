@@ -15,6 +15,7 @@ import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/coach_lite/coach_lite.dart';
 import 'package:soussight/core/analytics.dart';
 import 'package:soussight/core/models.dart';
+import 'package:soussight/label/household_allergens.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/recipe_preview.dart';
 import 'package:soussight/learner/recipe_preview_swap.dart';
@@ -295,6 +296,33 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+
+    // A swap's allergen reaches the household comparison, named as the swap.
+    final wrap = recipes.firstWhere((r) => r.id == 'chickpea_wrap_v1');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: cookingTheme,
+        home: RecipePreviewScreen(
+          recipe: wrap,
+          confirmedItems: const ['Plain Greek yogurt'],
+          household: InMemoryHouseholdAllergens(['milk']),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const ValueKey('preview-allergens')));
+    expect(
+      find.text(
+        'Your reviewed swap (Plain Greek yogurt) suggests milk, which is on '
+        'your household list — check its label yourself.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('preview-swap-allergen-line')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('found no match'), findsNothing);
   });
 
   testWidgets('without the flag, choosing opens cooking directly', (

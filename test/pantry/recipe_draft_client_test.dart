@@ -120,7 +120,9 @@ void main() {
         {
           'title': 'Cook',
           'instruction': 'Cook the chicken in a hot pan.',
-          'cue': 'Strips are browned on all sides and fully cooked.',
+          // A certifying cue ("fully cooked") now rejects the whole draft
+          // (SS-099, test/learner/recipe_preview_safety_test.dart).
+          'cue': 'Strips are browned on all sides.',
           'timerSeconds': 480,
         },
         {'title': 'Serve', 'instruction': 'Plate it.', 'cue': 'On the plate.'},
@@ -128,8 +130,8 @@ void main() {
     );
     final recipe = (await _client(() => jsonEncode(draft)).draft(_request))
         .recipe;
-    // The model's "fully cooked" cue is dropped; colour is never the test.
-    expect(recipe.steps[1].cue, draftThermometerNote('chicken'));
+    // Colour is never the test: the thermometer note follows the model cue.
+    expect(recipe.steps[1].cue, endsWith(draftThermometerNote('chicken')));
     expect(recipe.steps[1].cue, contains('poultry 165°F (74°C)'));
     expect(recipe.steps[1].cue, isNot(contains('fully cooked')));
     expect(recipe.steps[1].timerSeconds, 480);

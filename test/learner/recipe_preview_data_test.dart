@@ -151,6 +151,10 @@ void main() {
       );
       final milk = draft.ingredients.single;
       expect(previewHasIngredient(draft, milk, ['1 cup coconut milk']), isTrue);
+      expect(
+        previewHasIngredient(draft, milk, ['coconut milk (1 cup)']),
+        isTrue,
+      );
       expect(previewHasIngredient(draft, milk, ['milk']), isFalse);
       // A reviewed recipe gets no draft-key match.
       final reviewed = Recipe(
@@ -165,11 +169,110 @@ void main() {
         reviewedSubstitutions: const [],
         adjustmentLabels: const {},
       );
+      // Only the draft's validated key ignores a trailing "(1 cup)".
       expect(
-        previewHasIngredient(reviewed, milk, ['1 cup coconut milk']),
+        previewHasIngredient(reviewed, milk, ['coconut milk (1 cup)']),
         isFalse,
       );
       expect(previewHasIngredient(reviewed, milk, ['coconut milk']), isTrue);
+    });
+
+    test('a stated fresh/canned state that contradicts the recipe is not '
+        'the ingredient', () {
+      expect(have('black_bean_corn_salsa_v1', ['fresh black beans']), isEmpty);
+      expect(have('black_bean_corn_salsa_v1', ['canned black beans']), [
+        'black_beans',
+      ]);
+      expect(have('black_bean_corn_salsa_v1', ['black beans']), [
+        'black_beans',
+      ]);
+      expect(have('chickpea_wrap_v1', ['fresh lemon juice']), ['lemon']);
+    });
+
+    test('leading amounts and units are ignored on the confirmed side', () {
+      expect(have('black_bean_corn_salsa_v1', ['1 cup corn']), ['corn']);
+      expect(have('black_bean_corn_salsa_v1', ['1 cup corn starch']), isEmpty);
+      expect(have('black_bean_corn_salsa_v1', ['½ cup of corn']), ['corn']);
+      expect(have('peanut_butter_sandwich_v1', ['2 tbsp peanut butter']), [
+        'peanut_butter',
+      ]);
+      expect(have('black_bean_corn_salsa_v1', ['a can of corn']), ['corn']);
+    });
+
+    test('a reviewed swap is found before the optional branch', () {
+      final wrap = byId['chickpea_wrap_v1']!;
+      final result = previewIngredients(wrap, const [
+        'Shredded carrot',
+      ], pantryChecked: true);
+      expect([for (final s in result.substituted) s.ingredient.id], ['celery']);
+      expect(
+        result.optionalMissing.map((i) => i.id),
+        isNot(contains('celery')),
+      );
+    });
+
+    test('an optional ingredient\'s swap stays out of the required count', () {
+      const recipe = Recipe(
+        id: 'r',
+        version: 1,
+        title: 'R',
+        summary: '',
+        ingredients: [
+          Ingredient(id: 'jam', name: 'Jam', qty: '', optional: true),
+          Ingredient(id: 'bread', name: 'Bread', qty: ''),
+        ],
+        equipment: [],
+        steps: [],
+        checkpoints: [],
+        reviewedSubstitutions: [
+          ReviewedSubstitution(
+            ingredientId: 'jam',
+            substitute: 'Honey',
+            note: 'Thinner.',
+            approvedBy: 'Recipe reviewer',
+          ),
+        ],
+        adjustmentLabels: {},
+      );
+      final result = previewIngredients(recipe, const [
+        'honey',
+      ], pantryChecked: true);
+      expect(result.substituted.single.ingredient.id, 'jam');
+      expect((result.requiredHave, result.requiredTotal), (0, 1));
+    });
+
+    test('a confirmed swap that suggests an allergen counts for the '
+        'household', () {
+      final wrap = byId['chickpea_wrap_v1']!;
+      final data = RecipePreviewData(
+        wrap,
+        confirmedItems: const ['Plain Greek yogurt'],
+        household: const {'milk'},
+      );
+      expect(data.ingredients.substituted.single.ingredient.id, 'mayo');
+      final a = data.allergens;
+      expect(a.householdWarning, isTrue);
+      expect(
+        a.householdLine,
+        'Your reviewed swap (Plain Greek yogurt) suggests milk, which is on '
+        'your household list — check its label yourself.',
+      );
+      expect(a.householdLine, isNot(contains('found no match')));
+      expect(
+        a.swapLine,
+        'Your reviewed swap, Plain Greek yogurt, suggests milk — check its '
+        'label yourself.',
+      );
+      // Without the swap confirmed, nothing is suggested.
+      expect(
+        RecipePreviewData(wrap, household: const {'milk'}).allergens.swapLine,
+        isNull,
+      );
+      // Advice in a note is not contents: the lettuce swap names no allergen.
+      final lettuce = wrap.reviewedSubstitutions.firstWhere(
+        (s) => s.substitute.contains('lettuce'),
+      );
+      expect(previewSwapAllergens(lettuce), isEmpty);
     });
 
     test('bundled names suggest no allergen their tags miss', () {
@@ -416,6 +519,12 @@ void main() {
       expect(previewAllergenHints(named(['Coconut milk', 'Peanut butter'])), [
         'peanut',
       ]);
+      expect(previewAllergenHints(named(['Milk (coconut)'])), isEmpty);
+      expect(
+        previewAllergenHints(named(['Oat milk', 'Butter (sunflower seed)'])),
+        isEmpty,
+      );
+      expect(previewAllergenHints(named(['Milk', 'Greek yogurt'])), ['milk']);
       expect(previewAllergenHints(named(['Butter', 'Tahini', 'Shrimp'])), [
         'milk',
         'shellfish',

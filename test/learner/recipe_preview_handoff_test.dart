@@ -80,6 +80,25 @@ void main() {
     },
   );
 
+  test(
+    'fresh beans are not saved as canned; "1 cup corn" is saved as corn',
+    () async {
+      final salsa = byId['black_bean_corn_salsa_v1']!;
+      await applyPantryHandoff(
+        services,
+        salsa,
+        const PantryHandoff(
+          confirmedItems: [
+            'fresh black beans',
+            '1 cup corn',
+            '1 cup corn starch',
+          ],
+        ),
+      );
+      expect(await saved(salsa), {'corn': IngredientStatus.have});
+    },
+  );
+
   test('"Mayonnaise" persists the mayo ingredient', () async {
     final wrap = byId['chickpea_wrap_v1']!;
     await applyPantryHandoff(
