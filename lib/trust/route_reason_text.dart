@@ -8,22 +8,31 @@ const Map<RouteReason, String> routeReasonText = {
   RouteReason.onDevice: 'Ran on this device — nothing left it.',
   RouteReason.localOnlySetting:
       "You asked to keep this on your device, and it can't run here right now.",
-  RouteReason.cloudNotApproved: 'Cloud help is off in this build.',
+  RouteReason.cloudNotApproved: "Sending online is off in this build.",
   RouteReason.audioNeedsCloud:
-      'Voice clips need the cloud; your photo stayed here.',
+      "Voice clips have to be sent online to Google's AI; your photo stayed "
+      'here.',
   RouteReason.imageNeedsCloud:
-      "This device's model can't read photos, so the photo needs the cloud.",
+      "This device can't read photos, so the photo had to be sent online.",
   RouteReason.tooLargeForDevice:
-      'This was too big for the on-device model, so it needed the cloud.',
-  RouteReason.languageNotSupported: "The on-device model doesn't speak this language yet, so it needed the cloud.",
-  RouteReason.modelNotReady: "The on-device model isn't set up yet. You can set it up from On-device AI.",
+      'This was too big for this device, so it had to be sent online.',
+  RouteReason.languageNotSupported:
+      "This device doesn't speak this language yet, so it had to be sent "
+      'online.',
+  RouteReason.modelNotReady:
+      "Help on this device isn't set up yet. You can set it up from "
+      '"On this device".',
   RouteReason.modelDownloading:
-      'The on-device model is still downloading. Try again when it finishes.',
-  RouteReason.noLocalModel: "This device doesn't have an on-device model.",
-  RouteReason.offline: "You're offline, and this needs the cloud. It will work when you reconnect.",
+      'Help on this device is still downloading. Try again when it finishes.',
+  RouteReason.noLocalModel: "This device can't run this on its own.",
+  RouteReason.offline:
+      "You're offline, and this has to be sent online. It will work when you "
+      'reconnect.',
   RouteReason.consentDeclined: 'You said no, so nothing was sent.',
   RouteReason.cancelled: 'Stopped. Nothing more will be sent for this.',
-  RouteReason.cloudRetryAfterCheck: "The on-device answer didn't pass our checks, so we asked the cloud once.",
+  RouteReason.cloudRetryAfterCheck:
+      "The answer from this device didn't pass our checks, so we asked "
+      "Google's AI online once.",
 };
 
 /// The sentence for [reason]. Every enum value has one; a test enforces it.

@@ -39,7 +39,11 @@ class PantryUiController extends ChangeNotifier {
   List<String> _items = const [];
   final Set<int> _confirmed = {};
   int _generation = 0;
+  int _typedCount = 0;
   bool _disposed = false;
+
+  /// How many items started confirmed because the cook typed them.
+  int get typedCount => _typedCount;
 
   int get generation => _generation;
   List<String> get items => _items;
@@ -66,9 +70,11 @@ class PantryUiController extends ChangeNotifier {
   }
 
   /// Replaces the surface with components built from a validated result.
-  /// Every candidate starts unconfirmed: model confidence is not the cook's
-  /// confirmation. Only items the cook taps are handed to the cooking session.
-  void show(PantryResult result, List<Recipe> recipes) {
+  /// Model confidence is not the cook's confirmation, so photo and voice
+  /// guesses start unconfirmed. Items the cook [typed] are their own word and
+  /// start confirmed (SS-089); the cook can still untick them. Only confirmed
+  /// items are handed to the cooking session.
+  void show(PantryResult result, List<Recipe> recipes, {String typed = ''}) {
     if (_disposed) return;
     final byId = {for (final recipe in recipes) recipe.id: recipe};
     final meals = [
@@ -77,6 +83,13 @@ class PantryUiController extends ChangeNotifier {
     ];
     _items = [for (final item in result.items) item.name];
     _confirmed.clear();
+    final typedEntries = pantryTypedEntries(typed);
+    for (var i = 0; i < _items.length; i++) {
+      if (typedEntries.any((entry) => pantryNamesMatch(entry, _items[i]))) {
+        _confirmed.add(i);
+      }
+    }
+    _typedCount = _confirmed.length;
     final components = <Map<String, dynamic>>[
       {
         'id': 'root',
@@ -134,6 +147,34 @@ class PantryUiController extends ChangeNotifier {
     engine.dispose();
     super.dispose();
   }
+}
+
+/// The cook's typed list as lower-case entries, without leading amounts
+/// ("2 tomatoes" → "tomatoes").
+List<String> pantryTypedEntries(String typed) => [
+  for (final raw in typed.split(RegExp(r'[,;\n]+|\band\b')))
+    if (raw
+            .trim()
+            .replaceFirst(RegExp(r'^(\d+[\d/.]*\s*|a\s+|an\s+|some\s+)+'), '')
+            .trim()
+            .toLowerCase()
+        case final entry when entry.isNotEmpty)
+      entry,
+];
+
+/// Whether a typed entry and an item name are the same food: one contains
+/// the other, or (ignoring a plural "s") they share a word of 3+ letters.
+bool pantryNamesMatch(String typed, String item) {
+  final a = typed.toLowerCase().trim();
+  final b = item.toLowerCase().trim();
+  if (a.isEmpty || b.isEmpty) return false;
+  if (a.contains(b) || b.contains(a)) return true;
+  Set<String> words(String s) => {
+    for (final w in s.split(RegExp(r'[^a-z]+')))
+      if (w.length > 2)
+        w.length > 3 && w.endsWith('s') ? w.substring(0, w.length - 1) : w,
+  };
+  return words(a).intersection(words(b)).isNotEmpty;
 }
 
 class PantrySurface extends StatelessWidget {
@@ -207,9 +248,14 @@ Catalog buildPantryCatalog(PantryUiController controller) => Catalog([
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 4),
-            const Text(
-              'Tap each item you actually have. Nothing counts until you confirm it.',
-              style: TextStyle(fontSize: 14, height: 1.4),
+            Text(
+              controller.typedCount > 0
+                  ? 'Items you typed are already ticked. Tap anything to '
+                        'change it; guesses count only once you tick them.'
+                  : 'Tap each item you actually have. Nothing counts until '
+                        'you confirm it.',
+              key: const ValueKey('pantry-items-hint'),
+              style: const TextStyle(fontSize: 14, height: 1.4),
             ),
             const SizedBox(height: 14),
             AnimatedBuilder(
@@ -541,11 +587,13 @@ String pantryLegLabel(InferenceLeg leg) {
   final what = pantryLegWhat(leg);
   final where = switch (leg.provenance) {
     Provenance.sdkOnDevice => 'on this device',
-    Provenance.sdkCloud => 'Google cloud',
-    Provenance.cloudAdapter => 'Google cloud',
-    Provenance.simulated => 'simulated, no model used',
+    Provenance.sdkCloud => "sent online to Google's AI",
+    Provenance.cloudAdapter => "sent online to Google's AI",
+    Provenance.simulated => 'practice mode, pretend answer',
     Provenance.unknown =>
-      leg.transferPermitted ? 'may have used Google cloud' : 'on this device',
+      leg.transferPermitted
+          ? "may have been sent online to Google's AI"
+          : 'on this device',
   };
   final failed = leg.error == null ? '' : ' · did not finish';
   return '$what · $where$failed';

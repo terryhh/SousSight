@@ -29,7 +29,7 @@ class InferenceSourceBadge extends StatelessWidget {
   final RouteReason? reason;
 
   String _label(InferenceLeg leg) {
-    final base = legLabel(leg, localModel: localModelFamily);
+    final base = legLabel(leg);
     final error = leg.error;
     return error == null ? base : '$base (${errorLabel(error)})';
   }
@@ -257,7 +257,8 @@ class _LegDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final outcome = legOutcome(leg);
     final colors = outcomeColors(outcome);
-    final where = legLabel(leg, localModel: localModelFamily);
+    final where = legLabel(leg);
+    final model = legModelName(leg, localModel: localModelFamily);
     final kinds = dataKindsPhrase(leg.kinds);
     final permission = leg.transferPermitted
         ? 'Allowed to leave this device: $kinds.'
@@ -296,6 +297,7 @@ class _LegDetail extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(outcomeExplanation(outcome)),
+                    if (model != null) Text('Model: $model'),
                     Text('Used: $kinds. $permission'),
                     if (leg.error case final error?)
                       Text("This attempt didn't finish: ${errorLabel(error)}."),

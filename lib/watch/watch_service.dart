@@ -36,11 +36,19 @@ class WatchService extends ChangeNotifier {
     required this.startLiveWatch,
     required this.stopLiveWatch,
     FutureOr<bool> Function()? localVisionSupported,
+    this.liveAvailable = true,
+    this.simulated = false,
   }) : _localVisionSupported = localVisionSupported ?? (() => true) {
     local.addListener(_onLocal);
   }
 
   final LocalWatchController local;
+
+  /// False in builds without the Live coach: messages never point to it.
+  final bool liveAvailable;
+
+  /// Practice mode: messages say the watch is pretend.
+  final bool simulated;
 
   /// `LiveCookingController.startWatch`: returns a watch id or null.
   final String? Function(String goal) startLiveWatch;
@@ -128,10 +136,12 @@ class WatchService extends ChangeNotifier {
     if (!current()) return superseded;
     if (!supported) {
       return _result(
-        const WatchStart(
-          message:
-              'The on-device model here can\'t look at photos. Connect the '
-              'Live coach to watch with cloud vision.',
+        WatchStart(
+          message: liveAvailable
+              ? 'The on-device model here can\'t look at photos. Connect the '
+                    'Live coach to watch with cloud vision.'
+              : "This device can't look at photos on its own. Keep an eye on "
+                    'the food yourself — the step says what to look for.',
         ),
       );
     }
@@ -152,6 +162,9 @@ class WatchService extends ChangeNotifier {
         watchId: id,
         message: id == null
             ? (local.notice ?? 'The on-device watch could not start.')
+            : simulated
+            ? 'Practice watch: pretend checks of a practice camera picture. '
+                  'Nothing is sent.'
             : 'Watching on this device: camera on, microphone off. Photos '
                   'are checked by the on-device model.',
       ),

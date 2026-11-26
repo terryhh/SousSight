@@ -616,3 +616,63 @@ class _ReadinessCard extends StatelessWidget {
     );
   }
 }
+
+/// One calm line for the first screen (SS-089): what the cook can do now,
+/// never a stack of warnings. The full detail lives in the "On this device"
+/// sheet behind "Details". Null when there is nothing worth saying.
+String? readinessCalmLine(AppReadiness readiness) {
+  final states = readiness.states;
+  if (states.contains(ReadinessState.ready)) return null;
+  if (!readiness.canUseAi) {
+    return states.contains(ReadinessState.offline)
+        ? "You're offline. Pick a recipe below — steps and timers still work."
+        : "Pick a recipe below to start cooking. Matching your food may not "
+              'work on this device right now.';
+  }
+  if (readiness.items.any((i) => i.cloudPath) && !readiness.localReady) {
+    return "Type what you have, or pick a recipe below. Your list is sent "
+        "online to Google's AI, and each answer says so.";
+  }
+  return 'Type what you have, or pick a recipe below.';
+}
+
+/// The compact form of [ReadinessPanel]: [readinessCalmLine] and a
+/// "Details" button. Renders nothing when the line is null.
+class ReadinessLine extends StatelessWidget {
+  const ReadinessLine({
+    super.key,
+    required this.readiness,
+    required this.onDetails,
+  });
+
+  final AppReadiness readiness;
+  final VoidCallback onDetails;
+
+  @override
+  Widget build(BuildContext context) {
+    final line = readinessCalmLine(readiness);
+    if (line == null) return const SizedBox.shrink();
+    const ink = Color(0xff5c4a2e);
+    return Row(
+      key: const ValueKey('readiness-line'),
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const ExcludeSemantics(
+          child: Icon(Icons.info_outline, size: 18, color: ink),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            line,
+            style: const TextStyle(fontSize: 14, height: 1.35, color: ink),
+          ),
+        ),
+        TextButton(
+          key: const ValueKey('readiness-details'),
+          onPressed: onDetails,
+          child: const Text('Details'),
+        ),
+      ],
+    );
+  }
+}

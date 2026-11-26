@@ -45,7 +45,7 @@ void main() {
       expect(c.sent(DataKind.audio), 1);
       expect(sentences(c), [
         '0 photos left your kitchen this session',
-        '1 voice clip went to Google cloud',
+        '1 voice clip sent online to Google\'s AI',
         '2 photo checks stayed on this device',
       ]);
     });
@@ -59,7 +59,10 @@ void main() {
           kinds: {DataKind.image},
         ),
       ]);
-      expect(c.headline.sentence, '2 photos went to Google cloud this session');
+      expect(
+        c.headline.sentence,
+        '2 photos sent online to Google\'s AI this session',
+      );
     });
 
     test('unknown + permitted may have been sent; unknown + not is not', () {
@@ -114,7 +117,7 @@ void main() {
       expect(
         c.headline.sentence,
         '1 Live coach connection streamed your camera and microphone to '
-        'Google cloud this session',
+        'Google\'s AI this session',
       );
       expect(c.headline.sentence, isNot(contains('0 photos')));
     });
@@ -141,11 +144,11 @@ void main() {
         leg(Provenance.sdkCloud, feature: 'coach_lite'),
       ]);
       expect(sentences(c), [
-        '1 photo went to Google cloud this session',
+        '1 photo sent online to Google\'s AI this session',
         '1 Live coach connection streamed camera and microphone',
         '1 more photo may have been sent',
-        '1 location share went to Google cloud',
-        '2 text requests went to Google cloud',
+        '1 location share sent online to Google\'s AI',
+        '2 text requests sent online to Google\'s AI',
       ]);
     });
   });
@@ -163,7 +166,7 @@ void main() {
     ledger.add(leg(Provenance.sdkCloud, kinds: {DataKind.image}));
     await tester.pumpAndSettle();
     expect(
-      find.text('photo went to Google cloud this session'),
+      find.text('photo sent online to Google\'s AI this session'),
       findsOneWidget,
     );
     expect(find.text('1'), findsOneWidget);
@@ -216,7 +219,7 @@ void main() {
         failedLive(),
       ]);
       expect(sentences(c), [
-        '1 photo went to Google cloud this session',
+        '1 photo sent online to Google\'s AI this session',
         '2 Live coach connections may have streamed',
       ]);
     });

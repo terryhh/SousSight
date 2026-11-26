@@ -122,7 +122,7 @@ class WatchVerdict {
     final seen = whatISee.isEmpty ? '' : ' I can see: $whatISee';
     final where = switch (source) {
       WatchVerdictSource.cloud => ' (cloud check of one photo)',
-      WatchVerdictSource.simulated => ' (simulated)',
+      WatchVerdictSource.simulated => ' (practice mode, pretend answer)',
       _ => '',
     };
     return switch (state) {

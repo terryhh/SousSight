@@ -483,13 +483,9 @@ class CoachLite {
       result = await operation.result;
     } catch (e) {
       if (stamp.sequence != _sequence) {
-        return finish(CoachLiteStatus.cancelled, _fallback(step, null));
+        return finish(CoachLiteStatus.cancelled, _fallback(step));
       }
-      return finish(
-        CoachLiteStatus.failed,
-        _fallback(step, 'The on-device coach could not answer.'),
-        error: '$e',
-      );
+      return finish(CoachLiteStatus.failed, _fallback(step), error: '$e');
     }
     if (identical(_inflight, operation)) _inflight = null;
 
@@ -497,7 +493,7 @@ class CoachLite {
         result.blocked == RouteReason.cancelled) {
       return finish(
         CoachLiteStatus.cancelled,
-        _fallback(step, null),
+        _fallback(step),
         legs: result.legs,
         blocked: result.blocked,
       );
@@ -507,7 +503,7 @@ class CoachLite {
       final reason = result.blocked;
       return finish(
         reason == null ? CoachLiteStatus.failed : CoachLiteStatus.blocked,
-        _fallback(step, _blockedSentence(reason)),
+        _fallback(step),
         legs: result.legs,
         blocked: reason,
       );
@@ -525,7 +521,7 @@ class CoachLite {
     } on Object catch (e) {
       return finish(
         CoachLiteStatus.invalid,
-        _fallback(step, "The on-device coach's answer could not be shown."),
+        _fallback(step),
         legs: result.legs,
         error: e is FormatException ? e.message : '$e',
       );
@@ -614,21 +610,10 @@ String buildCoachLitePrompt({
   return prompt.length <= maxChars ? prompt : prompt.substring(0, maxChars);
 }
 
-String? _blockedSentence(RouteReason? reason) => switch (reason) {
-  RouteReason.modelDownloading =>
-    'The on-device coach is still downloading. Try again in a moment.',
-  RouteReason.modelNotReady || RouteReason.noLocalModel =>
-    "This device can't run the on-device coach right now.",
-  RouteReason.offline => "You're offline and the on-device coach isn't ready.",
-  RouteReason.localOnlySetting =>
-    'On-device only is on, and the on-device coach is not available.',
-  RouteReason.consentDeclined => 'Nothing was sent.',
-  null => 'The on-device coach could not answer.',
-  _ => 'The on-device coach is not available for this question.',
-};
-
 /// App-authored fallback: the recipe's own step text, never model output.
-List<Map<String, dynamic>> _fallback(RecipeStep step, String? note) {
+/// Why there is no answer is shown beside it by `coachLiteStatusLine`, never
+/// mixed into the step text (SS-089).
+List<Map<String, dynamic>> _fallback(RecipeStep step) {
   String cut(String v, int max) =>
       v.length <= max ? v : '${v.substring(0, max - 1)}…';
   return [
@@ -643,7 +628,6 @@ List<Map<String, dynamic>> _fallback(RecipeStep step, String? note) {
       'title': cut(step.title.trim().isEmpty ? 'This step' : step.title, 120),
       'body': cut(
         [
-          ?note,
           step.instruction.trim(),
           if (step.cue.trim().isNotEmpty) 'Look for: ${step.cue.trim()}',
         ].where((s) => s.isNotEmpty).join('\n'),

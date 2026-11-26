@@ -24,6 +24,7 @@ Future<void> showOnDeviceAiSheet(
   required HybridInference inference,
   required PrivacyPreferences privacy,
   VoidCallback? onReady,
+  bool practice = false,
 }) async {
   final capabilities = await inference.capabilities();
   final text = await inference.availability(withImage: false);
@@ -49,6 +50,7 @@ Future<void> showOnDeviceAiSheet(
         privacy: privacy,
         onReady: onReady,
         controller: controller,
+        practice: practice,
       ),
     ),
   );
@@ -61,21 +63,18 @@ String onDeviceStatusText(
   LocalModelLimits? local,
 }) {
   if (image && local != null && !local.supportsImage) {
-    return '${local.modelFamily} reads text only on this device.';
+    return 'Reads text only on this device.';
   }
   return switch (availability.status) {
-    OnDeviceStatus.available =>
-      availability.modelLabel == null
-          ? 'Ready on this device.'
-          : 'Ready on this device (${availability.modelLabel}).',
+    OnDeviceStatus.available => 'Ready on this device.',
     OnDeviceStatus.downloadable => 'Ready to set up.',
     OnDeviceStatus.downloading => 'Downloading.',
     OnDeviceStatus.unavailable => switch (availability.reason) {
       'unsupported_browser' => "This browser can't run it.",
-      'bridge_unavailable' => "On-device AI didn't start in this build.",
+      'bridge_unavailable' => "Offline help didn't start in this build.",
       'device_not_eligible' => "This device isn't supported.",
       'apple_intelligence_off' => 'Turn on Apple Intelligence first.',
-      'not_enrolled' => 'Needs the AICore developer preview.',
+      'not_enrolled' => 'Needs one more phone setting (see Details).',
       'model_not_ready' => "The model isn't ready yet.",
       _ when image => 'Photo checks need a Chrome setting or a newer device.',
       _ => 'Not available here.',
@@ -97,6 +96,7 @@ class OnDeviceAiSheet extends StatefulWidget {
     this.onReady,
     this.features = privacyFeatures,
     this.controller,
+    this.practice = false,
   });
 
   final HybridCapabilities capabilities;
@@ -110,6 +110,9 @@ class OnDeviceAiSheet extends StatefulWidget {
   final VoidCallback? onReady;
   final List<({String feature, String label, String detail})> features;
   final ScrollController? controller;
+
+  /// Practice mode (rehearsal): nothing real runs; the intro says so.
+  final bool practice;
 
   @override
   State<OnDeviceAiSheet> createState() => _OnDeviceAiSheetState();
@@ -167,7 +170,7 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
         HybridException(code: HybridErrorCode.network) =>
           'The download needs a connection. Try again on Wi-Fi.',
         HybridException(code: HybridErrorCode.unavailable) =>
-          "This device can't run the on-device model.",
+          "This device can't run offline help.",
         HybridException(code: HybridErrorCode.busy) =>
           'Your device is busy. Try again in a minute.',
         _ => "Setup didn't finish. Try again.",
@@ -224,20 +227,15 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
         Semantics(
           header: true,
           child: Text(
-            'On-device AI',
+            'On this device',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
             ),
           ),
         ),
         const SizedBox(height: 6),
-        Text(
-          local == null
-              ? "This device doesn't have an on-device model SousSight can use."
-              : 'SousSight can run some help on this device with '
-                    '${local.modelFamily}, so your photos and notes stay here.',
-        ),
-        heading('On this device'),
+        Text(_intro, key: const ValueKey('on-device-intro')),
+        heading('What this device can do'),
         _StatusRow(
           key: const ValueKey('on-device-text-status'),
           icon: Icons.notes,
@@ -256,7 +254,7 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
         _setupControls(theme),
         heading('Keep on this device'),
         Text(
-          "When a switch is on, that feature never uses the cloud. If this "
+          "When a switch is on, that feature is never sent online. If this "
           "device can't run it, SousSight tells you instead.",
           style: theme.textTheme.bodySmall,
         ),
@@ -276,16 +274,61 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
             ],
           ),
         ),
-        heading('How to turn it on'),
-        for (final p in _platforms)
-          _PlatformSteps(
-            key: ValueKey('enable-steps-${p.id}'),
-            title: p.title,
-            steps: p.steps,
-            current: widget.capabilities.platform == p.id,
+        const SizedBox(height: 12),
+        ExpansionTile(
+          key: const ValueKey('on-device-details'),
+          tilePadding: EdgeInsets.zero,
+          title: const Text(
+            'Details',
+            style: TextStyle(fontWeight: FontWeight.w800),
           ),
+          subtitle: const Text('Technical details and how to turn it on'),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_technical, key: const ValueKey('on-device-technical')),
+            heading('How to turn it on'),
+            for (final p in _platforms)
+              _PlatformSteps(
+                key: ValueKey('enable-steps-${p.id}'),
+                title: p.title,
+                steps: p.steps,
+                current: widget.capabilities.platform == p.id,
+              ),
+          ],
+        ),
       ],
     );
+  }
+
+  /// The plain first line. It never contradicts the status rows below it.
+  String get _intro {
+    if (widget.practice) {
+      return 'Practice mode (pretend answers): no AI runs here, on this '
+          'device or online. The switches below work as they do in the real '
+          'app.';
+    }
+    if (_text.status == OnDeviceStatus.available) {
+      return 'Some help works right here on this device, even offline, so '
+          'your photos and notes stay here.';
+    }
+    if (_needsSetup(_text)) {
+      return 'This device can help offline once it is set up. Until then, '
+          'nothing runs here.';
+    }
+    return "This device can't help offline right now. You can still cook any "
+        'recipe with real timers, and every answer shows where it came from.';
+  }
+
+  /// Technical names live here, inside "Details", never in the plain copy.
+  String get _technical {
+    final local = widget.capabilities.local;
+    final family = local == null ? 'none found' : local.modelFamily;
+    final label = _text.modelLabel ?? _image.modelLabel;
+    return 'On-device model: $family'
+        '${label == null ? '' : ' ($label)'}. Platform: '
+        '${widget.capabilities.platform}. SousSight uses Firebase AI Logic '
+        'hybrid inference: on-device first where this device supports it, '
+        "and Google's Gemini models online only where this build allows it.";
   }
 
   Widget _setupControls(ThemeData theme) {
@@ -298,8 +341,8 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
           Semantics(
             liveRegion: true,
             label: percent == null
-                ? 'Setting up on-device AI'
-                : 'Setting up on-device AI, $percent percent',
+                ? 'Setting up offline help'
+                : 'Setting up offline help, $percent percent',
             child: LinearProgressIndicator(
               key: const ValueKey('on-device-progress'),
               value: fraction,
@@ -346,7 +389,7 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
               label: Text(
                 _phase == _SetupPhase.failed
                     ? 'Try again'
-                    : 'Set up on-device AI',
+                    : 'Set up offline help',
               ),
             ),
           ),
@@ -465,7 +508,7 @@ const _platforms = [
           '16 GB of RAM and 4 CPU cores.',
       'For photo checks, open chrome://flags/#prompt-api-for-gemini-nano-multimodal-input, '
           'set it to Enabled, and relaunch Chrome.',
-      'Come back here and tap "Set up on-device AI". The first download needs '
+      'Come back here and tap "Set up offline help". The first download needs '
           'an unmetered connection.',
     ],
   ),
@@ -478,7 +521,7 @@ const _platforms = [
       'Update AICore and Android System Intelligence from the Play Store.',
       'This build asks for the Gemini Nano preview model, which needs the '
           'phone enrolled in the AICore developer preview.',
-      'Tap "Set up on-device AI" and keep SousSight open while it downloads.',
+      'Tap "Set up offline help" and keep SousSight open while it downloads.',
     ],
   ),
   (

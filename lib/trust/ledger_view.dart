@@ -15,11 +15,17 @@ import 'trust_motion.dart';
 /// `FirestoreSessionRepository`, `CookingSession.toMap` and
 /// `CookingCoordinator.cookingContext`.
 const sessionStorageNote =
-    'Your cooking session is saved to Firestore so you can pick it up again: '
+    'Your cooking session is saved online so you can pick it up again: '
     'the recipe, ingredient checks, substitutions, step progress, your timer, '
     'the facts you confirm (including allergy answers) and the delivery status '
     'of any dinner-ready message. Camera frames and voice clips are not saved '
     'there.';
+
+/// The technical version, shown only under "Details".
+const sessionStorageDetails =
+    'Sessions are stored in Cloud Firestore. AI requests go through Firebase '
+    'AI Logic: on this device with the browser or phone model when it can, '
+    "otherwise online to Google's Gemini models where this build allows it.";
 
 const liveCoachNote =
     'When the Live coach is on, it is told the recipe, the facts you confirmed '
@@ -217,7 +223,8 @@ class LedgerCounters {
     if (photos > 0) {
       return LedgerCount(
         photos,
-        '${noun(DataKind.image, photos)} went to Google cloud this session',
+        '${noun(DataKind.image, photos)} sent online to Google\'s AI this '
+        'session',
         LegOutcome.cloudSdk,
       );
     }
@@ -225,7 +232,7 @@ class LedgerCounters {
       return LedgerCount(
         liveStreams,
         '${_liveNoun(liveStreams)} streamed your camera and microphone to '
-        'Google cloud this session',
+        'Google\'s AI this session',
         LegOutcome.cloudSdk,
       );
     }
@@ -301,7 +308,7 @@ class LedgerCounters {
         lines.add(
           LedgerCount(
             n,
-            '${noun(kind, n)} went to Google cloud',
+            '${noun(kind, n)} sent online to Google\'s AI',
             LegOutcome.cloudSdk,
           ),
         );
@@ -482,14 +489,12 @@ class LedgerView extends StatelessWidget {
         : Column(
             key: ValueKey('ledger-$section'),
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final row in rows)
-                _LedgerRowTile(row: row, localModelFamily: localModelFamily),
-            ],
+            children: [for (final row in rows) _LedgerRowTile(row: row)],
           );
 
     final sentCount = summary.reportedSent.fold(0, (n, r) => n + r.count);
     final localCount = summary.stayedLocal.fold(0, (n, r) => n + r.count);
+    final simulatedCount = summary.simulated.fold(0, (n, r) => n + r.count);
 
     return ListView(
       key: const ValueKey('ledger-view'),
@@ -499,7 +504,7 @@ class LedgerView extends StatelessWidget {
         Semantics(
           header: true,
           child: Text(
-            'What left this device',
+            'What we sent',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
             ),
@@ -512,16 +517,20 @@ class LedgerView extends StatelessWidget {
           liveRegion: true,
           child: Text(
             summary.total == 0
-                ? 'No AI requests yet this session.'
-                : '${summary.total} AI ${summary.total == 1 ? 'request' : 'requests'} '
-                      'this session: $localCount stayed on this device, '
-                      '$sentCount reported as sent.',
+                ? 'Nothing has been sent online this session, and nothing '
+                      'has run on this device yet. A question or scan that '
+                      "couldn't start isn't listed: nothing ran and nothing "
+                      'was sent.'
+                : '${summary.total} ${summary.total == 1 ? 'request' : 'requests'} '
+                      'this session: $localCount answered on this device, '
+                      '$sentCount sent online'
+                      '${simulatedCount == 0 ? '' : ', $simulatedCount practice (pretend)'}.',
             key: const ValueKey('ledger-summary'),
           ),
         ),
         heading('Allowed to leave'),
         note(
-          'SousSight allowed these to go to the cloud. Being allowed is not '
+          'SousSight allowed these to be sent online. Being allowed is not '
           'proof that anything was sent.',
         ),
         rows(
@@ -531,7 +540,7 @@ class LedgerView extends StatelessWidget {
         ),
         heading('Reported as sent'),
         note(
-          'The Firebase AI Logic SDK or our own client said these went out.',
+          "Google's AI tools or SousSight's own app said these went online.",
         ),
         rows(summary.reportedSent, 'Nothing was reported as sent.', 'sent'),
         if (summary.maybeSent.isNotEmpty) ...[
@@ -553,14 +562,25 @@ class LedgerView extends StatelessWidget {
           rows(summary.notFinishedLocal, '', 'not-finished'),
         ],
         if (summary.simulated.isNotEmpty) ...[
-          heading('Simulated'),
-          note('Rehearsal only. No model ran and nothing was sent.'),
+          heading(kPracticeLabel),
+          note('No AI ran and nothing was sent.'),
           rows(summary.simulated, '', 'simulated'),
         ],
         heading('What this session keeps'),
         const Text(sessionStorageNote, key: ValueKey('ledger-storage-note')),
         const SizedBox(height: 8),
         const Text(liveCoachNote, key: ValueKey('ledger-live-note')),
+        ExpansionTile(
+          key: const ValueKey('ledger-details'),
+          tilePadding: EdgeInsets.zero,
+          title: const Text(
+            'Details',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          childrenPadding: const EdgeInsets.only(bottom: 8),
+          children: const [Text(sessionStorageDetails)],
+        ),
         const SizedBox(height: 12),
         note(
           'This list covers this session only, shows kinds of data and never '
@@ -572,15 +592,14 @@ class LedgerView extends StatelessWidget {
 }
 
 class _LedgerRowTile extends StatelessWidget {
-  const _LedgerRowTile({required this.row, this.localModelFamily});
+  const _LedgerRowTile({required this.row});
 
   final LedgerRow row;
-  final String? localModelFamily;
 
   @override
   Widget build(BuildContext context) {
     final colors = outcomeColors(row.outcome);
-    final where = outcomeLabel(row.outcome, localModel: localModelFamily);
+    final where = outcomeLabel(row.outcome);
     final times = row.count == 1 ? '' : ' · ${row.count} times';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

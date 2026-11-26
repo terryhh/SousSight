@@ -108,7 +108,12 @@ class WatchLegScope {
 
 /// The chip's wording. With no ledger to read, it says where the watch runs
 /// and makes no claim about uploads.
-String watchPrivacyLabel(({int sent, int maybe})? uploads) {
+/// In practice mode ([simulated]) it never says "on this device".
+String watchPrivacyLabel(
+  ({int sent, int maybe})? uploads, {
+  bool simulated = false,
+}) {
+  if (simulated) return 'Practice mode · pretend checks, nothing sent';
   if (uploads == null) return 'On this device';
   if (uploads.sent > 0) {
     return 'On this device · ${uploads.sent} '
@@ -125,6 +130,7 @@ String watchPrivacyLabel(({int sent, int maybe})? uploads) {
 ({String title, String? hint, IconData icon}) watchPhaseText(
   WatchOverlayPhase phase, {
   WatchDirection direction = WatchDirection.none,
+  bool simulated = false,
 }) => switch (phase) {
   WatchOverlayPhase.starting => (
     title: 'Starting the camera…',
@@ -137,7 +143,9 @@ String watchPrivacyLabel(({int sent, int maybe})? uploads) {
     icon: Icons.visibility_outlined,
   ),
   WatchOverlayPhase.checking => (
-    title: 'Checking this frame on this device…',
+    title: simulated
+        ? 'Checking this practice picture…'
+        : 'Checking this frame on this device…',
     hint: null,
     icon: Icons.visibility_outlined,
   ),
@@ -172,6 +180,7 @@ class LocalWatchOverlay extends StatelessWidget {
     required this.phase,
     this.direction = WatchDirection.none,
     this.uploads,
+    this.simulated = false,
   });
 
   /// Reads a running watch and, when given, the session ledger's legs.
@@ -185,6 +194,7 @@ class LocalWatchOverlay extends StatelessWidget {
     WatchLegScope? scope,
     Key? key,
   }) {
+    final simulated = watch.simulated;
     final phase = watchOverlayPhase(watch);
     if (phase == null) return null;
     final verdict = watch.verdict;
@@ -205,6 +215,7 @@ class LocalWatchOverlay extends StatelessWidget {
       phase: phase,
       direction: current?.direction ?? WatchDirection.none,
       uploads: legs == null ? null : watchUploads(legs),
+      simulated: simulated,
     );
   }
 
@@ -214,9 +225,16 @@ class LocalWatchOverlay extends StatelessWidget {
   /// From the session ledger; null when no ledger was available.
   final ({int sent, int maybe})? uploads;
 
+  /// Practice mode: the chip and status never claim an on-device run.
+  final bool simulated;
+
   @override
   Widget build(BuildContext context) {
-    final text = watchPhaseText(phase, direction: direction);
+    final text = watchPhaseText(
+      phase,
+      direction: direction,
+      simulated: simulated,
+    );
     final ready = phase == WatchOverlayPhase.ready;
     final unsure = phase == WatchOverlayPhase.unsure;
     final frameColor = ready
@@ -249,7 +267,7 @@ class LocalWatchOverlay extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _PrivacyChip(uploads: uploads),
+              _PrivacyChip(uploads: uploads, simulated: simulated),
               const SizedBox(height: 8),
               AnimatedSwitcher(
                 duration: duration,
@@ -270,20 +288,23 @@ class LocalWatchOverlay extends StatelessWidget {
 }
 
 class _PrivacyChip extends StatelessWidget {
-  const _PrivacyChip({required this.uploads});
+  const _PrivacyChip({required this.uploads, this.simulated = false});
 
   final ({int sent, int maybe})? uploads;
+  final bool simulated;
 
   @override
   Widget build(BuildContext context) {
     final u = uploads;
-    final outcome = u == null || (u.sent == 0 && u.maybe == 0)
+    final outcome = simulated
+        ? LegOutcome.simulated
+        : u == null || (u.sent == 0 && u.maybe == 0)
         ? LegOutcome.onDevice
         : u.sent > 0
         ? LegOutcome.cloudSdk
         : LegOutcome.maybeSent;
     final colors = outcomeColors(outcome);
-    final label = watchPrivacyLabel(u);
+    final label = watchPrivacyLabel(u, simulated: simulated);
     return DecoratedBox(
       key: const ValueKey('watch-privacy-chip'),
       decoration: ShapeDecoration(

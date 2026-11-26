@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
+import '../app/rehearsal_runtime.dart';
 import '../app/services_scope.dart';
 import '../core/analytics.dart';
 import '../core/models.dart';
@@ -49,8 +50,9 @@ class PantryFlow extends StatefulWidget {
   final Future<List<Recipe>> Function() loadRecipes;
   final CookingPageBuilder? cookingBuilder;
 
-  /// Shared hybrid inference services. Null in rehearsal (everything is
-  /// simulated) and in tests that supply their own clients.
+  /// Shared hybrid inference services. In rehearsal this is the practice-mode
+  /// runtime (scripted, labelled simulated); null in tests that supply their
+  /// own clients.
   final HybridRuntime? hybrid;
 
   @override
@@ -62,7 +64,8 @@ class _PantryFlowState extends State<PantryFlow> {
   late final PantryClient _client =
       widget.client ??
       switch ((widget.isDemo, widget.hybrid)) {
-        (true, _) => const FakePantryClient(),
+        (true, final hybrid?) => RehearsalPantryClient(hybrid),
+        (true, null) => const FakePantryClient(),
         (false, final hybrid?) => HybridPantryClient(
           dispatcher: hybrid.dispatcher,
           sessionId: () => hybrid.sessionId,
@@ -90,7 +93,7 @@ class _PantryFlowState extends State<PantryFlow> {
         isDemo: widget.isDemo,
         recipe: recipe,
         onBackToPantry: onBack,
-        hybrid: widget.isDemo ? null : widget.hybrid,
+        hybrid: widget.hybrid,
       );
 
   Widget _pantry(List<Recipe> recipes) => PantryScreen(
@@ -106,8 +109,12 @@ class _PantryFlowState extends State<PantryFlow> {
       (false, final hybrid?) => HybridReadinessCard(hybrid: hybrid),
       _ => null,
     },
-    headerActions: switch ((widget.isDemo, widget.hybrid)) {
-      (false, final hybrid?) => HybridHeaderButtons(
+    unavailableReason: switch (widget.hybrid) {
+      final hybrid? => () => hybridUnavailableReason(hybrid),
+      null => null,
+    },
+    headerActions: switch (widget.hybrid) {
+      final hybrid? => HybridHeaderButtons(
         hybrid: hybrid,
         // Typed labels only here: the pantry screen owns its own camera.
         onLabel: () => unawaited(

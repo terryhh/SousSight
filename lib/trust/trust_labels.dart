@@ -37,34 +37,40 @@ LegOutcome legOutcome(InferenceLeg leg) => switch (leg.provenance) {
     leg.transferPermitted ? LegOutcome.maybeSent : LegOutcome.notFinishedLocal,
 };
 
-/// Short label for one outcome. [localModel] is shown for on-device legs: the
-/// observed model label if the SDK gave one, else the model family from
-/// capabilities, else nothing.
-String outcomeLabel(LegOutcome outcome, {String? localModel}) =>
-    switch (outcome) {
-      LegOutcome.onDevice =>
-        localModel == null || localModel.isEmpty
-            ? 'On this device'
-            : 'On this device · $localModel',
-      LegOutcome.cloudSdk => 'Cloud · Gemini',
-      LegOutcome.cloudAdapter => 'Cloud',
-      LegOutcome.maybeSent => 'May have been sent',
-      LegOutcome.notFinishedLocal => "Didn't finish · nothing left this device",
-      LegOutcome.simulated => 'Simulated',
-    };
+/// What practice mode (rehearsal) calls a pretend answer, on every surface.
+const kPracticeLabel = 'Practice mode (pretend answers)';
+
+/// Short, plain label for one outcome. Model names stay out of it (SS-089):
+/// they appear only in the details sheet, via [legModelName].
+String outcomeLabel(LegOutcome outcome) => switch (outcome) {
+  LegOutcome.onDevice => 'On this device',
+  LegOutcome.cloudSdk ||
+  LegOutcome.cloudAdapter => "Sent online to Google's AI",
+  LegOutcome.maybeSent => 'May have been sent',
+  LegOutcome.notFinishedLocal => "Didn't finish · nothing left this device",
+  LegOutcome.simulated => kPracticeLabel,
+};
 
 /// Short label for one leg.
-String legLabel(InferenceLeg leg, {String? localModel}) =>
-    outcomeLabel(legOutcome(leg), localModel: leg.modelLabel ?? localModel);
+String legLabel(InferenceLeg leg) => outcomeLabel(legOutcome(leg));
+
+/// The model that ran an on-device leg, for the details sheet only: the
+/// observed model label if the SDK gave one, else [localModel] (the family
+/// from capabilities), else null. Null for every other outcome.
+String? legModelName(InferenceLeg leg, {String? localModel}) {
+  if (legOutcome(leg) != LegOutcome.onDevice) return null;
+  final name = leg.modelLabel ?? localModel;
+  return name == null || name.isEmpty ? null : name;
+}
 
 /// Longer explanation used in the details sheet.
 String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
   LegOutcome.onDevice =>
-    'The Firebase AI Logic SDK reported that this ran on your device.',
+    "Google's AI tools reported that this ran on your device. It wasn't sent "
+        'online.',
   LegOutcome.cloudSdk =>
-    'The Firebase AI Logic SDK reported that this ran on Gemini in the cloud.',
-  LegOutcome.cloudAdapter =>
-    "Sent to the cloud by SousSight's own Firebase AI Logic client.",
+    "Google's AI tools reported that this was sent online to Google's AI.",
+  LegOutcome.cloudAdapter => "SousSight sent this online to Google's AI.",
   LegOutcome.maybeSent =>
     "This was allowed to leave, then stopped with an error, so we can't "
         'tell whether it was sent.',
@@ -72,7 +78,7 @@ String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
     "This didn't finish, and it wasn't allowed to leave, so nothing left "
         'this device.',
   LegOutcome.simulated =>
-    'Simulated for this rehearsal. No model ran and nothing was sent.',
+    'Practice mode: a pretend answer. No AI ran and nothing was sent.',
 };
 
 /// One icon per outcome. On-device uses the same chip glyph as the
@@ -156,7 +162,8 @@ const Map<String, String> featureLabels = {
   'pantry_voice': 'Pantry voice note',
   'recipe_draft': 'Recipe draft',
   'local_watch': 'Watch my food',
-  'coach_lite': 'Coach Lite',
+  'local_watch_cloud_check': 'Photo check online',
+  'coach_lite': 'Typed question',
   'label_check': 'Label check',
   'research': 'Research',
   'nearby': 'Nearby stores',
@@ -175,7 +182,7 @@ String errorLabel(HybridErrorCode error) => switch (error) {
   HybridErrorCode.timeout => 'took too long',
   HybridErrorCode.cancelled => 'stopped',
   HybridErrorCode.network => 'connection problem',
-  HybridErrorCode.quota => 'cloud allowance used up',
+  HybridErrorCode.quota => 'online allowance used up',
   HybridErrorCode.attestation => "app couldn't be verified",
   HybridErrorCode.busy => 'device was busy',
   HybridErrorCode.blocked => 'blocked by safety filters',

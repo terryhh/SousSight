@@ -24,10 +24,16 @@ typedef PantryRecipeChosen = void Function(
   PantryHandoff handoff,
 );
 
+/// Plain words, no promises about what this device can do (SS-089): each
+/// result's badge says where it actually ran.
 const pantryPrivacyLine =
-    'On-device AI reads typed lists and photos when it is ready. Voice clips, '
-    'and anything this device cannot handle, may go to Google cloud AI; each '
-    'result shows where it ran. Nothing is stored.';
+    "Each result shows whether it was worked out on this device or sent "
+    "online to Google's AI. Nothing you show or type here is stored.";
+
+/// The catch-all when matching failed without a reason of its own.
+const pantryUnavailableMessage =
+    "Matching your food didn't work just now — no answer came back. Pick a "
+    'recipe below, or try again.';
 
 /// "What did you get from the pantry?" The cook shows, says, or types their
 /// haul; one Gemini call suggests bundled recipes; the cook confirms and picks.
@@ -46,6 +52,7 @@ class PantryScreen extends StatefulWidget {
     this.openLink,
     this.header,
     this.headerActions,
+    this.unavailableReason,
   });
 
   final List<Recipe> recipes;
@@ -73,8 +80,13 @@ class PantryScreen extends StatefulWidget {
   /// Shown under the brand row (for example the readiness panel).
   final Widget? header;
 
-  /// Extra buttons beside "How it works" (On-device AI, ledger, label check).
+  /// Labelled buttons under the brand row (On this device, What we sent,
+  /// Check a label).
   final Widget? headerActions;
+
+  /// Why AI help can't run here, in plain words, or null when it can or
+  /// nobody knows. Read when matching fails without a reason (SS-089).
+  final Future<String?> Function()? unavailableReason;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
@@ -112,6 +124,27 @@ class _PantryScreenState extends State<PantryScreen> {
   List<InferenceLeg> _errorLegs = const [];
   PantryResult? _result;
   bool _drafting = false;
+  final _resultsKey = GlobalKey(debugLabel: 'pantry-results');
+  final _errorKey = GlobalKey(debugLabel: 'pantry-error');
+
+  /// Scrolls [key]'s widget into view after the next frame, instantly when
+  /// the platform asks for reduced motion.
+  void _reveal(GlobalKey key) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = key.currentContext;
+      if (!mounted || target == null || !target.mounted) return;
+      final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+      unawaited(
+        Scrollable.ensureVisible(
+          target,
+          alignment: 0.05,
+          duration: still ? Duration.zero : const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    });
+  }
+
   String? _draftError;
   Recipe? _drafted;
   List<InferenceLeg> _draftLegs = const [];
@@ -286,7 +319,9 @@ class _PantryScreenState extends State<PantryScreen> {
         widget.recipes,
       );
       if (!mounted) return;
-      _ui.show(result, widget.recipes);
+      // What the cook typed is their own word: those items start confirmed.
+      _ui.show(result, widget.recipes, typed: _text.text);
+      _reveal(_resultsKey);
       setState(() {
         _result = result;
         _draftEpoch++;
@@ -298,20 +333,43 @@ class _PantryScreenState extends State<PantryScreen> {
       });
     } on PantryException catch (error) {
       if (mounted) {
+        final message = await _withReason(error.message);
+        if (!mounted) return;
         setState(() {
-          _error = error.message;
+          _error = message;
           _errorLegs = error.legs;
         });
+        _reveal(_errorKey);
       }
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Ingredient matching is unavailable right now. Pick a recipe below.',
-        );
+        final message = await _withReason(pantryUnavailableMessage);
+        if (!mounted) return;
+        setState(() => _error = message);
+        _reveal(_errorKey);
       }
     } finally {
       if (mounted) setState(() => _thinking = false);
     }
+  }
+
+  /// Adds the known reason to a reasonless "unavailable" message.
+  Future<String> _withReason(String message) async {
+    const generic = {
+      pantryUnavailableMessage,
+      'Ingredient matching is unavailable right now. Pick a recipe below.',
+    };
+    if (!generic.contains(message)) return message;
+    String? reason;
+    try {
+      reason = await widget.unavailableReason?.call();
+    } catch (_) {
+      reason = null;
+    }
+    return reason == null
+        ? pantryUnavailableMessage
+        : "Matching your food didn't work just now. $reason Pick a recipe "
+              'below, or try again.';
   }
 
   Future<void> _openNearby(
@@ -404,7 +462,8 @@ class _PantryScreenState extends State<PantryScreen> {
                 ?widget.header,
                 if (widget.isDemo) ...[
                   _notice(
-                    'Rehearsal mode · Camera, microphone, and Gemini are not used. Results are simulated.',
+                    'Practice mode (pretend answers) · No real camera, '
+                    'microphone or AI is used.',
                     Icons.science_outlined,
                   ),
                   const SizedBox(height: 14),
@@ -439,19 +498,24 @@ class _PantryScreenState extends State<PantryScreen> {
                 ),
                 if (_error case final error?) ...[
                   const SizedBox(height: 14),
-                  _notice(
-                    error,
-                    Icons.info_outline,
-                    color: const Color(0xFFFBE3DC),
+                  Semantics(
+                    key: _errorKey,
+                    liveRegion: true,
+                    child: _notice(
+                      error,
+                      Icons.info_outline,
+                      color: const Color(0xFFFBE3DC),
+                    ),
                   ),
-                  if (_errorLegs.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    PantryLegList(legs: _errorLegs),
-                  ],
+                  const SizedBox(height: 8),
+                  if (_errorLegs.isNotEmpty)
+                    PantryLegList(legs: _errorLegs)
+                  else
+                    const _NoAnswerSource(),
                 ],
                 if (_result case final result?) ...[
                   const SizedBox(height: 28),
-                  _resultsHeader(result),
+                  KeyedSubtree(key: _resultsKey, child: _resultsHeader(result)),
                   const SizedBox(height: 8),
                   PantryLegList(legs: result.legs),
                   if (result.notice case final notice?) ...[
@@ -488,42 +552,50 @@ class _PantryScreenState extends State<PantryScreen> {
     ),
   );
 
-  Widget _brand() => Row(
+  Widget _brand() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: pantryGreen,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Icon(
-          Icons.soup_kitchen_outlined,
-          color: Colors.white,
-          size: 26,
-        ),
-      ),
-      const SizedBox(width: 12),
-      const Expanded(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'SousSight',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1,
-              ),
+      Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: pantryGreen,
+              borderRadius: BorderRadius.circular(16),
             ),
-            Text(
-              'Pantry to plate, with a coach beside you',
-              style: TextStyle(fontSize: 12),
+            child: const Icon(
+              Icons.soup_kitchen_outlined,
+              color: Colors.white,
+              size: 26,
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SousSight',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
+                ),
+                Text(
+                  'Pantry to plate, with a coach beside you',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          HowItWorksButton(isDemo: widget.isDemo),
+        ],
       ),
-      ?widget.headerActions,
-      HowItWorksButton(isDemo: widget.isDemo),
+      if (widget.headerActions case final actions?) ...[
+        const SizedBox(height: 6),
+        Align(alignment: Alignment.centerLeft, child: actions),
+      ],
     ],
   );
 
@@ -664,8 +736,8 @@ class _PantryScreenState extends State<PantryScreen> {
                               child: Text(
                                 widget.isDemo
                                     ? (_simulatedPhoto
-                                          ? 'Simulated photo captured'
-                                          : 'Rehearsal: the camera is not used')
+                                          ? 'Pretend photo captured'
+                                          : 'Practice mode: the camera is not used')
                                     : 'Lay your haul out on the counter and point the camera at it.',
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
@@ -682,7 +754,7 @@ class _PantryScreenState extends State<PantryScreen> {
                   left: 10,
                   child: _pill(
                     widget.isDemo
-                        ? 'SIMULATED'
+                        ? 'PRACTICE MODE'
                         : _photo != null
                         ? 'PHOTO READY'
                         : _preview != null
@@ -714,7 +786,7 @@ class _PantryScreenState extends State<PantryScreen> {
             icon: const Icon(Icons.camera_alt),
             label: Text(
               widget.isDemo
-                  ? 'Simulate a photo'
+                  ? 'Take a pretend photo'
                   : _preview == null
                   ? 'Start camera'
                   : 'Snap photo',
@@ -739,7 +811,7 @@ class _PantryScreenState extends State<PantryScreen> {
               ? 'Listening… name everything you got.'
               : captured
               ? (widget.isDemo
-                    ? 'Simulated voice clip ready.'
+                    ? 'Pretend voice clip ready.'
                     : 'Got it. Your $seconds-second clip is ready.')
               : 'Tap and list what’s in your bag, like “black beans, corn, two tomatoes, bread.”',
           style: const TextStyle(fontSize: 16, height: 1.4),
@@ -764,7 +836,7 @@ class _PantryScreenState extends State<PantryScreen> {
             recording
                 ? 'Recording…'
                 : widget.isDemo
-                ? 'Simulate a voice clip'
+                ? 'Record a pretend voice clip'
                 : captured
                 ? 'Record again ($seconds s)'
                 : 'Record $seconds seconds',
@@ -825,7 +897,8 @@ class _PantryScreenState extends State<PantryScreen> {
           ),
         ),
       ),
-      if (result.simulated) _pill('SIMULATED', color: const Color(0xFF6B5A3E)),
+      if (result.simulated)
+        _pill('PRACTICE MODE', color: const Color(0xFF6B5A3E)),
     ],
   );
 
@@ -869,7 +942,10 @@ class _PantryScreenState extends State<PantryScreen> {
           controller: _answer,
           maxLength: 300,
           decoration: const InputDecoration(
-            hintText: 'Your answer (optional) — I’ll pass it to your coach',
+            hintText: 'Your answer (optional)',
+            hintMaxLines: 2,
+            helperText: 'I’ll pass it to your coach.',
+            helperMaxLines: 2,
             filled: true,
             fillColor: Colors.white,
             counterText: '',
@@ -942,8 +1018,9 @@ class _PantryScreenState extends State<PantryScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Tap the ingredients you have below, then Gemini creates a recipe '
-            'from exactly those. It is labelled as not reviewed by a person.',
+            "Tap the ingredients you have below, then SousSight's AI creates a "
+            'recipe from exactly those. It is labelled as not reviewed by a '
+            'person.',
             style: TextStyle(fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 14),
@@ -1128,4 +1205,30 @@ class _PantryScreenState extends State<PantryScreen> {
           ],
         ),
       );
+}
+
+/// The source line for a failure with no inference legs: says that no answer
+/// came back, and claims nothing about where anything ran (SS-089).
+class _NoAnswerSource extends StatelessWidget {
+  const _NoAnswerSource();
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    key: const ValueKey('pantry-no-answer-source'),
+    container: true,
+    label: 'Where this ran: no answer came back.',
+    excludeSemantics: true,
+    child: const Row(
+      children: [
+        Icon(Icons.block, size: 16, color: Color(0xFF3D3A34)),
+        SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            'Meal match · no answer came back',
+            style: TextStyle(fontSize: 13, color: Color(0xFF3D3A34)),
+          ),
+        ),
+      ],
+    ),
+  );
 }

@@ -21,6 +21,15 @@ void main() {
     }
   });
 
+  test('plain words: no "cloud", "model" or product names (SS-089)', () {
+    for (final text in routeReasonText.values) {
+      expect(
+        text,
+        isNot(matches(RegExp(r'\bcloud\b|\bmodel\b|Gemini|Firebase'))),
+      );
+    }
+  });
+
   test('the agreed wording is kept', () {
     expect(
       routeReasonSentence(RouteReason.onDevice),
@@ -28,11 +37,12 @@ void main() {
     );
     expect(
       routeReasonSentence(RouteReason.audioNeedsCloud),
-      'Voice clips need the cloud; your photo stayed here.',
+      "Voice clips have to be sent online to Google's AI; your photo stayed "
+      'here.',
     );
     expect(
       routeReasonSentence(RouteReason.cloudNotApproved),
-      'Cloud help is off in this build.',
+      'Sending online is off in this build.',
     );
   });
 }

@@ -95,8 +95,9 @@ class CookingCoordinator extends ChangeNotifier {
   /// keeps the old behaviour (asks the cook to connect Live).
   final CoachLite? coachLite;
 
-  /// Local or Live watch behind one entry point (SS-067). Null in rehearsal
-  /// and in builds without the hybrid runtime: the Live-only watch is used.
+  /// Local or Live watch behind one entry point (SS-067). Rehearsal has one
+  /// too (practice-mode runtime, SS-089). Null in builds without the hybrid
+  /// runtime: the Live-only watch is used.
   late final WatchService? watchService;
 
   /// Told the session id once the cooking session is open (ledger binding).
@@ -109,11 +110,19 @@ class CookingCoordinator extends ChangeNotifier {
   CoachLiteAnswer? coachLiteAnswer;
   bool coachLiteBusy = false;
 
+  /// The typed question the busy notice and the answer footer echo back.
+  String? coachLiteQuestion;
+
   /// Bumped when Live takes over or the context resets, so a late Coach Lite
   /// answer cannot overwrite the newer workspace.
   int _coachEpoch = 0;
   bool _wasLiveActive = false;
   WatchVerdict? _announcedVerdict;
+
+  /// The local watch the "watching" panel describes. When that watch ends
+  /// for any reason (refused, ready, stopped by the app), the panel is
+  /// replaced so it never says "Watching" after the watch is gone (SS-089).
+  String? _panelWatchId;
 
   final AppServices services;
   final CookingResearchClient research;
@@ -290,8 +299,8 @@ $cookingUiInstructions
   Future<void> connect() async {
     if (!liveEnabled) {
       alert =
-          'The Live coach is off in this build. Type a question for '
-          'Coach Lite instead.';
+          'The Live coach is off in this build. Type a question below '
+          'instead.';
       _notify();
       return;
     }
@@ -340,6 +349,9 @@ $cookingUiInstructions
     String text,
   ) async {
     coachLiteBusy = true;
+    // The footer pairs the answer with its question: drop the old pair.
+    coachLiteAnswer = null;
+    coachLiteQuestion = text.trim();
     _notify();
     final epoch = _coachEpoch;
     final CoachLiteAnswer answer;
@@ -361,7 +373,7 @@ $cookingUiInstructions
     } catch (_) {
       if (!_disposed && epoch == _coachEpoch) {
         coachLiteBusy = false;
-        error = 'Coach Lite could not answer. Try again.';
+        error = "I can't answer that right now — try the recipe step text.";
         _notify();
       }
       return;
@@ -400,6 +412,7 @@ $cookingUiInstructions
     coachLite?.cancel();
     coachLiteAnswer = null;
     coachLiteBusy = false;
+    coachLiteQuestion = null;
   }
 
   Future<void> confirmCookAnswer(String question, String answer) async {
@@ -627,7 +640,7 @@ $cookingUiInstructions
   Future<void> startWatch() async {
     final service = watchService;
     final saved = session;
-    if (service != null && saved != null && !isDemo) {
+    if (service != null && saved != null) {
       final stepId = step.id;
       final started = await service.startWatch(
         step: step,
@@ -640,6 +653,9 @@ $cookingUiInstructions
           'recipe_id': _recipeLabel,
           'source': 'button_${started.route!.name}',
         });
+        _panelWatchId = started.route == WatchRoute.local
+            ? started.watchId
+            : null;
         _watchPanel(
           'watching',
           'Watching ${step.title.toLowerCase()}',
@@ -672,6 +688,7 @@ $cookingUiInstructions
   }
 
   void stopWatch() {
+    _panelWatchId = null;
     if (watchService case final service?) unawaited(service.stopWatch());
     live.stopWatch();
     _watchPanel(
@@ -700,6 +717,18 @@ $cookingUiInstructions
         verdict.stepId == step.id) {
       _announcedVerdict = verdict;
       alert = 'Check your food: ${verdict.message}';
+    }
+    final local = watchService?.local;
+    if (_panelWatchId != null &&
+        local != null &&
+        local.watchId != _panelWatchId) {
+      _panelWatchId = null;
+      final ready = !local.isActive && local.verdict?.state == WatchState.ready;
+      _watchPanel(
+        'paused',
+        ready ? 'Have a look' : 'Watch stopped',
+        local.statusText ?? 'Start another watch when you are ready.',
+      );
     }
     _notify();
   }

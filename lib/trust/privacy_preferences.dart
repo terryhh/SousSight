@@ -26,7 +26,7 @@ const List<({String feature, String label, String detail})> privacyFeatures = [
   ),
   (
     feature: 'coach_lite',
-    label: 'Coach Lite',
+    label: 'Typed questions',
     detail: 'Typed questions while you cook.',
   ),
   (

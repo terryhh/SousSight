@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app/hybrid_runtime.dart';
+import 'app/rehearsal_runtime.dart';
 import 'app/services_scope.dart';
 import 'data/firebase_services.dart';
 import 'learner/cooking_app.dart';
@@ -20,11 +21,15 @@ class SousSightBootstrap extends StatefulWidget {
 class _SousSightBootstrapState extends State<SousSightBootstrap> {
   late Future<(AppServices, HybridRuntime?)> _services = _load();
 
-  /// Rehearsal is fully simulated and has no hybrid runtime. Real builds
-  /// initialize Firebase and App Check first, then configure the hybrid
-  /// backend once (its web bridge uses the Firebase app created here).
+  /// Rehearsal (practice mode) is fully simulated: its hybrid runtime answers
+  /// from a scripted fake, labelled "Practice mode (pretend answers)" on every
+  /// surface, and nothing leaves the browser. Real builds initialize Firebase
+  /// and App Check first, then configure the hybrid backend once (its web
+  /// bridge uses the Firebase app created here).
   Future<(AppServices, HybridRuntime?)> _load() async {
-    if (kFakeBackend) return (await fakeServices(), null);
+    if (kFakeBackend) {
+      return (await fakeServices(), RehearsalHybridRuntime.create());
+    }
     final services = await firebaseServices();
     return (services, HybridRuntime.create());
   }
