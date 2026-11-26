@@ -10,13 +10,13 @@ Inspired by UCF's [garden-to-pantry work](https://www.ucf.edu/pegasus/how-does-y
 
 ## Hybrid AI: on-device when the device can, cloud when it earns it
 
-> **Status: in progress for #BuildHybridAI 2026.** Nothing in this section is in the live app yet, and none of it has been run against a real on-device or cloud model. The live app today is the cloud build described under [What it does today](#what-it-does-today). Each item below is claimed only after its check on real hardware passes; the plan is in [PLAN.md](docs/buildhybridai/PLAN.md) and the design in [DESIGN.md](docs/buildhybridai/DESIGN.md).
+> **Status: in progress for #BuildHybridAI 2026.** The hybrid code is merged to `main`; the hosted app's `/version.json` shows which commit is deployed. On real hardware, only desktop Chrome has run on-device so far (gate probes and a typed pantry scan, from a local build). Android and iOS have not produced an on-device result. Each item below is claimed only after its check on real hardware passes; the plan is in [PLAN.md](docs/buildhybridai/PLAN.md), the design in [DESIGN.md](docs/buildhybridai/DESIGN.md), and the judged build's dinner texts are simulated.
 
 The people SousSight is for often have limited data plans, patchy kitchen Wi-Fi, and photos of their home plus allergy details they'd rather not upload. So the next version runs as much as it can on the device, through Firebase AI Logic's hybrid inference:
 
 - **Private by default.** What the camera sees is processed on the device when the device can.
 - **Free and resilient.** Help keeps working when the signal drops or a cloud limit is reached.
-- **Cloud when it earns it.** The live voice and vision coach, Google Search and Maps grounding, and anything the local model can't do.
+- **Cloud when it earns it.** Google Search grounding and anything the local model can't do. The live voice and vision coach and Google Maps grounding are in the code but off in the judged #BuildHybridAI build.
 
 | Feature (in progress) | Where it is meant to run |
 |---|---|
@@ -25,7 +25,8 @@ The people SousSight is for often have limited data plans, patchy kitchen Wi-Fi,
 | Local watch ("tell me when the mash looks right") | On-device only. If the view is unclear it asks for a better view, or for the cook's consent to send that one frame |
 | Coach Lite (step questions without the live coach) | On-device; generated panels come from the same trusted catalog |
 | Label check (allergens a label mentions) | On-device only. It reads the label; it can't confirm an allergen is absent |
-| Research, nearby food help, live coach | Cloud (grounding and real-time audio and video) |
+| Research | Cloud (Google Search grounding) |
+| Nearby food help, live coach | Cloud (Maps grounding; real-time audio and video). Both are off in the judged #BuildHybridAI build |
 
 Planned platforms are Chrome on desktop (Gemini Nano), Android (Gemini Nano through the AICore developer preview) and iOS (Apple Foundation Models). A platform is listed as supported only after it passes its device check. Every result will show whether it came from the device or the cloud, and strict local-only mode overrides every retry and remote setting.
 
@@ -39,7 +40,7 @@ The live app is a cloud build. These eight steps run there now:
 4. **Allergy check first.** Before anything else, the coach asks whether anyone eating has an allergy to the recipe's allergens (for example peanut). If someone does, it researches a safe swap, and you confirm it.
 5. **"Am I doing this right?"** Show the spread, the dice or the mash. The coach describes what it can see. When a fact is missing it asks you instead of guessing, and only your answer counts.
 6. **Ask anything.** For questions like "Can I swap sunflower butter for peanut butter?", the coach runs a separate Google Search–grounded answer and shows the source links.
-7. **Call everyone to the table.** You review a dinner-ready text before it goes out: "dinner's started", then "dinner is ready". The app tracks real delivery status, and if delivery fails it shows the reason and how to recover.
+7. **Call everyone to the table.** You review a dinner-ready text before it goes out: "dinner's started", then "dinner is ready". The app tracks real delivery status, and if delivery fails it shows the reason and how to recover. The #BuildHybridAI judged build simulates this step and sends no SMS (see [Dinner-ready text](#dinner-ready-text)).
 8. **You made it!** Finishing the last step shows a meal-complete moment. It lists the pantry items you confirmed, pauses the live coach to save cost, and offers three next steps: text the household (still reviewed), find food help nearby, or cook something else. It shows no invented impact numbers.
 
 ## Architecture (today)
@@ -63,7 +64,7 @@ flowchart LR
   end
   Live["Gemini Live API<br/>vision + voice + tools"]
   Flash["Gemini Flash via Firebase AI Logic<br/>pantry vision · recipe creation · Search + Maps grounding"]
-  SMS["SMS provider<br/>Vonage Messages API"]
+  SMS["SMS provider<br/>Vonage Messages API<br/>(not used by the judged build)"]
 
   Pantry -->|image/audio/text, nearby help| Flash
   UI -->|grounded research| Flash
@@ -96,7 +97,7 @@ In the hybrid design (in progress), every model call in the entry build goes thr
 | Identity and abuse protection | Firebase Anonymous Auth (no sign-up), **Firebase App Check** with reCAPTCHA Enterprise |
 | Data | Cloud Firestore: owner-scoped sessions, server-only ledgers, emulator-tested security rules |
 | Backend | Cloud Functions for Firebase (2nd gen, Cloud Run, Node 22): Live token minting, dinner-ready texts, delivery-status webhooks |
-| Messaging | Vonage Messages API (SMS) with signed delivery-status webhooks |
+| Messaging | Vonage Messages API (SMS) with signed delivery-status webhooks, for builds with `DINNER_MODE=real`. The judged #BuildHybridAI build uses `DINNER_MODE=simulated` and never calls it |
 | Secrets and operations | Google Secret Manager, Firebase Hosting, Cloud Billing budget and per-service caps |
 | CI/CD | GitHub Actions (SHA-pinned) → Workload Identity Federation → Firebase deploy on every merge to `main`; gitleaks secret scanning |
 
@@ -125,7 +126,8 @@ In the hybrid design (in progress), every model call in the entry build goes thr
 ## Dinner-ready text
 
 The cook reviews every text before it goes out: a "dinner's started" text when cooking begins and a "dinner is ready" text at the end.
-- **Delivery status:** a signed status webhook reports submitted → delivered or read, or rejected / undeliverable with the provider's reason, shown live in the app. A real text sent from the hosted app reached a phone, and the app showed Delivered ✓ from the signed callback.
+- **In the judged #BuildHybridAI build** (`DINNER_MODE=simulated`), no SMS is sent. The review sheet goes to a fictional "Demo household" with no phone number field, and every status starts with "Simulated — no SMS sent." Real SMS sends are disabled on the server for that build.
+- **Delivery status** (builds with `DINNER_MODE=real`): a signed status webhook reports submitted → delivered or read, or rejected / undeliverable with the provider's reason, shown live in the app. During DevFest Florida 2026 (prior work, before November 11), a real text sent from the then-hosted cloud build reached a phone, and the app showed Delivered ✓ from the signed callback.
 - **Failures:** a clearly labelled demo action replays a rejected status (error 1120 Illegal Sender, a real failure hit during setup) through the same webhook handler. The app shows the reason and offers a new reviewed attempt, and never resends silently.
 - **Real sends** go only to allowlisted numbers. Simulated delivered and failed outcomes are labelled as simulated.
 

@@ -1,6 +1,6 @@
 # SousSight trademark policy
 
-The SousSight code is licensed under the [GNU Affero General Public License v3.0](LICENSE). That license covers the code. It does **not** grant rights to the SousSight™ name, logo or app icon (the "marks").
+The SousSight code is licensed under the [GNU Affero General Public License v3.0](LICENSE). That license covers the code. It does **not** grant rights to the SousSight™ name or to any future SousSight logo or app icon (the "marks"). SousSight has no logo or icon of its own yet; the app currently uses Flutter's default icon, which is not a SousSight mark.
 
 ## What you can do
 
@@ -10,7 +10,7 @@ The SousSight code is licensed under the [GNU Affero General Public License v3.0
 
 ## What needs permission
 
-- Distributing or hosting a **modified** version under the SousSight name or logo. Rename your fork and change its icon.
+- Distributing or hosting a **modified** version under the SousSight name or logo. Rename your fork, and use your own icon.
 - Using the marks in a way that suggests your product or service is official, endorsed or affiliated when it isn't.
 - Using the marks in a company, product, domain or app-store name.
 
