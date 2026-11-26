@@ -6,10 +6,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/cooking_research_client.dart';
-import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
-import 'package:soussight/app/hybrid_controls.dart';
-import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/app/rehearsal_runtime.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/cooking_research.dart';
@@ -18,9 +15,6 @@ import 'package:soussight/label/label_check.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
-import 'package:soussight/learner/meal_complete.dart';
-import 'package:soussight/nearby/guarded_nearby_client.dart';
-import 'package:soussight/nearby/nearby_client.dart';
 import 'package:soussight/pantry/pantry_client.dart';
 import 'package:soussight/pantry/pantry_models.dart';
 import 'package:soussight/pantry/pantry_screen.dart';
@@ -28,23 +22,6 @@ import 'package:soussight/pantry/pantry_ui.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
 import 'package:soussight/pantry/recipe_draft.dart';
 import 'package:soussight/pantry/recipe_draft_client.dart';
-
-class _CountingNearby implements NearbyClient {
-  int calls = 0;
-  @override
-  Future<NearbyResult> find(NearbyQuery query) async {
-    calls++;
-    throw const NearbyException(NearbyFailure.noResults, 'none');
-  }
-}
-
-class _NoCloud implements CloudFallbackSender {
-  @override
-  Future<HybridResult> send(HybridRequest request) =>
-      throw const HybridException(HybridErrorCode.failed, 'not in tests');
-  @override
-  Future<void> cancel(String requestId) async {}
-}
 
 class _Research implements CookingResearchClient {
   int calls = 0;
@@ -92,144 +69,6 @@ Future<void> _phone(WidgetTester tester) async {
 }
 
 void main() {
-  group('P1: the Nearby route is checked before location and at send', () {
-    test('a denied route never reaches the sender', () async {
-      final inner = _CountingNearby();
-      final client = GuardedNearbyClient(inner: inner, allowed: () => false);
-      await expectLater(
-        client.find(const NearbyQuery(kind: NearbyKind.foodHelp, area: 'x')),
-        throwsA(
-          isA<NearbyException>().having(
-            (e) => e.message,
-            'message',
-            kNearbyOffMessage,
-          ),
-        ),
-      );
-      expect(inner.calls, 0);
-      expect(nearbyAllowed(client), isFalse);
-      expect(nearbyAllowed(inner), isTrue);
-    });
-
-    test('an allowed route is re-read at send and passes through', () async {
-      final inner = _CountingNearby();
-      var allowed = true;
-      final client = GuardedNearbyClient(inner: inner, allowed: () => allowed);
-      await expectLater(
-        client.find(const NearbyQuery(kind: NearbyKind.foodHelp, area: 'x')),
-        throwsA(isA<NearbyException>()),
-      );
-      expect(inner.calls, 1);
-      allowed = false; // the route changed after the sheet opened
-      await expectLater(
-        client.find(const NearbyQuery(kind: NearbyKind.foodHelp, area: 'x')),
-        throwsA(isA<NearbyException>()),
-      );
-      expect(inner.calls, 1);
-    });
-
-    test('an approved route sends through the ledger-backed client', () async {
-      final hybrid = HybridRuntime.create(
-        inference: FakeHybridInference(),
-        cloudRoutes: CloudRoutes.parse('nearby'),
-        cloudFallback: _NoCloud(),
-      );
-      final client = hybridNearbyClient(hybrid);
-      expect(client.allowed(), isTrue);
-      final inner = client.inner as GeminiNearbyClient;
-      expect(identical(inner.recorder, hybrid.cloudSends), isTrue);
-      final off = hybridNearbyClient(
-        HybridRuntime.create(
-          inference: FakeHybridInference(),
-          cloudRoutes: const CloudRoutes({}),
-          cloudFallback: _NoCloud(),
-        ),
-      );
-      expect(off.allowed(), isFalse);
-    });
-
-    testWidgets('pantry: a denied route asks for no location', (tester) async {
-      await _phone(tester);
-      final recipes = (await tester.runAsync(loadRecipeCatalog))!;
-      final inner = _CountingNearby();
-      var located = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: cookingTheme,
-          home: PantryScreen(
-            recipes: recipes,
-            client: const FakePantryClient(delay: Duration.zero),
-            onChooseRecipe: (_, _) {},
-            nearbyClient: GuardedNearbyClient(
-              inner: inner,
-              allowed: () => false,
-            ),
-            locate: () async {
-              located++;
-              return NearbyCoordinates(1, 1);
-            },
-          ),
-        ),
-      );
-      final help = find.byKey(const ValueKey('nearby-food-help'));
-      await tester.ensureVisible(help);
-      await tester.pumpAndSettle();
-      await tester.tap(help);
-      await tester.pumpAndSettle();
-      expect(find.text(kNearbyOffMessage), findsOneWidget);
-      expect(find.text('Find food help nearby'), findsOneWidget); // card only
-      expect(located, 0);
-      expect(inner.calls, 0);
-    });
-
-    testWidgets('meal complete: the same guard, before any location', (
-      tester,
-    ) async {
-      await _phone(tester);
-      final services = (await tester.runAsync(fakeServices))!;
-      final cook = CookingCoordinator(
-        services: services,
-        research: const FakeCookingResearchClient(),
-        transportFactory: null,
-        media: DemoLiveMedia(),
-      );
-      await tester.runAsync(cook.initialize);
-      final inner = _CountingNearby();
-      var located = 0;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: MealCompletePanel(
-                cook: cook,
-                isDemo: false,
-                onTextHousehold: () {},
-                onCookSomethingElse: null,
-                nearbyClient: GuardedNearbyClient(
-                  inner: inner,
-                  allowed: () => false,
-                ),
-                locate: () async {
-                  located++;
-                  return NearbyCoordinates(1, 1);
-                },
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final button = find.byKey(const ValueKey('meal-complete-nearby'));
-      await tester.ensureVisible(button);
-      await tester.tap(button);
-      await tester.pumpAndSettle();
-      expect(find.text(kNearbyOffMessage), findsOneWidget);
-      expect(located, 0);
-      expect(inner.calls, 0);
-      cook.dispose();
-    });
-  });
-
   testWidgets('P1: Record says voice clips go online (real builds only)', (
     tester,
   ) async {

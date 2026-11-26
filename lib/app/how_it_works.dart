@@ -287,6 +287,10 @@ const _routedFeatures = [
   ('label_check', 'Label check', 'Label check'),
 ];
 
+/// Nearby lookups are not dispatcher features: their row comes from the
+/// `nearby` cloud route, which `GeminiNearbyClient` checks before each send.
+const _nearbyLabel = 'Nearby stores';
+
 /// One entry in a column of the two-column view.
 typedef RoutingEntry = ({String feature, String note});
 
@@ -370,14 +374,13 @@ hybridRoutingColumns({
   } else {
     off.add('Grounded research');
   }
-  // Same rule as the Nearby guard (Codex #221).
   if (cloudRoutes.allows(CloudRoute.nearby)) {
     cloud.add((
-      feature: 'Nearby stores',
-      note: 'Google Maps, only when you ask. Sends approximate location.',
+      feature: _nearbyLabel,
+      note: 'Google Maps, only when you ask. Sends your area once.',
     ));
   } else {
-    off.add('Nearby stores');
+    off.add(_nearbyLabel);
   }
   return (onDevice: onDevice, cloud: cloud, off: off);
 }
@@ -634,10 +637,11 @@ List<RoutingRow> hybridRoutingRows({
           : 'Off in this build.',
     ),
     (
-      feature: 'Nearby stores',
+      feature: _nearbyLabel,
       where: cloudRoutes.allows(CloudRoute.nearby)
-          ? 'Google cloud with Google Maps grounding, only when you ask. '
-                'Sends your approximate location once.'
+          ? 'Google cloud with Google Maps grounding, only when you ask. Sends '
+                'the city or ZIP you type, or your approximate location, once. '
+                '"Keep Find food help on this device" turns it off.'
           : 'Off in this build.',
     ),
   ];

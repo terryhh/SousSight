@@ -372,7 +372,7 @@ void main() {
           {
             'title': 'Scramble',
             'instruction': 'Cook the eggs in a pan, stirring.',
-            'cue': 'Eggs are fully cooked and safe to eat.',
+            'cue': 'Curds hold together.',
             'timerSeconds': 180,
           },
           {

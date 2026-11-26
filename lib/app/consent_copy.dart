@@ -95,7 +95,14 @@ bool consentSendsDirectly(String feature, {RemoteRouting? remote}) {
   final withText = companion.isEmpty ? '' : ', with $companion,';
   final media =
       ask.kinds.contains(DataKind.image) || ask.kinds.contains(DataKind.audio);
-  final direct = consentSendsDirectly(ask.feature, remote: remote);
+  // The route the dispatcher actually chose, when the ask carries it (a
+  // pantry photo with a downloadable model goes straight to the cloud);
+  // otherwise the feature's effective default.
+  final direct = switch (ask.mode) {
+    HybridMode.onlyInCloud || HybridMode.preferInCloud => true,
+    HybridMode.preferOnDevice || HybridMode.onlyOnDevice => false,
+    null => consentSendsDirectly(ask.feature, remote: remote),
+  };
   final label = _featureNames[ask.feature] ?? featureLabel(ask.feature);
   final check = ask.feature == 'local_watch_cloud_check';
   final request = !direct

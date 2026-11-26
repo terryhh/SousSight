@@ -12,7 +12,9 @@ const List<({String feature, String label, String detail})> privacyFeatures = [
   (
     feature: 'pantry_scan',
     label: 'Pantry scan',
-    detail: 'Photos and typed lists of what you have.',
+    detail:
+        'Photos, voice clips and typed lists of what you have. Voice needs '
+        'the cloud, so it is not used while this is on.',
   ),
   (
     feature: 'recipe_draft',
@@ -35,6 +37,14 @@ const List<({String feature, String label, String detail})> privacyFeatures = [
     feature: 'label_check',
     label: 'Label check',
     detail: 'Reading allergen statements on packaging.',
+  ),
+  (
+    // `kNearbyFeature` in lib/nearby/nearby_client.dart.
+    feature: 'nearby',
+    label: 'Find food help',
+    detail:
+        'Google Maps searches for food help and stores near you. They need '
+        'the cloud, so none are sent while this is on.',
   ),
 ];
 

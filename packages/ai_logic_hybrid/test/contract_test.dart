@@ -5,39 +5,42 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('AndroidModelOption', () {
-    test('stable is the default and travels as its name', () {
+    test('deviceList is the default and travels as its name', () {
       const config = HybridConfig(cloudModel: 'm');
-      expect(config.androidModel, AndroidModelOption.stable);
-      expect(config.toMap()['androidModel'], 'stable');
-      // The existing wire names are unchanged.
+      expect(config.androidModel, AndroidModelOption.deviceList);
+      expect(config.toMap()['androidModel'], 'deviceList');
       expect(AndroidModelOption.values.map((o) => o.name), [
+        'deviceList',
         'preview',
         'previewFast',
         'stable',
       ]);
     });
 
-    test('fromName parses dart-define values; anything else is stable', () {
-      expect(
-        AndroidModelOption.fromName('preview'),
-        AndroidModelOption.preview,
-      );
-      expect(
-        AndroidModelOption.fromName('previewFast'),
-        AndroidModelOption.previewFast,
-      );
-      expect(
-        AndroidModelOption.fromName(' stable '),
-        AndroidModelOption.stable,
-      );
-      for (final other in [null, '', 'auto', 'nano4', 'PREVIEW']) {
+    test(
+      'fromName: explicit options override; anything else is deviceList',
+      () {
         expect(
-          AndroidModelOption.fromName(other),
-          AndroidModelOption.stable,
-          reason: '$other',
+          AndroidModelOption.fromName('preview'),
+          AndroidModelOption.preview,
         );
-      }
-    });
+        expect(
+          AndroidModelOption.fromName(' stable '),
+          AndroidModelOption.stable,
+        );
+        expect(
+          AndroidModelOption.fromName('previewFast'),
+          AndroidModelOption.previewFast,
+        );
+        for (final other in [null, '', 'auto', 'nano4', 'PREVIEW']) {
+          expect(
+            AndroidModelOption.fromName(other),
+            AndroidModelOption.deviceList,
+            reason: '$other',
+          );
+        }
+      },
+    );
   });
 
   group('the chosen model is reported', () {
@@ -47,14 +50,20 @@ void main() {
         'reason': null,
         'modelLabel': 'nano-v3',
         'modelOption': 'stable',
+        'modelChoice':
+            'not on the Gemini Nano 4 device list (Google Pixel 9) → stable',
       });
+      expect(
+        a.modelChoice,
+        'not on the Gemini Nano 4 device list (Google Pixel 9) → stable',
+      );
       expect(a.status, OnDeviceStatus.available);
       expect(a.modelLabel, 'nano-v3');
       expect(a.modelOption, AndroidModelOption.stable);
     });
 
     test('a missing or unknown option is reported as null', () {
-      for (final raw in <Object?>[null, 'auto', 'nano4', 3]) {
+      for (final raw in <Object?>[null, 'deviceList', 'nano4', 3]) {
         final a = HybridAvailability.fromMap({
           'status': 'unavailable',
           'modelOption': raw,
@@ -69,6 +78,9 @@ void main() {
         'local': {
           'modelFamily': 'Gemini Nano',
           'modelOption': option,
+          'modelChoice': option == null
+              ? null
+              : 'device list: Pixel 10 → preview',
           'supportsImage': true,
           'supportsJsonSchema': false,
           'maxTotalTokens': 4000,
@@ -83,6 +95,11 @@ void main() {
       };
       final chosen = HybridCapabilities.fromMap(caps('preview'));
       expect(chosen.local!.modelOption, AndroidModelOption.preview);
+      expect(chosen.local!.modelChoice, 'device list: Pixel 10 → preview');
+      expect(
+        chosen.toMap()['local'],
+        containsPair('modelChoice', 'device list: Pixel 10 → preview'),
+      );
       expect(chosen.toMap()['local'], containsPair('modelOption', 'preview'));
       expect(HybridCapabilities.fromMap(caps(null)).local!.modelOption, isNull);
       // Backends that never send the key (web, iOS) still parse.

@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/cooking_research_client.dart';
+import 'package:soussight/ai/hybrid/hybrid_types.dart';
+import 'package:soussight/ai/hybrid/inference_ledger.dart';
+import 'package:soussight/app/cloud_send_recorder.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/fakes.dart';
 import 'package:soussight/core/models.dart';
@@ -13,6 +16,8 @@ import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
 import 'package:soussight/learner/meal_complete.dart';
 import 'package:soussight/live/live_types.dart';
+import 'package:soussight/nearby/nearby_client.dart';
+import 'package:soussight/trust/privacy_preferences.dart';
 
 class _Transport extends DemoLiveTransport {
   final source = StreamController<LiveEvent>.broadcast();
@@ -186,6 +191,61 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Find food help nearby'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  group('nearby button in real mode (SS-096)', () {
+    Future<void> panel(WidgetTester tester, NearbyClient? client) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MealCompletePanel(
+                cook: cook,
+                isDemo: false,
+                onTextHousehold: () {},
+                onCookSomethingElse: null,
+                nearbyClient: client,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    GeminiNearbyClient gated(String routes) => GeminiNearbyClient(
+      gate: NearbyGate(
+        cloudRoutes: CloudRoutes.parse(routes),
+        privacy: InMemoryPrivacyPreferences(),
+        isOnline: () => true,
+        recorder: LedgerCloudSendRecorder(InferenceLedger(sessionId: 's')),
+      ),
+      generate: (_) => throw StateError('no Maps in tests'),
+    );
+
+    final button = find.byKey(const ValueKey('meal-complete-nearby'));
+
+    testWidgets('hidden without a wired client', (tester) async {
+      await finishAllSteps(tester);
+      await panel(tester, null);
+      expect(find.byKey(const ValueKey('meal-complete')), findsOneWidget);
+      expect(button, findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('hidden when the nearby route is off', (tester) async {
+      await finishAllSteps(tester);
+      await panel(tester, gated('hybridFallback,research'));
+      expect(button, findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('shown when the nearby route is on', (tester) async {
+      await finishAllSteps(tester);
+      await panel(tester, gated('nearby'));
+      expect(button, findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 
   testWidgets('cook something else returns to the pantry', (tester) async {

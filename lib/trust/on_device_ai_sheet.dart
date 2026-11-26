@@ -19,6 +19,52 @@ typedef CheckAvailability = Future<HybridAvailability> Function({
   required bool withImage,
 });
 
+/// What the trust controls show about the local model. A discovery call that
+/// fails (for example, startup still pending) reads as "no local model", so
+/// the privacy switches and the ledger always open.
+typedef OnDeviceDiscovery = ({
+  HybridCapabilities capabilities,
+  HybridAvailability text,
+  HybridAvailability image,
+});
+
+const _unavailable = HybridAvailability(
+  status: OnDeviceStatus.unavailable,
+  reason: 'bridge_unavailable',
+);
+
+Future<T> _orElse<T>(Future<T> Function() call, T fallback) async {
+  try {
+    return await call();
+  } catch (error) {
+    debugPrint('On-device discovery failed (${error.runtimeType})');
+    return fallback;
+  }
+}
+
+/// Capabilities only, never throwing.
+Future<HybridCapabilities> safeCapabilities(HybridInference inference) =>
+    _orElse(inference.capabilities, const HybridCapabilities.none());
+
+/// Capabilities and both availabilities, never throwing. The three calls run
+/// together, so a stalled startup costs one wait, not three.
+Future<OnDeviceDiscovery> discoverOnDevice(HybridInference inference) async {
+  final capabilities = safeCapabilities(inference);
+  final text = _orElse(
+    () => inference.availability(withImage: false),
+    _unavailable,
+  );
+  final image = _orElse(
+    () => inference.availability(withImage: true),
+    _unavailable,
+  );
+  return (
+    capabilities: await capabilities,
+    text: await text,
+    image: await image,
+  );
+}
+
 /// Loads capabilities and availability, then opens the sheet.
 Future<void> showOnDeviceAiSheet(
   BuildContext context, {
@@ -27,9 +73,7 @@ Future<void> showOnDeviceAiSheet(
   VoidCallback? onReady,
   bool practice = false,
 }) async {
-  final capabilities = await inference.capabilities();
-  final text = await inference.availability(withImage: false);
-  final image = await inference.availability(withImage: true);
+  final (:capabilities, :text, :image) = await discoverOnDevice(inference);
   if (!context.mounted) return;
   await showModalBottomSheet<void>(
     context: context,
@@ -182,8 +226,8 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
   Future<void> _finish() async {
     final check = widget.checkAvailability;
     if (check != null) {
-      final text = await check(withImage: false);
-      final image = await check(withImage: true);
+      final text = await _orElse(() => check(withImage: false), _unavailable);
+      final image = await _orElse(() => check(withImage: true), _unavailable);
       if (!mounted) return;
       _text = text;
       _image = image;

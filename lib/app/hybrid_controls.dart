@@ -14,8 +14,6 @@ import '../label/label_check_sheet.dart';
 import '../trust/app_readiness.dart';
 import '../trust/ledger_view.dart';
 import '../trust/on_device_ai_sheet.dart';
-import '../nearby/guarded_nearby_client.dart';
-import '../nearby/nearby_client.dart';
 import 'hybrid_runtime.dart';
 import 'rehearsal_runtime.dart';
 
@@ -28,7 +26,7 @@ Future<void> openOnDeviceAi(BuildContext context, HybridRuntime hybrid) =>
     );
 
 Future<void> openLedger(BuildContext context, HybridRuntime hybrid) async {
-  final caps = await hybrid.inference.capabilities();
+  final caps = await safeCapabilities(hybrid.inference);
   if (!context.mounted) return;
   await showLedgerSheet(
     context,
@@ -48,14 +46,6 @@ Future<void> openLabelCheck(
   controller: hybrid.labelCheck(sessionId),
   takePhoto: takePhoto,
 );
-
-/// The real-build Nearby client: guarded by the `nearby` route (read live)
-/// and recorded in the session ledger. One rule for every entry point.
-GuardedNearbyClient hybridNearbyClient(HybridRuntime hybrid) =>
-    GuardedNearbyClient(
-      inner: GeminiNearbyClient(recorder: hybrid.cloudSends),
-      allowed: () => hybrid.cloudRoutes.allows(CloudRoute.nearby),
-    );
 
 /// Why AI help can't run here, as one plain sentence, or null when the
 /// readiness check says it can (SS-089). Read live, when it is needed.
@@ -192,9 +182,9 @@ class _HybridReadinessCardState extends State<HybridReadinessCard> {
   Future<void> _refresh() async {
     final load = ++_load;
     final inference = widget.hybrid.inference;
-    final caps = await inference.capabilities();
-    final text = await inference.availability(withImage: false);
-    final image = await inference.availability(withImage: true);
+    final (capabilities: caps, :text, :image) = await discoverOnDevice(
+      inference,
+    );
     if (!mounted || load != _load) return;
     setState(() {
       _input = ReadinessInput(

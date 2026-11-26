@@ -24,6 +24,7 @@ import '../ai/hybrid/inference_ledger.dart';
 import '../core/models.dart';
 import '../learner/demo_live.dart';
 import '../live/live_types.dart';
+import '../safety/cook_safety.dart';
 import '../pantry/pantry_client.dart';
 import '../pantry/pantry_models.dart';
 import '../pantry/recipe_draft.dart';
@@ -270,9 +271,18 @@ String practiceCoachAnswer(String prompt) {
   );
   String cut(String v, int max) =>
       v.length <= max ? v : '${v.substring(0, max - 1)}…';
+  // Practice text passes the same cook safety gate as a model answer
+  // (SS-131): a piece that touches doneness or safety vocabulary is left
+  // out rather than getting the whole pretend answer replaced.
+  String keep(String v) => touchesFoodSafety(v) ? '' : v;
   final asked = question == null || question.trim().isEmpty
       ? ''
-      : 'You asked: “${cut(question.trim(), 120)}”. ';
+      : keep('You asked: “${cut(question.trim(), 120)}”. ');
+  final shownTitle = keep(cut(title, 60)).isEmpty
+      ? 'this step'
+      : cut(title, 60);
+  final shownInstruction = keep(instruction);
+  final shownCue = keep(cue);
   return jsonEncode({
     'components': [
       {
@@ -283,16 +293,20 @@ String practiceCoachAnswer(String prompt) {
       {
         'id': 'practice_answer',
         'component': 'stepCue',
-        'title': 'Practice answer for “${cut(title, 60)}”',
+        'title': 'Practice answer for “$shownTitle”',
         'body': cut(
-          '${asked}This is a pretend answer. Go gently and follow the step: '
-          '$instruction${cue.isEmpty ? '' : ' Look for: $cue'}',
+          '${asked}This is a pretend answer. Go gently and follow the step'
+          '${shownInstruction.isEmpty ? '.' : ': $shownInstruction'}'
+          '${shownCue.isEmpty ? '' : ' Look for: $shownCue'}',
           560,
         ),
       },
     ],
     if (seconds != null && seconds > 0)
-      'timerSuggestion': {'label': cut(title, 40), 'seconds': seconds},
+      'timerSuggestion': {
+        'label': keep(cut(title, 40)).isEmpty ? 'Step timer' : cut(title, 40),
+        'seconds': seconds,
+      },
   });
 }
 

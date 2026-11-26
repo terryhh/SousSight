@@ -113,19 +113,22 @@ class ManualDispatcher implements HybridDispatcher {
   );
 }
 
-class FakeConsentGate implements ConsentGate {
+class FakeConsentGate extends ConsentGate {
   final asks = <ConsentAsk>[];
   Completer<ConsentGrant?>? reply;
 
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) {
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
+
+  @override
+  Future<ConsentGrant?> request(ConsentAsk ask, {Uint8List? preview}) {
     asks.add(ask);
     reply = Completer<ConsentGrant?>();
     return reply!.future;
   }
 
-  void grant() => reply!.complete(ConsentGrant(asks.last));
-  void grantFor(ConsentAsk ask) => reply!.complete(ConsentGrant(ask));
+  void grant() => reply!.complete(super.request(asks.last));
+  void grantFor(ConsentAsk ask) => reply!.complete(super.request(ask));
   void decline() => reply!.complete(null);
 }
 

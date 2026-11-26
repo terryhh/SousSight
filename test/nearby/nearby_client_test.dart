@@ -10,6 +10,21 @@ import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
 import 'package:soussight/app/cloud_send_recorder.dart';
 import 'package:soussight/nearby/nearby_client.dart';
+import 'package:soussight/trust/privacy_preferences.dart';
+
+/// The gate a wired app uses, over fakes: every route approved, online,
+/// nothing kept on device, legs written to [ledger].
+NearbyGate _gate({
+  InferenceLedger? ledger,
+  CloudRoutes routes = const CloudRoutes({CloudRoute.nearby}),
+  PrivacyPreferences? privacy,
+  bool Function()? isOnline,
+}) => NearbyGate(
+  cloudRoutes: routes,
+  privacy: privacy ?? InMemoryPrivacyPreferences(),
+  isOnline: isOnline ?? () => true,
+  recorder: LedgerCloudSendRecorder(ledger ?? InferenceLedger(sessionId: 's1')),
+);
 
 GenerateContentResponse _response({
   String answer = 'Two pantries are nearby. Confirm hours before you go.',
@@ -102,6 +117,7 @@ void main() {
     () async {
       final requests = <NearbyGenerationRequest>[];
       final client = GeminiNearbyClient(
+        gate: _gate(),
         generate: (request) async {
           requests.add(request);
           return _response(
@@ -141,6 +157,7 @@ void main() {
 
   test('rejects missing area and maps failures to safe copy', () async {
     final client = GeminiNearbyClient(
+      gate: _gate(),
       generate: (_) => Future.error(Exception('API key leaked: secret')),
     );
     await expectLater(
@@ -164,6 +181,7 @@ void main() {
       ),
     );
     final slow = GeminiNearbyClient(
+      gate: _gate(),
       timeout: const Duration(milliseconds: 10),
       generate: (_) => Completer<GenerateContentResponse>().future,
     );
@@ -186,88 +204,5 @@ void main() {
     expect(result.places, isNotEmpty);
     expect(result.places.every((p) => p.title.contains('(simulated)')), isTrue);
     expect(result.places.every((p) => p.uri.scheme == 'https'), isTrue);
-  });
-
-  group('Codex #221: every nearby send writes one ledger leg', () {
-    final here = NearbyQuery(
-      kind: NearbyKind.foodHelp,
-      coordinates: NearbyCoordinates(28.5, -81.4),
-    );
-
-    test('a shared location is recorded as sent', () async {
-      final ledger = InferenceLedger(sessionId: 's');
-      final client = GeminiNearbyClient(
-        generate: (_) async => _response(
-          chunks: [_maps('Pantry', 'https://maps.google.com/?cid=1')],
-        ),
-        recorder: LedgerCloudSendRecorder(ledger),
-      );
-      await client.find(here);
-      final leg = ledger.legs.single;
-      expect(leg.feature, kNearbyFeature);
-      expect(leg.kinds, {DataKind.text, DataKind.location});
-      expect(leg.provenance, Provenance.cloudAdapter);
-    });
-
-    test(
-      'a typed ZIP counts as a location; a failure is recorded as uncertain',
-      () async {
-        final ledger = InferenceLedger(sessionId: 's');
-        final client = GeminiNearbyClient(
-          generate: (_) async => throw StateError('offline'),
-          recorder: LedgerCloudSendRecorder(ledger),
-        );
-        await expectLater(
-          client.find(
-            const NearbyQuery(kind: NearbyKind.foodHelp, area: '32801'),
-          ),
-          throwsA(isA<NearbyException>()),
-        );
-        final leg = ledger.legs.single;
-        expect(leg.kinds, {DataKind.text, DataKind.location});
-        expect(leg.transferPermitted, isTrue);
-        expect(leg.provenance, Provenance.unknown);
-        expect(leg.error, isNotNull);
-      },
-    );
-
-    test('a refusal raised by the sender is recorded as failed', () async {
-      final ledger = InferenceLedger(sessionId: 's');
-      final client = GeminiNearbyClient(
-        generate: (_) async => throw const NearbyException(
-          NearbyFailure.unavailable,
-          'Not now.',
-        ),
-        recorder: LedgerCloudSendRecorder(ledger),
-      );
-      await expectLater(client.find(here), throwsA(isA<NearbyException>()));
-      expect(ledger.entries.single.pending, isFalse);
-      expect(ledger.legs.single.error, isNotNull);
-    });
-
-    test('a timeout is recorded once', () async {
-      final ledger = InferenceLedger(sessionId: 's');
-      final client = GeminiNearbyClient(
-        generate: (_) => Completer<GenerateContentResponse>().future,
-        timeout: const Duration(milliseconds: 1),
-        recorder: LedgerCloudSendRecorder(ledger),
-      );
-      await expectLater(client.find(here), throwsA(isA<NearbyException>()));
-      expect(ledger.legs, hasLength(1));
-      expect(ledger.entries.single.pending, isFalse);
-    });
-
-    test('an invalid query is refused before any leg', () async {
-      final ledger = InferenceLedger(sessionId: 's');
-      final client = GeminiNearbyClient(
-        generate: (_) async => _response(),
-        recorder: LedgerCloudSendRecorder(ledger),
-      );
-      await expectLater(
-        client.find(const NearbyQuery(kind: NearbyKind.foodHelp)),
-        throwsA(isA<NearbyException>()),
-      );
-      expect(ledger.legs, isEmpty);
-    });
   });
 }

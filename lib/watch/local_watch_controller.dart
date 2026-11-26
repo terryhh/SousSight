@@ -334,6 +334,7 @@ class LocalWatchController extends ChangeNotifier {
           kinds: const {DataKind.image, DataKind.text},
           payloadDigest: digest,
           sessionId: token.sessionId,
+          imageDigests: taskImageDigests(task),
         ),
       );
     } finally {

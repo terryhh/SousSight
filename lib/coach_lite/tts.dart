@@ -64,7 +64,12 @@ String coachLiteSpokenText(CoachLiteAnswer answer, {int maxChars = 1500}) {
     final clean = value.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (clean.isEmpty) return;
     for (final sentence in clean.split(RegExp(r'(?<=[.!?])\s+'))) {
-      if (sentence.isEmpty || coachLiteCertifies(sentence)) continue;
+      if (sentence.isEmpty) continue;
+      // The text itself is gated, whatever card it is in: an app card can
+      // hold model-written text. Only the app's literal notices pass.
+      if (coachLiteCertifies(sentence) && !isCoachLiteAppLiteral(sentence)) {
+        continue;
+      }
       final s = '$prefix$sentence';
       parts.add(RegExp(r'[.!?…:]$').hasMatch(s) ? s : '$s.');
     }

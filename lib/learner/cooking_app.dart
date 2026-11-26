@@ -31,6 +31,7 @@ import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
 import '../live/live_controller.dart';
 import '../live/live_types.dart';
+import '../nearby/nearby_client.dart' show nearbyClientFor;
 import '../label/label_check_controller.dart';
 import '../label/label_check_sheet.dart';
 import '../trust/inference_source_badge.dart';
@@ -320,7 +321,11 @@ class _CookingScreenState extends State<CookingScreen> {
               liveAvailable: transport != null,
               simulated: widget.isDemo || isPracticeRuntime(hybrid),
             ),
-      onSessionReady: hybrid == null ? null : bindMealSession(hybrid),
+      // Bound to this screen's pantry flow: a late load after the cook
+      // went back to the pantry is ignored (SS-096 / Codex #224).
+      onSessionReady: hybrid == null
+          ? null
+          : bindMealSession(hybrid, hybrid.cookingSessionBinder()),
       // Rehearsal research is the simulated client; nothing is sent.
       researchAllowed: hybrid == null || widget.isDemo
           ? null
@@ -1369,11 +1374,10 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         MealCompletePanel(
           cook: cook,
           isDemo: widget.isDemo,
-          // The same guarded, ledger-backed client as the pantry (Codex #221).
-          nearbyClient: switch ((widget.isDemo, widget.hybrid)) {
-            (false, final hybrid?) => hybridNearbyClient(hybrid),
-            _ => null,
-          },
+          nearbyClient: nearbyClientFor(
+            isDemo: widget.isDemo,
+            hybrid: widget.hybrid,
+          ),
           onTextHousehold: _reviewDinner,
           onCookSomethingElse: switch (widget.onBackToPantry) {
             final back? => () {

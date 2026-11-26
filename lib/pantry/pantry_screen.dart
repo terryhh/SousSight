@@ -9,7 +9,6 @@ import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../learner/draft_recipe_chip.dart';
 import '../live/live_types.dart';
-import '../nearby/guarded_nearby_client.dart';
 import '../nearby/nearby_client.dart';
 import '../nearby/nearby_sheet.dart';
 import 'pantry_client.dart';
@@ -106,7 +105,9 @@ class PantryScreen extends StatefulWidget {
   final Duration recordDuration;
 
   /// Grounding with Google Maps search. Defaults to the rehearsal client in
-  /// demo mode and the Gemini client otherwise.
+  /// demo mode; real mode needs a gated client (`nearbyClientFor`). Without
+  /// one, or when this build does not approve the nearby route, the nearby
+  /// entry points are hidden.
   final NearbyClient? nearbyClient;
 
   /// One-time location lookup; defaults to browser geolocation (real mode)
@@ -131,14 +132,15 @@ class PantryScreen extends StatefulWidget {
 }
 
 class _PantryScreenState extends State<PantryScreen> {
+  late final NearbyClient? _nearby =
+      widget.nearbyClient ?? (widget.isDemo ? const FakeNearbyClient() : null);
   late final PantryUiController _ui = PantryUiController(
     onChooseMeal: _chooseById,
-    onFindMissing: (missing) =>
-        unawaited(_openNearby(NearbyKind.groceries, missing: missing)),
+    onFindMissing: nearbyOffered(_nearby)
+        ? (missing) =>
+              unawaited(_openNearby(NearbyKind.groceries, missing: missing))
+        : null,
   );
-  late final NearbyClient _nearby =
-      widget.nearbyClient ??
-      (widget.isDemo ? const FakeNearbyClient() : GeminiNearbyClient());
   final _text = TextEditingController();
   final _answer = TextEditingController();
   PantryMode _mode = PantryMode.type;
@@ -530,22 +532,9 @@ class _PantryScreenState extends State<PantryScreen> {
   Future<void> _openNearby(
     NearbyKind kind, {
     List<String> missing = const [],
-  }) async {
-    if (!nearbyAllowed(_nearby)) {
-      // Checked before the cook is asked for a location (Codex #221).
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text(kNearbyOffMessage)));
-      return;
-    }
-    await _showNearby(kind, missing: missing);
-  }
-
-  Future<void> _showNearby(
-    NearbyKind kind, {
-    List<String> missing = const [],
   }) => showNearbySheet(
     context,
-    client: _nearby,
+    client: _nearby!,
     kind: kind,
     missingItems: missing,
     locate:
@@ -743,8 +732,10 @@ class _PantryScreenState extends State<PantryScreen> {
                   ],
                   PantrySurface(controller: _ui),
                 ],
-                const SizedBox(height: 24),
-                _nearbyCard(),
+                if (nearbyOffered(_nearby)) ...[
+                  const SizedBox(height: 24),
+                  _nearbyCard(),
+                ],
                 const SizedBox(height: 32),
                 _skipList(),
               ],

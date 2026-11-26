@@ -24,6 +24,11 @@ internal class SdkMappingTest {
         assertEquals(OnDeviceModelOption.PREVIEW, SdkMapping.option(AndroidModelOption.PREVIEW))
         assertEquals(OnDeviceModelOption.PREVIEW_FAST, SdkMapping.option(AndroidModelOption.PREVIEW_FAST))
         assertEquals(OnDeviceModelOption.STABLE, SdkMapping.option(AndroidModelOption.STABLE))
+        // deviceList is resolved at configure; it never reaches the SDK.
+        assertEquals(
+            HybridErrorCode.FAILED,
+            assertFailsWith<HybridError> { SdkMapping.option(AndroidModelOption.DEVICE_LIST) }.code,
+        )
     }
 
     @Test

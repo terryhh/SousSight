@@ -440,7 +440,7 @@ void main() {
         // The digest is the dispatcher's own, and the grant travels with
         // the send so the dispatcher does not prompt again.
         expect(hybridPayloadDigest(sent), ask.payloadDigest);
-        expect(rig.fake.grants.last?.ask, same(ask));
+        expect(rig.fake.grants.last?.ask, _sameAskAs(ask));
         expect(cloud!.source, WatchVerdictSource.cloud);
         expect(cloud!.message, contains('cloud check of one photo'));
       });
@@ -568,3 +568,10 @@ void main() {
     });
   });
 }
+
+/// The gate grants a frozen copy of the ask: equal fields, not the instance.
+Matcher _sameAskAs(ConsentAsk a) => isA<ConsentAsk>()
+    .having((x) => x.feature, 'feature', a.feature)
+    .having((x) => x.kinds, 'kinds', a.kinds)
+    .having((x) => x.payloadDigest, 'payloadDigest', a.payloadDigest)
+    .having((x) => x.sessionId, 'sessionId', a.sessionId);

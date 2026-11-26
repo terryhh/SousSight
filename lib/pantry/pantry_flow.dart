@@ -12,6 +12,7 @@ import '../core/models.dart';
 import '../learner/cooking_app.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_types.dart';
+import '../nearby/nearby_client.dart' show NearbyClient, nearbyClientFor;
 import 'pantry_client.dart';
 import 'pantry_handoff.dart';
 import 'pantry_screen.dart';
@@ -88,6 +89,11 @@ class _PantryFlowState extends State<PantryFlow> {
         ),
         (false, null) => GeminiRecipeDraftClient(),
       };
+  // Gated by CloudRoute.nearby and the cook's switch; null hides nearby.
+  late final NearbyClient? _nearbyClient = nearbyClientFor(
+    isDemo: widget.isDemo,
+    hybrid: widget.hybrid,
+  );
   bool _opening = false;
 
   Widget _cooking(Recipe recipe, VoidCallback onBack) =>
@@ -106,18 +112,13 @@ class _PantryFlowState extends State<PantryFlow> {
     client: _client,
     draftClient: _draftClient,
     isDemo: widget.isDemo,
+    nearbyClient: _nearbyClient,
     mediaFactory: widget.isDemo
         ? null
         : (widget.mediaFactory ?? createLiveMedia),
     onChooseRecipe: _open,
     header: switch ((widget.isDemo, widget.hybrid)) {
       (false, final hybrid?) => HybridReadinessCard(hybrid: hybrid),
-      _ => null,
-    },
-    // Real builds record each nearby search (and any shared location) in the
-    // session ledger; rehearsal keeps its simulated nearby client.
-    nearbyClient: switch ((widget.isDemo, widget.hybrid)) {
-      (false, final hybrid?) => hybridNearbyClient(hybrid),
       _ => null,
     },
     // Read live (the gate can change when Remote Config settles).
@@ -170,12 +171,15 @@ class _PantryFlowState extends State<PantryFlow> {
     }
     if (!mounted) return;
     unawaited(
-      navigator.push(
-        MaterialPageRoute<void>(
-          builder: (context) =>
-              _cooking(recipe, () => Navigator.of(context).maybePop()),
-        ),
-      ),
+      navigator
+          .push(
+            MaterialPageRoute<void>(
+              builder: (context) =>
+                  _cooking(recipe, () => Navigator.of(context).maybePop()),
+            ),
+          )
+          // Back on the pantry: a new pantry flow with its own ledger.
+          .then((_) => widget.hybrid?.beginPantry()),
     );
   }
 
@@ -198,7 +202,10 @@ class _PantryFlowState extends State<PantryFlow> {
           .firstOrNull;
       if (deepLinked != null) {
         return _DeepLinkedCooking(
-          build: (onBack) => _cooking(deepLinked, onBack),
+          build: (onBack) => _cooking(deepLinked, () {
+            widget.hybrid?.beginPantry();
+            onBack();
+          }),
           pantry: () => _pantry(recipes),
         );
       }
