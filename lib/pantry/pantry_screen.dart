@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../learner/draft_recipe_chip.dart';
@@ -24,7 +25,9 @@ typedef PantryRecipeChosen = void Function(
 );
 
 const pantryPrivacyLine =
-    'Photos and audio go to Google Gemini to identify ingredients; nothing is stored.';
+    'On-device AI reads typed lists and photos when it is ready. Voice clips, '
+    'and anything this device cannot handle, may go to Google cloud AI; each '
+    'result shows where it ran. Nothing is stored.';
 
 /// "What did you get from the pantry?" The cook shows, says, or types their
 /// haul; one Gemini call suggests bundled recipes; the cook confirms and picks.
@@ -41,6 +44,8 @@ class PantryScreen extends StatefulWidget {
     this.nearbyClient,
     this.locate,
     this.openLink,
+    this.header,
+    this.headerActions,
   });
 
   final List<Recipe> recipes;
@@ -64,6 +69,12 @@ class PantryScreen extends StatefulWidget {
   /// or a simulated Orlando position (rehearsal mode).
   final NearbyLocator? locate;
   final NearbyLinkOpener? openLink;
+
+  /// Shown under the brand row (for example the readiness panel).
+  final Widget? header;
+
+  /// Extra buttons beside "How it works" (On-device AI, ledger, label check).
+  final Widget? headerActions;
 
   @override
   State<PantryScreen> createState() => _PantryScreenState();
@@ -98,10 +109,12 @@ class _PantryScreenState extends State<PantryScreen> {
   double _recordProgress = 0;
   bool _thinking = false;
   String? _error;
+  List<InferenceLeg> _errorLegs = const [];
   PantryResult? _result;
   bool _drafting = false;
   String? _draftError;
   Recipe? _drafted;
+  List<InferenceLeg> _draftLegs = const [];
   int _draftEpoch = 0;
 
   @override
@@ -263,6 +276,7 @@ class _PantryScreenState extends State<PantryScreen> {
     setState(() {
       _thinking = true;
       _error = null;
+      _errorLegs = const [];
     });
     // Release the camera and microphone as soon as the inputs are captured.
     await _stopMedia();
@@ -279,10 +293,16 @@ class _PantryScreenState extends State<PantryScreen> {
         _drafting = false;
         _draftError = null;
         _drafted = null;
+        _draftLegs = const [];
         _answer.clear();
       });
     } on PantryException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _errorLegs = error.legs;
+        });
+      }
     } catch (_) {
       if (mounted) {
         setState(
@@ -318,12 +338,15 @@ class _PantryScreenState extends State<PantryScreen> {
       _draftError = null;
     });
     try {
-      final recipe = await client.draft(
+      final result = await client.draft(
         RecipeDraftRequest(confirmedItems: items, note: _text.text.trim()),
       );
       if (!mounted || epoch != _draftEpoch) return;
-      setState(() => _drafted = recipe);
-      _choose(recipe);
+      setState(() {
+        _drafted = result.recipe;
+        _draftLegs = result.legs;
+      });
+      _choose(result.recipe);
     } on RecipeDraftException catch (error) {
       if (mounted && epoch == _draftEpoch) {
         setState(() => _draftError = error.message);
@@ -378,6 +401,7 @@ class _PantryScreenState extends State<PantryScreen> {
               children: [
                 _brand(),
                 const SizedBox(height: 18),
+                ?widget.header,
                 if (widget.isDemo) ...[
                   _notice(
                     'Rehearsal mode · Camera, microphone, and Gemini are not used. Results are simulated.',
@@ -420,10 +444,24 @@ class _PantryScreenState extends State<PantryScreen> {
                     Icons.info_outline,
                     color: const Color(0xFFFBE3DC),
                   ),
+                  if (_errorLegs.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    PantryLegList(legs: _errorLegs),
+                  ],
                 ],
                 if (_result case final result?) ...[
                   const SizedBox(height: 28),
                   _resultsHeader(result),
+                  const SizedBox(height: 8),
+                  PantryLegList(legs: result.legs),
+                  if (result.notice case final notice?) ...[
+                    const SizedBox(height: 8),
+                    _notice(
+                      notice,
+                      Icons.mic_off_outlined,
+                      color: const Color(0xFFFFF1CC),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   if (result.question case final question?) ...[
                     _questionCard(question),
@@ -484,6 +522,7 @@ class _PantryScreenState extends State<PantryScreen> {
           ],
         ),
       ),
+      ?widget.headerActions,
       HowItWorksButton(isDemo: widget.isDemo),
     ],
   );
@@ -877,6 +916,7 @@ class _PantryScreenState extends State<PantryScreen> {
           child: DraftRecipeChip(recipe: drafted),
         ),
         const SizedBox(height: 8),
+        PantryLegList(legs: _draftLegs),
         OutlinedButton.icon(
           key: const ValueKey('cook-drafted'),
           icon: const Icon(Icons.restaurant),

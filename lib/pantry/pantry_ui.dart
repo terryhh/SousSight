@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:genui/genui.dart';
 import 'package:json_schema_builder/json_schema_builder.dart';
 
+import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
+import 'pantry_client.dart' show kPantryScanFeature, kPantryVoiceFeature;
+import '../trust/inference_source_badge.dart';
 import 'pantry_models.dart';
+import 'recipe_draft.dart' show kRecipeDraftFeature;
 
 const pantryGreen = Color(0xFF235B46);
 const pantryTomato = Color(0xFFC4472B);
@@ -526,4 +530,67 @@ class _MealCard extends StatelessWidget {
       ),
     ],
   );
+}
+
+// ------------------------------------------------------------ provenance
+
+/// One plain line per inference leg: what ran and where the SDK said it ran.
+/// The source is reported, never inferred; an error on a send that was
+/// allowed to upload says that data may have left the device.
+String pantryLegLabel(InferenceLeg leg) {
+  final what = pantryLegWhat(leg);
+  final where = switch (leg.provenance) {
+    Provenance.sdkOnDevice => 'on this device',
+    Provenance.sdkCloud => 'Google cloud',
+    Provenance.cloudAdapter => 'Google cloud',
+    Provenance.simulated => 'simulated, no model used',
+    Provenance.unknown =>
+      leg.transferPermitted ? 'may have used Google cloud' : 'on this device',
+  };
+  final failed = leg.error == null ? '' : ' · did not finish';
+  return '$what · $where$failed';
+}
+
+/// What a pantry leg did, for the row label ("Voice list", "Meal match").
+String pantryLegWhat(InferenceLeg leg) => switch (leg.feature) {
+  kPantryVoiceFeature => 'Voice list',
+  kPantryScanFeature => 'Meal match',
+  kRecipeDraftFeature => 'Recipe draft',
+  _ => leg.feature,
+};
+
+/// Per-leg provenance for a pantry result: one row per leg, each with the
+/// trust surface's source badge. Never one merged badge.
+class PantryLegList extends StatelessWidget {
+  const PantryLegList({super.key, required this.legs});
+
+  final List<InferenceLeg> legs;
+
+  @override
+  Widget build(BuildContext context) {
+    if (legs.isEmpty) return const SizedBox.shrink();
+    return Column(
+      key: const ValueKey('pantry-legs'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final leg in legs)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              children: [
+                Text(
+                  pantryLegWhat(leg),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF3B3328),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(child: InferenceSourceBadge(legs: [leg])),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }

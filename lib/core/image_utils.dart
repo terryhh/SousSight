@@ -10,7 +10,11 @@ const kThumbMaxSide = 512;
 
 /// Decodes any supported image, bakes in EXIF orientation, scales the long
 /// side down to [maxSide] (never up), and re-encodes as JPEG.
-Uint8List downscaleJpeg(Uint8List bytes, {int maxSide = kPhotoMaxSide, int quality = 75}) {
+Uint8List downscaleJpeg(
+  Uint8List bytes, {
+  int maxSide = kPhotoMaxSide,
+  int quality = 75,
+}) {
   final decoded = img.decodeImage(bytes);
   if (decoded == null) throw const FormatException('Unsupported image');
   var image = img.bakeOrientation(decoded);
