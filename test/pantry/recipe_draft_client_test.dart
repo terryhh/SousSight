@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/pantry/recipe_draft.dart';
 import 'package:soussight/pantry/recipe_draft_client.dart';
 
@@ -11,13 +12,24 @@ Map<String, dynamic> _draft({List<Map<String, dynamic>>? steps}) => {
   'ingredients': [
     {
       'name': 'Bread',
+      'fromConfirmed': 'bread',
       'qty': '2 slices',
       'optional': false,
       'allergens': ['wheat', 'Gluten', 'MILK'],
     },
-    {'name': 'Black beans', 'qty': '1 can', 'allergens': <String>[]},
-    {'name': 'Salt', 'qty': 'a pinch', 'optional': true},
-    {'name': 'black beans', 'qty': 'extra'},
+    {
+      'name': 'Black beans',
+      'fromConfirmed': 'black beans',
+      'qty': '1 can',
+      'allergens': <String>[],
+    },
+    {
+      'name': 'Salt',
+      'fromConfirmed': 'basic',
+      'qty': 'a pinch',
+      'optional': true,
+    },
+    {'name': 'black beans', 'fromConfirmed': 'black beans', 'qty': 'extra'},
   ],
   'equipment': ['Pan', 'Spoon'],
   'steps':
@@ -55,7 +67,8 @@ void main() {
   test(
     'valid JSON builds a draft recipe with ids, allergens, timers',
     () async {
-      final recipe = await _client(() => jsonEncode(_draft())).draft(_request);
+      final recipe =
+          (await _client(() => jsonEncode(_draft())).draft(_request)).recipe;
       expect(recipe.id, startsWith(kDraftRecipePrefix));
       expect(isDraftRecipe(recipe), isTrue);
       expect(recipe.version, 1);
@@ -110,7 +123,8 @@ void main() {
         {'title': 'Serve', 'instruction': 'Plate it.', 'cue': 'On the plate.'},
       ],
     );
-    final recipe = await _client(() => jsonEncode(draft)).draft(_request);
+    final recipe =
+        (await _client(() => jsonEncode(draft)).draft(_request)).recipe;
     expect(recipe.steps[1].cue, endsWith(kThermometerDisclaimer));
     expect(recipe.steps[1].timerSeconds, 480);
     expect(recipe.steps[2].cue, 'On the plate.');
@@ -194,13 +208,15 @@ void main() {
 
   test('fake returns a labelled simulated draft', () async {
     const fake = FakeRecipeDraftClient(delay: Duration.zero);
-    final recipe = await fake.draft(_request);
+    final result = await fake.draft(_request);
+    final recipe = result.recipe;
+    expect(result.legs.single.provenance, Provenance.simulated);
     expect(isDraftRecipe(recipe), isTrue);
     expect(recipe.title, contains('(simulated)'));
     expect(recipe.steps, hasLength(4));
     expect(recipe.steps.last.timerSeconds, 600);
     expect(recipe.steps.last.cue, endsWith(kHeatDisclaimer));
     final again = await fake.draft(_request);
-    expect(again.id, recipe.id);
+    expect(again.recipe.id, recipe.id);
   });
 }
