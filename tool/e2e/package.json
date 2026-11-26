@@ -1,0 +1,15 @@
+{
+  "name": "soussight-e2e",
+  "private": true,
+  "description": "Browser checks of the SousSight hero journey (Playwright + installed Chrome).",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
