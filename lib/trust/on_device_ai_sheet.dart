@@ -318,9 +318,16 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
           'device or online. The switches below work as they do in the real '
           'app.';
     }
+    // Text and photos are stated separately, and no transfer is promised:
+    // each answer's badge says where that request actually ran (Codex #221).
     if (_text.status == OnDeviceStatus.available) {
-      return 'Some help works right here on this device, even offline, so '
-          'your photos and notes stay here.';
+      final photos = _imageCapable && _image.status == OnDeviceStatus.available;
+      return photos
+          ? 'Text and photo help can run right here on this device, even '
+                'offline. Each answer shows where it actually ran.'
+          : "Text help can run right here on this device, even offline. "
+                "Photo checks can't run here yet. Each answer shows where it "
+                'actually ran.';
     }
     if (_needsSetup(_text)) {
       return 'This device can help offline once it is set up. Until then, '

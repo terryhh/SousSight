@@ -223,8 +223,12 @@ void main() {
     await pumpPhone(tester, LedgerView(ledger: ledger));
     // SS-089: never "no requests" — a blocked attempt is not listed, and
     // the empty line says so instead of implying nothing was tried.
+    // Codex #221: the empty line says what the ledger recorded, not that
+    // nothing was ever sent.
     expect(
-      find.textContaining('Nothing has been sent online this session'),
+      find.textContaining(
+        'No AI requests or location shares recorded this session.',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining("couldn't start isn't listed"), findsOneWidget);
@@ -240,8 +244,16 @@ void main() {
     await tester.pump();
 
     expect(
-      find.textContaining('Nothing has been sent online this session'),
+      find.textContaining('No AI requests or location shares recorded'),
       findsNothing,
+    );
+    // Codex #221: an uncertain transfer is counted apart from "sent".
+    expect(
+      find.text(
+        '1 request this session: 0 answered on this device, 0 sent online, '
+        '1 may have been sent.',
+      ),
+      findsOneWidget,
     );
     expect(find.byKey(const ValueKey('ledger-sent-empty')), findsOneWidget);
     expect(find.byKey(const ValueKey('ledger-maybe')), findsOneWidget);

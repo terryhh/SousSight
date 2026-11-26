@@ -111,6 +111,19 @@ class HowItWorksSheet extends StatelessWidget {
   /// Defaults to this build's DINNER_MODE.
   final DinnerMode? dinnerMode;
 
+  /// Whether this build can start a Live coach: the same rule as the Start
+  /// control (an AI Logic backend also needs the `live` cloud route).
+  /// Rehearsal always has its simulated Live coach (Codex #221).
+  bool get _liveAvailable {
+    if (isDemo) return true;
+    return switch (liveBackend ?? configuredLiveBackend) {
+      LiveBackend.none => false,
+      LiveBackend.ephemeral => true,
+      LiveBackend.aiLogic =>
+        (cloudRoutes ?? CloudRoutes.fromEnvironment()).allows(CloudRoute.live),
+    };
+  }
+
   final bool isDemo;
   final ScrollController? controller;
 
@@ -188,7 +201,7 @@ class HowItWorksSheet extends StatelessWidget {
         ],
         heading('From pantry to plate'),
         for (final (index, (title, body)) in howItWorksStepsFor(
-          live: (liveBackend ?? configuredLiveBackend) != LiveBackend.none,
+          live: _liveAvailable,
         ).indexed)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -223,7 +236,7 @@ class HowItWorksSheet extends StatelessWidget {
           ),
         heading('Built with'),
         for (final tech in howItWorksTechnologiesFor(
-          live: (liveBackend ?? configuredLiveBackend) != LiveBackend.none,
+          live: _liveAvailable,
           vonage:
               !isDemo &&
               (dinnerMode ?? configuredDinnerMode) == DinnerMode.real,

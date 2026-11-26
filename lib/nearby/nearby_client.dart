@@ -5,6 +5,13 @@ import 'dart:async';
 import 'package:firebase_ai/firebase_ai.dart';
 
 import '../ai/cooking_research_client.dart' show kCookingResearchModel;
+import '../ai/hybrid/hybrid_types.dart' show DataKind;
+import '../core/cloud_send.dart';
+
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridErrorCode;
+
+/// Ledger key for nearby (Google Maps grounding) searches.
+const kNearbyFeature = 'nearby';
 
 /// Override with `--dart-define=NEARBY_MODEL=...`. It must be a model that
 /// supports Grounding with Google Maps; defaults to the research model.
@@ -210,9 +217,14 @@ class GeminiNearbyClient implements NearbyClient {
     NearbyGenerator? generate,
     this.model = kNearbyModel,
     this.timeout = const Duration(seconds: 20),
+    this.recorder,
   }) : _generate = generate ?? _generateWithGoogleMaps;
 
   final NearbyGenerator _generate;
+
+  /// Writes one session-ledger leg per send, at the send boundary (Codex
+  /// #221): "What we sent" then lists a shared location.
+  final CloudSendRecorder? recorder;
   final String model;
   final Duration timeout;
 
@@ -252,6 +264,11 @@ class GeminiNearbyClient implements NearbyClient {
       area: area,
       missingItems: items,
     );
+    final send = recorder?.begin(kNearbyFeature, {
+      DataKind.text,
+      if (cleaned.coordinates != null) DataKind.location,
+    });
+    var answered = false;
     try {
       final response = await _generate(
         NearbyGenerationRequest(
@@ -261,15 +278,20 @@ class GeminiNearbyClient implements NearbyClient {
           coordinates: cleaned.coordinates,
         ),
       ).timeout(timeout);
+      answered = true;
+      send?.confirmed(modelLabel: model);
       return parseNearbyResponse(response);
     } on NearbyException {
+      if (!answered) send?.failed(HybridErrorCode.failed);
       rethrow;
     } on TimeoutException {
+      send?.failed(HybridErrorCode.timeout);
       throw const NearbyException(
         NearbyFailure.timeout,
         'That search took too long. Please try again.',
       );
     } catch (error) {
+      if (!answered) send?.failed(HybridErrorCode.network);
       // Console-only diagnostics; keys/tokens redacted, never shown to cooks.
       final detail = '$error'
           .replaceAll(RegExp(r'AIza[0-9A-Za-z_-]{20,}'), '[key]')

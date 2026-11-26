@@ -620,7 +620,13 @@ class _ReadinessCard extends StatelessWidget {
 /// One calm line for the first screen (SS-089): what the cook can do now,
 /// never a stack of warnings. The full detail lives in the "On this device"
 /// sheet behind "Details". Null when there is nothing worth saying.
-String? readinessCalmLine(AppReadiness readiness) {
+///
+/// [pantryLocalOnly] is the cook's effective "keep Pantry scan on this
+/// device" setting: with it on, the line never says the list is sent online.
+String? readinessCalmLine(
+  AppReadiness readiness, {
+  bool pantryLocalOnly = false,
+}) {
   final states = readiness.states;
   if (states.contains(ReadinessState.ready)) return null;
   // One honest line for a paused cloud, not three stacked cards (Maya).
@@ -642,8 +648,11 @@ String? readinessCalmLine(AppReadiness readiness) {
               'work on this device right now.';
   }
   if (readiness.items.any((i) => i.cloudPath) && !readiness.localReady) {
-    return "Type what you have, or pick a recipe below. Your list is sent "
-        "online to Google's AI, and each answer says so.";
+    return pantryLocalOnly
+        ? "You chose to keep pantry scans on this device, and it can't run "
+              'them here. Pick a recipe below to start cooking.'
+        : "Type what you have, or pick a recipe below. Your list is sent "
+              "online to Google's AI, and each answer says so.";
   }
   return 'Type what you have, or pick a recipe below.';
 }
@@ -655,14 +664,18 @@ class ReadinessLine extends StatelessWidget {
     super.key,
     required this.readiness,
     required this.onDetails,
+    this.pantryLocalOnly = false,
   });
 
   final AppReadiness readiness;
   final VoidCallback onDetails;
 
+  /// See [readinessCalmLine].
+  final bool pantryLocalOnly;
+
   @override
   Widget build(BuildContext context) {
-    final line = readinessCalmLine(readiness);
+    final line = readinessCalmLine(readiness, pantryLocalOnly: pantryLocalOnly);
     if (line == null) return const SizedBox.shrink();
     const ink = Color(0xff5c4a2e);
     return Row(

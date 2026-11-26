@@ -25,7 +25,7 @@ import '../learner/demo_live.dart';
 import '../live/live_types.dart';
 import '../pantry/pantry_client.dart';
 import '../pantry/pantry_models.dart';
-import '../pantry/pantry_ui.dart' show pantryNamesMatch, pantryTypedEntries;
+import '../pantry/pantry_ui.dart' show pantrySameItem, pantryTypedEntries;
 import '../trust/privacy_preferences.dart';
 import '../label/label_check.dart' show kLabelAllergens, kLabelCheckFeature;
 import '../watch/watch_verdict.dart' show kLocalWatchFeature;
@@ -118,6 +118,21 @@ List<String> practiceTypedItems(String typed) {
   ].take(kPantryMaxItems).toList();
 }
 
+/// Whether the cook's typed [item] IS the catalog [ingredient]: the same
+/// food by identity, never a shared word ("sunflower seed butter" is not
+/// "peanut butter"). Only the name before the first comma counts, without
+/// notes in brackets; "X or Y" and "X and Y" offer each part.
+bool practiceHasIngredient(String item, String ingredient) {
+  final head = ingredient
+      .split(',')
+      .first
+      .replaceAll(RegExp(r'\([^)]*\)'), ' ')
+      .toLowerCase();
+  return head
+      .split(RegExp(r'\s+(?:or|and)\s+'))
+      .any((part) => pantrySameItem(item, part));
+}
+
 /// A pantry-scan JSON answer that only uses what the cook typed. [prompt] is
 /// the scan task's first text part (`{catalog, typedByCook}`).
 String practicePantryAnswer(String prompt) {
@@ -144,7 +159,7 @@ String practicePantryAnswer(String prompt) {
       final clean = (optional ? name.substring(0, name.length - 1) : name)
           .toLowerCase()
           .trim();
-      final hit = typed.where((t) => pantryNamesMatch(t, clean)).toList();
+      final hit = typed.where((t) => practiceHasIngredient(t, clean)).toList();
       if (!optional) required++;
       if (hit.isNotEmpty) {
         matched.add(clean);
@@ -447,7 +462,23 @@ class RehearsalPantryClient implements PantryClient {
 
   @override
   Future<PantryResult> identify(PantryInput input, List<Recipe> recipes) async {
-    if (input.text.trim().isEmpty) return fallback.identify(input, recipes);
+    if (input.text.trim().isEmpty) {
+      // A pretend photo or voice clip skips the dispatcher, so its legs are
+      // written to the session ledger here, once, as simulated (Codex #221).
+      final canned = await fallback.identify(input, recipes);
+      final legs = [for (final leg in canned.legs) simulatedLeg(leg)];
+      for (final leg in legs) {
+        hybrid.ledger.record(leg);
+      }
+      return PantryResult(
+        items: canned.items,
+        meals: canned.meals,
+        question: canned.question,
+        simulated: true,
+        legs: legs,
+        notice: canned.notice,
+      );
+    }
     final result = await HybridPantryClient(
       dispatcher: hybrid.dispatcher,
       sessionId: () => hybrid.sessionId,

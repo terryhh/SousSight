@@ -9,6 +9,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart' show localOnlyFor;
 import '../label/label_check_sheet.dart';
 import '../trust/app_readiness.dart';
 import '../trust/ledger_view.dart';
@@ -31,6 +32,7 @@ Future<void> openLedger(BuildContext context, HybridRuntime hybrid) async {
     context,
     ledger: hybrid.ledgerSource,
     localModelFamily: caps.local?.modelFamily,
+    practice: isPracticeRuntime(hybrid),
   );
 }
 
@@ -158,14 +160,21 @@ class _HybridReadinessCardState extends State<HybridReadinessCard> {
   void initState() {
     super.initState();
     widget.hybrid.ledger.addListener(_onLedger);
+    // The line reads the pantry privacy setting; update it live.
+    widget.hybrid.privacy.addListener(_onLedger);
     unawaited(_refresh());
   }
 
   @override
   void dispose() {
     widget.hybrid.ledger.removeListener(_onLedger);
+    widget.hybrid.privacy.removeListener(_onLedger);
     super.dispose();
   }
+
+  /// The effective (parent-aware) pantry local-only setting, read live.
+  bool get _pantryLocalOnly =>
+      localOnlyFor(widget.hybrid.privacy, 'pantry_scan');
 
   void _onLedger() {
     if (mounted && _input != null) setState(() {});
@@ -223,11 +232,15 @@ class _HybridReadinessCardState extends State<HybridReadinessCard> {
     );
     // One calm line (SS-089); the details live in the "On this device"
     // sheet behind "Details".
-    if (readinessCalmLine(readiness) == null) return const SizedBox.shrink();
+    if (readinessCalmLine(readiness, pantryLocalOnly: _pantryLocalOnly) ==
+        null) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: ReadinessLine(
         readiness: readiness,
+        pantryLocalOnly: _pantryLocalOnly,
         onDetails: () => unawaited(_onAction(ReadinessAction.showEnableSteps)),
       ),
     );

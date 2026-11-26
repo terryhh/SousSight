@@ -281,13 +281,13 @@ $cookingUiInstructions
         'component': 'CookingColumn',
         'children': ['ingredients', 'step'],
       },
-      _ingredientsPanel,
+      _ingredientsPanel(),
       _stepPanel,
     ],
   });
 
-  Map<String, dynamic> get _ingredientsPanel => {
-    'id': 'ingredients',
+  Map<String, dynamic> _ingredientsPanel([String id = 'ingredients']) => {
+    'id': id,
     'component': 'ingredientChecklist',
     'title': 'On your counter',
     'items': [
@@ -303,17 +303,21 @@ $cookingUiInstructions
     final components = [
       for (final c in payload['components'] as List) c as Map<String, dynamic>,
     ];
-    if (components.any((c) => c['id'] == 'ingredients')) return payload;
+    // A reserved app_ id: a model component may be called "ingredients",
+    // but never app_* (the lite validator rejects those), so the checklist
+    // can't be dropped or shadowed (Codex #221).
+    const id = 'app_ingredients';
+    if (components.any((c) => c['id'] == id)) return payload;
     return {
       'components': [
         for (final c in components)
           c['id'] == 'root'
               ? {
                   ...c,
-                  'children': [...(c['children'] as List), 'ingredients'],
+                  'children': [...(c['children'] as List), id],
                 }
               : c,
-        _ingredientsPanel,
+        _ingredientsPanel(id),
       ],
     };
   }
@@ -684,6 +688,15 @@ $cookingUiInstructions
   Future<void> startWatch() async {
     final service = watchService;
     final saved = session;
+    if (isDemo && live.isActive) {
+      // The pretend Live session has no camera frames to watch, and must
+      // never claim a stream to Gemini Live (Codex #221).
+      alert =
+          'Practice mode: tap Stop to end the pretend live session, then tap '
+          'Watch my food for a pretend camera watch.';
+      _notify();
+      return;
+    }
     if (service != null && saved != null) {
       final stepId = step.id;
       final started = await service.startWatch(

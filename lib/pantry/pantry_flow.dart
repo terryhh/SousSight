@@ -11,6 +11,7 @@ import '../core/models.dart';
 import '../learner/cooking_app.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_types.dart';
+import '../nearby/nearby_client.dart';
 import 'pantry_client.dart';
 import 'pantry_handoff.dart';
 import 'pantry_screen.dart';
@@ -107,6 +108,12 @@ class _PantryFlowState extends State<PantryFlow> {
     onChooseRecipe: _open,
     header: switch ((widget.isDemo, widget.hybrid)) {
       (false, final hybrid?) => HybridReadinessCard(hybrid: hybrid),
+      _ => null,
+    },
+    // Real builds record each nearby search (and any shared location) in the
+    // session ledger; rehearsal keeps its simulated nearby client.
+    nearbyClient: switch ((widget.isDemo, widget.hybrid)) {
+      (false, final hybrid?) => GeminiNearbyClient(recorder: hybrid.cloudSends),
       _ => null,
     },
     unavailableReason: switch (widget.hybrid) {

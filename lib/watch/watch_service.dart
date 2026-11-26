@@ -88,8 +88,11 @@ class WatchService extends ChangeNotifier {
   String? get statusText => switch (activeRoute) {
     WatchRoute.local => local.statusText,
     WatchRoute.live =>
-      'The Live coach is watching (cloud vision): camera and microphone are '
-          'streaming to Gemini Live.',
+      simulated
+          ? 'Practice mode: the pretend live coach is "watching". Nothing is '
+                'streamed.'
+          : 'The Live coach is watching (cloud vision): camera and microphone '
+                'are streaming to Gemini Live.',
     null => local.statusText ?? _message,
   };
 

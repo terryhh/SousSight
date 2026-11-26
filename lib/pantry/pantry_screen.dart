@@ -137,6 +137,10 @@ class _PantryScreenState extends State<PantryScreen> {
   bool _thinking = false;
   String? _error;
   List<InferenceLeg> _errorLegs = const [];
+
+  /// True only when [_error] came from matching (not the camera or mic), so
+  /// the "no answer came back" source line appears only there (Codex #221).
+  bool _matchError = false;
   PantryResult? _result;
   bool _drafting = false;
   final _resultsKey = GlobalKey(debugLabel: 'pantry-results');
@@ -195,6 +199,7 @@ class _PantryScreenState extends State<PantryScreen> {
           if (!mounted) return;
           setState(() {
             _error = message;
+            _matchError = false;
             _media = null;
           });
         }),
@@ -215,6 +220,7 @@ class _PantryScreenState extends State<PantryScreen> {
       if (mounted) {
         setState(() {
           _error = 'Camera or microphone is blocked. Allow access in the browser, or type your list instead.';
+          _matchError = false;
           _mode = PantryMode.type;
         });
       }
@@ -300,6 +306,7 @@ class _PantryScreenState extends State<PantryScreen> {
       // Under half a second of 16 kHz PCM16 is not a usable clip.
       if (pcm == null || pcm.length < 16000) {
         _error = 'I did not hear anything. Check the microphone and try again.';
+        _matchError = false;
       } else {
         _audio = pcm16ToWav(pcm);
       }
@@ -318,7 +325,10 @@ class _PantryScreenState extends State<PantryScreen> {
   Future<void> _analyze() async {
     if (_thinking) return;
     if (!_hasInput && !widget.isDemo) {
-      setState(() => _error = 'Show, say, or type what you got first.');
+      setState(() {
+        _error = 'Show, say, or type what you got first.';
+        _matchError = false;
+      });
       return;
     }
     setState(() {
@@ -353,6 +363,7 @@ class _PantryScreenState extends State<PantryScreen> {
         setState(() {
           _error = message;
           _errorLegs = error.legs;
+          _matchError = true;
         });
         _reveal(_errorKey);
       }
@@ -360,7 +371,10 @@ class _PantryScreenState extends State<PantryScreen> {
       if (mounted) {
         final message = await _withReason(pantryUnavailableMessage);
         if (!mounted) return;
-        setState(() => _error = message);
+        setState(() {
+          _error = message;
+          _matchError = true;
+        });
         _reveal(_errorKey);
       }
     } finally {
@@ -532,7 +546,7 @@ class _PantryScreenState extends State<PantryScreen> {
                   const SizedBox(height: 8),
                   if (_errorLegs.isNotEmpty)
                     PantryLegList(legs: _errorLegs)
-                  else
+                  else if (_matchError)
                     const _NoAnswerSource(),
                 ],
                 if (_result case final result?) ...[

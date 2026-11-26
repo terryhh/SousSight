@@ -233,7 +233,8 @@ void main() {
       expect(item, findsOneWidget);
     }
 
-    final live = configuredLiveBackend != LiveBackend.none;
+    // Rehearsal always has its simulated Live coach.
+    final live = demo || configuredLiveBackend != LiveBackend.none;
     for (final (title, _) in howItWorksStepsFor(live: live)) {
       await expectListed(
         find.descendant(of: sheet, matching: find.textContaining(title)),

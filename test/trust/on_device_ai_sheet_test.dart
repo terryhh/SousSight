@@ -167,11 +167,12 @@ void main() {
     expect(find.textContaining('Gemini Nano'), findsNothing);
     expect(
       find.text(
-        'Some help works right here on this device, even offline, so your '
-        'photos and notes stay here.',
+        'Text and photo help can run right here on this device, even '
+        'offline. Each answer shows where it actually ran.',
       ),
       findsOneWidget,
     );
+    expect(find.textContaining('stay here'), findsNothing);
     expect(find.byKey(const ValueKey('set-up-on-device')), findsNothing);
   });
 
@@ -380,5 +381,26 @@ void main() {
         "Offline help didn't start in this build.",
       );
     });
+  });
+
+  testWidgets('Codex #221: a text-only device states text and photos '
+      'separately and promises no transfer', (tester) async {
+    await pumpPhone(
+      tester,
+      OnDeviceAiSheet(
+        capabilities: fakeIosCapabilities,
+        textAvailability: _available,
+        imageAvailability: _available,
+        prepare: _Prepare().call,
+        privacy: InMemoryPrivacyPreferences(),
+      ),
+    );
+    final intro = tester
+        .widget<Text>(find.byKey(const ValueKey('on-device-intro')))
+        .data!;
+    expect(intro, contains('Text help can run right here'));
+    expect(intro, contains("Photo checks can't run here yet"));
+    expect(intro, isNot(contains('photos and notes stay here')));
+    expect(find.text('Reads text only on this device.'), findsOneWidget);
   });
 }

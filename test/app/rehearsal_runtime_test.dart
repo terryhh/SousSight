@@ -140,18 +140,91 @@ void main() {
       expect(result.legs.single.provenance, Provenance.simulated);
     });
 
-    test('the canned chickpea wrap matches the recipe after #215', () async {
+    test('the canned chickpea wrap matches the bundled recipe asset', () async {
       final result = await const FakePantryClient(delay: Duration.zero)
           .identify(const PantryInput(), recipes);
       final wrap = result.meals.firstWhere(
         (m) => m.recipeId == 'chickpea_wrap_v1',
       );
-      expect(
-        wrap.missing,
-        containsAll(['dijon mustard', 'red bell pepper or celery (optional)']),
-      );
-      expect(wrap.missing, isNot(contains('celery')));
+      final recipe = recipes.firstWhere((r) => r.id == 'chickpea_wrap_v1');
+      bool names(String item, Ingredient i) =>
+          practiceHasIngredient(item, i.name) ||
+          i.name.toLowerCase().contains(item.toLowerCase());
+      // Every "still need" item is a required ingredient of the asset...
+      for (final item in wrap.missing) {
+        final match = recipe.ingredients.where((i) => names(item, i)).toList();
+        expect(match, isNotEmpty, reason: '$item is not in the recipe');
+        expect(match.every((i) => !i.optional), isTrue, reason: item);
+      }
+      // ...and everything it already has is in the recipe too.
+      for (final item in wrap.matched) {
+        expect(
+          recipe.ingredients.any((i) => names(item, i)),
+          isTrue,
+          reason: item,
+        );
+      }
     });
+
+    test(
+      'Codex #221: ranking needs ingredient identity, not a shared word',
+      () {
+        expect(
+          practiceHasIngredient('sunflower seed butter', 'Peanut butter'),
+          isFalse,
+        );
+        expect(practiceHasIngredient('peanut butter', 'Peanut butter'), isTrue);
+        expect(
+          practiceHasIngredient(
+            'black beans',
+            'Canned black beans, drained and rinsed',
+          ),
+          isTrue,
+        );
+        expect(
+          practiceHasIngredient(
+            'tortillas',
+            'Tortilla chips or tortillas, for serving',
+          ),
+          isTrue,
+        );
+        final prompt =
+            buildPantryScanTask(
+                  typedText: 'bread, sunflower seed butter',
+                  spokenItems: const [],
+                  photoJpeg: null,
+                  recipes: recipes,
+                ).parts.first
+                as HybridText;
+        final answer = jsonDecode(
+          practicePantryAnswer(prompt.text),
+        ) as Map<String, dynamic>;
+        final pb = (answer['meals'] as List).firstWhere(
+          (m) => m['recipeId'] == 'peanut_butter_sandwich_v1',
+        ) as Map;
+        expect(pb['matched'], ['bread']);
+        expect(pb['missing'], contains('peanut butter'));
+        expect(pb['why'], isNot(contains('can make this now')));
+      },
+    );
+
+    test(
+      'Codex #221: a pretend photo writes its legs to the ledger once',
+      () async {
+        final hybrid = runtime();
+        final result = await RehearsalPantryClient(
+          hybrid,
+          fallback: const FakePantryClient(delay: Duration.zero),
+        ).identify(const PantryInput(), recipes);
+        expect(result.legs, hasLength(1));
+        expect(hybrid.ledger.legs, hasLength(1));
+        expect(hybrid.ledger.legs.single.provenance, Provenance.simulated);
+        expect(
+          hybrid.ledger.legs.single.requestId,
+          result.legs.single.requestId,
+        );
+      },
+    );
   });
 
   group('scripted answers', () {

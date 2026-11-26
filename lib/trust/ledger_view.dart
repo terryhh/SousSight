@@ -33,10 +33,16 @@ const liveCoachNote =
     "and the recipe's allergy context, and it hears and sees what you share "
     'while it is connected.';
 
+/// Practice mode keeps its pretend session in memory (Codex #221).
+const practiceStorageNote =
+    'Practice mode keeps this cooking session in memory on this device only. '
+    'Nothing is saved online, and it is gone when you close SousSight.';
+
 Future<void> showLedgerSheet(
   BuildContext context, {
   required LedgerSource ledger,
   String? localModelFamily,
+  bool practice = false,
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
@@ -52,6 +58,7 @@ Future<void> showLedgerSheet(
       ledger: ledger,
       localModelFamily: localModelFamily,
       controller: controller,
+      practice: practice,
     ),
   ),
 );
@@ -450,11 +457,15 @@ class LedgerView extends StatelessWidget {
     required this.ledger,
     this.localModelFamily,
     this.controller,
+    this.practice = false,
   });
 
   final LedgerSource ledger;
   final String? localModelFamily;
   final ScrollController? controller;
+
+  /// Practice mode: the storage note describes the in-memory session.
+  final bool practice;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -496,6 +507,7 @@ class LedgerView extends StatelessWidget {
     final sentCount = summary.reportedSent.fold(0, (n, r) => n + r.count);
     final localCount = summary.stayedLocal.fold(0, (n, r) => n + r.count);
     final simulatedCount = summary.simulated.fold(0, (n, r) => n + r.count);
+    final maybeCount = summary.maybeSent.fold(0, (n, r) => n + r.count);
 
     return CenteredListView(
       key: const ValueKey('ledger-view'),
@@ -518,13 +530,13 @@ class LedgerView extends StatelessWidget {
           liveRegion: true,
           child: Text(
             summary.total == 0
-                ? 'Nothing has been sent online this session, and nothing '
-                      'has run on this device yet. A question or scan that '
-                      "couldn't start isn't listed: nothing ran and nothing "
-                      'was sent.'
+                ? 'No AI requests or location shares recorded this session. '
+                      "A question or scan that couldn't start isn't listed: "
+                      'nothing ran and nothing was sent for it.'
                 : '${summary.total} ${summary.total == 1 ? 'request' : 'requests'} '
                       'this session: $localCount answered on this device, '
                       '$sentCount sent online'
+                      '${maybeCount == 0 ? '' : ', $maybeCount may have been sent'}'
                       '${simulatedCount == 0 ? '' : ', $simulatedCount practice (pretend)'}.',
             key: const ValueKey('ledger-summary'),
           ),
@@ -568,20 +580,24 @@ class LedgerView extends StatelessWidget {
           rows(summary.simulated, '', 'simulated'),
         ],
         heading('What this session keeps'),
-        const Text(sessionStorageNote, key: ValueKey('ledger-storage-note')),
+        Text(
+          practice ? practiceStorageNote : sessionStorageNote,
+          key: const ValueKey('ledger-storage-note'),
+        ),
         const SizedBox(height: 8),
         const Text(liveCoachNote, key: ValueKey('ledger-live-note')),
-        ExpansionTile(
-          key: const ValueKey('ledger-details'),
-          tilePadding: EdgeInsets.zero,
-          title: const Text(
-            'Details',
-            style: TextStyle(fontWeight: FontWeight.w700),
+        if (!practice)
+          ExpansionTile(
+            key: const ValueKey('ledger-details'),
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'Details',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            children: const [Text(sessionStorageDetails)],
           ),
-          expandedCrossAxisAlignment: CrossAxisAlignment.start,
-          childrenPadding: const EdgeInsets.only(bottom: 8),
-          children: const [Text(sessionStorageDetails)],
-        ),
         const SizedBox(height: 12),
         note(
           'This list covers everything since you opened SousSight, shows '
