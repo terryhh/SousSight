@@ -29,7 +29,12 @@ const types = {
 };
 
 function fileFor(urlPath) {
-  const decoded = decodeURIComponent(urlPath.split('?')[0]);
+  let decoded;
+  try {
+    decoded = decodeURIComponent(urlPath.split('?')[0]);
+  } catch {
+    return null; // malformed escape: never serve it, never crash
+  }
   const candidate = normalize(join(root, decoded));
   if (candidate !== root && !candidate.startsWith(root + sep)) return null;
   try {
@@ -45,11 +50,12 @@ function fileFor(urlPath) {
   return null;
 }
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   let file = fileFor(req.url ?? '/');
   // Flutter routes (e.g. /?recipe=...) fall back to the app shell, but a
   // missing asset is a real 404 so the journey notices it.
-  if (!file && !extname(req.url.split('?')[0])) file = join(root, 'index.html');
+  const path = (req.url ?? '/').split('?')[0];
+  if (!file && !extname(path) && !path.includes('%')) file = join(root, 'index.html');
   if (!file) {
     res.writeHead(404, { 'content-type': 'text/plain' });
     res.end('not found');
@@ -66,6 +72,8 @@ createServer((req, res) => {
     'referrer-policy': 'strict-origin-when-cross-origin',
   });
   createReadStream(file).pipe(res);
-}).listen(port, 'localhost', () => {
-  console.log(`serving ${root} on http://localhost:${port}`);
+});
+server.listen(port, 'localhost', () => {
+  // Port 0 picks a free port; print the real one.
+  console.log(`serving ${root} on http://localhost:${server.address().port}`);
 });

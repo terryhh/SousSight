@@ -6,12 +6,18 @@
 //   ask a question (Coach Lite) -> Watch my food -> "What was sent" ledger ->
 //   On-device AI sheet
 //
-// Two build modes. A rehearsal build (--dart-define=FAKE_BACKEND=true) has no
-// hybrid runtime, so Coach Lite, the local watch, the ledger and the
-// On-device AI sheet are not in it; the journey asserts the rehearsal's own
-// answers there instead and says so in report.json. A real build has them.
-// Automation Chrome has no Gemini Nano, so a real build shows its
-// unavailable/cloud states, and AI requests are aborted unless E2E_ALLOW_AI=1.
+// Build modes. A rehearsal build (--dart-define=FAKE_BACKEND=true) may or may
+// not carry a (simulated) hybrid runtime; when it does not, Coach Lite, the
+// local watch, the ledger and the On-device AI sheet are absent and the
+// journey checks the rehearsal's own answers instead. Which surfaces exist is
+// detected from the page, not assumed from the mode. Automation Chrome has no
+// Gemini Nano, so a real build shows its unavailable/cloud states.
+//
+// The network guard and the evidence listeners are installed before the
+// first navigation. With E2E_MODE=auto the first load runs under a
+// conservative provisional policy (Firebase, AI, dinner and analytics
+// blocked); once the mode is detected the policy is refined, and a real build
+// is reloaded so it can reach Firebase.
 import { expect, test } from '@playwright/test';
 import {
   Evidence,
@@ -22,40 +28,56 @@ import {
   seen,
   typeInto,
 } from './flutter.mjs';
+import { configProblems, initialPolicy, looksLikePreview } from './policy.mjs';
 
 const PANTRY = 'bread, peanut butter, banana';
 const QUESTION = 'How thick should I spread the peanut butter?';
 const requestedMode = process.env.E2E_MODE ?? 'auto';
 const allowAi = process.env.E2E_ALLOW_AI === '1';
+const requirePreview = process.env.E2E_REQUIRE_PREVIEW === '1';
 
 test('hero journey', async ({ page }, testInfo) => {
-  const project = testInfo.project.name;
-  await page.goto('/');
-  await enableSemantics(page);
-
-  // ---- 1. Home -------------------------------------------------------------
-  const rehearsalBanner = seen(page, /^Rehearsal mode ·/);
-  await expect(page.getByRole('button', { name: 'Find my meal' })).toBeVisible({
-    timeout: 60_000,
-  });
-  const detected = (await rehearsalBanner.isVisible()) ? 'rehearsal' : 'real';
-  const mode = requestedMode === 'auto' ? detected : requestedMode;
-  expect(detected, `build looks like ${detected}, E2E_MODE=${mode}`).toBe(mode);
+  expect(configProblems(process.env), 'e2e configuration').toEqual([]);
   const ev = new Evidence(page, {
     outDir: process.env.E2E_OUT,
-    project,
-    mode,
+    project: testInfo.project.name,
+    policy: initialPolicy(requestedMode),
+    allowAi,
   });
-  await ev.guardNetwork({ allowAi });
-  await ev.instrumentMedia();
-  // Listeners attach after the first load; reload so they see everything.
-  await page.reload();
-  await enableSemantics(page);
-  await expect(page.getByRole('button', { name: 'Find my meal' })).toBeVisible({
-    timeout: 60_000,
-  });
+  await ev.install();
 
+  const findMeal = page.getByRole('button', { name: 'Find my meal' });
+  const loaded = async () => {
+    await enableSemantics(page);
+    await expect(findMeal.or(seen(page, 'Could not connect to your kitchen'))).toBeVisible({
+      timeout: 60_000,
+    });
+  };
+
+  let mode;
+  let previewChecked = false;
   try {
+    // ---- 1. Home (detect the mode) -------------------------------------------
+    await page.goto('/');
+    await loaded();
+    const detected = (await seen(page, /^Rehearsal mode ·/).isVisible())
+      ? 'rehearsal'
+      : 'real';
+    ev.note(`detected mode: ${detected} (E2E_MODE=${requestedMode})`);
+    if (requestedMode !== 'auto') {
+      expect(detected, `build looks like ${detected}, E2E_MODE=${requestedMode}`).toBe(
+        requestedMode,
+      );
+    }
+    mode = detected;
+    const provisionalCount = ev.provisionallyBlocked.length;
+    if (ev.refine(mode)) {
+      ev.note(`reloading with the real policy (${provisionalCount} requests blocked provisionally)`);
+      ev.setAsideProvisionalErrors();
+      await page.reload();
+      await loaded();
+    }
+    await expect(findMeal, 'pantry screen loaded').toBeVisible();
     await ev.shot('home');
 
     // ---- 2. Type it ----------------------------------------------------------
@@ -120,53 +142,48 @@ test('hero journey', async ({ page }, testInfo) => {
     await expect(composer).toBeVisible();
     await typeInto(page, composer, QUESTION);
     await ev.shot('coach-question-typed');
-    await page.getByRole('button', { name: 'Send message' }).click();
-    if (mode === 'rehearsal') {
-      // No hybrid runtime in rehearsal, so no Coach Lite: the coordinator
-      // answers that the Live coach is needed (cooking_coordinator.say).
-      await expect(
-        seen(page, /Connect the live coach to talk or type a question/),
-      ).toBeVisible();
-      ev.note('rehearsal: Coach Lite absent (no hybrid runtime); got the Live-coach alert');
-      const reply = seen(page, /Connect the live coach to talk or type a question/);
-      ev.note(`coach reply visible without scrolling: ${await inViewport(page, reply)}`);
-      await ev.shot('coach-question-sent');
-      await bringIntoView(page, reply);
-    } else {
-      // Real build: Coach Lite runs. Without Gemini Nano it either asks to
-      // send to the cloud (declined here), is blocked (the recipe's own step
-      // text plus a reason, coach_lite.dart _blockedSentence), or answers
-      // with a source badge. Any of these is an expected state.
-      const consent = page.getByRole('button', { name: "Don't send" });
-      const blocked = seen(
-        page,
-        /on-device coach (is still downloading|can't|isn't ready|is not available|could not answer)|can't run the on-device coach|Nothing was sent\./,
-      );
-      const outcome = await Promise.race([
-        consent.waitFor({ timeout: 45_000 }).then(() => 'consent'),
-        page
-          .getByRole('button', { name: /^Where this ran:/ })
-          .first()
-          .waitFor({ timeout: 45_000 })
-          .then(() => 'answered'),
-        blocked.waitFor({ timeout: 45_000 }).then(() => 'blocked'),
-      ]).catch(() => 'none');
-      if (outcome === 'blocked') {
-        ev.note(`coach lite blocked: ${(await blocked.textContent())?.slice(0, 200)}`);
-        ev.note(`coach reply visible without scrolling: ${await inViewport(page, blocked)}`);
-      }
-      ev.note(`coach lite outcome: ${outcome}`);
-      await ev.shot('coach-lite-after-send', { settleMs: 1500 });
-      if (outcome === 'consent') {
-        await consent.click();
-        ev.note('declined the cloud consent prompt; nothing was sent');
-      }
-      expect(
-        outcome,
-        'Coach Lite answered, asked for consent, or said why it could not',
-      ).not.toBe('none');
-      if (outcome === 'blocked') await bringIntoView(page, blocked);
+    // Hybrid surfaces present? (HybridHeaderButtons on the cooking screen.)
+    const ledgerButton = page.getByRole('button', { name: 'What was sent' });
+    const onDeviceButton = page.getByRole('button', { name: 'On-device AI' });
+    const hasHybrid = (await ledgerButton.count()) > 0;
+    ev.note(`hybrid surfaces on the cooking screen: ${hasHybrid}`);
+    if (!hasHybrid) {
+      expect(mode, 'a real build always has the hybrid runtime').toBe('rehearsal');
     }
+    const sourceBadge = page.getByRole('button', { name: /^Where this ran:/ }).first();
+    expect(await sourceBadge.count(), 'no source badge before asking').toBe(0);
+    await page.getByRole('button', { name: 'Send message' }).click();
+
+    // Without a hybrid runtime the coordinator says the Live coach is needed
+    // (cooking_coordinator.say). With one, Coach Lite either answers with a
+    // source badge, asks to send to the cloud (declined here), or is blocked
+    // (the recipe's own step text plus a reason, coach_lite _blockedSentence).
+    const liveAlert = seen(page, /Connect the live coach to talk or type a question/);
+    const consent = page.getByRole('button', { name: "Don't send" });
+    const blocked = seen(
+      page,
+      /on-device coach (is still downloading|can't|isn't ready|is not available|could not answer)|can't run the on-device coach|Nothing was sent\./,
+    );
+    const outcome = await Promise.race([
+      liveAlert.waitFor({ timeout: 45_000 }).then(() => 'live-alert'),
+      consent.waitFor({ timeout: 45_000 }).then(() => 'consent'),
+      sourceBadge.waitFor({ timeout: 45_000 }).then(() => 'answered'),
+      blocked.waitFor({ timeout: 45_000 }).then(() => 'blocked'),
+    ]).catch(() => 'none');
+    ev.note(`coach outcome: ${outcome}`);
+    const reply = { 'live-alert': liveAlert, answered: sourceBadge, blocked }[outcome];
+    if (reply) {
+      ev.note(`coach reply: ${(await reply.textContent())?.slice(0, 200)}`);
+      ev.note(`coach reply visible without scrolling: ${await inViewport(page, reply)}`);
+    }
+    await ev.shot('coach-question-sent', { settleMs: 1500 });
+    if (outcome === 'consent') {
+      await consent.click();
+      ev.note('declined the cloud consent prompt; nothing was sent');
+    }
+    const accepted = hasHybrid ? ['answered', 'consent', 'blocked'] : ['live-alert'];
+    expect(accepted, `coach outcome "${outcome}" is expected here`).toContain(outcome);
+    if (reply) await bringIntoView(page, reply);
     await ev.shot('coach-reply');
 
     // ---- 7. Watch my food (fake camera) --------------------------------------
@@ -177,70 +194,54 @@ test('hero journey', async ({ page }, testInfo) => {
     const before = await placeholder.boundingBox();
     expect(before, 'empty camera card is shown before the watch').not.toBeNull();
     await watch.click();
-    if (mode === 'rehearsal') {
-      await expect(
-        seen(page, /Watch needs a real camera connection/),
-      ).toBeVisible();
-      ev.note('rehearsal: watch does not open the camera (by design); preview check skipped');
-      await ev.shot('watch-rehearsal');
+    // Either the camera card shows frames (real camera, or a rehearsal's
+    // simulated frames), or the app says why it cannot watch.
+    const refused = seen(
+      page,
+      /Watch needs a real camera connection|can't look at photos|watch could not start|camera could not start|so I can't watch|isn't ready yet|still downloading|could not start a watch/,
+    );
+    const watchOutcome = await Promise.race([
+      placeholder.waitFor({ state: 'hidden', timeout: 30_000 }).then(() => 'preview'),
+      refused.waitFor({ timeout: 30_000 }).then(() => 'refused'),
+    ]).catch(() => 'none');
+    ev.note(`watch outcome: ${watchOutcome}`);
+    await page.waitForTimeout(1000);
+    const media = await ev.mediaCalls();
+    ev.note(`getUserMedia calls so far: ${JSON.stringify(media)}`);
+    if (watchOutcome === 'preview') {
+      await page.waitForTimeout(1500);
+      const stats = await regionStats(page, before);
+      ev.note(`watch preview region stats: ${JSON.stringify(stats)}`);
+      await ev.shot('watch-preview');
+      expect(
+        looksLikePreview(stats),
+        `camera preview shows an image, not the empty gradient (${JSON.stringify(stats)})`,
+      ).toBe(true);
+      previewChecked = true;
+      const pause = page.getByRole('button', { name: /Pause watch/ });
+      if (await pause.isVisible()) await pause.click();
     } else {
-      // A real build opens the fake camera for the on-device watch, or says
-      // why it can't (automation Chrome has no Gemini Nano, so it can't).
-      const refused = seen(
-        page,
-        /can't look at photos|watch could not start|camera could not start|so I can't watch|isn't ready yet|still downloading|could not start a watch/,
-      );
-      const watchOutcome = await Promise.race([
-        placeholder
-          .waitFor({ state: 'hidden', timeout: 30_000 })
-          .then(() => 'preview'),
-        refused.waitFor({ timeout: 30_000 }).then(() => 'refused'),
-      ]).catch(() => 'none');
-      ev.note(`watch outcome: ${watchOutcome}`);
-      await page.waitForTimeout(1000);
-      ev.note(`getUserMedia calls so far: ${JSON.stringify(await ev.mediaCalls())}`);
-      if (watchOutcome === 'preview') {
-        await page.waitForTimeout(1500);
-        const stats = await regionStats(page, before);
-        ev.note(`watch preview region stats: ${JSON.stringify(stats)}`);
-        await ev.shot('watch-preview');
-        expect(
-          stats.gradientShare,
-          'camera preview shows an image, not the empty gradient',
-        ).toBeLessThan(0.5);
-        const pause = page.getByRole('button', { name: /Pause watch/ });
-        if (await pause.isVisible()) await pause.click();
+      if (watchOutcome === 'refused') {
+        ev.note(`watch refused: ${(await refused.textContent())?.slice(0, 200)}`);
+        ev.note(`watch reply visible without scrolling: ${await inViewport(page, refused)}`);
+        await ev.shot('watch-refused');
+        await bringIntoView(page, refused);
+        await ev.shot('watch-refused-message');
       } else {
-        if (watchOutcome === 'refused') {
-          ev.note(`watch refused: ${(await refused.textContent())?.slice(0, 200)}`);
-          ev.note(`watch reply visible without scrolling: ${await inViewport(page, refused)}`);
-          await ev.shot('watch-refused');
-          await bringIntoView(page, refused);
-          await ev.shot('watch-refused-message');
-        } else {
-          await ev.shot('watch-no-response');
-        }
-        ev.note('PREVIEW CHECK NOT RUN: the watch did not open the camera');
-        expect(watchOutcome, 'Watch my food opened the camera or said why not').toBe(
-          'refused',
-        );
-        // On a device that can run the on-device watch, require the preview.
-        expect(
-          process.env.E2E_REQUIRE_PREVIEW !== '1',
-          'E2E_REQUIRE_PREVIEW=1 but the camera preview never appeared',
-        ).toBe(true);
+        await ev.shot('watch-no-response');
       }
+      ev.note('PREVIEW CHECK NOT RUN: the camera card never showed frames');
+      expect(watchOutcome, 'Watch my food showed frames or said why not').toBe('refused');
+    }
+    if (mode === 'rehearsal') {
+      // The rehearsal banner promises the camera and microphone are not used.
+      expect(media, 'rehearsal never opens the camera or microphone').toEqual([]);
     }
 
     // ---- 8. "What was sent" ledger --------------------------------------------
-    const ledgerButton = page.getByRole('button', { name: 'What was sent' });
-    const onDeviceButton = page.getByRole('button', { name: 'On-device AI' });
-    if (mode === 'rehearsal') {
-      await expect(ledgerButton).toHaveCount(0);
+    if (!hasHybrid) {
       await expect(onDeviceButton).toHaveCount(0);
-      ev.note(
-        'rehearsal: "What was sent" and "On-device AI" are absent (HybridHeaderButtons needs a hybrid runtime)',
-      );
+      ev.note('"What was sent" and "On-device AI" are absent (no hybrid runtime in this rehearsal)');
     } else {
       await bringIntoView(page, ledgerButton.first(), { top: 0, bottom: 0.6 });
       await ledgerButton.first().click({ timeout: 15_000 });
@@ -252,9 +253,7 @@ test('hero journey', async ({ page }, testInfo) => {
       // ---- 9. On-device AI sheet ----------------------------------------------
       await bringIntoView(page, onDeviceButton.first(), { top: 0, bottom: 0.6 });
       await onDeviceButton.first().click({ timeout: 15_000 });
-      await expect(
-        page.getByRole('heading', { name: 'On-device AI' }).first(),
-      ).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'On-device AI' }).first()).toBeVisible();
       await ev.shot('on-device-ai-sheet', { settleMs: 1500 });
       await page.keyboard.press('Escape');
     }
@@ -265,15 +264,19 @@ test('hero journey', async ({ page }, testInfo) => {
     await ev.shot('failure-state', { settleMs: 200 }).catch(() => {});
     throw error;
   } finally {
-    const report = ev.write();
+    const report = ev.write({ mode, previewChecked, requirePreview });
     await testInfo.attach('report.json', {
       body: JSON.stringify(report, null, 2),
       contentType: 'application/json',
     });
   }
 
+  // Enforced in every mode, outside the per-step branches.
+  if (requirePreview) {
+    expect(previewChecked, 'E2E_REQUIRE_PREVIEW=1: the camera preview was checked').toBe(true);
+  }
   expect(ev.pageErrors, 'no uncaught page errors').toEqual([]);
-  expect(ev.forbidden, 'rehearsal made no Firebase/AI requests').toEqual([]);
+  expect(ev.forbidden, 'rehearsal made no Firebase/AI/dinner requests').toEqual([]);
   const consoleErrors = ev.consoleErrors.filter(
     (text) => !/ERR_BLOCKED_BY_CLIENT/.test(text),
   );

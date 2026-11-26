@@ -3,35 +3,7 @@
 import { expect } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-/// Hosts that serve model calls or paid/outbound actions. In a rehearsal
-/// build any request to these fails the run; in a real build they are
-/// aborted unless E2E_ALLOW_AI=1, so a run never spends model quota.
-export const AI_HOST_PATTERNS = [
-  /firebasevertexai\.googleapis\.com/,
-  /generativelanguage\.googleapis\.com/,
-  /aiplatform\.googleapis\.com/,
-  /firebaseml\.googleapis\.com/,
-  /\/api\/live-token/,
-  /\/api\/dinner-ready/,
-  /\/api\/vonage-status/,
-  /(api|rest)\.nexmo\.com|api[\w.-]*\.vonage\.com/,
-];
-
-/// Usage analytics: always aborted, so automated runs never count as usage.
-export const ANALYTICS_HOST_PATTERNS = [
-  /google-analytics\.com|googletagmanager\.com|analytics\.google\.com/,
-];
-
-/// Firebase/Google backends a rehearsal build must never contact.
-export const FIREBASE_HOST_PATTERNS = [
-  /firestore\.googleapis\.com/,
-  /identitytoolkit\.googleapis\.com/,
-  /securetoken\.googleapis\.com/,
-  /firebaseappcheck\.googleapis\.com/,
-  /firebaseinstallations\.googleapis\.com/,
-  /recaptcha/,
-];
+import { decideRequest, pixelStats, refinePolicy } from './policy.mjs';
 
 /// Turns Flutter's semantics tree on. Flutter web renders to a canvas and
 /// only builds the accessible DOM after its hidden "Enable accessibility"
@@ -68,18 +40,12 @@ export async function bringIntoView(page, target, { top = 0.15, bottom = 0.6 } =
   }
 }
 
-/// Whether [target] is fully inside the viewport, above [dockPx] of bottom
-/// chrome (the cooking screen's control dock is about 130 px tall).
-export async function inViewport(page, target, { dockPx = 0 } = {}) {
+/// Whether [target] is fully inside the viewport.
+export async function inViewport(page, target) {
   const box = await target.boundingBox();
   if (!box) return false;
   const { height, width } = page.viewportSize();
-  return (
-    box.y >= 0 &&
-    box.x >= 0 &&
-    box.y + box.height <= height - dockPx &&
-    box.x + box.width <= width
-  );
+  return box.y >= 0 && box.x >= 0 && box.y + box.height <= height && box.x + box.width <= width;
 }
 
 /// Types into a Flutter text field with real key events. Flutter keeps its
@@ -94,21 +60,26 @@ export async function typeInto(page, field, text) {
 }
 
 /// Records everything the journey needs to report: per-step screenshots,
-/// console messages, uncaught errors and every non-local request.
+/// console messages, uncaught errors and every non-local request. Create it
+/// and call [install] BEFORE the first navigation so the first load is
+/// covered by the network policy and the evidence.
 export class Evidence {
-  constructor(page, { outDir, project, mode }) {
+  constructor(page, { outDir, project, policy, allowAi }) {
     this.page = page;
     this.dir = join(outDir, project);
     this.project = project;
-    this.mode = mode;
+    this.policy = policy;
+    this.allowAi = allowAi;
     this.step = 0;
     this.pageErrors = [];
     this.consoleErrors = [];
+    this.provisionalConsoleErrors = [];
     this.console = [];
     this.external = new Map();
-    this.blocked = [];
+    this.abortedAi = [];
+    this.provisionallyBlocked = [];
     this.forbidden = [];
-    this.analytics = [];
+    this.analytics = 0;
     this.notes = [];
     mkdirSync(this.dir, { recursive: true });
 
@@ -124,39 +95,23 @@ export class Evidence {
       const url = new URL(request.url());
       if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return;
       if (url.protocol === 'data:' || url.protocol === 'blob:') return;
-      const key = url.host;
-      this.external.set(key, (this.external.get(key) ?? 0) + 1);
+      this.external.set(url.host, (this.external.get(url.host) ?? 0) + 1);
     });
   }
 
-  /// Network policy. Analytics is always aborted. Rehearsal: any Firebase or
-  /// AI request is a failure (and is aborted). Real: AI requests are aborted
-  /// unless allowed; Firebase Auth and Firestore go through.
-  async guardNetwork({ allowAi }) {
+  /// Network guard and getUserMedia instrumentation. The guard reads
+  /// [policy] on every request, so [refine] takes effect immediately.
+  async install() {
     await this.page.route('**/*', async (route) => {
       const url = route.request().url();
-      if (ANALYTICS_HOST_PATTERNS.some((p) => p.test(url))) {
-        this.analytics.push(url);
-        return route.abort('blockedbyclient');
-      }
-      const ai = AI_HOST_PATTERNS.some((p) => p.test(url));
-      const firebase = FIREBASE_HOST_PATTERNS.some((p) => p.test(url));
-      if (this.mode === 'rehearsal' && (ai || firebase)) {
-        this.forbidden.push(url);
-        return route.abort('blockedbyclient');
-      }
-      if (ai && !allowAi) {
-        this.blocked.push(url);
-        return route.abort('blockedbyclient');
-      }
-      return route.continue();
+      const decision = decideRequest(url, this.policy, { allowAi: this.allowAi });
+      if (decision.action === 'allow') return route.continue();
+      if (decision.kind === 'analytics') this.analytics += 1;
+      else if (decision.forbidden) this.forbidden.push(url);
+      else if (this.policy === 'provisional') this.provisionallyBlocked.push(url);
+      else this.abortedAi.push(url);
+      return route.abort('blockedbyclient');
     });
-  }
-
-  /// Counts getUserMedia calls and the tracks they returned, so the report
-  /// can say whether the camera was actually opened (e.g. briefly) even when
-  /// no preview is ever painted.
-  async instrumentMedia() {
     await this.page.addInitScript(() => {
       const log = [];
       window.__e2eMedia = log;
@@ -182,6 +137,22 @@ export class Evidence {
     });
   }
 
+  /// Leaves the provisional policy for the detected [mode] (refinePolicy in
+  /// policy.mjs). Returns whether the page must be reloaded.
+  refine(mode) {
+    const next = refinePolicy(this.policy, mode, this.provisionallyBlocked);
+    this.forbidden.push(...next.forbidden);
+    this.policy = next.policy;
+    return next.reload;
+  }
+
+  /// Before reloading a real build that loaded under the provisional
+  /// policy: the console errors so far were caused by that blocking, so they
+  /// are kept in the report but no longer fail the run.
+  setAsideProvisionalErrors() {
+    this.provisionalConsoleErrors.push(...this.consoleErrors.splice(0));
+  }
+
   async mediaCalls() {
     return this.page.evaluate(() => window.__e2eMedia ?? []);
   }
@@ -190,15 +161,12 @@ export class Evidence {
     this.notes.push(text);
   }
 
-  /// Full-page screenshot named NN-<name>.png. Waits a beat so Flutter's
-  /// implicit animations (sheets, ink splashes) settle first.
+  /// Screenshot named NN-<name>.png. Waits a beat so Flutter's implicit
+  /// animations (sheets, ink splashes) settle first.
   async shot(name, { settleMs = 600 } = {}) {
     await this.page.waitForTimeout(settleMs);
     this.step += 1;
-    const file = join(
-      this.dir,
-      `${String(this.step).padStart(2, '0')}-${name}.png`,
-    );
+    const file = join(this.dir, `${String(this.step).padStart(2, '0')}-${name}.png`);
     await this.page.screenshot({ path: file });
     return file;
   }
@@ -206,13 +174,15 @@ export class Evidence {
   write(extra = {}) {
     const report = {
       project: this.project,
-      mode: this.mode,
+      policy: this.policy,
       pageErrors: this.pageErrors,
       consoleErrors: this.consoleErrors,
+      provisionalConsoleErrors: this.provisionalConsoleErrors,
       externalHosts: Object.fromEntries(this.external),
-      abortedAiRequests: this.blocked,
+      abortedAiRequests: this.abortedAi,
+      provisionallyBlockedRequests: this.provisionallyBlocked,
       forbiddenRequests: this.forbidden,
-      abortedAnalyticsRequests: this.analytics.length,
+      abortedAnalyticsRequests: this.analytics,
       notes: this.notes,
       ...extra,
     };
@@ -222,36 +192,20 @@ export class Evidence {
   }
 }
 
-/// Mean colour and the share of pixels that look like the empty camera
-/// card's dark-green gradient, for a region of the current page. Decoded in
-/// the browser, so the e2e package needs no image library.
+/// pixelStats() (policy.mjs) for a region of the current page, decoded in
+/// the browser so the e2e package needs no image library.
 export async function regionStats(page, box) {
   const png = await page.screenshot({ clip: box });
-  return page.evaluate(async (b64) => {
-    const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob();
-    const bitmap = await createImageBitmap(blob);
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(bitmap, 0, 0);
-    const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-    let r = 0;
-    let g = 0;
-    let bl = 0;
-    let gradientLike = 0;
-    const n = data.length / 4;
-    for (let i = 0; i < data.length; i += 4) {
-      r += data[i];
-      g += data[i + 1];
-      bl += data[i + 2];
-      // The placeholder runs #214937 -> #102d24: dark, green-dominant.
-      const dark = data[i] < 60 && data[i + 1] < 90 && data[i + 2] < 70;
-      if (dark && data[i + 1] >= data[i] && data[i + 1] >= data[i + 2]) {
-        gradientLike += 1;
-      }
-    }
-    return {
-      mean: [r / n, g / n, bl / n].map(Math.round),
-      gradientShare: gradientLike / n,
-    };
-  }, png.toString('base64'));
+  return page.evaluate(
+    async ([b64, statsSource]) => {
+      const stats = new Function(`return (${statsSource})`)();
+      const blob = await (await fetch(`data:image/png;base64,${b64}`)).blob();
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0);
+      return stats(ctx.getImageData(0, 0, bitmap.width, bitmap.height).data);
+    },
+    [png.toString('base64'), pixelStats.toString()],
+  );
 }

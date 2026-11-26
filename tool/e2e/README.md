@@ -52,19 +52,36 @@ Environment:
 | `E2E_MODE` | `auto` (default; detects the rehearsal banner), `rehearsal` or `real`. Must match the build. |
 | `E2E_BASE_URL` | Test this URL instead of serving a build directory. |
 | `E2E_ALLOW_AI` | `1` lets model, Live-token and dinner-message requests through. Default: aborted. |
-| `E2E_REQUIRE_PREVIEW` | `1` fails the run unless Watch my food shows a camera preview (use on a machine with Gemini Nano). |
+| `E2E_REQUIRE_PREVIEW` | `1` fails the run, in any mode, unless Watch my food showed frames and the pixel check ran (a machine with Gemini Nano, or a rehearsal with simulated frames). |
 | `E2E_HEADED` | `1` shows the browser. |
 | `E2E_PORT` | Local server port (default 8787). |
 
 ## What fails a run
 
+- an invalid configuration (`E2E_MODE`, or a flag that is not `0`/`1`);
 - any uncaught page error, or any `console.error` (except requests the run
   itself aborted);
-- a missing expected element at any step;
+- a missing expected element at any step, or an AI step whose outcome is
+  not one the build can legitimately give;
 - in rehearsal, **any** request to Firebase (Auth, Firestore, App Check,
-  Installations), Firebase AI Logic / Gemini, the Live-token or dinner-message
-  endpoints, or Vonage;
-- Watch my food showing neither a preview nor a reason.
+  Installations, config), Firebase AI Logic / Gemini, the Live-token or
+  dinner-message endpoints, or Vonage, and any `getUserMedia` call (the
+  rehearsal banner promises the camera and microphone are not used);
+- Watch my food showing neither frames nor a reason; frames that still look
+  like the empty placeholder; with `E2E_REQUIRE_PREVIEW=1`, no frames at all.
+
+### Network policy, from the first request
+
+The guard and the evidence listeners are installed before the first
+navigation. With `E2E_MODE=rehearsal` or `real` the run uses that mode's
+policy from the start. With `E2E_MODE=auto` the first load runs under a
+conservative **provisional** policy that blocks Firebase, AI, Live-token,
+dinner, Vonage and analytics requests. Once the rehearsal banner shows (or
+doesn't), the policy is refined: for a rehearsal, anything the provisional
+policy blocked counts as forbidden and fails the run; for a real build, the
+page is reloaded under the real policy, and the first load's blocked requests
+and console errors stay in `report.json` (`provisionallyBlockedRequests`,
+`provisionalConsoleErrors`) without failing the run.
 
 Usage analytics requests are always aborted so automated runs never count as
 usage. In a real build, model and messaging requests are aborted unless
@@ -73,15 +90,22 @@ anonymously and creates a cooking session document).
 
 ## What each mode can show
 
-**Rehearsal** (`FAKE_BACKEND=true`) has no hybrid runtime
-(`lib/main_learner.dart` passes `hybrid: null`). So in rehearsal the journey
-asserts the rehearsal's own answers and records them in `report.json`:
+Which surfaces exist is detected from the page (the cooking screen's
+"What was sent" button), not assumed from the mode.
+
+**Rehearsal without a hybrid runtime** (`FAKE_BACKEND=true` today:
+`lib/main_learner.dart` passes `hybrid: null`). The journey checks the
+rehearsal's own answers and records them in `report.json`:
 
 - Find my meal returns the fixed, simulated result with a "Simulated" source badge;
 - sending a question shows "Connect the live coach to talk or type a question."
   (no Coach Lite);
-- Watch my food shows "Watch needs a real camera connection…" (no camera);
-- "What was sent" and "On-device AI" are absent and the run checks that they are.
+- Watch my food shows "Watch needs a real camera connection…";
+- "What was sent" and "On-device AI" are absent.
+
+**Rehearsal with a simulated hybrid runtime** (planned, SS-089): Coach Lite,
+the ledger and the On-device AI sheet are exercised as in a real build, and
+if the watch paints simulated frames the preview pixel check runs.
 
 **Real build in automation Chrome.** Playwright starts Chrome with a fresh
 profile, which has no Gemini Nano, and a local build has no App Check token, so
@@ -95,9 +119,9 @@ cloud AI is unavailable too. Expected, and accepted by the journey:
   preview check then **does not run** and `report.json` says so;
 - "What was sent" and "On-device AI" open and are screenshotted.
 
-The preview check (fake camera frame replaces the empty dark-green card; less
-than half the card's pixels may look like the placeholder gradient) runs only
-when the on-device watch actually starts.
+The preview check (frames replace the empty dark-green card; less than half
+the card's pixels may look like the placeholder gradient) runs whenever the
+card shows frames, in either mode.
 
 ## How it drives Flutter
 
@@ -124,3 +148,12 @@ granted, so a real build gets Chrome's synthetic camera instead of a prompt.
   `fonts.gstatic.com` by default, so even rehearsal needs network for those.
   Build with `--no-web-resources-cdn` to bundle CanvasKit; the run lists every
   external host in `report.json`.
+
+## Unit tests
+
+The tooling itself (request policy, configuration check, preview pixel test,
+static server, `run.sh` argument handling) is tested without a browser:
+
+```sh
+node --test test/e2e/
+```
