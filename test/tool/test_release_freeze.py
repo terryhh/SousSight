@@ -104,6 +104,8 @@ class FakeRunner:
         self.commands = []
         self.refs = {"buildhybridai-rc": SHA, SHA: SHA, "main": SHA}
         self.tags = {"buildhybridai-rc": SHA}
+        self.tag_types = {"buildhybridai-rc": "tag"}  # "tag" = annotated, "commit" = lightweight
+        self.tag_fails = False
         self.judges = judges()
         self.main_tip = SHA
         self.compare_status = "identical"
@@ -150,13 +152,25 @@ class FakeRunner:
                 return self.ok(argv, self.tags[name] + "\n") if name in self.tags else self.ok(argv, "", 1)
             name = target.removesuffix("^{commit}")
             return self.ok(argv, self.refs[name] + "\n") if name in self.refs else self.ok(argv, "", 1)
+        if args[:3] == ["rev-parse", "--verify", "--end-of-options"]:
+            name = args[3][len("refs/tags/"):].removesuffix("^{commit}")
+            return self.ok(argv, self.tags[name] + "\n") if name in self.tags else self.ok(argv, "", 128)
+        if args[:2] == ["cat-file", "-t"]:
+            name = args[2][len("refs/tags/"):]
+            return self.ok(argv, self.tag_types.get(name, "tag") + "\n") if name in self.tags else self.ok(argv, "", 128)
         if args[0] == "show":
             assert args[1] == f"{SHA}:{freeze.JUDGES_PATH}", "JUDGES.md is read at the frozen commit"
             return self.ok(argv, self.judges) if self.judges is not None else self.ok(argv, "", 128)
         if args[0] == "rev-parse" and args[1] == f"{SHA}:{freeze.JUDGES_PATH}":
             return self.ok(argv, BLOB_SHA + "\n")
         if args[:2] == ["tag", "-a"]:
+            if self.tag_fails:
+                return self.ok(argv, "", 128)
             self.tags[args[2]] = args[3]
+            self.tag_types[args[2]] = "tag"
+            return self.ok(argv, "")
+        if args[:2] == ["tag", "-d"]:
+            self.tags.pop(args[2])
             return self.ok(argv, "")
         raise AssertionError(f"unexpected git command {argv}")
 
@@ -271,7 +285,7 @@ class HappyPathTests(FreezeTestCase):
 
     def test_every_command_is_read_only(self):
         self.run_main(SHA, "--tag", "buildhybridai-2026")
-        allowed = {("git", "rev-parse"), ("git", "show"), ("git", "tag"), ("gh", "api"),
+        allowed = {("git", "rev-parse"), ("git", "show"), ("git", "tag"), ("git", "cat-file"), ("gh", "api"),
                    ("gh", "run"), ("gh", "variable"), (str(freeze.CHECK_BUILD_CONFIG), "--judged")}
         for command in self.runner.commands:
             self.assertIn(tuple(command[:2]), allowed, command)
@@ -537,6 +551,26 @@ class JudgesTests(FreezeTestCase):
         self.assertEqual(self.run_main(SHA), 0, self.stdout)
         self.assertIn("### Android\n\n- Not part of this entry (per JUDGES.md).", self.output.read_text())
 
+    def test_hidden_comment_is_not_a_platform_decision(self):
+        # Codex #247: the real JUDGES.md has this sentence inside a VERIFY instruction.
+        note = '<!-- VERIFY: gate G4. If G4 did not pass, replace this section with "Android is not part of this entry." -->'
+        self.runner.judges = judges(**{"### Android (gated)": f"### Mobile Android (gated) {note}"})
+        self.assert_not_frozen(self.run_main(SHA), "devices", "no '### Android' section and does not say it is out")
+        self.runner.judges = judges(**{"### Android (gated)": f"### Android (gated) {note}"})
+        self.output.unlink(missing_ok=True)
+        self.assertEqual(self.run_main(SHA), 0, self.stdout)
+        self.assertIn("- Needs a phone that runs Gemini Nano", self.output.read_text())
+
+    def test_exclusion_must_be_its_own_visible_line(self):
+        text = re.sub(r"### Android \(gated\).*?(?=### iOS)",
+                      "We may say Android is not part of this entry later.\n\n", judges(), flags=re.S)
+        self.runner.judges = text
+        self.assert_not_frozen(self.run_main(SHA), "devices", "no '### Android' section")
+
+    def test_section_and_exclusion_together_fail(self):
+        self.runner.judges = judges(**{"### iOS (gated)": "Android is not part of this entry.\n\n### iOS (gated)"})
+        self.assert_not_frozen(self.run_main(SHA), "devices", "both has a '### Android' section")
+
     def test_open_items_warn_but_do_not_block(self):
         self.assertEqual(self.run_main(SHA), 0)
         self.assertEqual(self.status("docs"), freeze.WARN)
@@ -562,11 +596,101 @@ class TagTests(FreezeTestCase):
         self.assert_not_frozen(self.run_main(SHA, "--tag", "buildhybridai-2026"), "tag", "already exists")
         self.assertEqual(self.runner.tags["buildhybridai-2026"], OTHER_SHA)
 
-    def test_existing_tag_at_commit_is_kept(self):
+    def test_existing_annotated_tag_at_commit_is_kept(self):
         self.runner.tags["buildhybridai-2026"] = SHA
+        self.runner.tag_types["buildhybridai-2026"] = "tag"
         self.assertEqual(self.run_main(SHA, "--tag", "buildhybridai-2026"), 0)
         self.assertNotIn(("git", "tag"), [tuple(c[:2]) for c in self.runner.commands])
-        self.assertIn("already points at", self.detail("tag"))
+        self.assertIn("annotated tag `buildhybridai-2026` already points at", self.detail("tag"))
+        self.assertIn("| Tag | `buildhybridai-2026` |", self.output.read_text())
+
+    def test_existing_lightweight_tag_at_commit_fails_and_is_not_moved(self):
+        # Codex #247: peeling to ^{commit} gives the same SHA for lightweight and annotated tags.
+        self.runner.tags["buildhybridai-2026"] = SHA
+        self.runner.tag_types["buildhybridai-2026"] = "commit"
+        self.assert_not_frozen(self.run_main(SHA, "--tag", "buildhybridai-2026"), "tag", "lightweight tag")
+        self.assertEqual(self.runner.tags["buildhybridai-2026"], SHA)
+        self.assertEqual(self.runner.tag_types["buildhybridai-2026"], "commit")
+
+    def test_tag_creation_failure_writes_nothing(self):
+        self.runner.tag_fails = True
+        code = self.run_main(SHA, "--tag", "buildhybridai-2026")
+        self.assertEqual(code, 1)
+        self.assertEqual(self.status("tag"), freeze.FAIL)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(list(self.dir.iterdir()), [], "the staged report is removed")
+        self.assertIn("the tag could not be created", self.stderr)
+
+    def test_tag_with_stdout_output(self):
+        out = io.StringIO()
+        self.last = self.freezer()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(freeze.main([SHA, "--tag", "buildhybridai-2026", "--output", "-"], freezer=self.last), 0)
+        self.assertIn("| Tag | `buildhybridai-2026` |", out.getvalue())
+        self.assertEqual(self.runner.tags["buildhybridai-2026"], SHA)
+
+
+class OutputTests(FreezeTestCase):
+    """Codex #247: an unwritable report path must never leave a new tag without its report."""
+
+    def test_unwritable_destination_is_refused_before_any_command(self):
+        blocker = self.dir / "not-a-dir"
+        blocker.write_text("file")
+        for target in (blocker / "RELEASE-IDENTITY.md", self.dir / "missing" / "RELEASE-IDENTITY.md", self.dir):
+            with self.subTest(target=target.name), contextlib.redirect_stdout(io.StringIO()):
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    code = freeze.main([SHA, "--tag", "buildhybridai-2026", "--output", str(target)],
+                                       freezer=self.freezer())
+                self.assertEqual(code, 2)
+                self.assertIn("--output", err.getvalue())
+        self.assertEqual(self.runner.commands, [])
+        self.assertNotIn("buildhybridai-2026", self.runner.tags)
+
+    def test_staging_failure_creates_no_tag(self):
+        original = freeze.tempfile.mkstemp
+
+        def no_space(*args, **kwargs):
+            raise OSError(28, "No space left on device")
+        freeze.tempfile.mkstemp = no_space
+        self.addCleanup(setattr, freeze.tempfile, "mkstemp", original)
+        self.assertEqual(self.run_main(SHA, "--tag", "buildhybridai-2026"), 1)
+        self.assertNotIn(["git", "tag", "-a", "buildhybridai-2026", SHA, "-m", freeze.TAG_MESSAGE],
+                         self.runner.commands)
+        self.assertNotIn("buildhybridai-2026", self.runner.tags)
+        self.assertEqual(self.status("tag"), freeze.NOT_RUN)
+        self.assertIn("could not write the report", self.stderr)
+        self.assertFalse(self.output.exists())
+
+    def test_failed_final_write_deletes_the_new_tag(self):
+        original = freeze.os.replace
+
+        def fail_replace(src, dst):
+            raise OSError(5, "I/O error")
+        freeze.os.replace = fail_replace
+        self.addCleanup(setattr, freeze.os, "replace", original)
+        self.assertEqual(self.run_main(SHA, "--tag", "buildhybridai-2026"), 1)
+        self.assertIn(["git", "tag", "-d", "buildhybridai-2026"], self.runner.commands)
+        self.assertNotIn("buildhybridai-2026", self.runner.tags)
+        self.assertEqual(self.status("tag"), freeze.FAIL)
+        self.assertIn("tag deleted again", self.detail("tag"))
+        self.assertEqual(list(self.dir.iterdir()), [], "no report and no staged file are left")
+
+    def test_failed_final_write_keeps_a_pre_existing_tag(self):
+        self.runner.tags["buildhybridai-2026"] = SHA
+        self.runner.tag_types["buildhybridai-2026"] = "tag"
+        original = freeze.os.replace
+        freeze.os.replace = lambda src, dst: (_ for _ in ()).throw(OSError(5, "I/O error"))
+        self.addCleanup(setattr, freeze.os, "replace", original)
+        self.assertEqual(self.run_main(SHA, "--tag", "buildhybridai-2026"), 1)
+        self.assertNotIn(("git", "tag"), [tuple(c[:2]) for c in self.runner.commands])
+        self.assertEqual(self.runner.tags["buildhybridai-2026"], SHA)
+
+    def test_existing_report_is_replaced_atomically(self):
+        self.output.write_text("old")
+        self.assertEqual(self.run_main(SHA), 0)
+        self.assertTrue(self.output.read_text().startswith("# Release identity"))
+        self.assertEqual([p.name for p in self.dir.iterdir()], [self.output.name])
 
 
 class ErrorPathTests(FreezeTestCase):

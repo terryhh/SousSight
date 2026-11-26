@@ -37,6 +37,7 @@ import datetime
 import hashlib
 import http.client
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -192,6 +193,8 @@ def bullets(text):
 def device_prerequisites(judges):
     """Return ({platform: [prerequisite, ...]}, [problem, ...]) from JUDGES.md text."""
     problems, found = [], {}
+    # Hidden comments are authoring instructions (e.g. VERIFY notes), never the release decision.
+    judges = strip_comments(judges)
     web = section(judges, r"Turn on Chrome", 2)
     if web is None:
         problems.append("JUDGES.md has no '## … Turn on Chrome …' section")
@@ -204,8 +207,13 @@ def device_prerequisites(judges):
             problems.append("JUDGES.md's Chrome section lists no prerequisites")
     for name in ("Android", "iOS"):
         body = section(judges, rf"^{name}\b", 3)
+        # Only a visible line that says exactly this counts as leaving the platform out.
+        excluded = re.search(rf"(?m)^\s*{name} is not part of this entry\.?\s*$", judges)
+        if body is not None and excluded:
+            problems.append(f"JUDGES.md both has a '### {name}' section and says {name} is not part of this entry")
+            continue
         if body is None:
-            if re.search(rf"{name} is not part of this entry", judges):
+            if excluded:
                 found[name] = ["Not part of this entry (per JUDGES.md)."]
             else:
                 problems.append(f"JUDGES.md has no '### {name}' section and does not say it is out")
@@ -257,6 +265,7 @@ class Freezer:
         )}
         self.facts = {}
         self.devices = {}
+        self.error = None
 
     # -- commands ---------------------------------------------------------
 
@@ -546,24 +555,100 @@ class Freezer:
         else:
             check.set(PASS, "JUDGES.md has no VERIFY comments or placeholders")
 
-    def make_tag(self, name, sha):
+    def plan_tag(self, name, sha):
+        """Decide what --tag NAME needs: "keep" an existing annotated tag at sha, or "create" one.
+
+        Returns None (and fails the check) for a lightweight tag or a tag at another commit;
+        an existing tag is never moved or replaced.
+        """
         check = self.checks["tag"]
-        if not name:
-            check.set(NOT_RUN, "no --tag given; nothing tagged")
-            return
-        existing = run_command(["git", "rev-parse", "--verify", "--quiet", "--end-of-options",
-                                f"refs/tags/{name}^{{commit}}"], self.runner, cwd=self.root)
-        if existing.returncode == 0 and existing.stdout.strip():
-            if existing.stdout.strip() == sha:
-                check.set(PASS, f"{code(name)} already points at {code(sha)}; left as is")
-                self.facts["tag"] = name
-            else:
-                check.set(FAIL, f"{code(name)} already exists at {code(existing.stdout.strip())}; not moved")
-            return
-        self.git("tag", "-a", name, sha, "-m", TAG_MESSAGE)
-        check.set(PASS, f"created annotated tag {code(name)} at {code(sha)} locally; "
-                  f"push it with `git push origin {name}`")
+        exists = run_command(["git", "rev-parse", "--verify", "--quiet", "--end-of-options",
+                              f"refs/tags/{name}"], self.runner, cwd=self.root)
+        if exists.returncode != 0 or not exists.stdout.strip():
+            return "create"
+        kind = self.git("cat-file", "-t", f"refs/tags/{name}").strip()
+        target = self.git("rev-parse", "--verify", "--end-of-options", f"refs/tags/{name}^{{commit}}").strip()
+        if kind != "tag":
+            check.set(FAIL, f"{code(name)} exists as a lightweight tag ({kind}); RELEASE.md §2 needs an "
+                      "annotated tag. Not moved")
+            return None
+        if target != sha:
+            check.set(FAIL, f"{code(name)} already exists at {code(target)}; not moved")
+            return None
+        check.set(PASS, f"annotated tag {code(name)} already points at {code(sha)}; left as is")
         self.facts["tag"] = name
+        return "keep"
+
+    def finish(self, tag, target):
+        """After every check passed: stage the report, create the tag, then put the report in place.
+
+        The report is written next to `target` before any tag is made, and a tag this run
+        created is deleted again if the report cannot be moved into place, so a run never
+        leaves a new tag without its report (or a report naming a tag that does not exist).
+        Returns the document, or None with self.error set.
+        """
+        sha = self.facts["sha"]
+        action = None
+        if tag:
+            action = self.guard(self.plan_tag, tag, sha)
+            if action is None:
+                if self.checks["tag"].status != FAIL:
+                    self.checks["tag"].set(FAIL, "could not inspect the existing tag")
+                self.error = "the tag check failed"
+                return None
+            if action == "create":
+                # Provisional: only true once the tag exists; reset below if it does not.
+                self.checks["tag"].set(PASS, f"created annotated tag {code(tag)} at {code(sha)} locally; "
+                                       f"push it with `git push origin {tag}`")
+                self.facts["tag"] = tag
+        document = self.render()
+        staged = None
+        if target is not None:
+            try:
+                handle, staged = tempfile.mkstemp(prefix=".release-identity-", suffix=".md", dir=target.parent)
+                with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                    stream.write(document)
+            except OSError:
+                self.discard(staged)
+                self.untag_plan(action, "not created: the report could not be written")
+                self.error = f"could not write the report in {target.parent}"
+                return None
+        if action == "create":
+            try:
+                self.git("tag", "-a", tag, sha, "-m", TAG_MESSAGE)
+            except FreezeError as error:
+                self.discard(staged)
+                self.facts.pop("tag", None)
+                self.checks["tag"].set(FAIL, str(error))
+                self.error = "the tag could not be created"
+                return None
+        if staged is not None:
+            try:
+                os.replace(staged, target)
+            except OSError:
+                self.discard(staged)
+                if action == "create":
+                    deleted = run_command(["git", "tag", "-d", tag], self.runner, cwd=self.root).returncode == 0
+                    self.facts.pop("tag", None)
+                    self.checks["tag"].set(FAIL, f"created {code(tag)}, then the report could not be written; "
+                                           + ("tag deleted again" if deleted else
+                                              f"delete it with `git tag -d {tag}`"))
+                self.error = f"could not write {target}"
+                return None
+        return document
+
+    def untag_plan(self, action, detail):
+        if action == "create":
+            self.facts.pop("tag", None)
+            self.checks["tag"].set(NOT_RUN, detail)
+
+    @staticmethod
+    def discard(path):
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     # -- run ----------------------------------------------------------------
 
@@ -591,13 +676,12 @@ class Freezer:
             if self.checks["devices"].status == NOT_RUN:
                 self.check_devices(judges)
             self.check_docs(judges)
-        if self.frozen_ok():
-            self.guard(self.make_tag, tag, sha)
-        elif tag:
-            self.checks["tag"].set(NOT_RUN, "not run: an earlier check failed, so nothing was tagged")
-        else:
+        if not tag:
             self.checks["tag"].set(NOT_RUN, "no --tag given; nothing tagged")
-        return self.frozen_ok() and self.checks["tag"].status != FAIL
+        elif not self.frozen_ok():
+            self.checks["tag"].set(NOT_RUN, "not run: an earlier check failed, so nothing was tagged")
+        # Tagging happens in finish(), after the report is staged.
+        return self.frozen_ok()
 
     def guard(self, step, *args, check=None):
         """Run one step; a FreezeError fails that step's check, never passes it."""
@@ -606,7 +690,7 @@ class Freezer:
         except FreezeError as error:
             key = check or {
                 self.check_main: "main", self.check_ci: "ci", self.check_config: "config",
-                self.check_hosted: "hosted", self.check_apk: "apk", self.make_tag: "tag",
+                self.check_hosted: "hosted", self.check_apk: "apk", self.plan_tag: "tag",
             }.get(step)
             self.checks[key].set(FAIL, str(error))
             return None
@@ -767,7 +851,10 @@ def main(argv=None, *, freezer=None):
     parser.add_argument("--hosted-url", default=DEFAULT_HOSTED_URL)
     args = parser.parse_args(argv)
     freezer = freezer or Freezer(repo=args.repo, hosted_url=args.hosted_url)
+    target = None if args.output == "-" else Path(args.output) if args.output else freezer.root / DEFAULT_OUTPUT
     try:
+        if target is not None:
+            check_destination(target)
         ok = freezer.run(args.ref, apk=args.apk, defines_path=args.defines, tag=args.tag)
     except UsageError as error:
         print(f"freeze: {error}", file=sys.stderr)
@@ -775,20 +862,30 @@ def main(argv=None, *, freezer=None):
     except FreezeError as error:
         print(f"freeze: {error} NOT FROZEN. Nothing was written.", file=sys.stderr)
         return 1
+    document = freezer.finish(args.tag, target) if ok else None
     print(f"Release freeze for {args.ref}:")
     for line in freezer.summary_lines():
         print(line)
-    if not ok:
-        print("NOT FROZEN: fix the FAIL lines above and run again. Nothing was written.", file=sys.stderr)
+    if document is None:
+        reason = f" ({freezer.error})" if freezer.error else ""
+        print(f"NOT FROZEN{reason}: fix the FAIL lines above and run again. Nothing was written.",
+              file=sys.stderr)
         return 1
-    document = freezer.render()
-    if args.output == "-":
+    if target is None:
         sys.stdout.write(document)
-        return 0
-    target = Path(args.output) if args.output else freezer.root / DEFAULT_OUTPUT
-    target.write_text(document, encoding="utf-8")
-    print(f"Frozen. Wrote {target}.")
+    else:
+        print(f"Frozen. Wrote {target}.")
     return 0
+
+
+def check_destination(target):
+    """Refuse an output path that cannot be written, before any command runs."""
+    if target.is_dir():
+        raise UsageError(f"--output {target} is a directory.")
+    if not target.parent.is_dir():
+        raise UsageError(f"--output directory {target.parent} does not exist.")
+    if not os.access(target.parent, os.W_OK) or (target.exists() and not os.access(target, os.W_OK)):
+        raise UsageError(f"--output {target} is not writable.")
 
 
 if __name__ == "__main__":
