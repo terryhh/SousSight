@@ -128,7 +128,9 @@ GeneratedIllustration illustrationFromResponse(
   GenerateContentResponse response, {
   required String model,
 }) {
-  if (response.promptFeedback?.blockReason != null) {
+  final feedback = response.promptFeedback;
+  if (feedback?.blockReason != null ||
+      (feedback?.safetyRatings ?? const []).any((r) => r.isBlocked == true)) {
     throw const IllustrationException(
       HybridErrorCode.blocked,
       'Prompt was blocked',
@@ -162,20 +164,43 @@ GeneratedIllustration illustrationFromResponse(
         'Generation did not finish normally (${reason?.name ?? 'no reason'})',
       );
   }
-  for (final part in response.inlineDataParts) {
-    final mime = part.mimeType.toLowerCase();
-    if (imageBytesMatch(mime, part.bytes)) {
-      return GeneratedIllustration(
-        bytes: part.bytes,
-        mimeType: mime,
-        model: model,
-      );
+  // An explicit block flag wins over a contradictory STOP.
+  if ((candidate.safetyRatings ?? const []).any((r) => r.isBlocked == true)) {
+    throw const IllustrationException(
+      HybridErrorCode.blocked,
+      'Image was blocked',
+    );
+  }
+  // The image-only contract: every non-thought part is one well-formed
+  // image (blank text is tolerated), and there is exactly one. Anything
+  // else in the answer means it is not what was asked for: abstain.
+  GeneratedIllustration? found;
+  for (final part in candidate.content.parts) {
+    if (part.isThought == true) continue;
+    switch (part) {
+      case TextPart(:final text) when text.trim().isEmpty:
+        continue;
+      case InlineDataPart(:final mimeType, :final bytes)
+          when found == null && imageBytesMatch(mimeType.toLowerCase(), bytes):
+        found = GeneratedIllustration(
+          bytes: bytes,
+          mimeType: mimeType.toLowerCase(),
+          model: model,
+        );
+      default:
+        throw const IllustrationException(
+          HybridErrorCode.failed,
+          'Response was not a single image',
+        );
     }
   }
-  throw const IllustrationException(
-    HybridErrorCode.failed,
-    'Response held no usable image',
-  );
+  if (found == null) {
+    throw const IllustrationException(
+      HybridErrorCode.failed,
+      'Response held no usable image',
+    );
+  }
+  return found;
 }
 
 /// Whether [bytes] start like the [mimeType] they claim (PNG, JPEG or WebP).

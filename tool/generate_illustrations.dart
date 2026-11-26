@@ -101,6 +101,12 @@ class _GeneratorAppState extends State<_GeneratorApp> {
   }
 
   Future<void> _start() async {
+    // The driver arms model traffic only for the mode it was asked to run.
+    _emit('ILLUSTRATION_MODE', {
+      'mode': _gate ? 'gate' : 'premade',
+      'max': _gate ? 0 : _max,
+      'model': kIllustrationModel,
+    });
     try {
       await initFirebase();
     } catch (e) {
@@ -122,6 +128,8 @@ class _GeneratorAppState extends State<_GeneratorApp> {
     };
     final recipes = await loadRecipeCatalog();
     final generator = FirebaseAiIllustrationGenerator();
+    // Give the driver time to read the mode line and arm before any call.
+    await Future<void>.delayed(const Duration(seconds: 2));
     var made = 0;
     for (final recipe in recipes) {
       for (final key in kPremadeIllustrations[recipe.id] ?? const <String>{}) {

@@ -31,5 +31,6 @@ IllustrationController illustrationControllerFor(
     ),
     recorder: hybrid.cloudSends,
     generator: generator ?? FirebaseAiIllustrationGenerator(),
+    settingsChanges: hybrid.privacy,
   );
 }

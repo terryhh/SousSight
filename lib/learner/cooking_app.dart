@@ -467,6 +467,15 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       stepId: cook.step.id,
     );
     if (cook.session?.id case final id?) _label?.setSession(id);
+    // SS-098: invalidate illustration work the moment the step changes,
+    // not on the next frame.
+    if (cook.session?.id case final id?) {
+      _illustrations?.bind(
+        sessionId: id,
+        recipeId: cook.recipe.id,
+        stepId: cook.step.id,
+      );
+    }
     if (cook.alert == null) _announcedAlert = null;
     if (cook.alert != null && cook.alert != _announcedAlert) {
       _announcedAlert = cook.alert;

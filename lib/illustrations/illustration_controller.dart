@@ -74,8 +74,30 @@ class IllustrationLoading extends IllustrationState {
 }
 
 class IllustrationReady extends IllustrationState {
-  const IllustrationReady(this.image);
+  const IllustrationReady(this.image, this.source);
   final GeneratedIllustration image;
+
+  /// Where it came from, as its ledger leg recorded it.
+  final IllustrationSource source;
+}
+
+/// The settled ledger leg behind an on-demand image, kept beside it so the
+/// screen can say it came from the cloud (bundled images have none).
+class IllustrationSource {
+  const IllustrationSource({
+    required this.modelLabel,
+    required this.provenance,
+  });
+  final String modelLabel;
+  final Provenance provenance;
+
+  /// Cook-facing, derived from the leg: only a cloud provenance says "sent".
+  String describe() => switch (provenance) {
+    Provenance.sdkCloud || Provenance.cloudAdapter =>
+      "Made just now in Google's cloud ($modelLabel) from this step's text, "
+          'sent with your OK.',
+    _ => 'Made by AI ($modelLabel).',
+  };
 }
 
 class IllustrationBlocked extends IllustrationState {
@@ -98,8 +120,19 @@ class IllustrationController extends ChangeNotifier {
     required this._generator,
     this.cap = kIllustrationSessionCap,
     Future<bool> Function(Uint8List bytes)? decodes,
+    this._settingsChanges,
   }) : _routes = cloudRoutes,
-       _decodes = decodes ?? imageDecodes;
+       _decodes = decodes ?? imageDecodes {
+    _settingsChanges?.addListener(_onSettingsChanged);
+  }
+
+  /// The cook's privacy preferences, when they can be observed: a change
+  /// re-renders the panel so a button follows the switch at once.
+  final Listenable? _settingsChanges;
+
+  void _onSettingsChanged() {
+    if (!_disposed) notifyListeners();
+  }
 
   final CloudRoutes _routes;
   final PrivacySettings _privacy;
@@ -120,7 +153,7 @@ class IllustrationController extends ChangeNotifier {
   bool _disposed = false;
 
   /// This session's images, by target key.
-  final Map<String, GeneratedIllustration> _cache = {};
+  final Map<String, IllustrationReady> _cache = {};
 
   /// Loading, blocked and failed states for the current step.
   final Map<String, IllustrationState> _states = {};
@@ -168,13 +201,14 @@ class IllustrationController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _epoch++;
+    _settingsChanges?.removeListener(_onSettingsChanged);
     super.dispose();
   }
 
   /// Why a request would be refused right now, read live; null if it may
   /// go ahead. The cap is checked last so a cloud block is what the cook
   /// sees first.
-  IllustrationBlock? availability() {
+  IllustrationBlock? availability({bool ignoreCap = false}) {
     if (!_routes.allows(CloudRoute.images)) {
       return IllustrationBlock.cloudNotApproved;
     }
@@ -185,12 +219,12 @@ class IllustrationController extends ChangeNotifier {
       return IllustrationBlock.localOnly;
     }
     if (!_isOnline()) return IllustrationBlock.offline;
-    if (remaining <= 0) return IllustrationBlock.capReached;
+    if (!ignoreCap && remaining <= 0) return IllustrationBlock.capReached;
     return null;
   }
 
   IllustrationState stateFor(IllustrationTarget target) {
-    if (_cache[target.key] case final image?) return IllustrationReady(image);
+    if (_cache[target.key] case final ready?) return ready;
     return _states[target.key] ?? const IllustrationIdle();
   }
 
@@ -252,24 +286,34 @@ class IllustrationController extends ChangeNotifier {
       _set(key, IllustrationBlocked(block));
       return;
     }
+    // The leg is admitted before the generator is invoked (DESIGN.md §5).
+    // The ledger tells its observers synchronously, and one of them may
+    // change a setting or move the cook on, so everything is checked again
+    // after admission and before dispatch. A leg cancelled here never
+    // reached the generator.
     _used++;
-    // From the final check to here is one synchronous block: dispatch,
-    // ledger admission, then the "sending" notice. No listener can run
-    // between the check and the dispatch, so a setting changed by an
-    // observer cannot slip a send through. Generators do no I/O before
-    // their first await, so the leg is still written before any data
-    // leaves the device.
+    final send = _recorder.begin(kIllustrationFeature, const {DataKind.text});
+    final late = _current(epoch) ? availability(ignoreCap: true) : null;
+    if (!_current(epoch) || late != null) {
+      send.failed(HybridErrorCode.cancelled);
+      // Nothing was sent. A rebind already reset the cap for its session.
+      if (_current(epoch)) {
+        _used--;
+        _set(key, IllustrationBlocked(late!));
+      }
+      return;
+    }
     Future<GeneratedIllustration> pending;
     try {
       pending = _generator.generate(prompt.text);
     } catch (e) {
       pending = Future.error(e);
     }
-    final send = _recorder.begin(kIllustrationFeature, const {DataKind.text});
-    _set(key, const IllustrationLoading(sending: true));
+    if (_current(epoch)) _set(key, const IllustrationLoading(sending: true));
     try {
       final image = await pending;
-      send.confirmed(modelLabel: illustrationModelLabel(image.model));
+      final label = illustrationModelLabel(image.model);
+      send.confirmed(modelLabel: label);
       // A valid signature over garbage must not show as a blank "ready".
       final decodes = await _decodes(image.bytes);
       if (!_current(epoch)) return;
@@ -277,7 +321,13 @@ class IllustrationController extends ChangeNotifier {
         _set(key, const IllustrationFailed(HybridErrorCode.failed));
         return;
       }
-      _cache[key] = image;
+      _cache[key] = IllustrationReady(
+        image,
+        IllustrationSource(
+          modelLabel: label,
+          provenance: Provenance.cloudAdapter,
+        ),
+      );
       _states.remove(key);
       notifyListeners();
     } on IllustrationException catch (e) {

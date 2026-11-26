@@ -63,26 +63,111 @@ void main() {
     expect(p.text, contains('no text'));
   });
 
-  test('safety and doneness sentences never reach a prompt', () {
-    final cue =
-        'Golden at the edges. $kHeatDisclaimer The camera cannot tell. '
-        '$kThermometerDisclaimer';
+  test('safety notes never reach a prompt, but keep the heat note on', () {
+    final cue = 'Golden at the edges. $kHeatDisclaimer The camera cannot tell.';
     expect(visibleCue(cue), 'Golden at the edges.');
     final r = recipe(
       steps: [
         RecipeStep(
-          id: 'toast',
-          title: 'Toast',
-          instruction: 'Toast the tortilla in a dry pan.',
+          id: 'warm',
+          title: 'Warm',
+          instruction: 'Warm the tortilla.', // no heat word the regex knows
           cue: cue,
         ),
       ],
     );
-    final p = illustrationPrompt(r, const StepTarget('toast'))!;
+    final p = illustrationPrompt(r, const StepTarget('warm'))!;
+    // The drafter's heat note marks the step as heated for the panel.
     expect(p.heated, isTrue);
     expect(p.subject, IllustrationSubject.stepLook);
-    expect(p.text, isNot(contains('thermometer')));
-    expect(p.text, isNot(contains('safety')));
+    expect(p.text, isNot(contains('camera')));
+    expect(illustrationPrompt(r, const PlateTarget())!.heated, isTrue);
+  });
+
+  test('a doneness assertion means no picture, step or plate', () {
+    for (final cue in [
+      'It is fully cooked when golden.',
+      'Cook until done.',
+      'The flesh turns opaque.',
+      'It flakes easily with a fork.',
+      'Juices run clear.',
+      'No longer pink inside.',
+    ]) {
+      final r = recipe(
+        steps: [
+          RecipeStep(id: 's', title: 'S', instruction: 'Bake it.', cue: cue),
+        ],
+      );
+      expect(illustrationPrompt(r, const StepTarget('s')), isNull, reason: cue);
+      expect(illustrationPrompt(r, const PlateTarget()), isNull, reason: cue);
+    }
+  });
+
+  test("the drafter's thermometer note marks a protein recipe", () {
+    final r = recipe(
+      steps: [
+        const RecipeStep(
+          id: 'prep',
+          title: 'Prep',
+          instruction: 'Stir the yogurt.',
+          cue: 'Smooth.',
+        ),
+        RecipeStep(
+          id: 'cook',
+          title: 'Cook',
+          instruction: 'Cook it through.',
+          cue: 'Golden. $kThermometerDisclaimer',
+        ),
+      ],
+    );
+    expect(recipeHasAnimalProtein(r), isTrue);
+    expect(illustrationPrompt(r, const StepTarget('cook')), isNull);
+    expect(illustrationPrompt(r, const PlateTarget()), isNull);
+  });
+
+  test('structured fish, shellfish and egg tags count (hake, gravlax)', () {
+    for (final (name, tag) in [
+      ('Hake', 'fish'),
+      ('Gravlax', 'fish'),
+      ('Langoustines', 'shellfish'),
+      ('Kedgeree base', 'egg'),
+    ]) {
+      final r = recipe(
+        ingredients: [
+          Ingredient(id: 'p', name: name, qty: '1', allergens: [tag]),
+        ],
+        steps: const [
+          RecipeStep(
+            id: 'cook',
+            title: 'Cook',
+            instruction: 'Pan-fry for 4 minutes.',
+            cue: 'Golden.',
+          ),
+        ],
+      );
+      expect(recipeHasAnimalProtein(r), isTrue, reason: name);
+      expect(
+        illustrationPrompt(r, const StepTarget('cook')),
+        isNull,
+        reason: name,
+      );
+      expect(illustrationPrompt(r, const PlateTarget()), isNull, reason: name);
+    }
+    // A shelf-stable product's tag says nothing about doneness.
+    for (final name in ['Mayonnaise', 'Worcestershire sauce', 'Egg noodles']) {
+      expect(
+        isAnimalProtein(
+          Ingredient(
+            id: 'x',
+            name: name,
+            qty: '',
+            allergens: const ['egg', 'fish'],
+          ),
+        ),
+        name == 'Egg noodles', // "egg" in the name still counts
+        reason: name,
+      );
+    }
   });
 
   RecipeStep step(String id, String instruction, [String cue = 'Golden.']) =>

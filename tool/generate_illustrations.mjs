@@ -22,7 +22,8 @@ import { createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync, createReadStream } from 'node:fs';
-import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
+import { fileToServe, gateEvidenceOk, modeAllowed, within } from './generate_illustrations_lib.mjs';
 import { fileURLToPath } from 'node:url';
 
 const usage = 'usage: premade <build-dir> --max N | gate <build-dir> <evidence-dir>';
@@ -30,13 +31,6 @@ const fail = (message, code = 2) => {
   console.error(message);
   process.exit(code);
 };
-
-/// Whether [child] is [parent] or inside it, by path components (not a
-/// string prefix, so `/a/build2` is not inside `/a/build`).
-export function within(parent, child) {
-  const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-}
 
 const repo = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
 const [mode, buildArg, third] = process.argv.slice(2);
@@ -68,15 +62,8 @@ const types = {
   '.frag': 'application/octet-stream',
 };
 const server = createServer((req, res) => {
-  let requested;
-  try {
-    requested = resolve(build, `.${decodeURIComponent(req.url.split('?')[0])}`);
-  } catch {
-    return res.writeHead(400).end();
-  }
-  let path = existsSync(requested) ? realpathSync(requested) : join(build, 'index.html');
-  if (!within(build, path)) return res.writeHead(403).end();
-  if (statSync(path).isDirectory()) path = join(build, 'index.html');
+  const path = fileToServe(build, req.url);
+  if (path === null) return res.writeHead(403).end();
   res.writeHead(200, { 'content-type': types[extname(path)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
   createReadStream(path).pipe(res);
 }).listen(0, '127.0.0.1');
@@ -87,14 +74,18 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 900, height: 1100 } });
 let modelCalls = 0;
 const statuses = [];
+// No model request passes until the page has announced a mode this run
+// accepts, and (for the gate) until the cook's "Allow once" is clicked.
+let announced = null;
+let armed = false;
 await page.route('**/*', (route) => {
   const u = new URL(route.request().url());
   if (/generateContent/.test(u.pathname)) {
-    modelCalls += 1;
-    if (modelCalls > cap) {
-      statuses.push({ path: u.pathname, aborted: 'over cap' });
+    if (!armed || modelCalls >= cap) {
+      statuses.push({ path: u.pathname, aborted: armed ? 'over cap' : 'not armed' });
       return route.abort('blockedbyclient');
     }
+    modelCalls += 1;
   }
   return route.continue();
 });
@@ -115,7 +106,23 @@ page.on('console', (m) => {
   const [tag, ...rest] = text.split(' ');
   const body = rest.join(' ');
   switch (tag) {
-    case 'ILLUSTRATION': { const img = JSON.parse(body); images.push(img.key); writePremade([img]); break; }
+    case 'ILLUSTRATION_MODE':
+      announced = JSON.parse(body);
+      if (!modeAllowed(mode, cap, announced)) {
+        console.log('ERROR: build mode does not match this run:', body);
+        resolveDone('wrong-mode');
+      } else if (mode === 'premade') {
+        armed = true;
+      }
+      break;
+    case 'ILLUSTRATION':
+      // Asset writes only for a pre-made run against a pre-made build.
+      if (mode === 'premade' && announced?.mode === 'premade') {
+        const img = JSON.parse(body);
+        images.push(img.key);
+        writePremade([img]);
+      }
+      break;
     case 'ILLUSTRATION_SKIP': console.log('skip', body); break;
     case 'ILLUSTRATION_ERROR': console.log('ERROR (stopping, no retry):', body); resolveDone('error'); break;
     case 'ILLUSTRATION_DONE': console.log('done', body); doneCalls = JSON.parse(body).calls; resolveDone('done'); break;
@@ -192,10 +199,15 @@ async function gate(evidenceDir) {
   const ask = page.getByRole('button', { name: 'Show me what it should look like' });
   await ask.waitFor({ timeout: 60_000 });
   await page.screenshot({ path: join(evidenceDir, 'gate-01-ready.png') });
+  if (!modeAllowed('gate', cap, announced)) {
+    console.log('ERROR: not a gate build; nothing was requested.');
+    return false;
+  }
   await ask.click();
   const allow = page.getByRole('button', { name: 'Allow once' });
   await allow.waitFor({ timeout: 30_000 });
   await page.screenshot({ path: join(evidenceDir, 'gate-02-consent.png') });
+  armed = true; // the one consented request may pass now
   await allow.click();
   const label = page.getByText('AI illustration — not a photo of your food')
     .or(page.getByLabel(/AI illustration — not a photo of your food/)).first();
@@ -208,17 +220,15 @@ async function gate(evidenceDir) {
   await page.waitForTimeout(1500);
   await page.screenshot({ path: join(evidenceDir, 'gate-03-result.png') });
   const last = ledger.at(-1) ?? null;
-  const legs = last?.legs ?? [];
-  // Evidence: the labelled image is on screen AND exactly one settled,
-  // successful cloud leg was written for it.
-  const settled =
-    legs.length === 1 &&
-    legs[0].pending === false &&
-    legs[0].provenance === 'cloudAdapter' &&
-    legs[0].transferPermitted === true &&
-    legs[0].error === null;
-  const result = { shown, settled, states, ledger: last };
+  const evidence = {
+    shown,
+    legs: last?.legs ?? [],
+    requests: statuses,
+    model: announced?.model,
+  };
+  const ok = gateEvidenceOk(evidence);
+  const result = { ok, ...evidence, states };
   writeFileSync(join(evidenceDir, 'gate-result.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));
-  return shown && settled;
+  return ok;
 }

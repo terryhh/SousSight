@@ -15,6 +15,7 @@ import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/core/fakes.dart';
 import 'package:soussight/core/models.dart';
+import 'package:soussight/illustrations/illustration_controller.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
 import 'package:soussight/illustrations/illustration_wiring.dart';
 import 'package:soussight/learner/cooking_app.dart';
@@ -222,6 +223,67 @@ void main() {
     expect(built, 1, reason: 'one controller for the whole cooking session');
     expect(h.controller.remaining, 0);
     expect(h.generator.prompts, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('advancing the cook while consent is open sends nothing, '
+      'even before the next frame', (tester) async {
+    final h = Harness()..consent.gate = Completer<void>();
+    debugIllustrationControllerFactory = (_) => h.controller;
+    addTearDown(() => debugIllustrationControllerFactory = null);
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: const CloudRoutes({CloudRoute.images}),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+    );
+    final cook = CookingCoordinator(
+      services: _services(_draft),
+      research: _Research(),
+      transportFactory: null,
+      media: _Media(),
+      recipe: _draft,
+    );
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 3000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: hybrid.navigatorKey,
+        home: CookingScreen(
+          services: _services(_draft),
+          isDemo: false,
+          hybrid: hybrid,
+          createCoordinator: () => cook,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final ask = find.text('Show me what it should look like');
+    await tester.ensureVisible(ask);
+    await tester.tap(ask);
+    await tester.pump();
+    expect(h.consent.asks, hasLength(1));
+
+    // The cook moves on; the grant arrives before Flutter builds a frame.
+    await cook.advanceStep();
+    expect(cook.step.id, 'serve');
+    h.consent.gate!.complete();
+    for (var i = 0; i < 20; i++) {
+      await Future<void>.value();
+    }
+    expect(
+      h.generator.prompts,
+      isEmpty,
+      reason: 'the old step was invalidated',
+    );
+    expect(h.ledger.entries, isEmpty);
+    await tester.pump();
+    expect(
+      h.controller.stateFor(const StepTarget('stir')),
+      isA<IllustrationIdle>(),
+    );
     await tester.pumpWidget(const SizedBox());
   });
 }

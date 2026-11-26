@@ -63,12 +63,13 @@ void main() {
     expect(FirebaseAiIllustrationGenerator().model, kIllustrationModel);
   });
 
-  test('returns the first image part whose bytes match its type', () async {
+  test('returns the single image of an image-only answer', () async {
     final prompts = <String>[];
     final g = generatorReturning(
       () => response([
-        const TextPart('here you go'),
-        InlineDataPart('image/png', jpeg()), // lies about its type
+        const TextPart('  '), // blank text is tolerated
+        const TextPart('planning the picture', isThought: true),
+        InlineDataPart('image/png', png(), isThought: true), // a draft
         InlineDataPart('IMAGE/JPEG', jpeg()),
       ]),
       prompts: prompts,
@@ -78,6 +79,81 @@ void main() {
     expect(image.mimeType, 'image/jpeg');
     expect(image.model, 'test-image-model');
     expect(image.bytes, jpeg());
+  });
+
+  test('anything but one well-formed image abstains', () {
+    for (final parts in <List<Part>>[
+      // Codex's case: text, a PNG part holding JPEG bytes, then a real JPEG.
+      [
+        const TextPart('here you go'),
+        InlineDataPart('image/png', jpeg()),
+        InlineDataPart('image/jpeg', jpeg()),
+      ],
+      [const TextPart('here you go'), InlineDataPart('image/jpeg', jpeg())],
+      [
+        InlineDataPart('image/jpeg', jpeg()),
+        InlineDataPart('image/png', png()),
+      ],
+      [InlineDataPart('image/png', jpeg())],
+    ]) {
+      expect(
+        () => illustrationFromResponse(response(parts), model: 'm'),
+        throwsA(
+          isA<IllustrationException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.failed,
+          ),
+        ),
+      );
+    }
+  });
+
+  test('explicit block flags win over a contradictory STOP', () {
+    final blocked = SafetyRating(
+      HarmCategory.dangerousContent,
+      HarmProbability.high,
+      isBlocked: true,
+    );
+    final fine = SafetyRating(
+      HarmCategory.dangerousContent,
+      HarmProbability.negligible,
+      isBlocked: false,
+    );
+    GenerateContentResponse withRatings({
+      List<SafetyRating>? candidate,
+      List<SafetyRating> prompt = const [],
+    }) => GenerateContentResponse([
+      Candidate(
+        Content('model', [InlineDataPart('image/png', png())]),
+        candidate,
+        null,
+        FinishReason.stop,
+        null,
+      ),
+    ], PromptFeedback(null, null, prompt));
+    for (final r in [
+      withRatings(candidate: [fine, blocked]),
+      withRatings(prompt: [blocked]),
+    ]) {
+      expect(
+        () => illustrationFromResponse(r, model: 'm'),
+        throwsA(
+          isA<IllustrationException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.blocked,
+          ),
+        ),
+      );
+    }
+    expect(
+      illustrationFromResponse(
+        withRatings(candidate: [fine], prompt: [fine]),
+        model: 'm',
+      ).mimeType,
+      'image/png',
+    );
   });
 
   test('accepts png and webp', () {

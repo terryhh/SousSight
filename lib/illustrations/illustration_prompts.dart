@@ -12,6 +12,8 @@
 // plate at all.
 
 import '../core/models.dart';
+import '../pantry/recipe_draft_client.dart'
+    show kHeatDisclaimer, kThermometerDisclaimer;
 
 /// Shown on every illustration, pre-made or on demand.
 const kIllustrationLabel = 'AI illustration — not a photo of your food';
@@ -105,7 +107,9 @@ final _risky = RegExp(
   r'haddock|snapper|bass|catfish|mackerel|sardines?|anchovy|anchovies|'
   r'swordfish|pollock|perch|carp|herring|mahi(?:[- ]mahi)?|seafood|'
   r'shellfish|shrimps?|prawns?|crabs?|lobsters?|scallops?|clams?|mussels?|'
-  r'oysters?|squid|calamari|octopus|crawfish|crayfish|eggs?|yolks?|'
+  r'oysters?|squid|calamari|octopus|crawfish|crayfish|hake|pollack|sole|'
+  r'flounder|plaice|monkfish|bream|turbot|whiting|eels?|roe|caviar|lox|'
+  r'kippers?|eggs?|yolks?|'
   r'whites? of|omelet(?:te)?s?|frittatas?|quiches?)\b',
   caseSensitive: false,
 );
@@ -132,8 +136,40 @@ final _safetySentence = RegExp(
   caseSensitive: false,
 );
 
+/// Doneness assertions. Their presence means a picture could be read as a
+/// doneness reference, so the builder abstains rather than strip them.
+final _doneness = RegExp(
+  r'fully cooked|cooked through|until (?:it is |they are )?done|'
+  r'\b(?:is|are|it.s|when) done\b|done when|doneness|opaque|'
+  r'flakes? (?:easily|with a fork)|juices? run clear|no longer pink|'
+  r'set in the (?:centre|center|middle)|firm to the touch|'
+  r'internal temp|safe to eat|reaches? \d+ ?°',
+  caseSensitive: false,
+);
+
+/// Allergen tags that mean fish, shellfish or eggs.
+const _proteinAllergens = {
+  'fish',
+  'shellfish',
+  'crustacean',
+  'crustaceans',
+  'mollusc',
+  'molluscs',
+  'mollusk',
+  'mollusks',
+  'egg',
+  'eggs',
+};
+
 /// Whether [text] mentions meat, poultry, fish or eggs.
 bool mentionsAnimalProtein(String text) => _risky.hasMatch(text);
+
+/// Whether [text] asserts doneness ("fully cooked when golden"). The
+/// drafter's own camera and thermometer notes are not assertions, so they
+/// are ignored here (they still mark the step as heated or risky).
+bool assertsDoneness(String text) => _doneness.hasMatch(
+  text.replaceAll(kHeatDisclaimer, '').replaceAll(kThermometerDisclaimer, ''),
+);
 
 /// Whether [text] describes a step that uses heat.
 bool mentionsHeat(String text) => _heat.hasMatch(text);
@@ -141,11 +177,37 @@ bool mentionsHeat(String text) => _heat.hasMatch(text);
 String _stepText(RecipeStep step) =>
     '${step.title} ${step.instruction} ${step.cue}';
 
-/// Whether the recipe has meat, poultry, fish or eggs anywhere: in an
-/// ingredient or in any step's text.
+/// Shelf-stable products whose fish, shellfish or egg allergen tag says
+/// nothing about doneness (mayonnaise, fish sauce, egg pasta…). Only these
+/// are exempt from the allergen rule; the name vocabulary still applies.
+final _preparedProduct = RegExp(
+  r'\b(?:mayo|mayonnaise|aioli|sauce|dressing|paste|pasta|noodles?|'
+  r'bread|buns?|tortillas?|crackers?|cakes?|cookies?|biscuits?|'
+  r'worcestershire|mustard|ketchup|oil)\b',
+  caseSensitive: false,
+);
+
+/// Whether [ingredient] is meat, poultry, fish, shellfish or egg: by its
+/// name, or by a fish, shellfish or egg allergen tag on anything that is
+/// not a known shelf-stable product. An unrecognised tagged food (hake,
+/// gravlax) is treated as protein: abstaining is the cautious answer.
+bool isAnimalProtein(Ingredient ingredient) =>
+    mentionsAnimalProtein(ingredient.name) ||
+    (ingredient.allergens.any(
+          (a) => _proteinAllergens.contains(a.trim().toLowerCase()),
+        ) &&
+        !_preparedProduct.hasMatch(ingredient.name));
+
+/// Whether the recipe has meat, poultry, fish or eggs anywhere: an
+/// ingredient's name or allergen tags, any step's text, or a step that
+/// carries the drafter's thermometer note (heat plus a risky food).
 bool recipeHasAnimalProtein(Recipe recipe) =>
-    recipe.ingredients.any((i) => mentionsAnimalProtein(i.name)) ||
-    recipe.steps.any((s) => mentionsAnimalProtein(_stepText(s)));
+    recipe.ingredients.any(isAnimalProtein) ||
+    recipe.steps.any(
+      (s) =>
+          mentionsAnimalProtein(_stepText(s)) ||
+          s.cue.contains(kThermometerDisclaimer),
+    );
 
 /// The cue without any safety or doneness sentence: an illustration is
 /// never asked to depict one.
@@ -239,9 +301,8 @@ bool _named(Ingredient i, RecipeStep s) => _names(_stepText(s), i);
 bool _touchesProtein(Recipe recipe, int index) {
   final step = recipe.steps[index];
   return mentionsAnimalProtein(_stepText(step)) ||
-      recipe.ingredients.any(
-        (i) => mentionsAnimalProtein(i.name) && _named(i, step),
-      );
+      step.cue.contains(kThermometerDisclaimer) ||
+      recipe.ingredients.any((i) => isAnimalProtein(i) && _named(i, step));
 }
 
 const _style =
@@ -266,11 +327,15 @@ IllustrationPrompt? illustrationPrompt(
   final protein = recipeHasAnimalProtein(recipe);
   switch (target) {
     case PlateTarget():
-      if (protein) return null;
+      if (protein || recipe.steps.any((s) => assertsDoneness(_stepText(s)))) {
+        return null;
+      }
       return IllustrationPrompt(
         target: target,
         subject: IllustrationSubject.finishedPlate,
-        heated: recipe.steps.any((s) => mentionsHeat(_stepText(s))),
+        heated: recipe.steps.any(
+          (s) => mentionsHeat(_stepText(s)) || s.cue.contains(kHeatDisclaimer),
+        ),
         text:
             'Show the finished dish, "${recipe.title}", served on a plate or '
             'in a bowl and ready to eat. Ingredients: '
@@ -281,9 +346,22 @@ IllustrationPrompt? illustrationPrompt(
       if (index < 0) return null;
       final step = recipe.steps[index];
       final used = _stepIngredients(recipe, index);
-      final heated = mentionsHeat(_stepText(step));
+      // A doneness assertion anywhere in the step means no picture at all.
+      if (assertsDoneness(_stepText(step))) return null;
+      // The drafter's heat notes count as heat, so the panel keeps the
+      // thermometer note beside any picture of this step.
+      final heated =
+          mentionsHeat(_stepText(step)) ||
+          step.cue.contains(kHeatDisclaimer) ||
+          step.cue.contains(kThermometerDisclaimer);
       if (protein) {
-        bool heats(int i) => mentionsHeat(_stepText(recipe.steps[i]));
+        bool heats(int i) {
+          final s = recipe.steps[i];
+          return mentionsHeat(_stepText(s)) ||
+              s.cue.contains(kHeatDisclaimer) ||
+              s.cue.contains(kThermometerDisclaimer);
+        }
+
         final firstRisk = [
           for (var i = 0; i < recipe.steps.length; i++)
             if (heats(i) || _touchesProtein(recipe, i)) i,

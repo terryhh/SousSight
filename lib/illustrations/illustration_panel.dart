@@ -106,6 +106,11 @@ String _title(IllustrationTarget target, IllustrationSubject subject) =>
       _ => 'What it should look like',
     };
 
+/// Beside every bundled image: nothing was generated or sent for it.
+const kPremadeSourceCopy =
+    'Made ahead with Google AI for this reviewed recipe and shipped with the '
+    'app. Nothing was sent for it.';
+
 class _IllustrationSlot extends StatelessWidget {
   const _IllustrationSlot({
     required this.recipe,
@@ -125,6 +130,8 @@ class _IllustrationSlot extends StatelessWidget {
       return IllustrationFrame(
         title: _title(target, prompt.subject),
         prompt: prompt,
+        source: kPremadeSourceCopy,
+        sourceIcon: Icons.inventory_2_outlined,
         image: Image.asset(
           asset,
           fit: BoxFit.cover,
@@ -158,10 +165,12 @@ class _IllustrationSlot extends StatelessWidget {
     final title = _title(target, prompt.subject);
     final state = controller.stateFor(target);
     switch (state) {
-      case IllustrationReady(:final image):
+      case IllustrationReady(:final image, :final source):
         return IllustrationFrame(
           title: title,
           prompt: prompt,
+          source: source.describe(),
+          sourceIcon: Icons.cloud_outlined,
           image: Image.memory(
             image.bytes,
             fit: BoxFit.cover,
@@ -252,7 +261,14 @@ class IllustrationFrame extends StatelessWidget {
     required this.title,
     required this.prompt,
     required this.image,
+    required this.source,
+    required this.sourceIcon,
   });
+
+  /// Where this picture came from: shipped with the app, or made just now
+  /// in the cloud (from its ledger leg).
+  final String source;
+  final IconData sourceIcon;
 
   final String title;
   final IllustrationPrompt prompt;
@@ -305,6 +321,21 @@ class IllustrationFrame extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  key: const ValueKey('illustration-source'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(sourceIcon, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        source,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
                 const Text(kIllustrationCompareCopy),
                 if (prompt.subject == IllustrationSubject.ingredientsLaidOut)
                   const Padding(

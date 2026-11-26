@@ -10,6 +10,8 @@ import 'package:soussight/illustrations/illustration_generator.dart';
 import 'package:soussight/illustrations/illustration_panel.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
+import 'package:soussight/app/cloud_send_recorder.dart';
+import 'package:soussight/trust/privacy_preferences.dart';
 
 import 'fakes.dart';
 
@@ -83,6 +85,69 @@ void main() {
       await pumpPanel(tester, recipe: pb, stepId: 'spread');
       expect(find.text(kIllustrationLabel), findsOneWidget);
     });
+  });
+
+  testWidgets('bundled and on-demand images say where they came from', (
+    tester,
+  ) async {
+    final recipes = await tester.runAsync(loadRecipeCatalog);
+    final pb = recipes!.firstWhere((r) => r.id == 'peanut_butter_sandwich_v1');
+    await pumpPanel(tester, recipe: pb, stepId: 'spread');
+    expect(find.text(kPremadeSourceCopy), findsOneWidget);
+    expect(find.byIcon(Icons.inventory_2_outlined), findsOneWidget);
+
+    final h = Harness();
+    await tester.pumpWidget(const SizedBox());
+    await pumpPanel(tester, recipe: draftRecipe(), stepId: 'grate', harness: h);
+    await tester.tap(find.text(askLabel));
+    await tester.pumpAndSettle();
+    expect(find.text(kPremadeSourceCopy), findsNothing);
+    expect(
+      find.text(
+        "Made just now in Google's cloud (fake-image-model (text→image)) "
+        "from this step's text, sent with your OK.",
+      ),
+      findsOneWidget,
+    );
+    expect(find.byIcon(Icons.cloud_outlined), findsOneWidget);
+  });
+
+  testWidgets('turning local-only off in the privacy sheet enables the '
+      'button on the next frame', (tester) async {
+    final prefs = InMemoryPrivacyPreferences({'recipe_draft'});
+    final h = Harness();
+    final controller = IllustrationController(
+      cloudRoutes: h.routes,
+      privacy: prefs,
+      isOnline: () => true,
+      consent: h.consent,
+      recorder: LedgerCloudSendRecorder(h.ledger),
+      generator: h.generator,
+      settingsChanges: prefs,
+      decodes: (_) async => true,
+    );
+    addTearDown(controller.dispose);
+    final r = draftRecipe();
+    await tester.pumpWidget(
+      host(
+        StepIllustrations(
+          recipe: r,
+          step: r.steps.first,
+          sessionId: 's1',
+          showPlate: false,
+          controller: controller,
+        ),
+      ),
+    );
+    OutlinedButton button() =>
+        tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+    expect(button().onPressed, isNull);
+    prefs.setLocalOnly('recipe_draft', false); // only the preferences change
+    await tester.pump();
+    expect(button().onPressed, isNotNull);
+    prefs.setLocalOnly('step_illustration', true);
+    await tester.pump();
+    expect(button().onPressed, isNull);
   });
 
   testWidgets('a draft without hybrid services shows nothing', (tester) async {

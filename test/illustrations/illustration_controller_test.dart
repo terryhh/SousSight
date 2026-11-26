@@ -8,6 +8,7 @@ import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/payload_digest.dart' show sha256Hex;
 import 'package:soussight/app/cloud_send_recorder.dart';
 import 'package:soussight/core/models.dart';
+import 'package:soussight/trust/privacy_preferences.dart';
 import 'package:soussight/illustrations/illustration_controller.dart';
 import 'package:soussight/illustrations/illustration_generator.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
@@ -395,7 +396,7 @@ void main() {
     },
   );
 
-  test('no observer runs between the final check and the dispatch', () async {
+  test('the leg is admitted before the generator is invoked', () async {
     final h = bound();
     final order = <String>[];
     String state() => switch (h.controller.stateFor(grate)) {
@@ -404,7 +405,10 @@ void main() {
       final other => '${other.runtimeType}',
     };
     h.ledger.addListener(
-      () => order.add('ledger, prompts=${h.generator.prompts.length}'),
+      () => order.add(
+        'ledger(pending=${h.ledger.entries.last.pending}), '
+        'prompts=${h.generator.prompts.length}',
+      ),
     );
     h.controller.addListener(
       () => order.add('${state()}, prompts=${h.generator.prompts.length}'),
@@ -412,13 +416,107 @@ void main() {
     await h.controller.request(recipe, grate);
     expect(order, [
       'loading(sending=false), prompts=0', // consent prompt opens
-      // After consent: check, dispatch and ledger admission happen before
-      // any observer is told anything.
-      'ledger, prompts=1',
+      'ledger(pending=true), prompts=0', // admitted, not yet dispatched
       'loading(sending=true), prompts=1',
-      'ledger, prompts=1', // confirmed
+      'ledger(pending=false), prompts=1', // confirmed
       'ready, prompts=1',
     ]);
+  });
+
+  test('a setting changed by a ledger observer at admission cancels the '
+      'send', () async {
+    final h = bound();
+    h.ledger.addListener(() {
+      if (h.ledger.entries.last.pending) {
+        h.privacy.setLocalOnly('recipe_draft', true);
+      }
+    });
+    await h.controller.request(recipe, grate);
+    expect(h.generator.prompts, isEmpty);
+    expect(
+      (h.controller.stateFor(grate) as IllustrationBlocked).reason,
+      IllustrationBlock.localOnly,
+    );
+    final leg = h.ledger.entries.single;
+    expect(leg.pending, isFalse);
+    expect(leg.leg.error, HybridErrorCode.cancelled);
+    expect(h.controller.used, 0, reason: 'nothing was sent');
+  });
+
+  test(
+    'a session rebind during admission leaves the new session clean',
+    () async {
+      final h = bound();
+      h.ledger.addListener(() {
+        if (h.ledger.entries.last.pending) {
+          h.controller.bind(
+            sessionId: 's2',
+            recipeId: 'draft_abc',
+            stepId: 'grate',
+          );
+        }
+      });
+      await h.controller.request(recipe, grate);
+      expect(h.generator.prompts, isEmpty);
+      expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
+      expect(h.controller.used, 0);
+      expect(h.controller.remaining, 4);
+      expect(h.ledger.entries.single.leg.error, HybridErrorCode.cancelled);
+    },
+  );
+
+  test('a rebind while generating never writes stale loading state', () async {
+    final h = bound()..generator.hold = true;
+    final pending = h.controller.request(recipe, grate);
+    await pumpEventQueue();
+    h.controller.bind(sessionId: 's2', recipeId: 'draft_abc', stepId: 'grate');
+    h.generator.release();
+    await pending;
+    expect(h.controller.stateFor(grate), isA<IllustrationIdle>());
+    expect(h.controller.remaining, 4);
+    expect(h.ledger.entries.single.pending, isFalse);
+    h.generator.hold = false;
+    await h.controller.request(recipe, grate);
+    expect(h.controller.stateFor(grate), isA<IllustrationReady>());
+    expect(h.controller.remaining, 3);
+  });
+
+  test('a ready image keeps its cloud source from the leg', () async {
+    final h = bound();
+    await h.controller.request(recipe, grate);
+    final ready = h.controller.stateFor(grate) as IllustrationReady;
+    expect(ready.source.provenance, Provenance.cloudAdapter);
+    expect(ready.source.modelLabel, h.ledger.entries.single.leg.modelLabel);
+    expect(ready.source.describe(), contains("Google's cloud"));
+    expect(ready.source.describe(), contains('fake-image-model'));
+    expect(
+      const IllustrationSource(
+        modelLabel: 'm',
+        provenance: Provenance.unknown,
+      ).describe(),
+      isNot(contains('cloud')),
+    );
+  });
+
+  test('privacy changes re-notify the panel; dispose unsubscribes', () {
+    final prefs = InMemoryPrivacyPreferences();
+    final h = Harness();
+    final controller = IllustrationController(
+      cloudRoutes: h.routes,
+      privacy: prefs,
+      isOnline: () => true,
+      consent: h.consent,
+      recorder: LedgerCloudSendRecorder(h.ledger),
+      generator: h.generator,
+      settingsChanges: prefs,
+    );
+    var notified = 0;
+    controller.addListener(() => notified++);
+    prefs.setLocalOnly('recipe_draft', true);
+    expect(notified, 1);
+    expect(controller.availability(), IllustrationBlock.localOnly);
+    controller.dispose();
+    prefs.setLocalOnly('recipe_draft', false);
   });
 
   test(
