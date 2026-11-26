@@ -318,18 +318,22 @@ void main() {
     expect(ingredientForPrompt('Jam, only if the cook chooses it'), 'Jam');
   });
 
-  testWidgets('the reviewed recipes have no animal protein and no heat', (
-    tester,
-  ) async {
+  testWidgets('the reviewed recipes have no animal protein; only warming '
+      'the tortilla is heat', (tester) async {
     final recipes = await tester.runAsync(loadRecipeCatalog);
     for (final r in recipes!) {
       expect(recipeHasAnimalProtein(r), isFalse, reason: r.id);
       final plate = illustrationPrompt(r, const PlateTarget());
       expect(plate, isNotNull, reason: r.id);
-      expect(plate!.heated, isFalse, reason: r.id);
+      expect(plate!.heated, r.id == 'chickpea_wrap_v1', reason: r.id);
       for (final s in r.steps) {
         final p = illustrationPrompt(r, StepTarget(s.id));
         expect(p?.subject, IllustrationSubject.stepLook, reason: s.id);
+        expect(
+          p!.heated,
+          r.id == 'chickpea_wrap_v1' && s.id == 'roll',
+          reason: '${r.id}/${s.id}',
+        );
       }
     }
   });

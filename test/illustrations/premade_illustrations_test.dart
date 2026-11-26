@@ -67,11 +67,20 @@ void main() {
         expect(entry!['file'], '$recipeId/$key.jpg');
         expect(entry['model'], isNotEmpty);
         expect(DateTime.tryParse(entry['generatedAt'] as String), isNotNull);
-        expect(
-          entry['prompt'],
-          illustrationPrompt(recipe, target)!.text,
-          reason: 'prompt for $recipeId/$key changed since generation',
-        );
+        // 'prompt' records what was actually sent. If the reviewed recipe
+        // changed since, the entry must say so (and Terry re-approves or
+        // regenerates); otherwise it must be exactly today's prompt.
+        final today = illustrationPrompt(recipe, target)!.text;
+        if (entry['recipeChangedSinceGeneration'] case final String note) {
+          expect(note, contains('Re-approve or regenerate'));
+          expect(entry['prompt'], isNot(today), reason: '$recipeId/$key');
+        } else {
+          expect(
+            entry['prompt'],
+            today,
+            reason: 'prompt for $recipeId/$key changed since generation',
+          );
+        }
       }
     }
     expect(entries.keys.toSet(), indexed);

@@ -71,7 +71,8 @@
       "generatedAt": "2026-11-26T06:02:25.155Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "1b736cf45383614b364dd79c6e94984aa13eab7da2ecf1ad11ccddb64d959375"
+      "sha256": "1b736cf45383614b364dd79c6e94984aa13eab7da2ecf1ad11ccddb64d959375",
+      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
     },
     {
       "recipe": "chickpea_wrap_v1",
@@ -83,7 +84,8 @@
       "generatedAt": "2026-11-26T06:01:46.627Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "f941329398705af9ef569c52f1a3565fd1711e127a0854d7d447d9525513ea02"
+      "sha256": "f941329398705af9ef569c52f1a3565fd1711e127a0854d7d447d9525513ea02",
+      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
     },
     {
       "recipe": "chickpea_wrap_v1",
@@ -95,7 +97,8 @@
       "generatedAt": "2026-11-26T06:02:00.087Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "73f25dcf51c795a749a8cf5ba2b8ba68329a3e52137d07d087b1d0b64a627ee6"
+      "sha256": "73f25dcf51c795a749a8cf5ba2b8ba68329a3e52137d07d087b1d0b64a627ee6",
+      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
     },
     {
       "recipe": "chickpea_wrap_v1",
@@ -107,7 +110,8 @@
       "generatedAt": "2026-11-26T06:01:35.655Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "385787a5518886a8851b81f824c790bb7b62a6936d754ba627bb57a4561f0db6"
+      "sha256": "385787a5518886a8851b81f824c790bb7b62a6936d754ba627bb57a4561f0db6",
+      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
     },
     {
       "recipe": "chickpea_wrap_v1",
@@ -119,7 +123,8 @@
       "generatedAt": "2026-11-26T06:02:13.340Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "9ae9a49f9d73355acc2f140ca102f6c2ebd6f7ee9f7e917b808fbdcd363943d2"
+      "sha256": "9ae9a49f9d73355acc2f140ca102f6c2ebd6f7ee9f7e917b808fbdcd363943d2",
+      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
     },
     {
       "recipe": "peanut_butter_sandwich_v1",
@@ -155,7 +160,8 @@
       "generatedAt": "2026-11-26T06:00:55.859Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "b43c01076ea83a373b2bd56dee906b98e482551137fe84fdad6dfbdf6ea6694a"
+      "sha256": "b43c01076ea83a373b2bd56dee906b98e482551137fe84fdad6dfbdf6ea6694a",
+      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
     },
     {
       "recipe": "peanut_butter_sandwich_v1",
@@ -167,7 +173,8 @@
       "generatedAt": "2026-11-26T06:00:28.717Z",
       "sourceMimeType": "image/jpeg",
       "postProcessing": "sips: JPEG quality 70, 800 px wide",
-      "sha256": "204d8725d25d92f7ddc3e17ec3323085bb3d12320f70d6d227cbb677060dca2c"
+      "sha256": "204d8725d25d92f7ddc3e17ec3323085bb3d12320f70d6d227cbb677060dca2c",
+      "recipeChangedSinceGeneration": "The reviewed recipe's wording changed after this image was made (PR #215). 'prompt' is the prompt actually sent; the builder now writes a different one. Re-approve or regenerate."
     },
     {
       "recipe": "peanut_butter_sandwich_v1",

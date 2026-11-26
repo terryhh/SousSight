@@ -418,22 +418,27 @@ class _TimerPanel extends StatelessWidget {
         icon: elapsed ? Icons.alarm_on : Icons.timer_outlined,
         title: timer?.label ?? label,
         eyebrow: elapsed ? 'TIME TO CHECK' : 'COOKING TIMER',
-        child: Row(
+        // A Wrap, not a Row: with large text (system scale or Big text,
+        // SS-107) the button moves under the countdown instead of squeezing
+        // the countdown onto two lines.
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
           children: [
-            Expanded(
-              child: Semantics(
-                liveRegion: elapsed,
-                label: elapsed
-                    ? '$label timer finished. Check your food.'
-                    : null,
-                child: Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: seconds == null ? 18 : 42,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                    color: _green,
-                  ),
+            Semantics(
+              liveRegion: elapsed,
+              label: elapsed ? '$label timer finished. Check your food.' : null,
+              child: Text(
+                value,
+                key: ValueKey('timer-countdown-$timerId'),
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: seconds == null ? 18 : 42,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: _green,
                 ),
               ),
             ),

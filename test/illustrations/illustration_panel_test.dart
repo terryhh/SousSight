@@ -71,7 +71,8 @@ void main() {
       expect(find.text('What it should look like'), findsOneWidget);
       expect(find.byType(Image), findsNWidgets(2));
       expect(find.text(askLabel), findsNothing);
-      expect(find.text(kIllustrationHeatCopy), findsNothing);
+      // Warming the tortilla is heat: the thermometer note stays.
+      expect(find.text(kIllustrationHeatCopy), findsNWidgets(2));
       expect(
         find.bySemanticsLabel(RegExp('not a photo of your food')),
         findsNWidgets(2),
