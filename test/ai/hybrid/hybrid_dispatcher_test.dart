@@ -516,6 +516,75 @@ void main() {
     },
   );
 
+  // Pre-existing (Codex): ledger admission notifies listeners synchronously;
+  // a listener switching on local-only must stop the send right there.
+  test('local-only switched on by a ledger listener at admission: nothing '
+      'sent, the leg settled unsent', () async {
+    final h = _Harness();
+    h.ledger.addListener(() {
+      if (h.ledger.entries.any((e) => e.pending)) {
+        h.privacy.localOnlyFeatures.add('local_watch');
+      }
+    });
+    final r = await h.run(_photo('local_watch_cloud_check'));
+    expect(r.blocked, RouteReason.localOnlySetting);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.adapter!.requests, isEmpty);
+    final entry = h.ledger.entries.single;
+    expect(entry.pending, isFalse);
+    expect(entry.leg.transferPermitted, isFalse);
+    expect(entry.leg.error, HybridErrorCode.blocked);
+    expect(entry.uploadUnknown, isFalse);
+    expect(r.legs.single.transferPermitted, isFalse);
+  });
+
+  test('cancelled by a ledger listener at admission: nothing sent', () async {
+    final h = _Harness();
+    late HybridOperation op;
+    h.ledger.addListener(() {
+      if (h.ledger.entries.any((e) => e.pending)) op.cancel();
+    });
+    op = h.dispatcher.start(_photo('local_watch_cloud_check'), sessionId: 's1');
+    final r = await op.result;
+    expect(r.ok, isFalse);
+    expect(h.bridge.requests, isEmpty);
+    expect(h.ledger.entries.single.leg.error, HybridErrorCode.cancelled);
+    expect(h.ledger.entries.single.leg.transferPermitted, isFalse);
+  });
+
+  // Pre-existing (Codex): a retry must not send the previous meal's payload
+  // under the next meal's ledger.
+  test('a new ledger session ends the run: the adapter fallback does not '
+      'send the old payload', () async {
+    final h = _Harness();
+    h.bridge.script.add((HybridRequest r) {
+      h.ledger.startSession('next-meal');
+      return const HybridException(HybridErrorCode.unavailable, 'no bridge');
+    });
+    final r = await h.run(_photo('local_watch_cloud_check'));
+    expect(r.ok, isFalse);
+    expect(h.adapter!.requests, isEmpty);
+    expect(h.ledger.sessionId, 'next-meal');
+    expect(h.ledger.entries, isEmpty, reason: 'nothing written to meal B');
+  });
+
+  test(
+    'a new ledger session during the consent prompt sends nothing',
+    () async {
+      final h = _Harness();
+      final prompt = Completer<ConsentGrant?>();
+      h.consent.answer = (_) => prompt.future;
+      final result = h.run(_photo('local_watch_cloud_check'));
+      await pumpEventQueue();
+      h.ledger.startSession('next-meal');
+      prompt.complete(h.consent.grantFor(h.consent.asks.single));
+      final r = await result;
+      expect(r.ok, isFalse);
+      expect(h.bridge.requests, isEmpty);
+      expect(h.ledger.entries, isEmpty);
+    },
+  );
+
   test('remote routing cannot widen local_watch to preferOnDevice', () async {
     final h = _Harness(
       remote: const RemoteRouting(
@@ -529,6 +598,49 @@ void main() {
   });
 
   group('a grant supplied by the feature', () {
+    // Pre-existing (Codex): a grant must match the feature and the exact
+    // set of data kinds the cook was shown, not only digest and session.
+    test('a grant for another feature or other kinds is ignored and the cook '
+        'asked', () async {
+      final h = _Harness();
+      final task = _photo('local_watch_cloud_check');
+      h.consent.answer = (_) async => null;
+      final grants = await Future.wait([
+        h.consent.grantFor(
+          ConsentAsk(
+            feature: 'label_check',
+            kinds: taskDataKinds(task),
+            payloadDigest: hybridPayloadDigest(task),
+            sessionId: 's1',
+          ),
+        ),
+        h.consent.grantFor(
+          ConsentAsk(
+            feature: 'local_watch_cloud_check',
+            kinds: const {DataKind.image},
+            payloadDigest: hybridPayloadDigest(task),
+            sessionId: 's1',
+          ),
+        ),
+        h.consent.grantFor(
+          ConsentAsk(
+            feature: 'local_watch_cloud_check',
+            kinds: {...taskDataKinds(task), DataKind.audio},
+            payloadDigest: hybridPayloadDigest(task),
+            sessionId: 's1',
+          ),
+        ),
+      ]);
+      for (final g in grants) {
+        final r = await h.dispatcher
+            .start(task, sessionId: 's1', grant: g)
+            .result;
+        expect(r.blocked, RouteReason.consentDeclined);
+      }
+      expect(h.consent.asks, hasLength(3));
+      expect(h.bridge.requests, isEmpty);
+    });
+
     test(
       'matching digest and session: used without asking the cook again',
       () async {
@@ -536,8 +648,8 @@ void main() {
         final task = _photo('local_watch_cloud_check');
         final grant = await h.consent.grantFor(
           ConsentAsk(
-            feature: 'local_watch',
-            kinds: const {DataKind.image},
+            feature: 'local_watch_cloud_check',
+            kinds: taskDataKinds(task),
             payloadDigest: hybridPayloadDigest(task),
             sessionId: 's1',
           ),
@@ -573,8 +685,8 @@ void main() {
         for (final g in await Future.wait([
           h.consent.grantFor(
             ConsentAsk(
-              feature: 'local_watch',
-              kinds: const {DataKind.image},
+              feature: 'local_watch_cloud_check',
+              kinds: taskDataKinds(task),
               payloadDigest: hybridPayloadDigest(
                 _photo('local_watch_cloud_check', 7),
               ),
@@ -583,8 +695,8 @@ void main() {
           ),
           h.consent.grantFor(
             ConsentAsk(
-              feature: 'local_watch',
-              kinds: const {DataKind.image},
+              feature: 'local_watch_cloud_check',
+              kinds: taskDataKinds(task),
               payloadDigest: hybridPayloadDigest(task),
               sessionId: 'other',
             ),
@@ -605,8 +717,8 @@ void main() {
       final h = _Harness();
       final task = _photo('local_watch_cloud_check');
       final ask = ConsentAsk(
-        feature: 'local_watch',
-        kinds: const {DataKind.image},
+        feature: 'local_watch_cloud_check',
+        kinds: taskDataKinds(task),
         payloadDigest: hybridPayloadDigest(task),
         sessionId: 's1',
       );

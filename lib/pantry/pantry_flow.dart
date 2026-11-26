@@ -150,12 +150,15 @@ class _PantryFlowState extends State<PantryFlow> {
     }
     if (!mounted) return;
     unawaited(
-      navigator.push(
-        MaterialPageRoute<void>(
-          builder: (context) =>
-              _cooking(recipe, () => Navigator.of(context).maybePop()),
-        ),
-      ),
+      navigator
+          .push(
+            MaterialPageRoute<void>(
+              builder: (context) =>
+                  _cooking(recipe, () => Navigator.of(context).maybePop()),
+            ),
+          )
+          // Back on the pantry: a new pantry flow with its own ledger.
+          .then((_) => widget.hybrid?.beginPantry()),
     );
   }
 
@@ -178,7 +181,10 @@ class _PantryFlowState extends State<PantryFlow> {
           .firstOrNull;
       if (deepLinked != null) {
         return _DeepLinkedCooking(
-          build: (onBack) => _cooking(deepLinked, onBack),
+          build: (onBack) => _cooking(deepLinked, () {
+            widget.hybrid?.beginPantry();
+            onBack();
+          }),
           pantry: () => _pantry(recipes),
         );
       }

@@ -532,13 +532,24 @@ class HybridRuntime {
   /// Before a cooking session exists (the pantry), it is this app run's id.
   String get sessionId => _cookingSessionId ?? ledger.sessionId;
 
-  /// Binds the ledger to a cooking session. The first cooking session keeps
-  /// the pantry legs that led to it; a later, different session (New cook)
-  /// starts an empty ledger.
+  /// Binds the ledger to a cooking session. A session chosen from a pantry
+  /// flow keeps (carries) that flow's legs; switching straight from one
+  /// cooking session to a different one (New cook) starts an empty ledger.
   void bindCookingSession(String id) {
     final previous = _cookingSessionId;
     _cookingSessionId = id;
     if (previous != null && previous != id) ledger.startSession(id);
+  }
+
+  /// A new pantry flow (back from cooking to the pantry) starts a fresh
+  /// ledger under a new run id, so a scan made before choosing the next meal
+  /// is not recorded under the previous meal. The meal chosen next carries
+  /// these legs ([bindCookingSession]). Work still running for the previous
+  /// meal ends with that meal's ledger and does not send.
+  void beginPantry() {
+    if (_cookingSessionId == null) return; // already in a pantry flow
+    _cookingSessionId = null;
+    ledger.startSession(_newRunId());
   }
 
   /// Ledger hook for cloud senders outside the dispatcher (grounded

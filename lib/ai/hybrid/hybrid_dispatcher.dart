@@ -5,6 +5,7 @@ import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
+import 'package:flutter/foundation.dart' show setEquals;
 
 import 'hybrid_types.dart';
 import 'inference_ledger.dart';
@@ -80,6 +81,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       sessionId: sessionId,
       kinds: taskDataKinds(snapshot),
       suppliedGrant: grant,
+      ledgerGeneration: _ledger.generation,
     );
     return HybridOperation(_newId(), _dispatch(op, run, validate), op.cancel);
   }
@@ -205,7 +207,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     required bool viaAdapter,
     ConsentGrant? carriedGrant,
   }) async {
-    if (op.cancelled) return const _Blocked(RouteReason.cancelled);
+    if (op.cancelled || _ledger.generation != run.ledgerGeneration) {
+      return const _Blocked(RouteReason.cancelled);
+    }
     final decision = decideCloudRetry(
       feature: run.task.feature,
       kinds: run.kinds,
@@ -237,8 +241,8 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       viaAdapter: useAdapter,
       carriedGrant: carriedGrant,
     );
-    if (outcome case _Blocked(:final reason)
-        when reason != RouteReason.cancelled) {
+    if (outcome case _Blocked(:final reason, :final recorded)
+        when reason != RouteReason.cancelled && !recorded) {
       _recordBlocked(run, reason);
     }
     return outcome;
@@ -265,7 +269,9 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     final feature = run.task.feature;
 
     RouteReason? liveCheck() {
-      if (op.cancelled) return RouteReason.cancelled;
+      if (op.cancelled || _ledger.generation != run.ledgerGeneration) {
+        return RouteReason.cancelled;
+      }
       if (!mayUpload) return null;
       if (localOnlyFor(_privacy, feature)) return RouteReason.localOnlySetting;
       if (!_routes.allows(CloudRoute.hybridFallback)) {
@@ -308,6 +314,29 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       provenance: Provenance.unknown,
     );
     final entry = _ledger.begin(pendingLeg);
+    // begin() notifies ledger listeners synchronously, and one may cancel,
+    // switch on local-only or go offline: check again immediately before
+    // the send. A refusal here sends nothing and settles the leg unsent.
+    if (liveCheck() case final refused?) {
+      final error = switch (refused) {
+        RouteReason.cancelled => HybridErrorCode.cancelled,
+        RouteReason.offline => HybridErrorCode.network,
+        _ => HybridErrorCode.blocked,
+      };
+      _ledger.withdraw(entry, error: error);
+      run.legs.add(
+        InferenceLeg(
+          requestId: requestId,
+          feature: feature,
+          mode: mode,
+          kinds: run.kinds,
+          transferPermitted: false,
+          provenance: Provenance.unknown,
+          error: error,
+        ),
+      );
+      return _Blocked(refused, recorded: true);
+    }
     op.inFlight = requestId;
     op.cancelInFlight = viaAdapter ? _adapter!.cancel : _inference.cancel;
 
@@ -401,13 +430,15 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     }
   }
 
-  /// The digest covers the feature and every byte that could leave, so a
-  /// digest and session match is the whole test (plus "not yet used" and
-  /// "issued by this dispatcher's own gate": a grant from any other gate is
-  /// not the cook's answer to this prompt, so the cook is asked).
+  /// A grant fits only what the cook was shown: this feature, exactly these
+  /// kinds of data, this payload digest and this session. It must also be
+  /// unused and issued by this dispatcher's own gate (a grant from any other
+  /// gate is not the cook's answer to this prompt, so the cook is asked).
   bool _grantFits(ConsentGrant grant, _Run run) =>
       _consent.issued(grant) &&
       !_spent.contains(grant) &&
+      grant.ask.feature == run.task.feature &&
+      setEquals(grant.ask.kinds, run.kinds) &&
       grant.ask.payloadDigest == run.digest &&
       grant.ask.sessionId == run.sessionId;
 
@@ -416,6 +447,8 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   /// attempt, which, like a blocked decision, leaves no leg.
   void _recordBlocked(_Run run, RouteReason reason) {
     if (run.legs.isEmpty) return;
+    // Never write an old run's leg into the next session's ledger.
+    if (_ledger.generation != run.ledgerGeneration) return;
     final leg = InferenceLeg(
       requestId: _newId(),
       feature: run.task.feature,
@@ -467,11 +500,17 @@ class _Run {
     required this.task,
     required this.sessionId,
     required this.kinds,
+    required this.ledgerGeneration,
     this.suppliedGrant,
   });
 
   final HybridTask task;
   final String sessionId;
+
+  /// The ledger generation this run started under. A new session (the next
+  /// meal, a new pantry flow) ends the run: no fallback or retry sends this
+  /// payload under the next session's ledger.
+  final int ledgerGeneration;
 
   /// SHA-256 of the serialized task; computed only when consent is needed.
   late final String digest = hybridPayloadDigest(task);
@@ -510,8 +549,11 @@ class _Failed extends _Outcome {
 }
 
 class _Blocked extends _Outcome {
-  const _Blocked(this.reason);
+  const _Blocked(this.reason, {this.recorded = false});
   final RouteReason reason;
+
+  /// The attempt already left its own unsent leg (refused after admission).
+  final bool recorded;
 }
 
 /// A deep copy of [task]: new byte buffers, new parts list, and an
