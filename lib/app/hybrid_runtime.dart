@@ -37,6 +37,13 @@ const kHybridCloudModel = String.fromEnvironment(
   defaultValue: kCookingResearchModel,
 );
 
+/// Android on-device model: `--dart-define=ANDROID_MODEL=stable|preview|
+/// previewFast`. Unset or unknown means stable, the device's supported
+/// Gemini Nano; preview (Nano 4) is an explicit opt-in.
+final kAndroidModel = AndroidModelOption.fromName(
+  const String.fromEnvironment('ANDROID_MODEL'),
+);
+
 /// Who the cook is told a cloud request goes to.
 const kCloudRecipient = "Google's Gemini model, through Firebase AI Logic";
 
@@ -515,7 +522,7 @@ class HybridRuntime {
     late final DefaultHybridDispatcher dispatcher;
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
-      HybridConfig(cloudModel: cloudModel),
+      HybridConfig(cloudModel: cloudModel, androidModel: kAndroidModel),
       // The same checks the dispatcher made, read again after the wait.
       mayForward: (request) =>
           routes.allows(CloudRoute.hybridFallback) &&

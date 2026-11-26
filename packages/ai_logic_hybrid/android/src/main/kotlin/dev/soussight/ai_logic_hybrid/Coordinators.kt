@@ -35,7 +35,8 @@ suspend fun currentAvailability(
     repeat(3) {
         val answer = engine.availability(snapshot, withImage)
         val now = config() ?: return AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.NOT_CONFIGURED)
-        if (now == snapshot) return answer
+        // modelOption: the option this answer is about.
+        if (now == snapshot) return answer.copy(modelOption = snapshot.androidModel)
         snapshot = now
     }
     // Config keeps changing; report nothing rather than a status for a superseded option.
