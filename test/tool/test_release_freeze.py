@@ -569,6 +569,85 @@ class TagTests(FreezeTestCase):
         self.assertIn("already points at", self.detail("tag"))
 
 
+class ErrorPathTests(FreezeTestCase):
+    def test_missing_git_fails_cleanly(self):
+        def no_git(argv, **kwargs):
+            raise FileNotFoundError(argv[0])
+        self.last = freeze.Freezer(runner=no_git, fetch=self.fetch, root=self.dir)
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            self.assertEqual(freeze.main([SHA, "--output", str(self.output)], freezer=self.last), 1)
+        self.assertIn("git rev-parse did not complete", err.getvalue())
+        self.assertIn("NOT FROZEN", err.getvalue())
+        self.assertFalse(self.output.exists())
+
+    def test_git_show_crash_fails_devices(self):
+        real = self.runner.git
+
+        def flaky(argv):
+            if argv[1] == "show":
+                raise subprocess.TimeoutExpired(argv, 60)
+            return real(argv)
+        self.runner.git = flaky
+        self.assert_not_frozen(self.run_main(SHA), "devices", "git show did not complete")
+
+    def test_unreadable_apk_fails(self):
+        apk = self.dir / "app-release.apk"
+        apk.mkdir()  # a directory is not a file
+        self.assert_not_frozen(self.run_main(SHA, "--apk", str(apk)), "apk", "APK not found")
+        apk.rmdir()
+        apk.write_bytes(APK_BYTES)
+        apk.chmod(0)
+        self.addCleanup(apk.chmod, 0o600)
+        if os.access(apk, os.R_OK):
+            self.skipTest("running as a user who can read mode-000 files")
+        self.assert_not_frozen(self.run_main(SHA, "--apk", str(apk)), "apk", "could not be read")
+
+
+class FetchHttpsTests(unittest.TestCase):
+    """The real fetcher, with urlopen replaced: still no network."""
+
+    class Response:
+        def __init__(self, url, status=200, body=b"{}"):
+            self.url, self.status, self.body = url, status, body
+
+        def geturl(self):
+            return self.url
+
+        def read(self, limit):
+            return self.body[:limit]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fetch_with(self, behaviour):
+        original = freeze.urllib.request.urlopen
+        freeze.urllib.request.urlopen = behaviour
+        self.addCleanup(setattr, freeze.urllib.request, "urlopen", original)
+        return freeze.fetch_https("https://example.test/version.json")
+
+    def test_ok_and_http_error(self):
+        self.assertEqual(self.fetch_with(lambda request, timeout: self.Response(request.full_url)), (200, b"{}"))
+
+        def not_found(request, timeout):
+            raise freeze.urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, io.BytesIO(b"gone"))
+        self.assertEqual(self.fetch_with(not_found), (404, b""))
+
+    def test_redirect_off_https_and_broken_reads_fail(self):
+        with self.assertRaisesRegex(freeze.FreezeError, "redirected away from https"):
+            self.fetch_with(lambda request, timeout: self.Response("http://example.test/version.json"))
+        for error in (freeze.urllib.error.URLError("down"), freeze.http.client.IncompleteRead(b""),
+                      ConnectionResetError()):
+            with self.subTest(error=type(error).__name__):
+                def broken(request, timeout, error=error):
+                    raise error
+                with self.assertRaisesRegex(freeze.FreezeError, "could not reach"):
+                    self.fetch_with(broken)
+
+
 class RepositoryContractTests(unittest.TestCase):
     def test_committed_template_matches_the_generator(self):
         committed = (ROOT / freeze.DEFAULT_OUTPUT).read_text(encoding="utf-8")

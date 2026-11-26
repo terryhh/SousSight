@@ -35,6 +35,7 @@ Exit codes: 0 frozen, 1 a check failed, 2 bad usage.
 import argparse
 import datetime
 import hashlib
+import http.client
 import json
 from pathlib import Path
 import re
@@ -128,10 +129,13 @@ def fetch_https(url, *, timeout=20):
         "Cache-Control": "no-cache", "User-Agent": "soussight-release-freeze"})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 (https only, checked)
+            if not response.geturl().startswith("https://"):
+                raise FreezeError("the hosted site redirected away from https; not read.")
             return response.status, response.read(MAX_VERSION_JSON_BYTES + 1)
     except urllib.error.HTTPError as error:
+        error.close()
         return error.code, b""
-    except (urllib.error.URLError, OSError, ValueError) as error:
+    except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as error:
         raise FreezeError("could not reach the hosted site; check the network.") from error
 
 
@@ -482,13 +486,17 @@ class Freezer:
             check.set(FAIL, f"APK not found: {code(apk)}")
             return
         digest, size = hashlib.sha256(), 0
-        with path.open("rb") as handle:
-            head = handle.read(4)
-            digest.update(head)
-            size += len(head)
-            for chunk in iter(lambda: handle.read(1 << 20), b""):
-                digest.update(chunk)
-                size += len(chunk)
+        try:
+            with path.open("rb") as handle:
+                head = handle.read(4)
+                digest.update(head)
+                size += len(head)
+                for chunk in iter(lambda: handle.read(1 << 20), b""):
+                    digest.update(chunk)
+                    size += len(chunk)
+        except OSError:
+            check.set(FAIL, f"{code(path.name)} could not be read")
+            return
         if head != b"PK\x03\x04":
             check.set(FAIL, f"{code(path.name)} is not an APK (no zip header)")
             return
@@ -574,9 +582,14 @@ class Freezer:
                 self.guard(self.check_hosted, sha, defines)
             else:
                 self.checks["hosted"].set(NOT_RUN, "not run: the build defines could not be read")
-            judges = self.read_judges(sha)
+            try:
+                judges = self.read_judges(sha)
+            except FreezeError as error:
+                judges = None
+                self.checks["devices"].set(FAIL, str(error))
             self.guard(self.check_apk, apk, judges)
-            self.check_devices(judges)
+            if self.checks["devices"].status == NOT_RUN:
+                self.check_devices(judges)
             self.check_docs(judges)
         if self.frozen_ok():
             self.guard(self.make_tag, tag, sha)
@@ -759,6 +772,9 @@ def main(argv=None, *, freezer=None):
     except UsageError as error:
         print(f"freeze: {error}", file=sys.stderr)
         return 2
+    except FreezeError as error:
+        print(f"freeze: {error} NOT FROZEN. Nothing was written.", file=sys.stderr)
+        return 1
     print(f"Release freeze for {args.ref}:")
     for line in freezer.summary_lines():
         print(line)
