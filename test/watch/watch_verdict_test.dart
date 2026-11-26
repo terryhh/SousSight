@@ -120,6 +120,12 @@ void main() {
       'The juices run clear.',
       'Medium-rare steak.',
       'The rice is underdone.',
+      // Codex, #271 review, verbatim.
+      'meets all food safeguards',
+      'The rice is overdone.',
+      'Ya está hecho.',
+      'Los fideos están hechos.',
+      'El filete está muy hecho.',
       'Perfect doneness.',
       // Codex, second round (#269 follow-up), verbatim.
       'cooked to the bone',
@@ -161,6 +167,8 @@ void main() {
       'Las cebollas están doradas.',
       'Burbujas pequeñas en la salsa.',
       'Bordes crujientes.',
+      // Codex, #271 review: "hecho" as an auxiliary is a visible cue.
+      'Se han hecho burbujas en la superficie',
     ];
 
     for (final claim in claims) {

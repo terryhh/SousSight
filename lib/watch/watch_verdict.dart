@@ -151,21 +151,23 @@ const _middle = '(inside|in${_sp}the$_sp(middle|centre|center)|throughout)';
 
 /// Judgements a photo cannot support: doneness, temperature, safety,
 /// freshness and allergens, in English and basic Spanish. Doneness words
-/// ("cooked", "done", "cocido", "hecho") are matched on their own rather
-/// than in phrases, because phrase lists kept leaking ("cooked to the
+/// ("cooked", "done", "cocido") are matched on their own rather than in
+/// phrases, because phrase lists kept leaking ("cooked to the
 /// bone", "well-done"). Matching is deliberately broad: a false match only
 /// swaps the sentence for a neutral one, a miss shows the cook a claim the
-/// camera cannot make.
+/// camera cannot make. Spanish "hecho" is the exception: it is also the
+/// auxiliary in visible cues ("se han hecho burbujas"), so only its doneness
+/// predicate ("está hecho", "bien hecho", "ya hecho") is matched.
 final _unsupportedClaim = RegExp(
   [
     // Doneness, any phrasing: overcooked, undercooked, well-done, doneness.
-    r'cooked\b', r'\bdone', r'\bunder[\s-]*done\b',
+    r'cooked\b', r'\bdone', r'\b(under|over)[\s-]*done\b',
     '(all${_sp}the${_sp}way|right)${_sp}through',
     '\\b(raw|pink|bloody|red|opaque|set)$_sp$_middle',
     r'no\s+longer\s+pink', r'\binternal(ly)?\b', r'\binterior\b',
     r'juices?\s+(run|running|are|is)\s+clear', r'medium[\s-]+rare',
     // Safety.
-    r'\bsafe(ly|ty)?\b', r'\bunsafe\b',
+    r'\bsafe(ly|ty)?\b', r'\bunsafe\b', 'food${_sp}safe',
     '\\b(ready|okay|ok|fine|good|fit)${_sp}to$_sp(eat|serve)\\b',
     r'\b(salmonella|bacteria|pathogens?|food\s+poisoning)\b',
     // Temperature, with or without a number or unit.
@@ -177,7 +179,9 @@ final _unsupportedClaim = RegExp(
     r'\bmay\s+contain\b',
     // Spanish basics: cocido/cocinado, hecho, seguro, sin gluten,
     // temperatura, grados, por dentro, listo para comer, alérgeno.
-    r'\b(cocid|cocinad|hech|segur|crud)[oa]s?\b', r'\bsin\s+gluten\b',
+    r'\b(cocid|cocinad|segur|crud)[oa]s?\b',
+    r'\b(est[aá]n?|estar|bien|ya|muy|poco|medio|mal)\s+hech[oa]s?\b',
+    r'\bsin\s+gluten\b',
     r'temperatura', r'\bgrados?\b', r'\bpor\s+dentro\b',
     r'\blist[oa]s?\s+para\s+(comer|servir)\b', r'al[eé]rg',
   ].join('|'),
