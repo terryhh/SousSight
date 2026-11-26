@@ -11,6 +11,7 @@ import { dirname, join, resolve } from 'node:path';
 import { after, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { COPY } from '../../tool/e2e/copy.mjs';
 import {
   configProblems,
   decideRequest,
@@ -294,5 +295,44 @@ describe('run.sh', () => {
     assert.equal(result.status, 2);
     assert.match(result.stderr, /No Flutter web build/);
     assert.match(result.stderr, /build_web\.sh --dart-define=FAKE_BACKEND=true/);
+  });
+});
+
+describe('COPY (app wording the journey matches)', () => {
+  // [entry, wording before the SS-089 UX pass, wording after it]
+  const pairs = [
+    ['rehearsalBanner', 'Rehearsal mode · Camera, microphone, and Gemini are not used.', 'Practice mode (pretend answers) · Nothing is sent.'],
+    ['pantryUnavailable', 'Ingredient matching is unavailable right now. Pick a recipe below.', "Matching your food didn't work. Pick a recipe below."],
+    ['composer', 'Ask Coach Lite (on-device)…', 'Ask a question…'],
+    ['coachBlocked', "This device can't run the on-device coach right now.", "I can't answer that here yet."],
+    ['watchRefused', "This device's on-device model can't look at photos.", 'Watch stopped: the camera view was unclear.'],
+    ['ledgerButton', 'What was sent', 'What we sent'],
+    ['ledgerHeading', 'What left this device', 'What we sent'],
+    ['onDeviceButton', 'On-device AI', 'On this device'],
+    ['simulatedBadge', 'Where this ran: Simulated', 'Where this ran: Practice mode'],
+  ];
+
+  test('each entry accepts the old and the new wording', () => {
+    for (const [key, before, now] of pairs) {
+      assert.ok(COPY[key] instanceof RegExp, key);
+      assert.match(before, COPY[key], `${key} (old)`);
+      assert.match(now, COPY[key], `${key} (new)`);
+    }
+  });
+
+  test('button names are matched exactly, not by substring', () => {
+    assert.doesNotMatch('What was sent and more', COPY.ledgerButton);
+    assert.doesNotMatch('Keep Pantry scan on this device', COPY.onDeviceButton);
+    assert.doesNotMatch('Find my meal now', COPY.findMeal);
+  });
+
+  test('literal punctuation is escaped', () => {
+    assert.match("Don't send", COPY.consentDecline);
+    assert.doesNotMatch('Nothing was sentX', /^Nothing was sent\.$/);
+    assert.doesNotMatch('Nothing was sentX', COPY.coachBlocked);
+  });
+
+  test('the live-coach alert does not match unrelated text', () => {
+    assert.doesNotMatch('Connect your camera and microphone', COPY.liveCoachNeeded);
   });
 });
