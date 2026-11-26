@@ -154,7 +154,11 @@ class FakeHybridDispatcher implements HybridDispatcher {
             requestId: 'fake-$_seq',
             feature: task.feature,
             mode: HybridMode.preferOnDevice,
-            kinds: {DataKind.text, if (task.hasImage) DataKind.image},
+            kinds: {
+              DataKind.text,
+              if (task.hasImage) DataKind.image,
+              if (task.hasAudio) DataKind.audio,
+            },
             transferPermitted: provenance != Provenance.sdkOnDevice,
             provenance: provenance,
           ),
