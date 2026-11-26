@@ -14,8 +14,12 @@ Duration motionDuration(BuildContext context, Duration duration) =>
     reduceMotion(context) ? Duration.zero : duration;
 
 /// Fades and lifts [child] in once when it is first built, and again when
-/// [signature] changes (a new result arrived). Under reduced motion the child
-/// is shown as is, with no animation widget in the tree.
+/// [signature] changes (a new result arrived). Under reduced motion the
+/// transition takes zero time.
+///
+/// The widget tree is the same in both modes, so turning reduced motion on
+/// or off never rebuilds [child] from scratch: state below it (such as a
+/// timer card that was already started) survives the switch.
 class ArrivalTransition extends StatelessWidget {
   const ArrivalTransition({
     super.key,
@@ -35,11 +39,10 @@ class ArrivalTransition extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (reduceMotion(context)) return child;
     return TweenAnimationBuilder<double>(
       key: ValueKey(signature),
       tween: Tween(begin: 0, end: 1),
-      duration: duration,
+      duration: motionDuration(context, duration),
       curve: Curves.easeOutCubic,
       builder: (context, t, child) => Opacity(
         opacity: t,
