@@ -131,16 +131,24 @@ typedef ResultValidator = String? Function(String text);
 
 /// The only sender of hybrid requests (DESIGN.md §5).
 abstract class HybridDispatcher {
+  /// [grant] is consent the feature already obtained for this exact payload
+  /// (e.g. one watch frame). It is used only if its `payloadDigest` equals
+  /// `hybridPayloadDigest(task)` and its `sessionId` equals [sessionId], and
+  /// at most once; otherwise the dispatcher asks its [ConsentGate].
   HybridOperation start(
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   });
 }
 
 /// For feature tests: returns scripted [DispatchResult]s and records tasks.
 class FakeHybridDispatcher implements HybridDispatcher {
   final List<HybridTask> tasks = [];
+
+  /// The grant passed with each task, in the same order as [tasks].
+  final List<ConsentGrant?> grants = [];
   final List<String> cancelledOperations = [];
   final List<DispatchResult Function(HybridTask)> script = [];
   Duration delay = Duration.zero;
@@ -173,8 +181,10 @@ class FakeHybridDispatcher implements HybridDispatcher {
     HybridTask task, {
     required String sessionId,
     ResultValidator? validate,
+    ConsentGrant? grant,
   }) {
     tasks.add(task);
+    grants.add(grant);
     final id = 'op-${++_seq}';
     var cancelled = false;
     // Build the scripted result now, while this operation's sequence number

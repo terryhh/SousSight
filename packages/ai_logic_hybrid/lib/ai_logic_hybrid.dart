@@ -4,4 +4,6 @@
 library;
 
 export 'src/contract.dart';
+export 'src/default_instance.dart';
 export 'src/fake_hybrid_inference.dart';
+export 'src/method_channel_hybrid_inference.dart';
