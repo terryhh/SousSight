@@ -52,6 +52,27 @@ class _TwoLegClient implements PantryClient {
   }
 }
 
+/// Fails after a voice leg was already sent to the cloud.
+class _DeclinedAfterVoiceClient implements PantryClient {
+  @override
+  Future<PantryResult> identify(PantryInput input, List<Recipe> recipes) =>
+      Future.error(
+        const PantryException(
+          'Okay, your list was not sent.',
+          legs: [
+            InferenceLeg(
+              requestId: 'v',
+              feature: kPantryVoiceFeature,
+              mode: null,
+              kinds: {DataKind.audio},
+              transferPermitted: true,
+              provenance: Provenance.sdkCloud,
+            ),
+          ],
+        ),
+      );
+}
+
 class _FakeMedia implements LiveMedia {
   final frames$ = StreamController<Uint8List>.broadcast();
   final mic$ = StreamController<Uint8List>.broadcast();
@@ -383,6 +404,18 @@ void main() {
     expect(find.text('Voice list · Google cloud'), findsOneWidget);
     expect(find.text('Meal match · on this device'), findsOneWidget);
     expect(find.text(kPantryVoiceSkippedNotice), findsOneWidget);
+  });
+
+  testWidgets('a failed scan still shows legs that already ran', (
+    tester,
+  ) async {
+    await setUp360(tester);
+    await tester.pumpWidget(app(client: _DeclinedAfterVoiceClient()));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    expect(find.text('Okay, your list was not sent.'), findsOneWidget);
+    expect(find.text('Voice list · Google cloud'), findsOneWidget);
   });
 
   testWidgets('rehearsal results show a simulated leg', (tester) async {
