@@ -121,6 +121,28 @@ void main() {
       'Medium-rare steak.',
       'The rice is underdone.',
       'Perfect doneness.',
+      // Codex, second round (#269 follow-up), verbatim.
+      'cooked to the bone',
+      'well-done',
+      'gluten-free',
+      'El pollo está completamente cocido',
+      // Orchestrator: the only observation on a ready verdict.
+      'The chicken is done and ready to eat',
+      // More doneness wording and Spanish basics.
+      'Overcooked edges.',
+      'The steak is well done.',
+      'Nut-free crust.',
+      'May contain peanuts.',
+      'Dairy free sauce.',
+      'La carne está bien hecha.',
+      'Es seguro para comer.',
+      'Ya está segura.',
+      'Pan sin gluten.',
+      'Crudo por dentro.',
+      'Está rosado por dentro.',
+      'La temperatura es de 75 grados.',
+      'Listo para comer.',
+      'Contiene alérgenos.',
     ];
     const visibleOnly = [
       'Golden on top.',
@@ -134,6 +156,11 @@ void main() {
       'The pancake is set at the edges.',
       'The pasta water is at a rolling boil.',
       'Dark sear marks on one side.',
+      'Free of lumps and smooth.',
+      'The onions are cooking in the pan.',
+      'Las cebollas están doradas.',
+      'Burbujas pequeñas en la salsa.',
+      'Bordes crujientes.',
     ];
 
     for (final claim in claims) {
@@ -141,6 +168,12 @@ void main() {
         for (final state in ['ready', 'not_yet']) {
           final parsed = parseWatchJson(verdictJson(state, see: claim));
           expect(parsed.redacted, isTrue, reason: '$state: $claim');
+          // A redacted positive abstains; not_yet keeps its state.
+          expect(
+            parsed.state,
+            state == 'ready' ? WatchState.unsure : WatchState.notYet,
+            reason: '$state: $claim',
+          );
           expect(parsed.whatISee, isNot(contains(claim)));
           final message = WatchVerdict(
             state: parsed.state,
@@ -169,17 +202,23 @@ void main() {
       });
     }
 
-    test('Codex probe: ready stays visible-cue only', () {
+    test('Codex probe: a redacted ready abstains as unsure', () {
       final parsed = parseWatchJson(
         '{"state":"ready","direction":"none",'
         '"whatISee":"The chicken is cooked all the way through."}',
       );
-      expect(parsed.state, WatchState.ready);
+      expect(parsed.state, WatchState.unsure);
       expect(parsed.redacted, isTrue);
       expect(
         parsed.whatISee,
         'I can describe how it looks, not how it is inside.',
       );
+    });
+
+    test('a redacted unsure stays unsure', () {
+      final parsed = parseWatchJson(verdictJson('unsure', see: 'Safe to eat.'));
+      expect(parsed.state, WatchState.unsure);
+      expect(parsed.redacted, isTrue);
     });
 
     test('claimsUnsupported normalises curly apostrophes', () {

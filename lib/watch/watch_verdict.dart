@@ -149,36 +149,37 @@ class WatchVerdict {
 const _sp = r'[\s-]+';
 const _middle = '(inside|in${_sp}the$_sp(middle|centre|center)|throughout)';
 
-/// Claims a photo cannot support: internal doneness, temperature, safety,
-/// freshness and allergens. Matching is deliberately broad: a false match
-/// only swaps the sentence for a neutral one, a miss shows the cook a claim
-/// the camera cannot make.
+/// Judgements a photo cannot support: doneness, temperature, safety,
+/// freshness and allergens, in English and basic Spanish. Doneness words
+/// ("cooked", "done", "cocido", "hecho") are matched on their own rather
+/// than in phrases, because phrase lists kept leaking ("cooked to the
+/// bone", "well-done"). Matching is deliberately broad: a false match only
+/// swaps the sentence for a neutral one, a miss shows the cook a claim the
+/// camera cannot make.
 final _unsupportedClaim = RegExp(
   [
+    // Doneness, any phrasing: overcooked, undercooked, well-done, doneness.
+    r'cooked\b', r'\bdone', r'\bunder[\s-]*done\b',
+    '(all${_sp}the${_sp}way|right)${_sp}through',
+    '\\b(raw|pink|bloody|red|opaque|set)$_sp$_middle',
+    r'no\s+longer\s+pink', r'\binternal(ly)?\b', r'\binterior\b',
+    r'juices?\s+(run|running|are|is)\s+clear', r'medium[\s-]+rare',
     // Safety.
-    r'\bsafe(ly)?\b', r'\bunsafe\b', 'food${_sp}safe',
+    r'\bsafe(ly|ty)?\b', r'\bunsafe\b',
     '\\b(ready|okay|ok|fine|good|fit)${_sp}to$_sp(eat|serve)\\b',
     r'\b(salmonella|bacteria|pathogens?|food\s+poisoning)\b',
     // Temperature, with or without a number or unit.
     r'temperature', r'\btemps?\b', r'thermometer', r'[°º]',
     r'\b(degrees?|deg|fahrenheit|celsius)\b', r'\b\d+\s*[fc]\b',
-    // Internal doneness.
-    'cooked$_sp((all${_sp}the${_sp}way|right|fully|thoroughly|completely|'
-        'properly|perfectly)$_sp)?(through|inside)',
-    'cooked$_sp(all${_sp}the${_sp}way|fully|thoroughly|completely|'
-        'properly|perfectly)',
-    '\\b(fully|properly|thoroughly|completely|totally|perfectly)$_sp'
-        '(cooked|done)\\b',
-    '(all${_sp}the${_sp}way|right)${_sp}through',
-    r'\bunder[\s-]*(cooked|done)\b', r'\bdoneness\b',
-    '\\bdone$_sp$_middle',
-    '\\b(is|are|it\'s|looks?|seems?)$_sp((fully|completely|all)$_sp)?'
-        'done\\b',
-    '\\b(raw|pink|bloody|red|cooked|opaque|set)$_sp$_middle',
-    r'no\s+longer\s+pink', r'\binternal(ly)?\b', r'\binterior\b',
-    r'juices?\s+(run|running|are|is)\s+clear', r'medium[\s-]+rare',
     // Freshness and allergens.
-    r'spoil', r'gone\s+off', r'allergen',
+    r'spoil', r'gone\s+off', r'allerg', r'\bgluten\b', r'\blactose\b',
+    '\\b(nut|peanut|dairy|egg|soy|wheat|shellfish)$_sp?free\\b',
+    r'\bmay\s+contain\b',
+    // Spanish basics: cocido/cocinado, hecho, seguro, sin gluten,
+    // temperatura, grados, por dentro, listo para comer, alérgeno.
+    r'\b(cocid|cocinad|hech|segur|crud)[oa]s?\b', r'\bsin\s+gluten\b',
+    r'temperatura', r'\bgrados?\b', r'\bpor\s+dentro\b',
+    r'\blist[oa]s?\s+para\s+(comer|servir)\b', r'al[eé]rg',
   ].join('|'),
   caseSensitive: false,
 );
@@ -225,22 +226,23 @@ parseWatchJson(String text) {
     _ => null,
   };
   if (state == null || parsedDirection == null) return unsure;
-  var seen = _clip(raw);
+  final seen = _clip(raw);
   if (seen.isEmpty && state != WatchState.unsure) return unsure;
   final direction = state == WatchState.notYet
       ? parsedDirection
       : WatchDirection.none;
-  var redacted = false;
   if (claimsUnsupported(seen)) {
-    seen = 'I can describe how it looks, not how it is inside.';
-    redacted = true;
+    // The sentence was the only evidence. A positive verdict resting on a
+    // claim the camera cannot make abstains, so the watch keeps looking
+    // instead of stopping and telling the cook it saw the cue.
+    return (
+      state: state == WatchState.ready ? WatchState.unsure : state,
+      direction: direction,
+      whatISee: 'I can describe how it looks, not how it is inside.',
+      redacted: true,
+    );
   }
-  return (
-    state: state,
-    direction: direction,
-    whatISee: seen,
-    redacted: redacted,
-  );
+  return (state: state, direction: direction, whatISee: seen, redacted: false);
 }
 
 WatchVerdictSource sourceOf(List<InferenceLeg> legs) {
