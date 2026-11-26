@@ -430,7 +430,7 @@ class LocalWatchController extends ChangeNotifier {
       _blocked(token, result.blocked);
       return null;
     }
-    final parsed = parseWatchJson(result.text!);
+    final parsed = parseWatchJson(result.text!, cue: watchCue(token.step));
     final next = WatchVerdict(
       state: parsed.state,
       direction: parsed.direction,
