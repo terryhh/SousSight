@@ -52,6 +52,9 @@ dependencies:
   firebase_analytics: ^13.0.1
   ai_logic_hybrid:
     path: packages/ai_logic_hybrid
+  # Native (Android/iOS) camera frames and microphone PCM for NativeLiveMedia.
+  camera: ^0.12.2
+  record: ^7.2.0
 
 dev_dependencies:
   flutter_test:
