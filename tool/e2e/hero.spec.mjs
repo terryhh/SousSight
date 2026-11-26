@@ -28,6 +28,7 @@ import {
   seen,
   typeInto,
 } from './flutter.mjs';
+import { COPY } from './copy.mjs';
 import { configProblems, initialPolicy, looksLikePreview } from './policy.mjs';
 
 const PANTRY = 'bread, peanut butter, banana';
@@ -46,10 +47,10 @@ test('hero journey', async ({ page }, testInfo) => {
   });
   await ev.install();
 
-  const findMeal = page.getByRole('button', { name: 'Find my meal' });
+  const findMeal = page.getByRole('button', { name: COPY.findMeal });
   const loaded = async () => {
     await enableSemantics(page);
-    await expect(findMeal.or(seen(page, 'Could not connect to your kitchen'))).toBeVisible({
+    await expect(findMeal.or(seen(page, COPY.couldNotConnect))).toBeVisible({
       timeout: 60_000,
     });
   };
@@ -60,7 +61,7 @@ test('hero journey', async ({ page }, testInfo) => {
     // ---- 1. Home (detect the mode) -------------------------------------------
     await page.goto('/');
     await loaded();
-    const detected = (await seen(page, /^Rehearsal mode ·/).isVisible())
+    const detected = (await seen(page, COPY.rehearsalBanner).isVisible())
       ? 'rehearsal'
       : 'real';
     ev.note(`detected mode: ${detected} (E2E_MODE=${requestedMode})`);
@@ -81,8 +82,8 @@ test('hero journey', async ({ page }, testInfo) => {
     await ev.shot('home');
 
     // ---- 2. Type it ----------------------------------------------------------
-    await page.getByRole('button', { name: 'Type it' }).click();
-    const pantryText = page.getByRole('textbox', { name: /canned black beans/ });
+    await page.getByRole('button', { name: COPY.typeIt }).click();
+    const pantryText = page.getByRole('textbox', { name: COPY.pantryField });
     await expect(pantryText).toBeVisible();
     await typeInto(page, pantryText, PANTRY);
     await ev.shot('typed-pantry');
@@ -91,10 +92,10 @@ test('hero journey', async ({ page }, testInfo) => {
     // A real build without Gemini Nano and without an approved cloud route
     // cannot match ingredients; it says so and offers the recipe list. That
     // is an expected outcome there, never in rehearsal.
-    await page.getByRole('button', { name: 'Find my meal' }).click();
-    const unavailable = seen(page, /Ingredient matching is unavailable|could not read that answer/);
+    await page.getByRole('button', { name: COPY.findMeal }).click();
+    const unavailable = seen(page, COPY.pantryUnavailable);
     const findOutcome = await Promise.race([
-      seen(page, 'Your pantry haul')
+      seen(page, COPY.pantryResult)
         .waitFor({ timeout: 60_000 })
         .then(() => 'result'),
       unavailable.waitFor({ timeout: 60_000 }).then(() => 'unavailable'),
@@ -107,20 +108,20 @@ test('hero journey', async ({ page }, testInfo) => {
 
     let cook;
     if (findOutcome === 'result') {
-      const badge = page.getByRole('button', { name: /^Where this ran:/ }).first();
+      const badge = page.getByRole('button', { name: COPY.sourceBadge }).first();
       await expect(badge, 'result shows a source badge').toBeVisible();
       ev.note(`pantry source badge: ${(await badge.ariaSnapshot()).trim()}`);
       if (mode === 'rehearsal') {
-        await expect(badge).toHaveAccessibleName(/simulat/i);
+        await expect(badge).toHaveAccessibleName(COPY.simulatedBadge);
       }
       await bringIntoView(page, badge);
       await ev.shot('pantry-result-badge');
-      cook = page.getByRole('button', { name: /^Cook Peanut Butter Sandwich/ });
+      cook = page.getByRole('button', { name: COPY.cookRecipe });
     } else {
       await bringIntoView(page, unavailable);
       await ev.shot('pantry-unavailable');
       // The "Skip — pick a recipe" list.
-      cook = page.getByRole('button', { name: /^Peanut Butter Sandwich/ });
+      cook = page.getByRole('button', { name: COPY.recipeListItem });
     }
 
     // ---- 4. Open Peanut Butter Sandwich --------------------------------------
@@ -129,41 +130,36 @@ test('hero journey', async ({ page }, testInfo) => {
     await cook.click();
 
     // ---- 5. Cooking screen ---------------------------------------------------
-    await expect(seen(page, 'Your cooking space')).toBeVisible({
+    await expect(seen(page, COPY.cookingSpace)).toBeVisible({
       timeout: 60_000,
     });
-    await expect(seen(page, 'Peanut Butter Sandwich')).toBeVisible();
+    await expect(seen(page, COPY.recipeTitle)).toBeVisible();
     await ev.shot('cooking-screen', { settleMs: 1500 });
 
     // ---- 6. Ask a question (Coach Lite) --------------------------------------
-    const composer = page.getByRole('textbox', {
-      name: /Ask the coach|Ask Coach Lite|Your answer/,
-    });
+    const composer = page.getByRole('textbox', { name: COPY.composer });
     await expect(composer).toBeVisible();
     await typeInto(page, composer, QUESTION);
     await ev.shot('coach-question-typed');
     // Hybrid surfaces present? (HybridHeaderButtons on the cooking screen.)
-    const ledgerButton = page.getByRole('button', { name: 'What was sent' });
-    const onDeviceButton = page.getByRole('button', { name: 'On-device AI' });
+    const ledgerButton = page.getByRole('button', { name: COPY.ledgerButton });
+    const onDeviceButton = page.getByRole('button', { name: COPY.onDeviceButton });
     const hasHybrid = (await ledgerButton.count()) > 0;
     ev.note(`hybrid surfaces on the cooking screen: ${hasHybrid}`);
     if (!hasHybrid) {
       expect(mode, 'a real build always has the hybrid runtime').toBe('rehearsal');
     }
-    const sourceBadge = page.getByRole('button', { name: /^Where this ran:/ }).first();
+    const sourceBadge = page.getByRole('button', { name: COPY.sourceBadge }).first();
     expect(await sourceBadge.count(), 'no source badge before asking').toBe(0);
-    await page.getByRole('button', { name: 'Send message' }).click();
+    await page.getByRole('button', { name: COPY.send }).click();
 
     // Without a hybrid runtime the coordinator says the Live coach is needed
     // (cooking_coordinator.say). With one, Coach Lite either answers with a
     // source badge, asks to send to the cloud (declined here), or is blocked
     // (the recipe's own step text plus a reason, coach_lite _blockedSentence).
-    const liveAlert = seen(page, /Connect the live coach to talk or type a question/);
-    const consent = page.getByRole('button', { name: "Don't send" });
-    const blocked = seen(
-      page,
-      /on-device coach (is still downloading|can't|isn't ready|is not available|could not answer)|can't run the on-device coach|Nothing was sent\./,
-    );
+    const liveAlert = seen(page, COPY.liveCoachNeeded);
+    const consent = page.getByRole('button', { name: COPY.consentDecline });
+    const blocked = seen(page, COPY.coachBlocked);
     const outcome = await Promise.race([
       liveAlert.waitFor({ timeout: 45_000 }).then(() => 'live-alert'),
       consent.waitFor({ timeout: 45_000 }).then(() => 'consent'),
@@ -187,19 +183,16 @@ test('hero journey', async ({ page }, testInfo) => {
     await ev.shot('coach-reply');
 
     // ---- 7. Watch my food (fake camera) --------------------------------------
-    const watch = page.getByRole('button', { name: /Watch my food/ });
+    const watch = page.getByRole('button', { name: COPY.watch });
     await bringIntoView(page, watch, { top: 0.4, bottom: 0.75 });
     // The camera card's placeholder text marks the preview region.
-    const placeholder = seen(page, 'Your counter is the canvas');
+    const placeholder = seen(page, COPY.cameraPlaceholder);
     const before = await placeholder.boundingBox();
     expect(before, 'empty camera card is shown before the watch').not.toBeNull();
     await watch.click();
     // Either the camera card shows frames (real camera, or a rehearsal's
     // simulated frames), or the app says why it cannot watch.
-    const refused = seen(
-      page,
-      /Watch needs a real camera connection|can't look at photos|watch could not start|camera could not start|so I can't watch|isn't ready yet|still downloading|could not start a watch/,
-    );
+    const refused = seen(page, COPY.watchRefused);
     const watchOutcome = await Promise.race([
       placeholder.waitFor({ state: 'hidden', timeout: 30_000 }).then(() => 'preview'),
       refused.waitFor({ timeout: 30_000 }).then(() => 'refused'),
@@ -218,7 +211,7 @@ test('hero journey', async ({ page }, testInfo) => {
         `camera preview shows an image, not the empty gradient (${JSON.stringify(stats)})`,
       ).toBe(true);
       previewChecked = true;
-      const pause = page.getByRole('button', { name: /Pause watch/ });
+      const pause = page.getByRole('button', { name: COPY.pauseWatch });
       if (await pause.isVisible()) await pause.click();
     } else {
       if (watchOutcome === 'refused') {
@@ -245,15 +238,15 @@ test('hero journey', async ({ page }, testInfo) => {
     } else {
       await bringIntoView(page, ledgerButton.first(), { top: 0, bottom: 0.6 });
       await ledgerButton.first().click({ timeout: 15_000 });
-      await expect(seen(page, 'What left this device')).toBeVisible();
+      await expect(page.getByRole('heading', { name: COPY.ledgerHeading }).first()).toBeVisible();
       await ev.shot('ledger-sheet', { settleMs: 1000 });
       await page.keyboard.press('Escape');
-      await expect(seen(page, 'What left this device')).toBeHidden();
+      await expect(page.getByRole('heading', { name: COPY.ledgerHeading })).toHaveCount(0);
 
       // ---- 9. On-device AI sheet ----------------------------------------------
       await bringIntoView(page, onDeviceButton.first(), { top: 0, bottom: 0.6 });
       await onDeviceButton.first().click({ timeout: 15_000 });
-      await expect(page.getByRole('heading', { name: 'On-device AI' }).first()).toBeVisible();
+      await expect(page.getByRole('heading', { name: COPY.onDeviceHeading }).first()).toBeVisible();
       await ev.shot('on-device-ai-sheet', { settleMs: 1500 });
       await page.keyboard.press('Escape');
     }

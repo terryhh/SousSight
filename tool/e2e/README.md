@@ -139,6 +139,16 @@ Chrome runs with `--use-fake-device-for-media-stream` and
 `--use-fake-ui-for-media-stream`, with camera and microphone permission
 granted, so a real build gets Chrome's synthetic camera instead of a prompt.
 
+## App wording
+
+Every piece of app copy the journey matches lives in `copy.mjs`. Each entry
+accepts both the wording before the SS-089 UX pass (#221) and the wording
+after it (for example "What was sent" / "What we sent", "Rehearsal mode" /
+"Practice mode (pretend answers)"). When copy changes, add the new wording
+there; the unit tests check that every entry matches both old and new text.
+Flutter web does not expose widget keys in the DOM; `Semantics(identifier:)`
+on the journey's controls would give copy-independent selectors.
+
 ## Setup notes
 
 - Node 20+. `run.sh` installs the pinned `@playwright/test` (exact version in
