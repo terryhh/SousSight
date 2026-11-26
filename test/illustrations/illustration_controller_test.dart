@@ -191,6 +191,22 @@ void main() {
           sessionId: 's1',
         ),
         ConsentAsk(
+          feature: kIllustrationFeature,
+          kinds: const {DataKind.audio},
+          payloadDigest: sha256Hex(
+            utf8.encode(illustrationPrompt(recipe, grate)!.text),
+          ),
+          sessionId: 's1',
+        ),
+        ConsentAsk(
+          feature: kIllustrationFeature,
+          kinds: const {DataKind.text, DataKind.image},
+          payloadDigest: sha256Hex(
+            utf8.encode(illustrationPrompt(recipe, grate)!.text),
+          ),
+          sessionId: 's1',
+        ),
+        ConsentAsk(
           feature: 'research',
           kinds: const {DataKind.text},
           payloadDigest: sha256Hex(utf8.encode('x')),
@@ -363,6 +379,84 @@ void main() {
     });
   });
 
+  test(
+    'an image that does not decode is a failure, not a blank "ready"',
+    () async {
+      final h = bound()..decodes = false;
+      await h.controller.request(recipe, grate);
+      expect(
+        (h.controller.stateFor(grate) as IllustrationFailed).code,
+        HybridErrorCode.failed,
+      );
+      expect(h.decoded.single, fakePng);
+      // The cloud did answer, so the leg is a confirmed send.
+      expect(h.ledger.entries.single.leg.provenance, Provenance.cloudAdapter);
+      expect(h.controller.used, 1);
+    },
+  );
+
+  test('no observer runs between the final check and the dispatch', () async {
+    final h = bound();
+    final order = <String>[];
+    String state() => switch (h.controller.stateFor(grate)) {
+      IllustrationLoading(:final sending) => 'loading(sending=$sending)',
+      IllustrationReady() => 'ready',
+      final other => '${other.runtimeType}',
+    };
+    h.ledger.addListener(
+      () => order.add('ledger, prompts=${h.generator.prompts.length}'),
+    );
+    h.controller.addListener(
+      () => order.add('${state()}, prompts=${h.generator.prompts.length}'),
+    );
+    await h.controller.request(recipe, grate);
+    expect(order, [
+      'loading(sending=false), prompts=0', // consent prompt opens
+      // After consent: check, dispatch and ledger admission happen before
+      // any observer is told anything.
+      'ledger, prompts=1',
+      'loading(sending=true), prompts=1',
+      'ledger, prompts=1', // confirmed
+      'ready, prompts=1',
+    ]);
+  });
+
+  test(
+    'a setting changed by an observer before the final check blocks',
+    () async {
+      final h = bound();
+      // The "waiting for consent" notice is the last notification before the
+      // final check; a change made there must stop the send.
+      var first = true;
+      h.controller.addListener(() {
+        if (first) h.privacy.setLocalOnly('recipe_draft', true);
+        first = false;
+      });
+      await h.controller.request(recipe, grate);
+      expect(
+        (h.controller.stateFor(grate) as IllustrationBlocked).reason,
+        IllustrationBlock.localOnly,
+      );
+      expect(h.generator.prompts, isEmpty);
+      expect(h.ledger.entries, isEmpty);
+    },
+  );
+
+  test('a generator that throws synchronously still settles its leg', () async {
+    final h = Harness(cap: 4);
+    final controller = IllustrationController(
+      cloudRoutes: h.routes,
+      privacy: h.privacy,
+      isOnline: () => true,
+      consent: h.consent,
+      recorder: LedgerCloudSendRecorder(h.ledger),
+      generator: _ThrowingGenerator(),
+    )..bind(sessionId: 's1', recipeId: 'draft_abc', stepId: 'grate');
+    await controller.request(recipe, grate);
+    expect(controller.stateFor(grate), isA<IllustrationFailed>());
+    expect(h.ledger.entries.single.leg.error, HybridErrorCode.failed);
+  });
+
   test('a request in flight is not repeated', () async {
     final h = bound()..generator.hold = true;
     final first = h.controller.request(recipe, grate);
@@ -421,4 +515,12 @@ class _SwitchRoutes extends CloudRoutes {
   final bool Function() _on;
   @override
   bool allows(CloudRoute route) => route == CloudRoute.images && _on();
+}
+
+class _ThrowingGenerator implements IllustrationGenerator {
+  @override
+  String get model => 'throws';
+  @override
+  Future<GeneratedIllustration> generate(String prompt) =>
+      throw StateError('sync');
 }

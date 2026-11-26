@@ -231,7 +231,7 @@ class _GeneratorAppState extends State<_GeneratorApp> {
                 step: gateRecipe.steps.single,
                 sessionId: 'illustration-gate',
                 showPlate: false,
-                createController: () => controller,
+                controller: controller,
               ),
               if (_ledger case final ledger?)
                 ListenableBuilder(

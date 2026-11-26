@@ -21,22 +21,42 @@
 import { createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, createReadStream } from 'node:fs';
-import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync, createReadStream } from 'node:fs';
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const [mode, buildArg, third] = process.argv.slice(2);
-const maxFlag = process.argv.indexOf('--max');
-const cap = mode === 'gate' ? 1 : Number(maxFlag > 0 ? process.argv[maxFlag + 1] : 0);
-if (!['premade', 'gate'].includes(mode) || !buildArg) {
-  console.error('usage: premade <build-dir> --max N | gate <build-dir> <evidence-dir>');
-  process.exit(2);
+const usage = 'usage: premade <build-dir> --max N | gate <build-dir> <evidence-dir>';
+const fail = (message, code = 2) => {
+  console.error(message);
+  process.exit(code);
+};
+
+/// Whether [child] is [parent] or inside it, by path components (not a
+/// string prefix, so `/a/build2` is not inside `/a/build`).
+export function within(parent, child) {
+  const rel = relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
-const build = resolve(buildArg);
-if (build.startsWith(repo + sep)) {
-  console.error('Refusing a build inside the repository: it holds a debug token.');
-  process.exit(2);
+
+const repo = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), '..'));
+const [mode, buildArg, third] = process.argv.slice(2);
+if (!['premade', 'gate'].includes(mode) || !buildArg) fail(usage);
+let cap = 1;
+if (mode === 'premade') {
+  // A finite, non-negative integer only: NaN would disable the cap below.
+  const at = process.argv.indexOf('--max');
+  const raw = at > 0 ? process.argv[at + 1] : undefined;
+  if (raw === undefined || !/^\d+$/.test(raw)) fail(`--max needs a whole number. ${usage}`);
+  cap = Number(raw);
+  if (!Number.isSafeInteger(cap)) fail(`--max is out of range. ${usage}`);
+} else if (!third) {
+  fail(usage);
+}
+if (!existsSync(buildArg) || !statSync(buildArg).isDirectory()) fail(`No build directory at ${buildArg}`);
+// Canonical paths, so a symlink cannot smuggle the repository in.
+const build = realpathSync(resolve(buildArg));
+if (within(repo, build) || within(build, repo)) {
+  fail('Refusing a build inside (or containing) the repository: it holds a debug token.');
 }
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
@@ -48,9 +68,15 @@ const types = {
   '.frag': 'application/octet-stream',
 };
 const server = createServer((req, res) => {
-  let path = normalize(join(build, decodeURIComponent(req.url.split('?')[0])));
-  if (!path.startsWith(build)) return res.writeHead(403).end();
-  if (!existsSync(path) || statSync(path).isDirectory()) path = join(build, 'index.html');
+  let requested;
+  try {
+    requested = resolve(build, `.${decodeURIComponent(req.url.split('?')[0])}`);
+  } catch {
+    return res.writeHead(400).end();
+  }
+  let path = existsSync(requested) ? realpathSync(requested) : join(build, 'index.html');
+  if (!within(build, path)) return res.writeHead(403).end();
+  if (statSync(path).isDirectory()) path = join(build, 'index.html');
   res.writeHead(200, { 'content-type': types[extname(path)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
   createReadStream(path).pipe(res);
 }).listen(0, '127.0.0.1');
@@ -78,6 +104,7 @@ page.on('response', (r) => {
 });
 
 let resolveDone;
+let doneCalls = -1;
 const done = new Promise((r) => { resolveDone = r; });
 const images = [];
 const ledger = [];
@@ -91,27 +118,36 @@ page.on('console', (m) => {
     case 'ILLUSTRATION': { const img = JSON.parse(body); images.push(img.key); writePremade([img]); break; }
     case 'ILLUSTRATION_SKIP': console.log('skip', body); break;
     case 'ILLUSTRATION_ERROR': console.log('ERROR (stopping, no retry):', body); resolveDone('error'); break;
-    case 'ILLUSTRATION_DONE': console.log('done', body); resolveDone('done'); break;
+    case 'ILLUSTRATION_DONE': console.log('done', body); doneCalls = JSON.parse(body).calls; resolveDone('done'); break;
     case 'ILLUSTRATION_GATE_LEDGER': ledger.push(JSON.parse(body)); break;
     case 'ILLUSTRATION_GATE_STATE': states.push(JSON.parse(body)); break;
     default: if (m.type() === 'error') console.log('[console error]', text.slice(0, 300));
   }
 });
 
-await page.goto(url);
+let exitCode = 1;
+let guard;
 try {
+  await page.goto(url);
   if (mode === 'premade') {
-    const outcome = await Promise.race([done, new Promise((r) => setTimeout(() => r('timeout'), 15 * 60_000))]);
+    const timeout = new Promise((r) => { guard = setTimeout(() => r('timeout'), 15 * 60_000); });
+    const outcome = await Promise.race([done, timeout]);
     console.log('outcome', outcome, 'images', images.length);
+    // Success only when the page finished and every call it made produced
+    // an image that was written.
+    if (outcome === 'done' && doneCalls === images.length) exitCode = 0;
   } else {
-    await gate(third);
+    if (await gate(third)) exitCode = 0;
   }
+} catch (error) {
+  console.error('FAILED:', error?.message ?? error);
 } finally {
-  console.log(JSON.stringify({ modelRequests: modelCalls, responses: statuses }));
-  await browser.close();
+  clearTimeout(guard);
+  console.log(JSON.stringify({ modelRequests: modelCalls, responses: statuses, exitCode }));
+  await browser.close().catch(() => {});
   server.closeAllConnections();
   server.close();
-  process.exit(0); // the 15-minute guard timer must not hold the process
+  process.exit(exitCode);
 }
 
 function writePremade(list) {
@@ -171,7 +207,18 @@ async function gate(evidenceDir) {
   }
   await page.waitForTimeout(1500);
   await page.screenshot({ path: join(evidenceDir, 'gate-03-result.png') });
-  const result = { shown, states, ledger: ledger.at(-1) ?? null };
+  const last = ledger.at(-1) ?? null;
+  const legs = last?.legs ?? [];
+  // Evidence: the labelled image is on screen AND exactly one settled,
+  // successful cloud leg was written for it.
+  const settled =
+    legs.length === 1 &&
+    legs[0].pending === false &&
+    legs[0].provenance === 'cloudAdapter' &&
+    legs[0].transferPermitted === true &&
+    legs[0].error === null;
+  const result = { shown, settled, states, ledger: last };
   writeFileSync(join(evidenceDir, 'gate-result.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));
+  return shown && settled;
 }

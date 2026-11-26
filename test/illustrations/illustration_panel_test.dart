@@ -31,7 +31,7 @@ Future<void> pumpPanel(
       step: recipe.steps.firstWhere((s) => s.id == stepId),
       sessionId: sessionId,
       showPlate: showPlate,
-      createController: harness == null ? null : () => harness.controller,
+      controller: harness?.controller,
     ),
   ),
 );
@@ -173,7 +173,7 @@ void main() {
           step: r.steps.last,
           sessionId: 's1',
           showPlate: false,
-          createController: () => h.controller,
+          controller: h.controller,
         ),
       ),
     );
@@ -241,44 +241,93 @@ void main() {
     expect(find.text(kIllustrationHeatCopy), findsOneWidget);
   });
 
-  testWidgets('meat steps offer the ingredients laid out, never "done"', (
+  testWidgets(
+    'meat: raw prep is laid out; heated steps and plate say why not',
+    (tester) async {
+      final r = draftRecipe(
+        ingredients: const [
+          Ingredient(id: 'c', name: 'Chicken thighs', qty: '2'),
+          Ingredient(id: 'o', name: 'Olive oil', qty: '1 tbsp'),
+        ],
+        steps: const [
+          RecipeStep(
+            id: 'season',
+            title: 'Season',
+            instruction: 'Rub the chicken with olive oil.',
+            cue: 'Evenly coated.',
+          ),
+          RecipeStep(
+            id: 'sear',
+            title: 'Sear',
+            instruction: 'Cook them in a hot pan.',
+            cue: 'Golden outside.',
+          ),
+        ],
+      );
+      final h = Harness();
+      await pumpPanel(tester, recipe: r, stepId: 'season', harness: h);
+      expect(find.text(askLabel), findsNothing);
+      expect(find.text('Show me the ingredients laid out'), findsOneWidget);
+      await tester.tap(find.text('Show me the ingredients laid out'));
+      await tester.pumpAndSettle();
+      expect(h.generator.prompts.single, contains('before any cooking'));
+      expect(h.generator.prompts.single, isNot(contains('Evenly coated')));
+      expect(find.text('The ingredients, laid out'), findsOneWidget);
+      expect(find.text(kIllustrationNoDonenessCopy), findsOneWidget);
+
+      // The heated step and the plate: no button, a reason instead.
+      await tester.pumpWidget(
+        host(
+          StepIllustrations(
+            recipe: r,
+            step: r.steps.last,
+            sessionId: 's1',
+            showPlate: true,
+            controller: h.controller,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(OutlinedButton), findsNothing);
+      expect(
+        find.byKey(const ValueKey('step_sear-no-picture')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('plate-no-picture')), findsOneWidget);
+      expect(find.text(kIllustrationNoDonenessCopy), findsNWidgets(2));
+      expect(h.generator.prompts, hasLength(1));
+    },
+  );
+
+  testWidgets('offline during consent: reconnecting offers the button again', (
     tester,
   ) async {
-    final r = draftRecipe(
-      ingredients: const [
-        Ingredient(id: 'c', name: 'Chicken thighs', qty: '2'),
-        Ingredient(id: 'o', name: 'Olive oil', qty: '1 tbsp'),
-      ],
-      steps: const [
-        RecipeStep(
-          id: 'sear',
-          title: 'Sear',
-          instruction: 'Cook the chicken in a hot pan.',
-          cue: 'Golden outside.',
-        ),
-      ],
-    );
     final h = Harness();
-    await pumpPanel(
-      tester,
-      recipe: r,
-      stepId: 'sear',
-      harness: h,
-      showPlate: true,
-    );
-    expect(find.text(askLabel), findsNothing);
-    expect(find.text('Show me the ingredients laid out'), findsOneWidget);
-    expect(find.textContaining('No "done" picture'), findsNWidgets(2));
-    expect(find.byKey(const ValueKey('plate-no-picture')), findsOneWidget);
-    expect(find.text('Show me the finished plate'), findsNothing);
-
-    await tester.tap(find.text('Show me the ingredients laid out'));
+    h.consent.whileOpen = () => h.online = false;
+    await pumpPanel(tester, recipe: draftRecipe(), stepId: 'grate', harness: h);
+    await tester.tap(find.text(askLabel));
     await tester.pumpAndSettle();
-    expect(h.generator.prompts.single, contains('before any cooking'));
-    expect(h.generator.prompts.single, isNot(contains('Golden')));
-    expect(find.text('The ingredients, laid out'), findsOneWidget);
-    expect(find.text(kIllustrationNoDonenessCopy), findsNWidgets(2));
-    expect(find.text(kIllustrationHeatCopy), findsOneWidget);
+    expect(
+      find.text(illustrationBlockText(IllustrationBlock.offline)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<OutlinedButton>(find.byType(OutlinedButton)).onPressed,
+      isNull,
+    );
+    expect(h.generator.prompts, isEmpty);
+
+    // Back online: the next rebuild offers the button, with a new prompt.
+    h
+      ..online = true
+      ..consent.whileOpen = null;
+    await pumpPanel(tester, recipe: draftRecipe(), stepId: 'grate', harness: h);
+    final button = find.byType(OutlinedButton);
+    expect(tester.widget<OutlinedButton>(button).onPressed, isNotNull);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(h.consent.asks, hasLength(2));
+    expect(find.text(kIllustrationLabel), findsOneWidget);
   });
 
   testWidgets('the plate button appears on the last step', (tester) async {
@@ -295,9 +344,7 @@ void main() {
     expect(find.text('The finished plate'), findsOneWidget);
   });
 
-  testWidgets('no session yet: nothing is requested; dispose disposes', (
-    tester,
-  ) async {
+  testWidgets('no session yet: nothing is requested', (tester) async {
     final h = Harness();
     await pumpPanel(
       tester,
@@ -309,10 +356,31 @@ void main() {
     await tester.tap(find.text(askLabel));
     await tester.pumpAndSettle();
     expect(h.consent.asks, isEmpty);
+  });
+
+  testWidgets('the session owns the controller: a rebuilt widget keeps the '
+      'cache and the cap', (tester) async {
+    final h = Harness(cap: 1);
+    await pumpPanel(tester, recipe: draftRecipe(), stepId: 'grate', harness: h);
+    await tester.tap(find.text(askLabel));
+    await tester.pumpAndSettle();
+    expect(find.text(kIllustrationLabel), findsOneWidget);
+    // The widget leaves the tree (a layout change), then comes back.
     await tester.pumpWidget(host(const SizedBox()));
-    // Disposed: a later bind is ignored rather than throwing.
-    h.controller.bind(sessionId: 's', recipeId: 'draft_abc', stepId: 'grate');
-    expect(h.controller.used, 0);
+    await pumpPanel(
+      tester,
+      recipe: draftRecipe(),
+      stepId: 'grate',
+      harness: h,
+      showPlate: true,
+    );
+    expect(find.text(kIllustrationLabel), findsOneWidget); // cached
+    expect(
+      find.text(illustrationBlockText(IllustrationBlock.capReached)),
+      findsOneWidget,
+    );
+    expect(h.generator.prompts, hasLength(1));
+    expect(h.controller.remaining, 0);
   });
 
   testWidgets('the label badge is plain, visible text', (tester) async {

@@ -20,7 +20,7 @@ Recipe recipe({
     RecipeStep(
       id: 'stir',
       title: 'Stir',
-      instruction: 'Stir everything together.',
+      instruction: 'Stir the yogurt and cilantro; set the tortillas aside.',
       cue: 'Evenly mixed with no streaks.',
     ),
   ],
@@ -56,7 +56,7 @@ void main() {
     expect(p.text, contains('Evenly mixed with no streaks.'));
     expect(p.text, contains('Plain yogurt; Tortillas; Cilantro'));
     // Not the title or instruction, and no bracketed or "only if" notes.
-    expect(p.text, isNot(contains('Stir everything together')));
+    expect(p.text, isNot(contains('set the tortillas aside')));
     expect(p.text, isNot(contains('check labels')));
     expect(p.text, isNot(contains('only if')));
     expect(p.text, contains('not photorealistic'));
@@ -85,44 +85,108 @@ void main() {
     expect(p.text, isNot(contains('safety')));
   });
 
-  test('meat, poultry, fish and egg steps get ingredients laid out', () {
-    for (final text in [
-      'Cook the chicken until golden.',
-      'Scramble the eggs.',
-      'Brown the ground beef.',
-      'Sear the salmon.',
+  RecipeStep step(String id, String instruction, [String cue = 'Golden.']) =>
+      RecipeStep(id: id, title: 'Step', instruction: instruction, cue: cue);
+
+  test('ingredient context: "them" in the oven is still the chicken', () {
+    final r = recipe(
+      ingredients: const [
+        Ingredient(id: 'c', name: 'Chicken thighs', qty: '4'),
+        Ingredient(id: 'o', name: 'Olive oil', qty: '1 tbsp'),
+      ],
+      steps: [
+        step('season', 'Rub the thighs with olive oil.', 'Evenly coated.'),
+        step('roast', 'Roast them in the oven.', 'Golden on both sides.'),
+        step('rest', 'Rest, then slice.', 'Juices settle.'),
+      ],
+    );
+    final season = illustrationPrompt(r, const StepTarget('season'))!;
+    expect(season.subject, IllustrationSubject.ingredientsLaidOut);
+    expect(season.text, contains('Chicken thighs'));
+    expect(season.text, contains('before any cooking'));
+    expect(season.text, isNot(contains('Evenly coated')));
+    // Heat on a protein recipe, and everything after it: no picture.
+    expect(illustrationPrompt(r, const StepTarget('roast')), isNull);
+    expect(illustrationPrompt(r, const StepTarget('rest')), isNull);
+    expect(illustrationPrompt(r, const PlateTarget()), isNull);
+  });
+
+  test('every common animal protein abstains from look and plate', () {
+    for (final name in [
+      'Chicken breast',
+      'Turkey mince',
+      'Duck legs',
+      'Pork chops',
+      'Bacon',
+      'Ground beef',
+      'Sirloin steak',
+      'Lamb shoulder',
+      'Italian sausages',
+      'Trout fillets',
+      'Salmon',
+      'Cod loin',
+      'Tilapia',
+      'Halibut',
+      'Tuna',
+      'Shrimp',
+      'Prawns',
+      'Scallops',
+      'Mussels',
+      'Crab',
+      'Eggs',
+      'Egg yolks',
     ]) {
       final r = recipe(
-        steps: [
-          RecipeStep(id: 's', title: 'Step', instruction: text, cue: 'Golden.'),
-        ],
+        ingredients: [Ingredient(id: 'p', name: name, qty: '1')],
+        steps: [step('cook', 'Sear in a hot pan for 4 minutes.', 'Browned.')],
       );
-      final p = illustrationPrompt(r, const StepTarget('s'))!;
-      expect(p.subject, IllustrationSubject.ingredientsLaidOut, reason: text);
-      expect(p.text, contains('before any cooking'));
-      expect(p.text, contains('Show no cooked food'));
-      expect(p.text, isNot(contains('Golden')), reason: 'no doneness cue');
+      expect(recipeHasAnimalProtein(r), isTrue, reason: name);
+      expect(
+        illustrationPrompt(r, const StepTarget('cook')),
+        isNull,
+        reason: name,
+      );
+      expect(illustrationPrompt(r, const PlateTarget()), isNull, reason: name);
     }
   });
 
-  test('no finished plate for a recipe with animal protein', () {
-    final byIngredient = recipe(
-      ingredients: const [Ingredient(id: 'e', name: 'Eggs', qty: '2')],
-    );
-    expect(illustrationPrompt(byIngredient, const PlateTarget()), isNull);
-    final byStep = recipe(
-      steps: const [
-        RecipeStep(
-          id: 's',
-          title: 'Add tuna',
-          instruction: 'Fold in the tuna.',
-          cue: 'Flaked.',
-        ),
+  test('protein named only in a step still counts', () {
+    final r = recipe(
+      steps: [
+        step('mix', 'Stir the yogurt.', 'Smooth.'),
+        step('top', 'Lay the smoked trout on top.', 'Neat flakes.'),
       ],
     );
-    expect(illustrationPrompt(byStep, const PlateTarget()), isNull);
-    expect(recipeHasAnimalProtein(byIngredient), isTrue);
-    expect(recipeHasAnimalProtein(recipe()), isFalse);
+    expect(recipeHasAnimalProtein(r), isTrue);
+    expect(illustrationPrompt(r, const PlateTarget()), isNull);
+    // Steps before the protein appears may still be shown.
+    expect(
+      illustrationPrompt(r, const StepTarget('mix'))!.subject,
+      IllustrationSubject.stepLook,
+    );
+    expect(illustrationPrompt(r, const StepTarget('top')), isNull);
+  });
+
+  test('protein steps that name no ingredient get no picture', () {
+    final r = recipe(
+      ingredients: const [Ingredient(id: 'y', name: 'Yogurt', qty: '1')],
+      steps: [step('beat', 'Beat the eggs.', 'Pale yellow.')],
+    );
+    // "eggs" is in the step but no listed ingredient: nothing to lay out.
+    expect(illustrationPrompt(r, const StepTarget('beat')), isNull);
+  });
+
+  test('a step that names no ingredient gets no ingredient list', () {
+    final r = recipe(
+      steps: [
+        step('bowl', 'Set out a clean bowl.', 'An empty, dry bowl.'),
+        step('stir', 'Stir the yogurt.', 'Smooth.'),
+      ],
+    );
+    final p = illustrationPrompt(r, const StepTarget('bowl'))!;
+    expect(p.text, isNot(contains('Ingredients')));
+    expect(p.text, isNot(contains('yogurt')));
+    expect(p.text, isNot(contains('Tortillas')));
   });
 
   test('a plate prompt names the dish and marks heat', () {

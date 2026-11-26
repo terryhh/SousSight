@@ -22,6 +22,7 @@ import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
 import '../data/offline_ops_banner.dart';
 import '../genui/cooking_ui.dart';
+import '../illustrations/illustration_controller.dart';
 import '../illustrations/illustration_panel.dart';
 import '../illustrations/illustration_wiring.dart';
 import '../live/live_media_factory.dart';
@@ -425,6 +426,12 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         isDemo: widget.isDemo,
         fake: _fakeDinner,
       );
+  // SS-098: one illustration controller per cooking session, above the
+  // layout breakpoint, so its cache and cap survive a resize.
+  late final IllustrationController? _illustrations = switch (widget.hybrid) {
+    final hybrid? => illustrationControllerFor(hybrid),
+    null => null,
+  };
   String _prediction = 'Not sure';
   String? _announcedAlert;
   bool _messagePending = false;
@@ -508,6 +515,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _illustrations?.dispose();
     _speaker?.dispose();
     _message.dispose();
     unawaited(_fakeDinner.dispose());
@@ -1190,10 +1198,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         sessionId: cook.session?.id,
         showPlate:
             cook.complete || cook.stepIndex == cook.recipe.steps.length - 1,
-        createController: switch (widget.hybrid) {
-          final hybrid? => () => illustrationControllerFor(hybrid),
-          null => null,
-        },
+        controller: _illustrations,
       ),
       if (cook.coachLiteAnswer != null)
         if (_speaker case final speaker?)

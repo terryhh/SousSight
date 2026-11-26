@@ -261,15 +261,24 @@ outside the repository and were deleted after the run). Every request
 returned HTTP 200; no quota, spend-cap or 429 error occurred, and nothing was
 retried.
 
-| Date (UTC) | Action | Calls | Estimated charge | Verified billed amount |
+| Date (UTC) | Action | Calls | Estimated image-output charge (excludes input/thinking tokens) | Verified billed amount |
 |---|---|---|---|---|
 | 2026-11-26 05:53 | Trial image (`chickpea_wrap_v1/step_mash`), later replaced after the prompt was narrowed to the step's own ingredients | 1 | ~$0.034 | Not inspected |
 | 2026-11-26 ~06:00 | Pre-made set: 15 images for the 3 reviewed recipes (`assets/illustrations/manifest.json` holds each prompt, model and date) | 15 | ~$0.50 | Not inspected |
 | 2026-11-26 ~06:06 | On-demand gate: one image for a synthetic AI-drafted recipe through the production controller, consent dialog ("Allow once" clicked), ledger and widget; one ledger leg `step_illustration`, text, cloudAdapter, `gemini-nano-banana-2.1 (text→image)` | 1 | ~$0.034 | Not inspected |
-| **Total** | | **17** | **~$0.57 image output, plus well under $0.01 of input and any thinking tokens; under $0.65 in all** | Not inspected |
+| **Total** | | **17** | Image output only: 17 × $0.0336 ≈ $0.57 (estimate). Input and thinking tokens were not measured, so the **total is unknown**. | Not inspected |
 
-The estimate uses the published per-image price; token usage was not read
-from the responses, so thinking-token charges are an unmeasured addition.
-The app caps on-demand illustrations at `ILLUSTRATION_SESSION_CAP` (default
-4) per cooking session, so one cook can spend at most about $0.14 on
-illustrations; the route is off unless `CLOUD_ROUTES` includes `images`.
+These are estimates from the published per-image price. Token usage was not
+read from the responses, so input and thinking-token charges are unmeasured
+and no total is claimed. Reconcile against billing.
+
+**Authorization for on-demand images in the judged build.** Terry approved
+the scope on November 26, 2026 (relayed by the orchestrator and recorded on
+SS-098 / #226): "AI-drafted recipes get on-demand generation behind a new
+'images' cloud route, capped per session." The existing $15/month Gemini
+Developer API cap and the $20 project alerts back it. The route stays off
+until `CLOUD_ROUTES` includes `images`.
+
+Exposure per cook: `ILLUSTRATION_SESSION_CAP` (default 4) on-demand images
+per cooking session. The image-output estimate is about $0.13 per session at
+the cap. Input and thinking tokens are additional and unmeasured.

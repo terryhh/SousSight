@@ -1,10 +1,11 @@
 // "What it should look like" on the cooking screen (SS-098).
 //
 // Reviewed recipes show their pre-made images. AI-drafted recipes get a
-// "Show me what it should look like" button that asks the cloud, through an
-// [IllustrationController] this widget owns for the life of the cooking
-// session (the cooking screen is rebuilt for every new cook). Every image
-// carries [kIllustrationLabel] and the compare-the-look copy.
+// "Show me what it should look like" button that asks the cloud through an
+// [IllustrationController]. The controller is owned by the cooking session,
+// not by this widget, so its cache and per-session cap survive a layout
+// change that rebuilds this widget. Every image carries [kIllustrationLabel]
+// and the compare-the-look copy.
 
 import 'package:flutter/material.dart';
 
@@ -22,7 +23,7 @@ class StepIllustrations extends StatefulWidget {
     required this.step,
     required this.sessionId,
     required this.showPlate,
-    this.createController,
+    this.controller,
   });
 
   final Recipe recipe;
@@ -34,32 +35,29 @@ class StepIllustrations extends StatefulWidget {
   /// Also show the finished plate (the last step, or a finished cook).
   final bool showPlate;
 
-  /// Builds the on-demand controller; null in builds without hybrid
-  /// services (rehearsal), which then show pre-made images only.
-  final IllustrationController Function()? createController;
+  /// The cooking session's on-demand controller, owned and disposed by the
+  /// session. Null in builds without hybrid services (rehearsal), which
+  /// then show pre-made images only.
+  final IllustrationController? controller;
 
   @override
   State<StepIllustrations> createState() => _StepIllustrationsState();
 }
 
 class _StepIllustrationsState extends State<StepIllustrations> {
-  IllustrationController? _controller;
-
-  IllustrationController? get _onDemand {
-    if (!isDraftRecipe(widget.recipe)) return null;
-    final create = widget.createController;
-    if (create == null) return null;
-    return _controller ??= create();
-  }
+  IllustrationController? get _onDemand =>
+      isDraftRecipe(widget.recipe) ? widget.controller : null;
 
   void _bind() {
-    final session = widget.sessionId;
     final controller = _onDemand;
     if (controller == null) return;
+    final session = widget.sessionId;
     if (session == null) {
       controller.endSession();
       return;
     }
+    // Binding to the same place again is a no-op, so a rebuilt widget keeps
+    // the session's cache, cap and in-flight work.
     controller.bind(
       sessionId: session,
       recipeId: widget.recipe.id,
@@ -80,29 +78,22 @@ class _StepIllustrationsState extends State<StepIllustrations> {
   }
 
   @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final controller = _onDemand;
     final targets = <IllustrationTarget>[
       StepTarget(widget.step.id),
       if (widget.showPlate) const PlateTarget(),
     ];
-    final panels = [
-      for (final target in targets)
-        _IllustrationSlot(
-          recipe: widget.recipe,
-          target: target,
-          controller: controller,
-        ),
-    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: panels,
+      children: [
+        for (final target in targets)
+          _IllustrationSlot(
+            recipe: widget.recipe,
+            target: target,
+            controller: controller,
+          ),
+      ],
     );
   }
 }
@@ -142,11 +133,12 @@ class _IllustrationSlot extends StatelessWidget {
       );
     }
     if (prompt == null) {
-      // A plate of meat, poultry, fish or eggs is never pictured "done".
-      return target is PlateTarget && recipeHasAnimalProtein(recipe)
+      // Meat, poultry, fish and eggs are never pictured where doneness could
+      // be implied; say why instead of showing nothing.
+      return recipeHasAnimalProtein(recipe)
           ? _Note(
               kIllustrationNoDonenessCopy,
-              key: const ValueKey('plate-no-picture'),
+              key: ValueKey('${target.key}-no-picture'),
             )
           : const SizedBox.shrink();
     }
@@ -184,40 +176,62 @@ class _IllustrationSlot extends StatelessWidget {
           busy: true,
           key: const ValueKey('illustration-loading'),
         );
-      case IllustrationBlocked(:final reason):
+      case IllustrationBlocked(reason: IllustrationBlock.noPicture):
         return _Note(
-          illustrationBlockText(reason),
-          key: ValueKey('illustration-blocked-${reason.name}'),
+          illustrationBlockText(IllustrationBlock.noPicture),
+          key: const ValueKey('illustration-blocked-noPicture'),
         );
       case IllustrationFailed(:final code):
-        return _Ask(
+        return _ask(
+          controller,
+          prompt,
           label: target is PlateTarget
               ? 'Try again: show the finished plate'
               : 'Try again: show me what it should look like',
-          notice: "Couldn't make an illustration (${errorLabel(code)}).",
-          detail: _detail(controller, prompt),
-          onPressed: () => controller.request(recipe, target),
+          lastOutcome: "Couldn't make an illustration (${errorLabel(code)}).",
+        );
+      case IllustrationBlocked(:final reason):
+        // Recoverable: offline, settings, a declined prompt or the cap. The
+        // button follows the live state, so reconnecting offers it again
+        // (with a fresh consent prompt).
+        return _ask(
+          controller,
+          prompt,
+          lastOutcome: reason == IllustrationBlock.consentDeclined
+              ? illustrationBlockText(reason)
+              : null,
         );
       case IllustrationIdle():
-        final block = controller.availability();
         // A build without the images route offers nothing to press.
-        if (block == IllustrationBlock.cloudNotApproved) {
+        if (controller.availability() == IllustrationBlock.cloudNotApproved) {
           return const SizedBox.shrink();
         }
-        return _Ask(
-          label: switch ((target, prompt.subject)) {
+        return _ask(controller, prompt);
+    }
+  }
+
+  Widget _ask(
+    IllustrationController controller,
+    IllustrationPrompt prompt, {
+    String? label,
+    String? lastOutcome,
+  }) {
+    final block = controller.availability();
+    return _Ask(
+      label:
+          label ??
+          switch ((target, prompt.subject)) {
             (PlateTarget(), _) => 'Show me the finished plate',
             (_, IllustrationSubject.ingredientsLaidOut) =>
               'Show me the ingredients laid out',
             _ => 'Show me what it should look like',
           },
-          notice: block == null ? null : illustrationBlockText(block),
-          detail: _detail(controller, prompt),
-          onPressed: block == null
-              ? () => controller.request(recipe, target)
-              : null,
-        );
-    }
+      notice: block != null ? illustrationBlockText(block) : lastOutcome,
+      detail: _detail(controller, prompt),
+      onPressed: block == null
+          ? () => controller.request(recipe, target)
+          : null,
+    );
   }
 
   String _detail(

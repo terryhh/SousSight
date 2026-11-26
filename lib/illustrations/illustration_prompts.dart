@@ -93,10 +93,20 @@ class IllustrationPrompt {
   final bool heated;
 }
 
+// Meat, poultry, fish, seafood and eggs, singular or plural. Deliberately
+// broad: a false match only means no picture.
 final _risky = RegExp(
-  r'\b(raw|meat|meats|poultry|chicken|turkey|duck|beef|steak|pork|bacon|ham|'
-  r'lamb|sausages?|burgers?|patty|patties|mince|minced|fish|salmon|tuna|cod|'
-  r'seafood|shrimp|prawns?|scallops?|clams?|mussels?|eggs?|yolks?|omelet(?:te)?)\b',
+  r'\b(?:raw|meats?|poultry|chickens?|turkeys?|ducks?|goose|geese|quails?|'
+  r'hens?|beef|steaks?|pork|bacon|hams?|lamb|mutton|veal|venison|goat|'
+  r'sausages?|chorizo|salami|pepperoni|prosciutto|pancetta|burgers?|'
+  r'patty|patties|mince|minced|meatballs?|ribs?|brisket|tenderloin|loin|'
+  r'cutlets?|fillets?|filets?|thighs?|breasts?|drumsticks?|wings?|'
+  r'hot ?dogs?|jerky|fish|fishes|salmon|tuna|cod|trout|tilapia|halibut|'
+  r'haddock|snapper|bass|catfish|mackerel|sardines?|anchovy|anchovies|'
+  r'swordfish|pollock|perch|carp|herring|mahi(?:[- ]mahi)?|seafood|'
+  r'shellfish|shrimps?|prawns?|crabs?|lobsters?|scallops?|clams?|mussels?|'
+  r'oysters?|squid|calamari|octopus|crawfish|crayfish|eggs?|yolks?|'
+  r'whites? of|omelet(?:te)?s?|frittatas?|quiches?)\b',
   caseSensitive: false,
 );
 
@@ -108,7 +118,10 @@ final _heat = RegExp(
   r'heat|heated|heating|oven|pan|skillet|boil|boiling|simmer|simmering|'
   r'roast|roasting|grill|grilling|microwave|saute|sauté|sautéed|scramble|'
   r'scrambled|toast|toasted|toasting|broil|broiled|steam|steamed|poach|'
-  r'poached)\b',
+  r'poached|sear|seared|searing|browned|browning|char|charred|smoke|'
+  r'smoked|braise|braised|stew|stewed|blanch|blanched|caramelize|'
+  r'caramelized|barbecue|bbq|air[- ]fry|deep[- ]fry|stir[- ]fry|reheat|'
+  r'melt|melted|brown(?=\s+(?:the|it|them|on|in)\b))\b',
   caseSensitive: false,
 );
 
@@ -128,9 +141,11 @@ bool mentionsHeat(String text) => _heat.hasMatch(text);
 String _stepText(RecipeStep step) =>
     '${step.title} ${step.instruction} ${step.cue}';
 
-/// Whether any ingredient is meat, poultry, fish or egg.
+/// Whether the recipe has meat, poultry, fish or eggs anywhere: in an
+/// ingredient or in any step's text.
 bool recipeHasAnimalProtein(Recipe recipe) =>
-    recipe.ingredients.any((i) => mentionsAnimalProtein(i.name));
+    recipe.ingredients.any((i) => mentionsAnimalProtein(i.name)) ||
+    recipe.steps.any((s) => mentionsAnimalProtein(_stepText(s)));
 
 /// The cue without any safety or doneness sentence: an illustration is
 /// never asked to depict one.
@@ -198,24 +213,35 @@ bool _names(String text, Ingredient ingredient) {
   return false;
 }
 
-/// The ingredients a step works with, and those earlier steps prepared:
-/// a picture of one step should not show what comes later. When no step
-/// names any ingredient, the whole list stands in.
-({String now, String earlier}) _stepIngredients(Recipe recipe, int index) {
-  bool named(Ingredient i, RecipeStep s) => _names(_stepText(s), i);
+bool _named(Ingredient i, RecipeStep s) => _names(_stepText(s), i);
+
+/// The ingredients a step names, and those earlier steps named: a picture
+/// of one step should not show what comes later. Nothing is guessed: a step
+/// that names no ingredient gets no ingredient list.
+({List<Ingredient> now, List<Ingredient> earlier}) _stepIngredients(
+  Recipe recipe,
+  int index,
+) {
   final now = [
     for (final i in recipe.ingredients)
-      if (named(i, recipe.steps[index])) i,
+      if (_named(i, recipe.steps[index])) i,
   ];
   final earlier = [
     for (final i in recipe.ingredients)
-      if (!now.contains(i) && recipe.steps.take(index).any((s) => named(i, s)))
+      if (!now.contains(i) && recipe.steps.take(index).any((s) => _named(i, s)))
         i,
   ];
-  if (now.isEmpty && earlier.isEmpty) {
-    return (now: _ingredients(recipe.ingredients), earlier: '');
-  }
-  return (now: _ingredients(now), earlier: _ingredients(earlier));
+  return (now: now, earlier: earlier);
+}
+
+/// Whether [index] touches meat, poultry, fish or eggs: by its own words or
+/// by an ingredient it names.
+bool _touchesProtein(Recipe recipe, int index) {
+  final step = recipe.steps[index];
+  return mentionsAnimalProtein(_stepText(step)) ||
+      recipe.ingredients.any(
+        (i) => mentionsAnimalProtein(i.name) && _named(i, step),
+      );
 }
 
 const _style =
@@ -225,18 +251,22 @@ const _style =
     'hands, no text, no labels, no logos, no brand names, no packaging.';
 
 /// The prompt for [target] in [recipe], or null when there must be no
-/// picture: an unknown step, a step with no visible cue, or the finished
-/// plate of a recipe with meat, poultry, fish or eggs.
+/// picture.
+///
+/// For a recipe with meat, poultry, fish or eggs anywhere, the builder only
+/// draws what cannot imply doneness: steps before the first step that heats
+/// or touches the protein look as usual; a step that touches the protein
+/// before any heat gets its ingredients laid out, uncooked; every other step
+/// and the finished plate get no picture. Otherwise there is no picture for
+/// an unknown step or a step without a visible cue.
 IllustrationPrompt? illustrationPrompt(
   Recipe recipe,
   IllustrationTarget target,
 ) {
+  final protein = recipeHasAnimalProtein(recipe);
   switch (target) {
     case PlateTarget():
-      if (recipeHasAnimalProtein(recipe) ||
-          recipe.steps.any((s) => mentionsAnimalProtein(_stepText(s)))) {
-        return null;
-      }
+      if (protein) return null;
       return IllustrationPrompt(
         target: target,
         subject: IllustrationSubject.finishedPlate,
@@ -252,29 +282,45 @@ IllustrationPrompt? illustrationPrompt(
       final step = recipe.steps[index];
       final used = _stepIngredients(recipe, index);
       final heated = mentionsHeat(_stepText(step));
-      if (mentionsAnimalProtein(_stepText(step))) {
-        return IllustrationPrompt(
-          target: target,
-          subject: IllustrationSubject.ingredientsLaidOut,
-          heated: heated,
-          text:
-              'Show these ingredients laid out separately on a cutting board '
-              'before any cooking, each in its own small pile or bowl: '
-              '${used.now}. Show no cooked food and no finished dish. $_style',
-        );
+      if (protein) {
+        bool heats(int i) => mentionsHeat(_stepText(recipe.steps[i]));
+        final firstRisk = [
+          for (var i = 0; i < recipe.steps.length; i++)
+            if (heats(i) || _touchesProtein(recipe, i)) i,
+        ].firstOrNull;
+        if (firstRisk != null && index >= firstRisk) {
+          final heatSoFar = [for (var i = 0; i <= index; i++) i].any(heats);
+          if (!_touchesProtein(recipe, index) ||
+              heatSoFar ||
+              used.now.isEmpty) {
+            return null;
+          }
+          return IllustrationPrompt(
+            target: target,
+            subject: IllustrationSubject.ingredientsLaidOut,
+            heated: heated,
+            text:
+                'Show these ingredients laid out separately on a cutting '
+                'board before any cooking, each in its own small pile or '
+                'bowl: ${_ingredients(used.now)}. Show no cooked food and no '
+                'finished dish. $_style',
+          );
+        }
       }
       final cue = visibleCue(step.cue);
       if (cue.isEmpty) return null;
+      final now = _ingredients(used.now);
+      final earlier = _ingredients(used.earlier);
       return IllustrationPrompt(
         target: target,
         subject: IllustrationSubject.stepLook,
         heated: heated,
         text:
             'Show what the food should look like at this point: $cue'
-            '${used.now.isEmpty ? '' : ' Ingredients in this step: ${used.now}.'}'
-            '${used.earlier.isEmpty ? '' : ' Prepared in earlier steps, and '
+            '${now.isEmpty ? '' : ' Ingredients in this step: $now.'}'
+            '${earlier.isEmpty ? '' : ' Prepared in earlier steps, and '
                       'shown only where the description above includes '
-                      'them: ${used.earlier}.'}'
+                      'them: $earlier.'}'
             ' Show nothing from later steps. $_style',
       );
   }

@@ -97,7 +97,9 @@ class IllustrationController extends ChangeNotifier {
     required this._recorder,
     required this._generator,
     this.cap = kIllustrationSessionCap,
-  }) : _routes = cloudRoutes;
+    Future<bool> Function(Uint8List bytes)? decodes,
+  }) : _routes = cloudRoutes,
+       _decodes = decodes ?? imageDecodes;
 
   final CloudRoutes _routes;
   final PrivacySettings _privacy;
@@ -105,6 +107,7 @@ class IllustrationController extends ChangeNotifier {
   final ConsentGate _consent;
   final CloudSendRecorder _recorder;
   final IllustrationGenerator _generator;
+  final Future<bool> Function(Uint8List bytes) _decodes;
 
   /// On-demand illustrations per session.
   final int cap;
@@ -238,7 +241,8 @@ class IllustrationController extends ChangeNotifier {
     if (grant == null ||
         grant.ask.sessionId != session ||
         grant.ask.feature != kIllustrationFeature ||
-        grant.ask.payloadDigest != digest) {
+        grant.ask.payloadDigest != digest ||
+        !setEquals(grant.ask.kinds, const {DataKind.text})) {
       _set(key, const IllustrationBlocked(IllustrationBlock.consentDeclined));
       return;
     }
@@ -249,12 +253,30 @@ class IllustrationController extends ChangeNotifier {
       return;
     }
     _used++;
-    _set(key, const IllustrationLoading(sending: true));
-    final send = _recorder.begin(kIllustrationFeature, const {DataKind.text});
+    // From the final check to here is one synchronous block: dispatch,
+    // ledger admission, then the "sending" notice. No listener can run
+    // between the check and the dispatch, so a setting changed by an
+    // observer cannot slip a send through. Generators do no I/O before
+    // their first await, so the leg is still written before any data
+    // leaves the device.
+    Future<GeneratedIllustration> pending;
     try {
-      final image = await _generator.generate(prompt.text);
+      pending = _generator.generate(prompt.text);
+    } catch (e) {
+      pending = Future.error(e);
+    }
+    final send = _recorder.begin(kIllustrationFeature, const {DataKind.text});
+    _set(key, const IllustrationLoading(sending: true));
+    try {
+      final image = await pending;
       send.confirmed(modelLabel: illustrationModelLabel(image.model));
+      // A valid signature over garbage must not show as a blank "ready".
+      final decodes = await _decodes(image.bytes);
       if (!_current(epoch)) return;
+      if (!decodes) {
+        _set(key, const IllustrationFailed(HybridErrorCode.failed));
+        return;
+      }
       _cache[key] = image;
       _states.remove(key);
       notifyListeners();

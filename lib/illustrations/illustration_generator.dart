@@ -10,6 +10,7 @@
 
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridErrorCode;
 import 'package:firebase_ai/firebase_ai.dart';
@@ -119,8 +120,10 @@ class FirebaseAiIllustrationGenerator implements IllustrationGenerator {
 }
 
 /// The first usable image in [response]. Anything else (no candidate, a
-/// blocked prompt or candidate, a non-image part, bytes that are not the
-/// image type they claim) throws: a malformed answer shows nothing.
+/// blocked prompt or candidate, a finish other than STOP, a non-image part,
+/// bytes that are not the image type they claim) throws: a malformed answer
+/// shows nothing. The caller still decodes the bytes before showing them
+/// ([imageDecodes]).
 GeneratedIllustration illustrationFromResponse(
   GenerateContentResponse response, {
   required String model,
@@ -135,17 +138,29 @@ GeneratedIllustration illustrationFromResponse(
   if (candidate == null) {
     throw const IllustrationException(HybridErrorCode.failed, 'No candidate');
   }
+  // Only a normal finish may show an image: every block, including the
+  // image-specific ones, is "blocked", and anything else (no reason, cut
+  // short, no image, unknown) abstains.
   switch (candidate.finishReason) {
+    case FinishReason.stop:
+      break;
     case FinishReason.safety ||
         FinishReason.blocklist ||
         FinishReason.prohibitedContent ||
         FinishReason.spii ||
-        FinishReason.recitation:
+        FinishReason.recitation ||
+        FinishReason.imageSafety ||
+        FinishReason.imageProhibitedContent ||
+        FinishReason.imageRecitation:
       throw const IllustrationException(
         HybridErrorCode.blocked,
         'Image was blocked',
       );
-    default:
+    case final reason:
+      throw IllustrationException(
+        HybridErrorCode.failed,
+        'Generation did not finish normally (${reason?.name ?? 'no reason'})',
+      );
   }
   for (final part in response.inlineDataParts) {
     final mime = part.mimeType.toLowerCase();
@@ -180,4 +195,21 @@ bool imageBytesMatch(String mimeType, Uint8List bytes) {
       starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8),
     _ => false,
   };
+}
+
+/// Whether [bytes] decode to an image with at least one pixel. A valid
+/// signature followed by garbage fails here, so it is never shown as ready.
+Future<bool> imageDecodes(Uint8List bytes) async {
+  ui.Codec? codec;
+  try {
+    codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final ok = frame.image.width > 0 && frame.image.height > 0;
+    frame.image.dispose();
+    return ok;
+  } catch (_) {
+    return false;
+  } finally {
+    codec?.dispose();
+  }
 }

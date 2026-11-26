@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridErrorCode;
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:soussight/illustrations/illustration_generator.dart';
 
 Uint8List png() => Uint8List.fromList([
@@ -121,6 +122,10 @@ void main() {
       FinishReason.prohibitedContent,
       FinishReason.spii,
       FinishReason.recitation,
+      // The image-specific blocks, with a perfectly valid image attached.
+      FinishReason.imageSafety,
+      FinishReason.imageProhibitedContent,
+      FinishReason.imageRecitation,
     ]) {
       expect(
         () => illustrationFromResponse(
@@ -134,6 +139,7 @@ void main() {
             HybridErrorCode.blocked,
           ),
         ),
+        reason: finish.name,
       );
     }
     expect(
@@ -153,6 +159,47 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('only a STOP finish may show an image', () {
+    for (final finish in <FinishReason?>[
+      null,
+      FinishReason.unknown,
+      FinishReason.maxTokens,
+      FinishReason.imageOther,
+      FinishReason.noImage,
+      FinishReason.other,
+      FinishReason.malformedResponse,
+    ]) {
+      expect(
+        () => illustrationFromResponse(
+          response([InlineDataPart('image/png', png())], finish: finish),
+          model: 'm',
+        ),
+        throwsA(
+          isA<IllustrationException>().having(
+            (e) => e.code,
+            'code',
+            HybridErrorCode.failed,
+          ),
+        ),
+        reason: '$finish',
+      );
+    }
+  });
+
+  testWidgets('imageDecodes accepts a real image and rejects a fake one', (
+    tester,
+  ) async {
+    final real = img.encodePng(img.Image(width: 4, height: 3));
+    final results = await tester.runAsync(
+      () async => [
+        await imageDecodes(real),
+        await imageDecodes(png()), // valid signature, garbage body
+        await imageDecodes(Uint8List(0)),
+      ],
+    );
+    expect(results, [true, false, false]);
   });
 
   test('errors map to ledger codes', () async {

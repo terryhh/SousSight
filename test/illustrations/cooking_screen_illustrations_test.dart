@@ -16,10 +16,13 @@ import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/core/fakes.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/illustrations/illustration_prompts.dart';
+import 'package:soussight/illustrations/illustration_wiring.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/live/live_types.dart';
 import 'package:soussight/pantry/recipe_catalog.dart';
+
+import 'fakes.dart';
 
 class _Media implements LiveMedia {
   @override
@@ -99,9 +102,10 @@ Future<void> _pump(
   WidgetTester tester,
   Recipe recipe, {
   HybridRuntime? hybrid,
+  double width = 1200,
 }) async {
   tester.view.devicePixelRatio = 1;
-  tester.view.physicalSize = const Size(1200, 3000);
+  tester.view.physicalSize = Size(width, 3000);
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
@@ -184,6 +188,40 @@ void main() {
     );
     await _pump(tester, _draft, hybrid: hybrid);
     expect(find.text('Show me what it should look like'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('the cap and cache survive a layout breakpoint change', (
+    tester,
+  ) async {
+    final h = Harness(cap: 1);
+    var built = 0;
+    debugIllustrationControllerFactory = (_) {
+      built++;
+      return h.controller;
+    };
+    addTearDown(() => debugIllustrationControllerFactory = null);
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: const CloudRoutes({CloudRoute.images}),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+    );
+    await _pump(tester, _draft, hybrid: hybrid);
+    final ask = find.text('Show me what it should look like');
+    await tester.ensureVisible(ask);
+    await tester.tap(ask);
+    await tester.pumpAndSettle();
+    expect(find.text(kIllustrationLabel), findsOneWidget);
+    expect(h.controller.remaining, 0);
+
+    // Narrow (< 850 px) swaps the Row for a Column around the workspace.
+    tester.view.physicalSize = const Size(600, 3000);
+    await tester.pumpAndSettle();
+    expect(find.text(kIllustrationLabel), findsOneWidget);
+    expect(built, 1, reason: 'one controller for the whole cooking session');
+    expect(h.controller.remaining, 0);
+    expect(h.generator.prompts, hasLength(1));
     await tester.pumpWidget(const SizedBox());
   });
 }
