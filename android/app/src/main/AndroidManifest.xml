@@ -1,4 +1,9 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- The camera plugin asks for this to save videos; SousSight never writes
+         camera frames to storage, so it is dropped from the merged manifest. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove"/>
     <!-- Firebase, AI Logic and Live need the network in release builds too. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Camera frames for the coach and the local watch; asked at first use. -->
