@@ -87,7 +87,10 @@ final _vocabulary = _words([
   r"(?:(?:is|are|was|were)n't|not)\s+a\s+trace\s+of\s+\p{L}+",
   // Doneness grades.
   r'rare',
-  r'medium(?:\s+(?:rare|well))?',
+  // "medium" only as a doneness grade; "medium heat", "medium-high",
+  // "medium bowl" stay allowed.
+  r'medium[- ]?(?:rare|well)',
+  r'(?:is|are|cooked|until|to)\s+medium(?=\s*(?:[.,;:!?)]|$))',
   r'well[- ]done',
   r'al\s+punto',
   r't[ée]rmino',

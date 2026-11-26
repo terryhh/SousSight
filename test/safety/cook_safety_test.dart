@@ -56,7 +56,11 @@ const _blocked = [
   'Take it out at 63 on the thermometer.',
   'Cook it medium rare.',
   'Leave it rare.',
-  'Make it medium.',
+  'Cook it to medium.',
+  'The steak is medium.',
+  'Grill until medium, then rest.',
+  'Medium-rare is best.',
+  'Medium well for kids.',
   'Well done, please.',
   'Déjalo al punto.',
   'Término medio.',
@@ -73,6 +77,11 @@ const _allowed = [
   'Fold from the bottom up until evenly mixed.',
   'Add 2 cups of rice.',
   'Check the thickest part with a thermometer.',
+  'Cook over medium heat.',
+  'Turn it to medium-high.',
+  'Lower to medium-low and stir.',
+  'Use a medium bowl.',
+  'Dice a medium onion.',
 ];
 
 /// Harmless sentences blocked on purpose: over-blocking is the accepted
