@@ -20,6 +20,7 @@ import '../coach_lite/tts_toggle.dart';
 import '../data/dinner_messages.dart';
 import '../data/dinner_mode.dart';
 import '../data/dinner_status.dart';
+import '../data/offline_ops_banner.dart';
 import '../genui/cooking_ui.dart';
 import '../live/live_media_factory.dart';
 import '../live/live_backend.dart';
@@ -263,6 +264,7 @@ class _CookingScreenState extends State<CookingScreen> {
       researchAllowed: hybrid == null
           ? null
           : () => hybrid.cloudRoutes.allows(CloudRoute.research),
+      isOnline: hybrid?.isOnline,
     );
   }
 
@@ -1143,6 +1145,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         minHeight: 5,
       ),
       const SizedBox(height: 16),
+      if (cook.offline) OfflineBanner(pendingSteps: cook.pendingStepSaves),
       if (cook.error case final error?)
         _inlineNotice(error, Icons.error_outline),
       if (cook.alert case final alert?)
