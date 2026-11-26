@@ -1,46 +1,19 @@
 // The digest a label-check ConsentGrant names (DESIGN.md §5: consent is for
 // one exact payload in one session).
 //
-// This mirrors `hybridPayloadDigest(HybridTask)` from
-// `lib/ai/hybrid/payload_digest.dart` (PR #186, branch hybrid/07-dispatcher)
-// byte for byte, so the dispatcher accepts a grant computed here. When that
-// file is on the trunk, replace the body of [labelPayloadDigest] with
-// `hybridPayloadDigest(task)` and delete the rest of this file.
-//
-// SHA-256 is implemented here because `package:crypto` is only a transitive
-// dependency and the root pubspec is a shared file.
+// It is the dispatcher's own `hybridPayloadDigest(HybridTask)`, so the
+// dispatcher accepts a grant computed here. [sha256Hex] stays for its tests.
 
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 
+import '../ai/hybrid/payload_digest.dart' as hybrid show hybridPayloadDigest;
+
 /// Lowercase hex SHA-256 of the task's canonical serialization: everything
 /// that can leave the device (feature, instruction, every part including the
 /// photo bytes, schema, output limit).
-String labelPayloadDigest(HybridTask task) => sha256Hex(
-  Uint8List.fromList(
-    utf8.encode(
-      jsonEncode({
-        'feature': task.feature,
-        'systemInstruction': task.systemInstruction,
-        'parts': [
-          for (final p in task.parts)
-            switch (p) {
-              HybridText(:final text) => {'type': 'text', 'text': text},
-              HybridInlineData(:final bytes, :final mimeType) => {
-                'type': 'inlineData',
-                'mimeType': mimeType,
-                'bytes': base64Encode(bytes),
-              },
-            },
-        ],
-        'jsonSchema': task.jsonSchema,
-        'maxOutputTokens': task.maxOutputTokens,
-      }),
-    ),
-  ),
-);
+String labelPayloadDigest(HybridTask task) => hybrid.hybridPayloadDigest(task);
 
 const _k = <int>[
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, //

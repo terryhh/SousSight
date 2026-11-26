@@ -1,4 +1,9 @@
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
+
+import '../ai/hybrid/hybrid_types.dart';
+import '../ai/hybrid/inference_policy.dart';
+import '../live/live_backend.dart';
 
 /// Steps shown in the "From pantry to plate" section.
 const howItWorksSteps = [
@@ -28,6 +33,7 @@ const howItWorksTechnologies = [
   'Cloud Functions on Cloud Run',
   'Secret Manager',
   'Firebase Hosting',
+  'Firebase AI Logic hybrid inference (on-device Gemini Nano in Chrome, Gemini in the cloud)',
   'Vonage Messages API with signed status webhooks',
 ];
 
@@ -64,10 +70,20 @@ Future<void> showHowItWorks(BuildContext context, {bool isDemo = false}) =>
     );
 
 class HowItWorksSheet extends StatelessWidget {
-  const HowItWorksSheet({super.key, this.isDemo = false, this.controller});
+  const HowItWorksSheet({
+    super.key,
+    this.isDemo = false,
+    this.controller,
+    this.cloudRoutes,
+    this.liveBackend,
+  });
 
   final bool isDemo;
   final ScrollController? controller;
+
+  /// Defaults: this build's CLOUD_ROUTES and LIVE_BACKEND.
+  final CloudRoutes? cloudRoutes;
+  final LiveBackend? liveBackend;
 
   @override
   Widget build(BuildContext context) {
@@ -175,11 +191,11 @@ class HowItWorksSheet extends StatelessWidget {
           bullet(tech, icon: Icons.build_circle_outlined),
         heading('Your privacy'),
         bullet(
-          'Pantry photos, voice clips and typed lists you choose to send go to '
-          'Google Gemini once to identify ingredients. During cooking, camera '
-          'and audio stream to Gemini only while the live coach is on. '
-          'SousSight does not store photos, audio or transcripts; only your '
-          'confirmed cooking progress is saved.',
+          'Pantry photos, voice clips and typed lists are read on this device '
+          'when the on-device model can, and go to Google cloud AI only where '
+          '"Where the AI runs" below says so. Camera and audio stream to Gemini '
+          'only while the Live coach is on. SousSight does not store photos, '
+          'audio or transcripts; only your confirmed cooking progress is saved.',
           icon: Icons.lock_outline,
         ),
         bullet('No account needed.', icon: Icons.lock_outline),
@@ -191,94 +207,448 @@ class HowItWorksSheet extends StatelessWidget {
           icon: Icons.warning_amber_rounded,
         ),
         bullet('Nothing is sent without your review.'),
-        heading('Under the hood'),
-        _DevFestXRayCard(isDemo: isDemo),
+        heading('Where the AI runs'),
+        HybridRoutingSection(
+          isDemo: isDemo,
+          cloudRoutes: cloudRoutes ?? CloudRoutes.fromEnvironment(),
+          liveBackend: liveBackend ?? configuredLiveBackend,
+        ),
       ],
     );
   }
 }
 
-class _DevFestXRayCard extends StatelessWidget {
-  const _DevFestXRayCard({required this.isDemo});
+/// The dispatcher features the "Where the AI runs" section lists, with a
+/// long label (feature-by-feature rows) and a short one (the two columns).
+const _routedFeatures = [
+  ('pantry_scan', 'Pantry scan (typed list, photo)', 'Pantry scan'),
+  ('pantry_voice', 'Pantry voice note', 'Pantry voice note'),
+  ('recipe_draft', 'Recipe draft', 'Recipe draft'),
+  ('local_watch', 'Watch my food', 'Watch my food'),
+  (
+    'local_watch_cloud_check',
+    'Watch: "Ask the cloud about this photo"',
+    'Watch: one photo you choose',
+  ),
+  ('coach_lite', 'Coach Lite (typed questions)', 'Coach Lite'),
+  ('label_check', 'Label check', 'Label check'),
+];
 
-  final bool isDemo;
+/// One entry in a column of the two-column view.
+typedef RoutingEntry = ({String feature, String note});
+
+/// The two-column view of "Where the AI runs": what can run on this device,
+/// what can go to Google cloud, and what is off in this build. Generated
+/// from the same routing table as [hybridRoutingRows]; a feature appears in
+/// the cloud column only if this build's routes let it reach the cloud.
+({List<RoutingEntry> onDevice, List<RoutingEntry> cloud, List<String> off})
+hybridRoutingColumns({
+  required CloudRoutes cloudRoutes,
+  required LiveBackend liveBackend,
+}) {
+  final cloudOk = cloudRoutes.allows(CloudRoute.hybridFallback);
+  final onDevice = <RoutingEntry>[];
+  final cloud = <RoutingEntry>[];
+  final off = <String>[];
+  for (final (feature, _, label) in _routedFeatures) {
+    final route = featureRouteFor(feature);
+    final ask = switch (route.consent) {
+      UploadConsent.always => ' You allow each one.',
+      UploadConsent.media => ' Photos only after you allow them.',
+      UploadConsent.none => ' Labelled before you send.',
+    };
+    switch (route.defaultMode) {
+      case HybridMode.onlyInCloud || HybridMode.preferInCloud:
+        if (cloudOk) {
+          cloud.add((feature: label, note: 'Always in the cloud.$ask'));
+        } else {
+          off.add(label);
+        }
+      case HybridMode.onlyOnDevice when !route.cloudWhenLocalCannot:
+        onDevice.add((feature: label, note: 'Always here.'));
+        if (route.semanticRetry && cloudOk) {
+          cloud.add((
+            feature: label,
+            note: 'Once, only if the on-device answer fails its checks.',
+          ));
+        }
+      case HybridMode.onlyOnDevice:
+        onDevice.add((
+          feature: label,
+          note: cloudOk ? 'First choice.' : 'Always here.',
+        ));
+        if (cloudOk) {
+          cloud.add((
+            feature: label,
+            note: "Only if this device can't run it.$ask",
+          ));
+        }
+      case HybridMode.preferOnDevice:
+        onDevice.add((
+          feature: label,
+          note: cloudOk ? 'When the model is ready.' : 'Always here.',
+        ));
+        if (cloudOk) {
+          cloud.add((
+            feature: label,
+            note: "When the on-device model isn't ready.$ask",
+          ));
+        }
+    }
+  }
+  final liveOn = switch (liveBackend) {
+    LiveBackend.aiLogic => cloudRoutes.allows(CloudRoute.live),
+    LiveBackend.ephemeral => true,
+    LiveBackend.none => false,
+  };
+  if (liveOn) {
+    cloud.add((
+      feature: 'Live coach',
+      note: 'Camera and microphone stream only while it is on.',
+    ));
+  } else {
+    off.add('Live coach');
+  }
+  if (cloudRoutes.allows(CloudRoute.research)) {
+    cloud.add((
+      feature: 'Grounded research',
+      note: 'Google Search, for factual questions.',
+    ));
+  } else {
+    off.add('Grounded research');
+  }
+  cloud.add((
+    feature: 'Nearby stores',
+    note: 'Google Maps, only when you ask. Sends approximate location.',
+  ));
+  return (onDevice: onDevice, cloud: cloud, off: off);
+}
+
+/// On-device and cloud side by side, generated from the routing table.
+class HybridRoutingColumns extends StatelessWidget {
+  const HybridRoutingColumns({
+    super.key,
+    required this.cloudRoutes,
+    required this.liveBackend,
+  });
+
+  final CloudRoutes cloudRoutes;
+  final LiveBackend liveBackend;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      key: const ValueKey('devfest-x-ray-card'),
-      elevation: 0,
-      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.2)),
+    final columns = hybridRoutingColumns(
+      cloudRoutes: cloudRoutes,
+      liveBackend: liveBackend,
+    );
+    final local = _RoutingColumn(
+      key: const ValueKey('routing-column-device'),
+      icon: Icons.memory,
+      title: 'On this device',
+      subtitle: 'Nothing leaves while it runs here',
+      background: const Color(0xffe4ebdf),
+      accent: const Color(0xff285b43),
+      foreground: const Color(0xff1c4231),
+      entries: columns.onDevice,
+    );
+    final remote = _RoutingColumn(
+      key: const ValueKey('routing-column-cloud'),
+      icon: Icons.cloud,
+      title: 'Google cloud',
+      subtitle: 'Each cloud answer is labelled',
+      background: const Color(0xffe3ecf5),
+      accent: const Color(0xff3c6a92),
+      foreground: const Color(0xff1f3d57),
+      entries: columns.cloud,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) => constraints.maxWidth >= 330
+              ? IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: local),
+                      const SizedBox(width: 10),
+                      Expanded(child: remote),
+                    ],
+                  ),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [local, const SizedBox(height: 10), remote],
+                ),
+        ),
+        if (columns.off.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Row(
+            key: const ValueKey('routing-off'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.block,
+                size: 16,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Off in this build: ${columns.off.join(', ')}.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RoutingColumn extends StatelessWidget {
+  const _RoutingColumn({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.background,
+    required this.accent,
+    required this.foreground,
+    required this.entries,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color background;
+  final Color accent;
+  final Color foreground;
+  final List<RoutingEntry> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withValues(alpha: 0.3)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.terminal, size: 20, color: theme.colorScheme.primary),
+                ExcludeSemantics(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Icon(icon, size: 16, color: Colors.white),
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    'ARCHITECTURE AT A GLANCE',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                      color: theme.colorScheme.primary,
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: foreground,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            _diagRow(
-              'Gemini Live Protocol',
-              isDemo ? 'Rehearsal Fake' : 'WebSocket w/ Ephemeral Auth',
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(color: foreground),
             ),
-            _diagRow('Audio Capture & Playback', '16 kHz Mono In · 24 kHz PCM Out'),
-            _diagRow('Video Frame Ingestion', '1 fps JPEG (≤768px, client-rendered)'),
-            _diagRow(
-              'GenUI / A2UI Safety',
-              'Schema-validated trusted catalog; no model-written code or HTML',
-            ),
-            _diagRow(
-              'Grounding Engines',
-              'Google Search (cited sources) & Google Maps (grounded places)',
-            ),
-            _diagRow('Client Secret Isolation', 'Zero long-lived keys in web bundle'),
-            _diagRow(
-              'Budget Guardrail',
-              '8 min session cap · 3 min idle watchdog · 15s watch',
-            ),
+            const SizedBox(height: 8),
+            for (final entry in entries)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.feature,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: foreground,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      entry.note,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: foreground,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _diagRow(String label, String value) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Column(
+/// One row of the "Where the AI runs" section.
+typedef RoutingRow = ({String feature, String where});
+
+const _cloud = 'Google cloud AI (Gemini, through Firebase AI Logic)';
+
+/// What runs on this device and what may go to the cloud, derived from the
+/// dispatcher's routing table ([featureRoutes]), the cloud routes this build
+/// approves, and the Live backend it was compiled with. Never hand-written,
+/// so it cannot drift from what the code does.
+List<RoutingRow> hybridRoutingRows({
+  required CloudRoutes cloudRoutes,
+  required LiveBackend liveBackend,
+}) {
+  final cloudOk = cloudRoutes.allows(CloudRoute.hybridFallback);
+  String describe(FeatureRoute route) {
+    final retry = route.semanticRetry && cloudOk
+        ? ' If an on-device answer fails its checks, it is retried once in '
+              'the cloud.'
+        : '';
+    final ask = switch (route.consent) {
+      UploadConsent.always => ' Only after you allow that exact request.',
+      UploadConsent.media => ' Photos are sent only after you allow them.',
+      UploadConsent.none => ' The button says so before you send.',
+    };
+    switch (route.defaultMode) {
+      case HybridMode.onlyInCloud || HybridMode.preferInCloud:
+        return cloudOk
+            ? '$_cloud.$ask'
+            : 'Off in this build (needs the cloud).';
+      case HybridMode.onlyOnDevice when !route.cloudWhenLocalCannot:
+        return 'On this device only.$retry';
+      case HybridMode.onlyOnDevice:
+        if (!cloudOk) return 'On this device only.';
+        return route.cloudOnlyWithImage
+            ? 'On this device. A photo this device cannot read goes to '
+                  '$_cloud only after you allow that exact photo; typed text '
+                  'never does.'
+            : 'On this device. If this device cannot run it, $_cloud.$ask';
+      case HybridMode.preferOnDevice:
+        return cloudOk
+            ? 'On this device when the on-device model is ready; otherwise '
+                  '$_cloud.$ask$retry'
+            : 'On this device only (cloud help is off in this build).';
+    }
+  }
+
+  return [
+    for (final (feature, label, _) in _routedFeatures)
+      (feature: label, where: describe(featureRouteFor(feature))),
+    (
+      feature: 'Live coach (voice and camera)',
+      where: switch (liveBackend) {
+        LiveBackend.aiLogic when cloudRoutes.allows(CloudRoute.live) =>
+          'Google cloud (Gemini Live, through Firebase AI Logic). Camera and '
+              'microphone stream only while you have it on.',
+        LiveBackend.ephemeral =>
+          'Google cloud (Gemini Live, direct connection). Camera and '
+              'microphone stream only while you have it on.',
+        _ => 'Off in this build. Typed questions go to Coach Lite.',
+      },
+    ),
+    (
+      feature: 'Grounded research',
+      where: cloudRoutes.allows(CloudRoute.research)
+          ? 'Google cloud with Google Search grounding, only when you or the '
+                'coach ask a factual question.'
+          : 'Off in this build.',
+    ),
+    (
+      feature: 'Nearby stores',
+      where:
+          'Google cloud with Google Maps grounding, only when you ask. Sends '
+          'your approximate location once.',
+    ),
+  ];
+}
+
+class HybridRoutingSection extends StatelessWidget {
+  const HybridRoutingSection({
+    super.key,
+    required this.isDemo,
+    required this.cloudRoutes,
+    required this.liveBackend,
+  });
+
+  final bool isDemo;
+  final CloudRoutes cloudRoutes;
+  final LiveBackend liveBackend;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final rows = hybridRoutingRows(
+      cloudRoutes: cloudRoutes,
+      liveBackend: liveBackend,
+    );
+    return Column(
+      key: const ValueKey('how-it-works-hybrid'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '• $label',
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          isDemo
+              ? 'In this rehearsal everything is simulated. In the real app:'
+              : 'SousSight runs AI on this device first, with Gemini Nano in '
+                    "Chrome, and uses the cloud only where it says so. Each "
+                    'answer shows where it ran; "What was sent" lists every '
+                    'request in this session. Your "keep on this device" '
+                    'switches in On-device AI override everything below.',
         ),
-        const SizedBox(height: 2),
-        Padding(
-          padding: const EdgeInsets.only(left: 10),
+        const SizedBox(height: 14),
+        HybridRoutingColumns(
+          cloudRoutes: cloudRoutes,
+          liveBackend: liveBackend,
+        ),
+        const SizedBox(height: 18),
+        Semantics(
+          header: true,
           child: Text(
-            value,
-            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+            'Feature by feature',
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
+        const SizedBox(height: 8),
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: '${row.feature}\n',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  TextSpan(text: row.where),
+                ],
+              ),
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
       ],
-    ),
-  );
+    );
+  }
 }

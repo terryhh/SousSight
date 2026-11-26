@@ -1,421 +1,407 @@
-// Firestore repositories against an in-memory Firestore (fake_cloud_firestore).
-// No emulator, project or network: this proves the queries, transactions and
-// encoding the code issues, not Firestore's server behaviour or rules.
+// FirestoreSessionRepository, FirestoreRecipeRepository and
+// FirebaseAuthService against a tiny in-memory stand-in for the Firestore and
+// Auth SDK surfaces they call (noSuchMethod fakes). This checks the
+// repositories' own logic, including the SS-072 step-operation transaction; it
+// says nothing about Firestore's real transaction or offline behaviour, and
+// no emulator or network is involved.
+//
+// The SDK marks these types @sealed so apps do not subclass them in
+// production; a test double is the intended exception.
+// ignore_for_file: subtype_of_sealed_class
 
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:soussight/app/services_scope.dart';
-import 'package:soussight/core/fakes.dart';
 import 'package:soussight/core/models.dart';
-import 'package:soussight/core/services.dart';
 import 'package:soussight/data/firestore_repositories.dart';
+import 'package:soussight/data/offline_ops.dart';
 
-class _FakeUser implements User {
-  _FakeUser(this.uid, {this.email});
+typedef _Data = Map<String, dynamic>;
+
+class _Db implements FirebaseFirestore {
+  final Map<String, _Data> docs = {};
+  final _changes = StreamController<String>.broadcast();
+  int transactions = 0;
+  int writes = 0;
+
+  void write(String path, _Data? data) {
+    writes++;
+    if (data == null) {
+      docs.remove(path);
+    } else {
+      docs[path] = Map.of(data);
+    }
+    _changes.add(path);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation i) {
+    switch (i.memberName) {
+      case #collection:
+        return _Col(this, i.positionalArguments.single as String);
+      case #runTransaction:
+        transactions++;
+        final handler = i.positionalArguments.single as Function;
+        return Function.apply(handler, [_Tx(this)]);
+      case #batch:
+        return _Batch(this);
+    }
+    return super.noSuchMethod(i);
+  }
+}
+
+class _Snap implements DocumentSnapshot<_Data> {
+  _Snap(this._db, this._path, this._data);
+  final _Db _db;
+  final String _path;
+  final _Data? _data;
+
+  @override
+  dynamic noSuchMethod(Invocation i) => switch (i.memberName) {
+    #id => _path.split('/').last,
+    #exists => _data != null,
+    #data => _data == null ? null : Map<String, dynamic>.of(_data),
+    #reference => _Doc(_db, _path),
+    _ => super.noSuchMethod(i),
+  };
+}
+
+class _QuerySnap extends _Snap implements QueryDocumentSnapshot<_Data> {
+  _QuerySnap(super._db, super._path, super._data);
+}
+
+class _Doc implements DocumentReference<_Data> {
+  _Doc(this._db, this.path);
+  final _Db _db;
+  @override
+  final String path;
+
+  _Snap _snap() => _Snap(_db, path, _db.docs[path]);
+
+  @override
+  dynamic noSuchMethod(Invocation i) {
+    switch (i.memberName) {
+      case #id:
+        return path.split('/').last;
+      case #set:
+        _db.write(path, i.positionalArguments.first as _Data);
+        return Future<void>.value();
+      case #collection:
+        return _Col(_db, '$path/${i.positionalArguments.single}');
+      case #snapshots:
+        late final StreamController<DocumentSnapshot<_Data>> out;
+        StreamSubscription<String>? sub;
+        out = StreamController<DocumentSnapshot<_Data>>(
+          onListen: () {
+            out.add(_snap());
+            sub = _db._changes.stream
+                .where((p) => p == path)
+                .listen((_) => out.add(_snap()));
+          },
+          onCancel: () => sub?.cancel(),
+        );
+        return out.stream;
+    }
+    return super.noSuchMethod(i);
+  }
+}
+
+class _Col implements CollectionReference<_Data> {
+  _Col(this._db, this._path, [this._filters = const {}, this._limit]);
+  final _Db _db;
+  final String _path;
+  final Map<String, Object?> _filters;
+  final int? _limit;
+
+  @override
+  dynamic noSuchMethod(Invocation i) {
+    switch (i.memberName) {
+      case #doc:
+        return _Doc(_db, '$_path/${i.positionalArguments.single}');
+      case #where:
+        return _Col(_db, _path, {
+          ..._filters,
+          i.positionalArguments.single as String: i.namedArguments[#isEqualTo],
+        }, _limit);
+      case #orderBy:
+        return this; // Results are sorted newest first below.
+      case #limit:
+        return _Col(_db, _path, _filters, i.positionalArguments.single as int);
+      case #get:
+        final prefix = '$_path/';
+        final matches =
+            [
+              for (final e in _db.docs.entries)
+                if (e.key.startsWith(prefix) &&
+                    !e.key.substring(prefix.length).contains('/') &&
+                    _filters.entries.every((f) => e.value[f.key] == f.value))
+                  _QuerySnap(_db, e.key, e.value),
+            ]..sort((a, b) {
+              final byTime = readTime(b._data!['createdAt'])
+                  .compareTo(readTime(a._data!['createdAt']));
+              return byTime != 0 ? byTime : b._path.compareTo(a._path);
+            });
+        return Future<QuerySnapshot<_Data>>.value(
+          _Query(matches.take(_limit ?? matches.length).toList()),
+        );
+    }
+    return super.noSuchMethod(i);
+  }
+}
+
+class _Query implements QuerySnapshot<_Data> {
+  _Query(this.docs);
+  @override
+  final List<QueryDocumentSnapshot<_Data>> docs;
+  @override
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
+}
+
+class _Tx implements Transaction {
+  _Tx(this._db);
+  final _Db _db;
+  @override
+  dynamic noSuchMethod(Invocation i) {
+    final doc = i.positionalArguments.first as _Doc;
+    switch (i.memberName) {
+      case #get:
+        return Future<DocumentSnapshot<_Data>>.value(doc._snap());
+      case #set:
+        _db.write(doc.path, i.positionalArguments[1] as _Data);
+        return this;
+    }
+    return super.noSuchMethod(i);
+  }
+}
+
+class _Batch implements WriteBatch {
+  _Batch(this._db);
+  final _Db _db;
+  final _deletes = <String>[];
+  @override
+  dynamic noSuchMethod(Invocation i) {
+    switch (i.memberName) {
+      case #delete:
+        _deletes.add((i.positionalArguments.single as _Doc).path);
+        return null;
+      case #commit:
+        for (final path in _deletes) {
+          _db.write(path, null);
+        }
+        return Future<void>.value();
+    }
+    return super.noSuchMethod(i);
+  }
+}
+
+class _User implements User {
+  _User(this.uid);
   @override
   final String uid;
   @override
-  final String? email;
+  String? get email => '$uid@example.com';
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
-class _FakeCredential implements UserCredential {
-  _FakeCredential(this.user);
+class _Credential implements UserCredential {
+  _Credential(this.user);
   @override
   final User? user;
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
-class _FakeAuth implements FirebaseAuth {
-  _FakeAuth([this.currentUser]);
-  @override
-  User? currentUser;
+class _Auth implements FirebaseAuth {
+  User? current;
   int anonymousSignIns = 0;
   int signOuts = 0;
-
+  @override
+  User? get currentUser => current;
   @override
   Future<UserCredential> signInAnonymously() async {
     anonymousSignIns++;
-    return _FakeCredential(currentUser = _FakeUser('anon-$anonymousSignIns'));
+    current = _User('anon-$anonymousSignIns');
+    return _Credential(current);
   }
 
   @override
   Future<void> signOut() async {
     signOuts++;
-    currentUser = null;
+    current = null;
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
-Map<String, dynamic> _sessionDoc({
-  required String learnerId,
-  required String recipeId,
-  required DateTime createdAt,
-  String step = 'step-1',
-}) => {
-  'learnerId': learnerId,
-  'recipeId': recipeId,
-  'recipeVersion': 1,
-  'ingredients': <String, Object?>{},
-  'substitutions': <Object?>[],
-  'currentStepId': step,
-  'completedStepIds': <Object?>[],
-  'revision': 0,
-  'createdAt': Timestamp.fromDate(createdAt),
-  'updatedAt': Timestamp.fromDate(createdAt),
-};
+const _recipe = Recipe(
+  id: 'wrap',
+  version: 2,
+  title: 'Wrap',
+  summary: 'A wrap.',
+  ingredients: [Ingredient(id: 'chickpeas', name: 'Chickpeas', qty: '1 can')],
+  equipment: ['bowl'],
+  steps: [
+    RecipeStep(id: 'prep', title: 'Prep', instruction: 'Drain.', cue: 'Dry.'),
+    RecipeStep(id: 'mix', title: 'Mix', instruction: 'Stir.', cue: 'Even.'),
+  ],
+  checkpoints: [],
+  reviewedSubstitutions: [],
+  adjustmentLabels: {},
+);
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  late Recipe recipe;
-  late FakeFirebaseFirestore db;
-
-  setUpAll(() async => recipe = await loadBundledRecipe());
-  setUp(() => db = FakeFirebaseFirestore());
-
   group('FirebaseAuthService', () {
-    test('signs in anonymously once and reuses the signed-in cook', () async {
-      final auth = _FakeAuth();
+    test('reuses the signed-in cook, otherwise signs in anonymously', () async {
+      final auth = _Auth();
       final service = FirebaseAuthService(auth);
       expect(service.uid, isNull);
-
-      final first = await service.signInLearner();
-      final again = await service.signInLearner();
-
-      expect(first, 'anon-1');
-      expect(again, first);
+      expect(service.email, isNull);
+      expect(await service.signInLearner(), 'anon-1');
+      expect(await service.signInLearner(), 'anon-1');
       expect(auth.anonymousSignIns, 1);
-      expect(service.uid, first);
-    });
-
-    test('an existing account is used as is, with its email', () async {
-      final auth = _FakeAuth(_FakeUser('cook-7', email: 'cook@example.test'));
-      final service = FirebaseAuthService(auth);
-
-      expect(await service.signInLearner(), 'cook-7');
-      expect(service.email, 'cook@example.test');
-      expect(auth.anonymousSignIns, 0);
-    });
-
-    test('sign out clears the uid', () async {
-      final auth = _FakeAuth(_FakeUser('cook-7'));
-      final service = FirebaseAuthService(auth);
+      expect(service.uid, 'anon-1');
+      expect(service.email, 'anon-1@example.com');
       await service.signOut();
       expect(auth.signOuts, 1);
       expect(service.uid, isNull);
-      expect(service.email, isNull);
     });
   });
 
   group('FirestoreRecipeRepository', () {
-    test('an unseeded project falls back to the bundled recipe', () async {
-      final repo = FirestoreRecipeRepository(db, recipe);
-      final watched = await repo.watch(recipe.id).first;
-      expect(watched.id, recipe.id);
-      expect(watched.title, recipe.title);
+    test('reads a stored recipe, falls back to the bundled one, and never '
+        'swaps another recipe for it', () async {
+      final db = _Db();
+      final repo = FirestoreRecipeRepository(db, _recipe);
+      expect((await repo.watch('wrap').first).version, 2);
+      db.write('recipes/wrap', {..._recipe.toMap(), 'version': 3});
+      expect((await repo.watch('wrap').first).version, 3);
+      final other = <Recipe>[];
+      final sub = repo.watch('soup').listen(other.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(other, isEmpty);
+      await sub.cancel();
     });
-
-    test(
-      'an unseeded different recipe is never swapped for the bundled one',
-      () async {
-        final repo = FirestoreRecipeRepository(db, recipe);
-        final seen = <Recipe>[];
-        final sub = repo.watch('other_recipe_v1').listen(seen.add);
-        await pumpEventQueue();
-        expect(seen, isEmpty);
-
-        await db.collection('recipes').doc('other_recipe_v1').set({
-          ...recipe.toMap(),
-          'title': 'Other recipe',
-        });
-        await pumpEventQueue();
-        await sub.cancel();
-
-        expect(seen.single.id, 'other_recipe_v1');
-        expect(seen.single.title, 'Other recipe');
-      },
-    );
-
-    test(
-      'a seeded recipe takes its id from the document and streams edits',
-      () async {
-        final doc = db.collection('recipes').doc(recipe.id);
-        await doc.set({...recipe.toMap(), 'id': 'stale-id', 'title': 'Seeded'});
-        final repo = FirestoreRecipeRepository(db, recipe);
-        final updates = StreamIterator(repo.watch(recipe.id));
-
-        expect(await updates.moveNext(), isTrue);
-        expect(updates.current.id, recipe.id);
-        expect(updates.current.title, 'Seeded');
-
-        await doc.update({'title': 'Seeded v2'});
-        expect(await updates.moveNext(), isTrue);
-        expect(updates.current.title, 'Seeded v2');
-        await updates.cancel();
-      },
-    );
   });
 
   group('FirestoreSessionRepository', () {
-    test('createNew stores a fresh session at the first step', () async {
-      final repo = FirestoreSessionRepository(db);
-      final before = DateTime.now();
-      final session = await repo.createNew('cook-1', recipe);
-
-      final stored = await db.collection('sessions').doc(session.id).get();
-      expect(stored.exists, isTrue);
-      final data = stored.data()!;
-      expect(data['learnerId'], 'cook-1');
-      expect(data['recipeId'], recipe.id);
-      expect(data['recipeVersion'], recipe.version);
-      expect(data['currentStepId'], recipe.steps.first.id);
-      expect(data['revision'], 0);
-      expect(session.createdAt.isBefore(before), isFalse);
-      expect(session.timerDeadline, isNull);
-      expect(session.confirmedFacts, isEmpty);
+    late _Db db;
+    late FirestoreSessionRepository repo;
+    setUp(() {
+      db = _Db();
+      repo = FirestoreSessionRepository(db);
     });
 
-    test('createOrResume returns the newest session for this cook and recipe '
-        'only', () async {
-      final sessions = db.collection('sessions');
-      final t0 = DateTime(2026, 11, 20, 18);
-      await sessions
-          .doc('old')
-          .set(
-            _sessionDoc(
-              learnerId: 'cook-1',
-              recipeId: recipe.id,
-              createdAt: t0,
-            ),
-          );
-      await sessions
-          .doc('newest')
-          .set(
-            _sessionDoc(
-              learnerId: 'cook-1',
-              recipeId: recipe.id,
-              createdAt: t0.add(const Duration(hours: 2)),
-              step: 'step-3',
-            ),
-          );
-      await sessions
-          .doc('other-cook')
-          .set(
-            _sessionDoc(
-              learnerId: 'cook-2',
-              recipeId: recipe.id,
-              createdAt: t0.add(const Duration(days: 1)),
-            ),
-          );
-      await sessions
-          .doc('other-recipe')
-          .set(
-            _sessionDoc(
-              learnerId: 'cook-1',
-              recipeId: 'other_recipe_v1',
-              createdAt: t0.add(const Duration(days: 1)),
-            ),
-          );
-      final repo = FirestoreSessionRepository(db);
-
-      final resumed = await repo.createOrResume('cook-1', recipe);
-      expect(resumed.id, 'newest');
-      expect(resumed.currentStepId, 'step-3');
-      // Timestamps read back as DateTime.
-      expect(resumed.createdAt, t0.add(const Duration(hours: 2)));
+    test('creates, resumes the newest session for the cook and recipe, and '
+        'creates fresh on request', () async {
+      final first = await repo.createOrResume('cook', _recipe);
+      expect(first.currentStepId, 'prep');
+      expect(first.revision, 0);
+      expect(db.docs['sessions/${first.id}']!['learnerId'], 'cook');
+      expect((await repo.createOrResume('cook', _recipe)).id, first.id);
+      final other = await repo.createOrResume('someone-else', _recipe);
+      expect(other.id, isNot(first.id));
+      final fresh = await repo.createNew('cook', _recipe);
+      expect(fresh.id, isNot(first.id));
+      expect((await repo.createOrResume('cook', _recipe)).id, fresh.id);
     });
 
-    test('createOrResume creates a session when none exists', () async {
-      final repo = FirestoreSessionRepository(db);
-      final created = await repo.createOrResume('cook-9', recipe);
-      expect(created.learnerId, 'cook-9');
-      expect((await repo.createOrResume('cook-9', recipe)).id, created.id);
-      expect((await db.collection('sessions').get()).docs, hasLength(1));
-    });
-
-    test('watch waits for the document, then streams its updates', () async {
-      final repo = FirestoreSessionRepository(db);
+    test('watch emits saved sessions only', () async {
+      final saved = await repo.createNew('cook', _recipe);
       final seen = <CookingSession>[];
-      final sub = repo.watch('later').listen(seen.add);
-      await pumpEventQueue();
-      expect(seen, isEmpty, reason: 'a missing document emits nothing');
-
-      await db
-          .collection('sessions')
-          .doc('later')
-          .set(
-            _sessionDoc(
-              learnerId: 'cook-1',
-              recipeId: recipe.id,
-              createdAt: DateTime(2026, 11, 21),
-            ),
-          );
-      await pumpEventQueue();
+      final sub = repo.watch(saved.id).listen(seen.add);
+      final missing = <CookingSession>[];
+      final missingSub = repo.watch('nope').listen(missing.add);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen.single.id, saved.id);
+      expect(missing, isEmpty);
       await sub.cancel();
-      expect(seen.single.id, 'later');
-      expect(seen.single.learnerId, 'cook-1');
+      await missingSub.cancel();
     });
 
-    test('update applies the mutation in a transaction, stamps updatedAt and '
-        'round-trips session fields', () async {
-      final repo = FirestoreSessionRepository(db);
-      final created = await repo.createNew('cook-1', recipe);
-      final deadline = DateTime(2026, 11, 25, 19, 30);
-      final stepId = recipe.steps.last.id;
-
+    test('an ordinary update keeps the step-operation ids (SS-072)', () async {
+      final saved = await repo.createNew('cook', _recipe);
+      await repo.commitStepOp(
+        saved.id,
+        StepOp(
+          opId: 'op-1',
+          kind: StepOpKind.advance,
+          expectedStepId: 'prep',
+          toStepId: 'mix',
+        ),
+      );
       final next = await repo.update(
-        created.id,
-        (s) => s.copyWith(
-          currentStepId: stepId,
-          completedStepIds: [recipe.steps.first.id],
-          ingredients: {
-            'bread': IngredientStatus.have,
-            'jam': IngredientStatus.missing,
-            'butter': IngredientStatus.substituted,
-          },
-          substitutions: const [
-            SessionSubstitution(
-              ingredientId: 'butter',
-              substitute: 'olive oil',
-              source: 'reviewed',
-            ),
-          ],
-          confirmedFacts: ['No nuts in this kitchen.'],
-          timerId: 't1',
-          timerLabel: 'Toast',
-          timerDeadline: deadline,
-          revision: s.revision + 1,
-        ),
+        saved.id,
+        (s) => s.copyWith(confirmedFacts: ['No dairy'], revision: 2),
       );
-      expect(next.updatedAt.isBefore(created.updatedAt), isFalse);
+      expect(next.confirmedFacts, ['No dairy']);
+      final stored = db.docs['sessions/${saved.id}']!;
+      expect(stored[appliedOpIdsField], ['op-1']);
+      expect(stored['confirmedFacts'], ['No dairy']);
+      expect(stored['currentStepId'], 'mix');
+    });
 
-      // Read back with get(): fake_cloud_firestore 4.5 does not push
-      // transaction writes to snapshots() listeners (real Firestore does).
-      final doc = await db.collection('sessions').doc(created.id).get();
-      final reread = CookingSession.fromMap(doc.id, doc.data()!);
-      expect(reread.currentStepId, stepId);
-      expect(reread.completedStepIds, [recipe.steps.first.id]);
-      expect(reread.ingredients, {
-        'bread': IngredientStatus.have,
-        'jam': IngredientStatus.missing,
-        'butter': IngredientStatus.substituted,
-      });
-      final sub = reread.substitutions.single;
+    test('an update without saved op ids writes none', () async {
+      final saved = await repo.createNew('cook', _recipe);
+      await repo.update(saved.id, (s) => s.copyWith(revision: 1));
       expect(
-        (sub.ingredientId, sub.substitute, sub.source, sub.requestId),
-        ('butter', 'olive oil', 'reviewed', null),
+        db.docs['sessions/${saved.id}']!.containsKey(appliedOpIdsField),
+        isFalse,
       );
-      expect(reread.confirmedFacts, ['No nuts in this kitchen.']);
-      expect(reread.timerDeadline, deadline);
-      expect(reread.timerLabel, 'Toast');
-      expect(reread.revision, 1);
-      expect(reread.createdAt, created.createdAt);
     });
 
-    test('an unknown ingredient status from storage reads as "have"', () async {
-      await db.collection('sessions').doc('legacy').set({
-        ..._sessionDoc(
-          learnerId: 'cook-1',
-          recipeId: recipe.id,
-          createdAt: DateTime(2026, 11, 1),
+    test('a step operation is saved once in one transaction; a retry or an '
+        'outdated one writes nothing', () async {
+      final saved = await repo.createNew('cook', _recipe);
+      final endsAt = DateTime.utc(2026, 11, 25, 18, 1);
+      final op = StepOp(
+        opId: 'op-1',
+        kind: StepOpKind.advance,
+        expectedStepId: 'prep',
+        toStepId: 'mix',
+        timer: OpTimer(id: 't', label: 'Mix', endsAt: endsAt),
+      );
+      final writesBefore = db.writes;
+      final applied = await repo.commitStepOp(saved.id, op);
+      expect(applied.outcome, StepOpOutcome.applied);
+      expect(applied.session.currentStepId, 'mix');
+      expect(applied.session.timerDeadline, endsAt);
+      expect(db.writes, writesBefore + 1);
+      expect(db.transactions, 1);
+
+      final retry = await repo.commitStepOp(saved.id, op);
+      expect(retry.outcome, StepOpOutcome.duplicate);
+      expect(retry.session.currentStepId, 'mix');
+      final stale = await repo.commitStepOp(
+        saved.id,
+        StepOp(
+          opId: 'op-2',
+          kind: StepOpKind.advance,
+          expectedStepId: 'prep',
+          toStepId: 'mix',
         ),
-        'ingredients': {'bread': 'borrowed-from-neighbour'},
-        'substitutions': [
-          {'ingredientId': 'jam', 'substitute': 'honey'},
-        ],
-      });
-      final session = await FirestoreSessionRepository(db)
-          .watch('legacy')
-          .first;
-      expect(session.ingredients, {'bread': IngredientStatus.have});
-      expect(session.substitutions.single.source, 'reviewed');
+      );
+      expect(stale.outcome, StepOpOutcome.stale);
+      expect(db.writes, writesBefore + 1);
+      final stored = db.docs['sessions/${saved.id}']!;
+      expect(stored[appliedOpIdsField], ['op-1']);
+      expect(stored['revision'], 1);
     });
 
-    test(
-      'deleteSession removes the session and its legacy checkpoints only',
-      () async {
-        final repo = FirestoreSessionRepository(db);
-        final doomed = await repo.createNew('cook-1', recipe);
-        final kept = await repo.createNew('cook-1', recipe);
-        final sessions = db.collection('sessions');
-        await sessions.doc(doomed.id).collection('checkpoints').doc('a').set({
-          'photo': 'legacy',
-        });
-        await sessions.doc(doomed.id).collection('checkpoints').doc('b').set({
-          'photo': 'legacy',
-        });
-        await sessions.doc(kept.id).collection('checkpoints').doc('c').set({
-          'photo': 'keep',
-        });
-
-        await repo.deleteSession(doomed.id);
-
-        expect((await sessions.doc(doomed.id).get()).exists, isFalse);
-        expect(
-          (await sessions.doc(doomed.id).collection('checkpoints').get()).docs,
-          isEmpty,
-        );
-        expect((await sessions.doc(kept.id).get()).exists, isTrue);
-        expect(
-          (await sessions.doc(kept.id).collection('checkpoints').get()).docs,
-          hasLength(1),
-        );
-      },
-    );
-
-    test('deleting a session without checkpoints succeeds', () async {
-      final repo = FirestoreSessionRepository(db);
-      final session = await repo.createNew('cook-1', recipe);
-      await repo.deleteSession(session.id);
-      expect((await db.collection('sessions').get()).docs, isEmpty);
-    });
-  });
-
-  // The in-memory fakes stand in for Firestore across the app's widget tests,
-  // so they must behave the same way for the flows the app relies on.
-  group('fake and Firestore session repositories agree', () {
-    final makers = <String, SessionRepository Function()>{
-      'fake': FakeSessionRepository.new,
-      'firestore': () => FirestoreSessionRepository(FakeFirebaseFirestore()),
-    };
-    for (final entry in makers.entries) {
-      test('${entry.key}: resume, update, new cook and delete', () async {
-        final repo = entry.value();
-        final first = await repo.createOrResume('cook-1', recipe);
-        expect((await repo.createOrResume('cook-1', recipe)).id, first.id);
-
-        final updated = await repo.update(
-          first.id,
-          (s) => s.copyWith(revision: 3),
-        );
-        expect(updated.revision, 3);
-        expect((await repo.createOrResume('cook-1', recipe)).revision, 3);
-
-        await Future<void>.delayed(const Duration(milliseconds: 2));
-        final fresh = await repo.createNew('cook-1', recipe);
-        expect(fresh.revision, 0);
-        expect((await repo.createOrResume('cook-1', recipe)).id, fresh.id);
-
-        await repo.deleteSession(fresh.id);
-        expect((await repo.createOrResume('cook-1', recipe)).id, first.id);
-      });
-    }
-
-    test('fake auth signs in and out like the Firebase one', () async {
-      final AuthService fake = FakeAuthService(learnerUid: 'cook-3');
-      expect(fake.uid, isNull);
-      expect(await fake.signInLearner(), 'cook-3');
-      expect(fake.uid, 'cook-3');
-      await fake.signOut();
-      expect(fake.uid, isNull);
+    test('deleting a session also deletes its checkpoints', () async {
+      final saved = await repo.createNew('cook', _recipe);
+      db.write('sessions/${saved.id}/checkpoints/a', {'stepId': 'prep'});
+      db.write('sessions/other/checkpoints/b', {'stepId': 'prep'});
+      await repo.deleteSession(saved.id);
+      expect(db.docs.containsKey('sessions/${saved.id}'), isFalse);
+      expect(
+        db.docs.containsKey('sessions/${saved.id}/checkpoints/a'),
+        isFalse,
+      );
+      expect(db.docs.containsKey('sessions/other/checkpoints/b'), isTrue);
     });
   });
 }

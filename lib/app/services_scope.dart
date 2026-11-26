@@ -57,7 +57,11 @@ Future<AppServices> fakeServices({String recipeId = kRecipeId}) async {
 }
 
 class ServicesScope extends InheritedWidget {
-  const ServicesScope({super.key, required this.services, required super.child});
+  const ServicesScope({
+    super.key,
+    required this.services,
+    required super.child,
+  });
 
   final AppServices services;
 
@@ -68,5 +72,6 @@ class ServicesScope extends InheritedWidget {
   }
 
   @override
-  bool updateShouldNotify(ServicesScope oldWidget) => services != oldWidget.services;
+  bool updateShouldNotify(ServicesScope oldWidget) =>
+      services != oldWidget.services;
 }

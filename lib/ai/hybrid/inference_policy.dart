@@ -142,6 +142,8 @@ const featureRoutes = <String, FeatureRoute>{
     HybridMode.onlyOnDevice,
     cloudWhenLocalCannot: true,
     semanticRetry: false,
+    // Always: a typed label that hits a local hard limit (e.g. language)
+    // must not reach the cloud without the cook's OK.
     consent: UploadConsent.always,
     cloudOnlyWithImage: true,
   ),

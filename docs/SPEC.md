@@ -1,19 +1,29 @@
 # SousSight design specification
 
-Updated November 8, 2026 for the DevFest Florida (Orlando) showcase. This document is the current product direction; earlier handoffs describe an older design.
+Updated November 25, 2026. This document describes the cloud build that is live today (everything up to commit `430747b`, November 10, 2026) and the hybrid on-device direction that is in progress. It is the current product direction; earlier handoffs describe an older design.
 
-## November 8 changes
+## Hybrid direction (in progress for #BuildHybridAI 2026)
+
+**What happens at the counter stays at the counter: on-device when the device can, cloud when it earns it.** None of this is in the live app yet, and none of it has been run against a real on-device or cloud model. [PLAN.md](buildhybridai/PLAN.md) says what and why; [DESIGN.md](buildhybridai/DESIGN.md) says how, and lists the device checks each claim depends on.
+
+- **Why.** The cooks SousSight is for often have limited data plans, patchy kitchen Wi-Fi, and photos of their home plus allergy details they'd rather not upload.
+- **How.** Every model call in the entry build goes through Firebase AI Logic. An in-repo Flutter bridge (`packages/ai_logic_hybrid`, unofficial) wraps the official hybrid SDKs for Web (Chrome built-in Gemini Nano), Android (Gemini Nano, AICore developer preview) and iOS (Apple Foundation Models). One app-side dispatcher decides per request whether it runs on the device or in the cloud, asks for consent before an on-device task sends a frame to the cloud, and records each transfer without storing its content.
+- **Planned features.** Hybrid pantry scan; an AI recipe draft that only requires ingredients the cook confirmed; a local watch that runs on the device without a cloud video stream; Coach Lite (step questions and generated panels without the live coach); a label check that lists allergens a label mentions; a source badge beside every result; first-run and offline states for an already-open cooking session; and a clearly simulated dinner-ready text for the entry build.
+- **Unchanged.** The cook stays the human in the loop. Vision, on-device or cloud, cannot establish internal temperature, freshness, doneness or allergen absence. Research, nearby food help and the live voice and vision coach stay in the cloud.
+- **Claims.** A platform or feature is described as working only after its check passes on real hardware. Until then it is "in progress".
+
+## Changes through November 10 (the live cloud build)
 
 - **Pantry-first start (SS-038).** The app opens on "What did you get from the pantry?" The cook scans with the camera, records a short voice clip, or types. One structured Gemini Flash call (Firebase AI Logic, multimodal input, JSON schema output) returns candidate items, ranked bundled meals with matched/missing ingredients, and at most one clarifying question. Items are candidates the cook confirms. Picking a meal opens the live cooking screen for that recipe. `?recipe=<id>` and `RECIPE_ID` skip the scan.
 - **Recipes.** Peanut Butter Sandwich (default demo, untimed), Smashed Chickpea Salad Wrap (real 5-minute pickle timer, mash/mix visual checks), and Black Bean & Corn Salsa (produce-forward, real 5-minute meld timer, dice-size visual cue). Sessions are keyed by cook and recipe; "New cook" starts a fresh session without deleting history (SS-033).
-- **Vonage lifecycle (SS-036/037).** Cook-reviewed "dinner's started" and "dinner is ready" SMS from server-side templates; a signed Messages API status webhook (`/api/vonage-status`) records submitted/delivered/read/rejected/undeliverable and mirrors it to an owner-readable `sessions/{id}/notifications/{nid}` doc the UI listens to. A labelled demo action simulates a failed delivery through the same handler. Failures show the reason and offer a new reviewed attempt; there are no automatic retries.
+- **Dinner-ready texts (SS-036/037).** Cook-reviewed "dinner's started" and "dinner is ready" SMS from server-side templates; a signed Messages API status webhook (`/api/vonage-status`) records submitted/delivered/read/rejected/undeliverable and mirrors it to an owner-readable `sessions/{id}/notifications/{nid}` doc the UI listens to. A labelled demo action simulates a failed delivery through the same handler. Failures show the reason and offer a new reviewed attempt; there are no automatic retries.
 - **Live reliability (SS-035).** Validation errors go back to the model; duplicate cook answers are blocked; socket errors attempt resumption; low media resolution; replies in the cook's language.
 - **Nearby food help (SS-041).** Grounding with Google Maps (Firebase AI Logic `Tool.googleMaps` with an opt-in `RetrievalConfig` location, or a typed city/ZIP) lists nearby food pantries and stores. It shows only places from Maps grounding metadata, with Maps links and attribution, never invented hours or eligibility, and doesn't store the location.
 - **Allergy-aware start and How it works (SS-042).** When a recipe has allergens, the coach first asks once about allergies (`ask_cook`), then researches a substitution if needed. The header shows an allergen chip. An in-app "How it works" sheet lists the flow, technologies, privacy and safety boundaries.
 - **Cost guardrails (SS-043).** Live session cap with a warning, idle stop, a 15 s watch cadence that expires, low media resolution, and per-user, daily and global Live token caps. Zero-cost simulated Vonage outcomes.
 - **Meal-complete moment (SS-049).** Completing the final step stops the live coach (no further model call) and shows a recap built only from cook-confirmed facts, with reviewed dinner text, nearby help and cook-again actions.
 - **AI-drafted recipes are the primary path (SS-053).** **Make a meal from these ingredients** leads the pantry results. Gemini Flash (structured output) creates a recipe from exactly the cook-confirmed items, which is validated into the app's `Recipe` model with an id starting `draft_`, 3–7 steps, visible cues, clamped timers and the major-nine allergens only. Safety rules are enforced in code: thermometer reminders for heated meat, poultry, fish, shellfish or egg, and a no-doneness-certification line on every heated step. Drafts are labelled **AI-drafted recipe · not reviewed** and the live coach is told so. Reviewed recipes are shown as alternatives.
-- **Vonage verified end to end (SS-021).** A real SMS from the hosted app was received, and the signed status callback showed Delivered. Real sends go only to allowlisted numbers; simulated outcomes remain for repeat demos.
+- **Dinner-ready texts verified end to end (SS-021).** A real SMS from the hosted app was received, and the signed status callback showed Delivered. Real sends go only to allowlisted numbers; simulated outcomes remain for repeat demos.
 - **Browser support.** Chrome on desktop and Android. Firefox fails client-side for Firebase AI Logic calls (#109).
 - **Removed (SS-034).** The instructor board, help-request routing, triage/assessment clients, seed data and their Firestore rules are gone. References to them below are historical.
 
@@ -21,7 +31,7 @@ Updated November 8, 2026 for the DevFest Florida (Orlando) showcase. This docume
 
 SousSight is a live cooking companion. The cook shows ingredients and the bowl to the camera, talks through a recipe, and asks “am I doing this right?” Gemini uses sampled video and microphone audio to give short spoken guidance and compose useful Flutter panels as the task changes.
 
-**The cook is the human in the loop.** When context is missing, the coach asks the cook a precise question. When an answer needs outside information, it performs a separate Google Search grounded request and presents returned sources. The cook confirms ingredients, substitutions, progress, and messages. There is no external instructor, board, help queue, or routing requirement in this submission.
+**The cook is the human in the loop.** When context is missing, the coach asks the cook a precise question. When an answer needs outside information, it performs a separate Google Search grounded request and presents returned sources. The cook confirms ingredients, substitutions, progress, and messages. There is no external instructor, board, help queue, or routing requirement in this product.
 
 Live vision, bidirectional audio, GenUI/A2UI panels, real timers, optional visual watches, and a reviewed dinner-ready message are core features. Keep those features central when making implementation tradeoffs.
 
@@ -47,7 +57,7 @@ The five-minute onion timer remains a genuine five-minute recipe timer. Do not s
 
 | Capability | Implementation / current limit |
 |---|---|
-| Recipe | One bundled `chickpea_wrap_v1` recipe, four steps. General recipe import is outside the current build. |
+| Recipe | Three reviewed bundled recipes (`peanut_butter_sandwich_v1`, `chickpea_wrap_v1`, `black_bean_corn_salsa_v1`) plus AI-drafted recipes from cook-confirmed items (SS-053). General recipe import is outside the current build. |
 | Live vision and voice | Browser camera frames, microphone PCM, streamed spoken responses, transcription, and tool calls. Real hardware and deployed model connectivity still need a smoke test. |
 | Dynamic workspace | GenUI 0.10.4 renders validated A2UI components from a cooking catalog. The model chooses composition and content; it does not generate executable Dart or arbitrary HTML. |
 | Check my bowl | Active cook flow asks Live to compare the latest frame with the current recipe cue. It is not a measured vision accuracy benchmark. |
@@ -55,7 +65,7 @@ The five-minute onion timer remains a genuine five-minute recipe timer. Do not s
 | Research | Separate Gemini 3.8 Flash request with Google Search. Sources come from provider grounding metadata; the real client rejects answers without usable sources. |
 | Timers | Absolute deadlines drive countdowns. Multiple timers can run in memory; only the latest timer ID, label, and deadline are saved in the cooking session for reload. |
 | Watch | Opt-in visual goal, fresh-frame checks, periodic model prompts, and watch IDs to reject stale results. It pauses when the session ends or the tab becomes hidden. |
-| Dinner notification | Cook-reviewed request to an authenticated backend; Vonage sending is disabled by default. Provider acceptance is not confirmed delivery. |
+| Dinner notification | Cook-reviewed request to an authenticated backend; provider sending is disabled by default (`ENABLE_DINNER_MESSAGES=false`). Provider acceptance is not confirmed delivery; only a signed delivery report shows Delivered. |
 | Rehearsal | `FAKE_BACKEND=true` uses simulated AI and in-memory services. It does not capture camera/audio, run a real watch, search Google, or send a message. |
 | Reference assets | Existing target JPEGs are small placeholders. Recipe fixture fields saying `Recipe reviewer` are not evidence of a real human review. |
 
@@ -73,7 +83,7 @@ lib/ai/        grounded research plus existing structured-model clients
 lib/live/      browser media, Live transport, tools, lifecycle and watch control
 lib/genui/     trusted cooking catalog, validated surfaces, timers
 lib/learner/   cooking screen, coordinator, labelled rehearsal transport
-lib/research/  sister's AGY research/substitution experience (separate task)
+lib/research/  research/substitution panel (Jenna's, separate ownership)
 functions/    protected Live-token and dinner-ready endpoints
 tool/         local build tooling
 ```
@@ -129,7 +139,7 @@ The separate `CookingResearchClient` accepts a question, the current step, and c
 
 Citations are HTTPS links taken from grounding metadata, never extracted from model-authored prose. Google-provided search suggestions are preserved in an isolated renderer. Failure, timeout, and a missing usable source are explicit states. The cook may clarify context or retry; late results must not overwrite a newer question.
 
-The sister's [AGY task](handoffs/AGY-COOKING-RESEARCH.md) adds a focused research panel, clarification flow, and editable substitution confirmation through the provider-independent contract. It must not silently change the recipe or claim that a substitution has been reviewed by someone else.
+Jenna's [research panel task](handoffs/AGY-COOKING-RESEARCH.md) adds a focused research panel, clarification flow, and editable substitution confirmation through the provider-independent contract. It must not silently change the recipe or claim that a substitution has been reviewed by someone else.
 
 ## Persistence and privacy boundaries
 
@@ -145,17 +155,17 @@ Backend-only Firestore collections hold token quotas and dinner-message idempote
 
 The backend defaults to `ENABLE_DINNER_MESSAGES=false`. WhatsApp uses the Vonage Messages Sandbox; SMS uses the production Messages API with the appropriate sender/account setup. Keep channel and account details in [functions/README.md](../functions/README.md), including secret names, sandbox enrollment, and rate limits.
 
-A transaction claims the notification before contacting Vonage. A second ID cannot bypass an existing announcement for the same meal and recipient. Pending or ambiguous outcomes are not automatically retried. The UI distinguishes rehearsal, provider rejection, uncertain status, and provider acceptance with delivery unconfirmed. Delivery callbacks are not implemented in this build, so do not display a delivered receipt.
+A transaction claims the notification before contacting Vonage. A second ID cannot bypass an existing announcement for the same meal and recipient. Pending or ambiguous outcomes are not automatically retried. The UI distinguishes rehearsal, provider rejection, uncertain status, and provider acceptance with delivery unconfirmed. Delivery reports arrive through the signed `/api/vonage-status` webhook and are mirrored to `sessions/{id}/notifications/{nid}`; only a provider `delivered` or `read` report is shown as delivered or read.
 
 ## Build and release shape
 
-The application artifact is `build/web`, produced by `tool/build_web.sh`. Hosting needs rewrites for `/api/live-token` and `/api/dinner-ready` before the single-page-app fallback. The token and dinner functions run in `us-central1`. Keep runtime secrets in Secret Manager and service settings on the backend; the web build only receives public configuration and development-only App Check settings.
+The application artifact is `build/web`, produced by `tool/build_web.sh`. Hosting needs rewrites for `/api/live-token`, `/api/dinner-ready` and `/api/vonage-status` before the single-page-app fallback. The token and dinner functions run in `us-central1`. Keep runtime secrets in Secret Manager and service settings on the backend; the web build only receives public configuration and development-only App Check settings.
 
 Continue the existing stack with small reviewable commits. The foundation and data layers remain the base, followed by structured AI, live cooking, dynamic UI, the cook application, protected backend functions, and integration checks. Historical board branches are not the current product plan. The AGY research task has separate file ownership and joins the stack through its draft PR.
 
 ## Acceptance and remaining validation
 
-Before calling the submission demo ready:
+Before calling a release demo-ready:
 
 - Run static analysis, focused Dart tests, browser media tests, backend tests, and the web build for the integrated cook entrypoint. Report sandbox or environment blocks separately from passing tests.
 - Exercise the actual hosted app on a phone: permissions, camera framing, two or more spoken turns, interruption, mute, disconnect, hide/resume, and a generated interactive panel.

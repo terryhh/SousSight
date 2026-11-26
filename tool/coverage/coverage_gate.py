@@ -20,7 +20,9 @@ export-only barrel files also land there because they have no executable
 lines.
 
 The gate compares each root's coverage with the integer minimum stored in
-tool/coverage/baseline.json and fails when a root is below it. With
+tool/coverage/baseline.json and fails when a root is below it, allowing
+JITTER_LINES (1) uncovered line per root for the VM's non-repeatable
+const-constructor coverage. With
 --update-baseline each minimum is raised to the current measurement rounded
 down; it is never lowered. A missing baseline file is created only with
 --update-baseline.
@@ -43,6 +45,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = 'packages/ai_logic_hybrid'
 GATED_ROOTS = {'lib': 'lib/', 'plugin': PLUGIN_DIR + '/lib/'}
+# The Dart VM's line coverage is not perfectly repeatable: a const
+# constructor's line (e.g. HybridConfig in the plugin's contract.dart) is
+# sometimes hit and sometimes not across identical runs. In the small plugin
+# root one line is ~0.5 points, enough to cross an integer minimum. The gate
+# therefore forgives this many uncovered lines per root; it never forgives a
+# real drop of more than that.
+JITTER_LINES = 1
 # Areas always printed, even when nothing in them was measured.
 NAMED_AREAS = ('lib/ai', 'lib/trust', 'lib/watch', 'lib/pantry', 'lib/coach_lite',
                'lib/label', 'lib/live', 'lib/learner', 'lib/data', 'plugin')
@@ -193,7 +202,8 @@ def build_report(files, all_sources, minimums, bottom) -> tuple[list[str], dict,
     unloaded = [path for path in all_sources if path not in measured]
 
     out = ['SousSight line coverage (lcov DA records; generated files excluded)', '']
-    out.append(f'{"Gated root":<40} {"Lines":>13} {"Cover":>7} {"Minimum":>8}  Result')
+    out.append(f'{"Gated root":<40} {"Lines":>13} {"Cover":>7} {"Minimum":>8}  Result '
+               f'(allows {JITTER_LINES} line of VM coverage jitter per root)')
     failures = []
     for name, prefix in GATED_ROOTS.items():
         hit, found = roots[name]
@@ -203,11 +213,12 @@ def build_report(files, all_sources, minimums, bottom) -> tuple[list[str], dict,
             failures.append(f'{name}: no coverage data for {prefix}')
         elif minimum is None:
             result = 'no baseline'
-        elif pct(hit, found) + 1e-9 >= minimum:
+        elif pct(min(hit + JITTER_LINES, found), found) + 1e-9 >= minimum:
             result = 'pass'
         else:
             result = 'FAIL'
-            failures.append(f'{name}: {pct(hit, found):.1f}% is below the minimum {minimum}%')
+            failures.append(f'{name}: {pct(hit, found):.1f}% is below the minimum {minimum}% '
+                            f'(even allowing {JITTER_LINES} line of VM coverage jitter)')
         min_text = f'{minimum}%' if minimum is not None else '-'
         out.append(f'{name + " (" + prefix + ")":<40} {hit:>6}/{found:<6} {fmt_pct(hit, found):>7} '
                    f'{min_text:>8}  {result}')

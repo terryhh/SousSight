@@ -12,9 +12,12 @@ many steps were skipped.
 ./tool/verify_all.sh --no-e2e        # skip the browser journey
 ./tool/verify_all.sh --dry-run       # show the plan (run/skip per step), run nothing
 ./tool/verify_all.sh --update-baseline   # raise the coverage minimums (never lowers them)
+./tool/verify_all.sh --e2e-base-url https://…   # also run the journey against a deployed build
+./tool/verify_all.sh --allow-coverage-skip      # a missing lcov is SKIP, not FAIL (rarely wanted)
 ```
 
-Output goes to `build/verify/` (override with `VERIFY_OUT_DIR`): `summary.txt`,
+Output goes to `build/verify/` (override with `VERIFY_OUT_DIR`; a relative value is resolved
+against the directory you ran the script from): `summary.txt`,
 `summary.md` (a Markdown table to paste into a PR), `coverage.txt`, `logs/NN-step.log`, the app
 and plugin lcov files and a merged `lcov.info` with repository-relative paths. The script never
 writes the repository's `coverage/` directories.
@@ -26,18 +29,25 @@ writes the repository's `coverage/` directories.
 | 1-2 | pub get | `flutter pub get --enforce-lockfile` (app, as CI), `flutter pub get` (plugin) | — |
 | 3-4 | analyze | `flutter analyze --no-pub`, app and `packages/ai_logic_hybrid` | — |
 | 5-6 | unit tests | `flutter test --no-pub --coverage`, app and plugin | — |
-| 7 | coverage gate | `python3 -I tool/coverage/coverage_gate.py` | a test step failed (no fresh lcov) |
+| 7 | coverage gate | `python3 -I tool/coverage/coverage_gate.py` | never skipped by default: if either lcov file is missing (a test step failed, or it was written elsewhere) the gate step is **FAIL**, so the run cannot end GREEN without it; `--allow-coverage-skip` downgrades that to SKIP |
 | 8 | plugin web tests | `flutter test --platform chrome test/web` in the plugin | `--quick`, no Chrome |
 | 9 | Node bridge + media | `node --test test/hybrid/*.cjs test/live/browser_media_test.cjs` | no node |
 | 10 | script tests | `node --test test/tool/*.cjs`, `python3 -m unittest discover -s test/tool -p 'test_*.py'` | no node |
 | 11 | functions | `npm --prefix functions run check && npm --prefix functions test` (runs `npm ci` first if `node_modules` is missing) | no node |
 | 12 | Firestore rules | `npm --prefix test/rules test` (emulator) | `--quick`, no `firebase` CLI, no JDK 21+ |
-| 13 | rehearsal web build | `./tool/build_web.sh --no-pub --dart-define=FAKE_BACKEND=true` | `--quick` |
+| 13 | rehearsal web build | `./tool/build_web.sh --no-pub --dart-define=FAKE_BACKEND=true`, then a copy to `build/verify/e2e-rehearsal-web/` for the journey | `--quick` |
 | 14-16 | judged web build | writes `judged_defines.json` (`FAKE_BACKEND=false`, `DINNER_MODE=simulated`, `LIVE_BACKEND=none`, `CLOUD_ROUTES=`), then `check_build_config.sh --judged`, `build_web.sh --dart-define-from-file=…`, `check_web_bundle.sh --warn-live-marker --commit HEAD --config …` | `--quick`; later parts skip if an earlier part failed |
 | 17 | Android | `flutter build apk --debug --no-pub` | `--quick`, `--no-native`, no SDK at `$ANDROID_HOME` |
 | 18 | iOS | `flutter build ios --no-codesign --debug --no-pub` | `--quick`, `--no-native`, not macOS, no Xcode |
 | 19 | secret scan | gitleaks 8.30.1 `git --config .gitleaks.toml --redact=100 --log-opts="--all --full-history"` | `--quick`, no binary and the download failed |
-| 20 | browser journey | `tool/e2e/run.sh` | `--quick`, `--no-e2e`, script not on the branch, no Chrome |
+| 20 | browser journey | `tool/e2e/run.sh build/verify/e2e-rehearsal-web` with `E2E_BASE_URL` unset, `E2E_MODE=rehearsal`, `E2E_ALLOW_AI=0` | `--quick`, `--no-e2e`, script not on the branch, no Chrome, no rehearsal artifact |
+| 21 | hosted journey (opt-in) | only with `--e2e-base-url URL`: `E2E_BASE_URL=URL E2E_MODE=auto E2E_ALLOW_AI=0 tool/e2e/run.sh` | not requested |
+
+The browser journey never runs against `build/web` (which holds the judged build by the time
+it runs) and never against a URL unless `--e2e-base-url` asks for it as its own step. Whatever
+the caller's environment says, `verify_all.sh` forces `E2E_ALLOW_AI=0`, so the harness aborts
+model, Live and dinner requests and a run never spends quota. A run that is meant to reach real
+AI services is `tool/e2e/run.sh` by hand, with `E2E_ALLOW_AI=1` set on purpose.
 
 The judged bundle check uses `--warn-live-marker` exactly as the CI validate job does: until
 SS-074 compiles the ephemeral Live transport out of the judged build, its markers are a
@@ -71,8 +81,12 @@ measures **line coverage** — the share of lcov `DA` lines with a hit — for t
 Excluded as generated: `lib/firebase_options.dart`, `*.g.dart`, `*.freezed.dart`,
 `*.mocks.dart`.
 
-Each root must be at or above its integer minimum in `tool/coverage/baseline.json`. The
-minimums were set to the measured coverage on the trunk, rounded down. `--update-baseline`
+Each root must be at or above its integer minimum in `tool/coverage/baseline.json`, allowing
+one uncovered line per root: the Dart VM does not report a const constructor's line the same
+way on every run (seen on the plugin's `HybridConfig`, 195 vs 196 of 215 lines across identical
+runs), and in the small plugin root one line is about half a point. The
+minimums were set to the measured coverage on the trunk after #193 (lib 85.9%, plugin 91.2%),
+rounded down: lib 85, plugin 91. `--update-baseline`
 raises each minimum to the current measurement rounded down and never lowers one; run it (or
 `./tool/verify_all.sh --update-baseline`) after adding tests and commit the new baseline with
 them. A root with no coverage data fails even at a zero minimum, and a missing lcov file is an

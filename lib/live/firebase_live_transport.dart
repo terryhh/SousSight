@@ -2,48 +2,37 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:firebase_ai/firebase_ai.dart';
-import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import 'live_backend_guard.dart';
 import 'live_tools.dart';
 import 'live_types.dart';
 
-/// Opens a Live session for [model]; [FirebaseLiveTransport]'s test seam.
+/// Opens one Firebase AI Logic Live session. Defaults to firebase_ai's
+/// `liveGenerativeModel(...).connect`; tests pass a fake.
 typedef LiveSessionOpener = Future<LiveSession> Function({
   required String model,
   required String systemInstruction,
 });
 
-Future<LiveSession> _openFirebaseSession({
-  required String model,
-  required String systemInstruction,
-}) {
-  final liveModel = FirebaseAI.googleAI().liveGenerativeModel(
-    model: model,
-    systemInstruction: Content.system(systemInstruction),
-    liveGenerationConfig: LiveGenerationConfig(
-      responseModalities: [ResponseModalities.audio],
-      inputAudioTranscription: AudioTranscriptionConfig(),
-      outputAudioTranscription: AudioTranscriptionConfig(),
-      contextWindowCompression: ContextWindowCompressionConfig(
-        slidingWindow: SlidingWindow(),
-      ),
-    ),
-    tools: [Tool.functionDeclarations(cookingLiveFunctions())],
-  );
-  return liveModel.connect(sessionResumption: SessionResumptionConfig());
-}
-
-/// Native Firebase AI Logic adapter. On web use EphemeralGeminiLiveTransport:
-/// firebase_ai 5.1's browser WebSocket cannot attach App Check headers.
+/// Gemini Live through Firebase AI Logic (`LIVE_BACKEND=aiLogic`, SS-074).
+///
+/// On Android and iOS, firebase_ai sends App Check and Auth headers on the
+/// Live handshake and on every resume. On web, firebase_ai 5.1 opens a browser
+/// WebSocket, which cannot carry those headers; whether Live works there with
+/// App Check enforced is gate G3. Either way the socket goes to
+/// firebasevertexai.googleapis.com, never the Gemini Developer API host.
+///
+/// With a [guard], a new session is reserved server-side before it opens, and
+/// every connect and resume re-checks the Live route and writes a ledger leg.
 class FirebaseLiveTransport implements LiveTransport {
-  /// [openSession] is a test seam; production omits it and connects through
-  /// Firebase AI Logic.
   FirebaseLiveTransport({
     this.model = kLiveModel,
-    @visibleForTesting LiveSessionOpener? openSession,
-  }) : _openSession = openSession ?? _openFirebaseSession;
+    this.guard,
+    LiveSessionOpener? openSession,
+  }) : _open = openSession ?? _openFirebaseSession;
   final String model;
-  final LiveSessionOpener _openSession;
+  final LiveCloudGuard? guard;
+  final LiveSessionOpener _open;
   final _events = StreamController<LiveEvent>.broadcast();
   LiveSession? _session;
   StreamSubscription<LiveServerResponse>? _subscription;
@@ -57,7 +46,18 @@ class FirebaseLiveTransport implements LiveTransport {
 
   @override
   Future<void> connect({required String systemInstruction}) async {
-    final session = await _openSession(
+    if (_closed) return;
+    final guard = this.guard;
+    if (guard != null) {
+      // Reserve before the socket opens; denied throws LiveUnavailable.
+      await guard.reserveSession();
+      // Stop or dispose while the reservation was in flight: open nothing.
+      if (_closed) return;
+      if (!guard.admit()) {
+        throw const LiveUnavailable(LiveCloudGuard.blockedMessage);
+      }
+    }
+    final session = await _open(
       model: model,
       systemInstruction: systemInstruction,
     );
@@ -69,6 +69,26 @@ class FirebaseLiveTransport implements LiveTransport {
     _setup = Completer<void>();
     _listen(session);
     await _setup!.future.timeout(const Duration(seconds: 20));
+  }
+
+  static Future<LiveSession> _openFirebaseSession({
+    required String model,
+    required String systemInstruction,
+  }) {
+    final liveModel = FirebaseAI.googleAI().liveGenerativeModel(
+      model: model,
+      systemInstruction: Content.system(systemInstruction),
+      liveGenerationConfig: LiveGenerationConfig(
+        responseModalities: [ResponseModalities.audio],
+        inputAudioTranscription: AudioTranscriptionConfig(),
+        outputAudioTranscription: AudioTranscriptionConfig(),
+        contextWindowCompression: ContextWindowCompressionConfig(
+          slidingWindow: SlidingWindow(),
+        ),
+      ),
+      tools: [Tool.functionDeclarations(cookingLiveFunctions())],
+    );
+    return liveModel.connect(sessionResumption: SessionResumptionConfig());
   }
 
   void _listen(LiveSession session) {
@@ -159,6 +179,12 @@ class FirebaseLiveTransport implements LiveTransport {
       _events.addError(
         StateError('Live session expired; reconnect to continue.'),
       );
+      return;
+    }
+    // A resume opens a new socket: re-check the route and write its leg. No
+    // new reservation (DESIGN.md §6 SS-074).
+    if (guard case final guard? when !guard.admit()) {
+      _events.addError(StateError(LiveCloudGuard.blockedMessage));
       return;
     }
     _resuming = true;
