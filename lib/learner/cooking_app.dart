@@ -155,15 +155,36 @@ class CookingScreen extends StatefulWidget {
   State<CookingScreen> createState() => _CookingScreenState();
 }
 
-/// Wraps a real Live transport so each connect attempt and resume is a leg
-/// in the session ledger. Rehearsal (no runtime) is left as is.
+/// The Live transport for this build, wrapped so each connect attempt and each
+/// resume is exactly one leg in the session ledger. The AI Logic transport
+/// (SS-074) opens its legs through its guard (`recordCloudLeg`), right before
+/// each socket opens; [LedgeredLiveTransport] settles them. Rehearsal (no
+/// runtime) is left as is. [build] replaces [liveTransportFactory] in tests.
 @visibleForTesting
-LiveTransportFactory? ledgeredLiveFactory(
-  LiveTransportFactory? factory,
+LiveTransportFactory? ledgeredLiveFactory({
+  required bool isDemo,
   HybridRuntime? hybrid,
-) {
-  if (factory == null || hybrid == null) return factory;
-  return () => LedgeredLiveTransport(factory(), hybrid.cloudSends);
+  bool selfRecording = kLiveAiLogic,
+  LiveTransportFactory? Function(LiveLegRecorder? recordCloudLeg)? build,
+}) {
+  LiveTransportFactory? make(LiveLegRecorder? record) => build != null
+      ? build(record)
+      : liveTransportFactory(
+          isDemo: isDemo,
+          cloudRoutes: hybrid?.cloudRoutes,
+          privacy: hybrid?.privacy,
+          recordCloudLeg: record,
+        );
+  if (isDemo || hybrid == null) return make(null);
+  if (make(null) == null) return null; // no Live coach in this build
+  return () {
+    final legs = LiveLegTracker(hybrid.cloudSends);
+    return LedgeredLiveTransport(
+      make(legs.admitted)!(),
+      legs,
+      selfRecording: selfRecording,
+    );
+  };
 }
 
 /// The one "Watch my food" service for a cooking session: an on-device watch
@@ -215,11 +236,8 @@ class _CookingScreenState extends State<CookingScreen> {
           ? FakeCookingResearchClient()
           : GeminiCookingResearchClient(recorder: hybrid?.cloudSends),
       transportFactory: ledgeredLiveFactory(
-        liveTransportFactory(
-          isDemo: widget.isDemo,
-          cloudRoutes: hybrid?.cloudRoutes,
-        ),
-        hybrid,
+        isDemo: widget.isDemo,
+        hybrid: hybrid,
       ),
       media: widget.isDemo ? DemoLiveMedia() : createLiveMedia(),
       coachLite: hybrid == null

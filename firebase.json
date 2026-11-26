@@ -52,6 +52,13 @@
         }
       },
       {
+        "source": "/api/live-session",
+        "function": {
+          "functionId": "liveSession",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/api/dinner-ready",
         "function": {
           "functionId": "dinnerReady",

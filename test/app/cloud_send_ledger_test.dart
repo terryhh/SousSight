@@ -14,12 +14,15 @@ import 'package:soussight/ai/cooking_research_client.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
 import 'package:soussight/app/cloud_send_recorder.dart';
+import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/core/fakes.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
+import 'package:soussight/live/live_backend_guard.dart';
+import 'package:soussight/live/live_controller.dart';
 import 'package:soussight/live/live_types.dart';
 import 'package:soussight/main_hybrid_gate.dart';
 
@@ -179,7 +182,10 @@ void main() {
 
   group('Live', () {
     test('a failed connect is recorded and stays visible', () async {
-      final live = LedgeredLiveTransport(_Transport(fail: true), recorder);
+      final live = LedgeredLiveTransport(
+        _Transport(fail: true),
+        LiveLegTracker(recorder),
+      );
       await expectLater(
         live.connect(systemInstruction: 'x'),
         throwsA(isA<StateError>()),
@@ -192,7 +198,7 @@ void main() {
 
     test('a connect and every resume are legs', () async {
       final inner = _Transport();
-      final live = LedgeredLiveTransport(inner, recorder);
+      final live = LedgeredLiveTransport(inner, LiveLegTracker(recorder));
       final seen = <LiveEvent>[];
       final errors = <Object>[];
       final sub = live.events.listen(seen.add, onError: errors.add);
@@ -236,7 +242,7 @@ void main() {
         research: const FakeCookingResearchClient(),
         transportFactory: () => LedgeredLiveTransport(
           _Transport(fail: true),
-          LedgerCloudSendRecorder(hybridLedger),
+          LiveLegTracker(LedgerCloudSendRecorder(hybridLedger)),
         ),
         media: _Media(),
       );
@@ -248,9 +254,91 @@ void main() {
     });
 
     test('rehearsal Live is not wrapped', () {
-      LiveTransport demo() => _Transport();
-      expect(ledgeredLiveFactory(demo, null), same(demo));
-      expect(ledgeredLiveFactory(null, null), isNull);
+      final demo = ledgeredLiveFactory(isDemo: true)!;
+      expect(demo(), isNot(isA<LedgeredLiveTransport>()));
+    });
+
+    test('no Live in this build means no factory', () {
+      expect(
+        ledgeredLiveFactory(
+          isDemo: false,
+          hybrid: _runtime(),
+          build: (_) => null,
+        ),
+        isNull,
+      );
+    });
+
+    group('AI Logic transport (records through its guard)', () {
+      late HybridRuntime runtime;
+      late List<_SelfRecording> made;
+      var refuse = false;
+
+      LiveTransport make() => ledgeredLiveFactory(
+        isDemo: false,
+        hybrid: runtime,
+        selfRecording: true,
+        build: (record) => () {
+          final t = _SelfRecording(record!, refuse: refuse);
+          made.add(t);
+          return t;
+        },
+      )!();
+
+      setUp(() {
+        runtime = _runtime();
+        made = [];
+        refuse = false;
+      });
+
+      test('a connect and a resume are each exactly one leg', () async {
+        final live = make();
+        final sub = live.events.listen((_) {}, onError: (_) {});
+        await live.connect(systemInstruction: 'x');
+        expect(runtime.ledger.entries, hasLength(1));
+        expect(runtime.ledger.entries.single.reportedSent, isTrue);
+        await made.single.resume();
+        expect(runtime.ledger.entries, hasLength(2));
+        expect(runtime.ledger.entries.every((e) => e.reportedSent), isTrue);
+        await sub.cancel();
+      });
+
+      test(
+        'a connect refused before its socket opens writes nothing',
+        () async {
+          refuse = true;
+          final live = make();
+          await expectLater(
+            live.connect(systemInstruction: 'x'),
+            throwsA(isA<LiveUnavailable>()),
+          );
+          expect(runtime.ledger.entries, isEmpty);
+        },
+      );
+
+      test('the cook sees why Live was refused', () async {
+        refuse = true;
+        final controller = LiveCookingController(
+          transportFactory: make,
+          media: _Media(),
+          onToolCall: (_) async => const {},
+        );
+        await controller.start(cookingContext: 'Mash');
+        expect(controller.isActive, isFalse);
+        expect(controller.error, 'Live is off.');
+        expect(runtime.ledger.entries, isEmpty);
+        controller.dispose();
+      });
+
+      test('a socket that fails after admission stays unknown', () async {
+        final live = make();
+        made.single.failAfterAdmit = true;
+        await expectLater(
+          live.connect(systemInstruction: 'x'),
+          throwsA(isA<StateError>()),
+        );
+        expect(runtime.ledger.entries.single.uploadUnknown, isTrue);
+      });
     });
   });
 
@@ -285,3 +373,52 @@ const _recipe = Recipe(
   reviewedSubstitutions: [],
   adjustmentLabels: {},
 );
+
+HybridRuntime _runtime() => HybridRuntime.create(
+  inference: FakeHybridInference(),
+  cloudRoutes: CloudRoutes.parse('live'),
+  isOnline: () => true,
+  cloudModel: 'm',
+);
+
+/// Stands in for the AI Logic transport: its guard records a leg right before
+/// each socket opens, and refuses before that when Live is not allowed.
+class _SelfRecording implements LiveTransport {
+  _SelfRecording(this.record, {required this.refuse});
+  final LiveLegRecorder record;
+  final bool refuse;
+  bool failAfterAdmit = false;
+  final source = StreamController<LiveEvent>.broadcast();
+
+  @override
+  Stream<LiveEvent> get events => source.stream;
+
+  @override
+  Future<void> connect({required String systemInstruction}) async {
+    if (refuse) throw const LiveUnavailable('Live is off.');
+    record(kLiveFeature, kLiveLegKinds);
+    if (failAfterAdmit) throw StateError('socket closed');
+  }
+
+  Future<void> resume() async {
+    record(kLiveFeature, kLiveLegKinds);
+    source.add(const LiveConnectionNotice('…', reconnecting: true));
+    await Future<void>.delayed(Duration.zero);
+    source.add(const LiveConnectionNotice('Live session resumed.'));
+    await Future<void>.delayed(Duration.zero);
+  }
+
+  @override
+  Future<void> sendAudio(Uint8List pcm16khz) async {}
+  @override
+  Future<void> sendVideo(Uint8List jpeg) async {}
+  @override
+  Future<void> sendText(String text) async {}
+  @override
+  Future<void> respondToTool(
+    LiveToolCall call,
+    Map<String, Object?> response,
+  ) async {}
+  @override
+  Future<void> close() async {}
+}
