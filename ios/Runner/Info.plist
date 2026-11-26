@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>SousSight uses the camera so the cooking coach can see your food and so a visible-change watch can notice when something looks ready to check. Frames stay in memory for the session. The camera cannot tell internal temperature or food safety.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SousSight uses the microphone so you can talk to the cooking coach hands-free. Camera-only checks never use the microphone.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
