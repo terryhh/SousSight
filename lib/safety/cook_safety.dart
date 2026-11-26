@@ -76,17 +76,31 @@ final _vocabulary = _words([
   r'runs?\s+clear',
   r'opaque',
   r'no\s+longer\s+(?:pink|red|translucent|glossy)',
-  // Absence of an allergen: "no peanuts in this dish", "without nuts".
-  r'(?:no|without|zero|not\s+any)\s+(?:\w+\s+)?(?:peanuts?|nuts?|'
-      r'tree\s+nuts?|gluten|dairy|milk|eggs?|wheat|soy|sesame|shellfish|'
-      r'fish|mustard|allergens?|lactose)',
+  // Any absence claim, whatever follows: "no almonds", "without milk",
+  // "doesn't contain soy". Over-blocks "no liquid pools" on purpose.
+  r"(?:no|zero|without|not\s+any|free\s+(?:of|from)|"
+      r"does(?:n['\u2019]t|\s+not)\s+contain|contains?\s+no)\s+\p{L}+",
+  // Any dietary label or suitability claim.
+  r'vegan',
+  r'vegetarian',
+  r'dairy',
+  r'kosher',
+  r'halal',
+  r'keto',
+  r'paleo',
+  r'allergy[- ]friendly',
+  r'nut[- ]safe',
+  r'safe\s+for',
+  r'fahrenheit',
+  r'celsius',
 ]);
 
 /// Temperature symbols, and a number written as a temperature without one
 /// ("165F", "74 C").
 final _symbols = RegExp('[°º℉℃]');
 final _bareTemperature = RegExp(
-  r'\d+(?:[.,]\d+)?\s*(?:[FC]|degrees)(?![\p{L}])',
+  r'\d+(?:[.,]\d+)?\s*(?:[°º]\s*)?'
+  r'(?:[FC]|degrees?|fahrenheit|celsius|grados?)(?![\p{L}])',
   caseSensitive: false,
   unicode: true,
 );

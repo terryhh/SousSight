@@ -90,7 +90,7 @@ For meat, poultry, fish and eggs, never use colour or 'juices run clear' as
 the doneness test. Never write a temperature, a doneness, freshness or
 safety claim, or that a food is free of an allergen: the app adds its own
 thermometer note.
-Dried beans: soak, drain, then boil in fresh water.
+Dried beans: soak, discard the soaking water, then boil in new water.
 Use timerSeconds (60 to 3600) only for real waiting or heating; omit it
 otherwise. For each ingredient list allergens only from: milk, egg, fish,
 shellfish, tree nut, peanut, wheat, soy, sesame (lowercase). Never claim an
@@ -629,14 +629,15 @@ Recipe buildDraftRecipe(
   final rawSteps = m['steps'];
   if (rawSteps is! List) throw const FormatException('no steps');
   // SS-131: the shared safety gate over every model-written field. Any hit
-  // rejects the whole draft, so the retry or the fallback runs. An
-  // ingredient named exactly as a confirmed item is the cook's own word.
-  final confirmedKeys = {for (final c in confirmedItems) draftFoodKey(c)};
+  // rejects the whole draft, so the retry or the fallback runs. Only an
+  // ingredient name that is verbatim one of the cook's confirmed items is
+  // the cook's own word; every other field is always checked in full.
+  final confirmedRaw = {for (final c in confirmedItems) c.trim().toLowerCase()};
   final modelText = <String>[
     title,
     summary,
     for (final i in ingredients) ...[
-      if (!confirmedKeys.contains(draftFoodKey(i.name))) i.name,
+      if (!confirmedRaw.contains(i.name.trim().toLowerCase())) i.name,
       i.qty,
     ],
     for (final raw in rawSteps)
@@ -648,20 +649,7 @@ Recipe buildDraftRecipe(
     if (m['equipment'] case final List equipment)
       for (final e in equipment) _str(e),
   ];
-  // The cook's own confirmed item names ("leftover salmon") are their
-  // words, not the model's claim: they are taken out before the check.
-  final cookWords = [
-    for (final c in confirmedItems)
-      if (c.trim().isNotEmpty)
-        RegExp(
-          '(?<![\\p{L}])${RegExp.escape(c.trim())}(?![\\p{L}])',
-          caseSensitive: false,
-          unicode: true,
-        ),
-  ];
-  String withoutCookWords(String text) =>
-      cookWords.fold(text, (t, r) => t.replaceAll(r, ' '));
-  if (modelText.map(withoutCookWords).any(touchesFoodSafety)) {
+  if (modelText.any(touchesFoodSafety)) {
     throw const UnsafeClaimException();
   }
   final parsed = <Map<String, Object?>>[];

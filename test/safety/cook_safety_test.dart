@@ -28,6 +28,13 @@ const _blocked = [
   'It contains no gluten.',
   'You can eat it now.',
   'Throw out spoiled leftovers.',
+  // Codex's probes on #277.
+  'The camera shows the chicken is 165 Fahrenheit inside',
+  'There are no almonds in this dish',
+  'This dish is vegan',
+  "It doesn't contain soy.",
+  'Keep it at 74 Celsius.',
+  'Kosher and halal.',
 ];
 
 /// Visual-only coaching stays allowed.
@@ -43,6 +50,7 @@ const _allowed = [
 /// Harmless sentences blocked on purpose: over-blocking is the accepted
 /// cost.
 const _overBlocked = [
+  'No liquid pools in the can.',
   'Stir until it is done.',
   'Have your peanut butter ready.',
   "The camera can't measure temperature.",
@@ -200,6 +208,23 @@ void main() {
       expect(spoken, isNot(contains('safe to eat')));
       expect(spoken, contains('Flip it once.'));
       expect(spoken, contains(coachLiteSafetyNotice));
+    });
+
+    test('a fragment of an app notice cannot cut away its negation', () {
+      final spoken = coachLiteSpokenTextFor([
+        {
+          'id': 'root',
+          'component': 'CookingColumn',
+          'children': ['tip'],
+        },
+        {
+          'id': 'tip',
+          'component': 'stepCue',
+          'title': 'This dish',
+          'body': 'free of an allergen.',
+        },
+      ]);
+      expect(spoken, isNot(contains('free of')));
     });
   });
 }

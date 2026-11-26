@@ -970,10 +970,6 @@ $cookingUiInstructions
           (a['seconds'] as num).toInt(),
         );
       case 'watch_cooking':
-        if (touchesFoodSafety(a['goal'] as String)) {
-          // Not ok: the Live controller stops the watch it just started.
-          return _gated('Watch goal');
-        }
         _watchPanel('watching', 'Watching your food', a['goal'] as String);
         // LiveCookingController started the watch before dispatching here.
         if (live.watchId case final id?) {

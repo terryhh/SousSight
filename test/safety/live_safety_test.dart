@@ -282,6 +282,20 @@ void main() {
       }
     });
 
+    test('a rejected new watch goal keeps the current watch', () async {
+      final first = await call('watch_cooking', {
+        'goal': 'Golden on both sides',
+      });
+      expect(first['ok'], isTrue);
+      final watchId = cook.live.watchId;
+      expect(watchId, isNotNull);
+      final second = await call('watch_cooking', {
+        'goal': 'Tell me when it is done',
+      });
+      expect(second['ok'], isFalse);
+      expect(cook.live.watchId, watchId);
+    });
+
     test('a plain readiness observation still works', () async {
       await call('watch_cooking', {'goal': 'Golden on both sides'});
       final watchId = cook.live.watchId!;

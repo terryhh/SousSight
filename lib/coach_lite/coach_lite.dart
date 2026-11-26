@@ -519,13 +519,30 @@ class CoachLite {
       timeout: timeout,
     );
 
+    // The dispatcher discards a rejected answer's text; remember when a
+    // rejection was the safety gate so the safety fallback still shows.
+    var gatedBySafety = false;
+    String? validate(String text) {
+      try {
+        parseCoachLiteResponse(text);
+        return null;
+      } on UnsafeClaimException catch (e) {
+        gatedBySafety = true;
+        return e.message;
+      } on FormatException catch (e) {
+        return e.message;
+      } on TypeError catch (e) {
+        return e.toString();
+      }
+    }
+
     final HybridOperation operation;
     final DispatchResult result;
     try {
       operation = dispatcher.start(
         task,
         sessionId: sessionId,
-        validate: validateCoachLiteResponse,
+        validate: validate,
       );
       _inflight = operation;
       result = await operation.result;
@@ -551,6 +568,13 @@ class CoachLite {
       );
     }
     final text = result.text;
+    if (text == null && result.blocked == null && gatedBySafety) {
+      return finish(
+        CoachLiteStatus.invalid,
+        _fallback(step, cookSafetyFallbackNote),
+        legs: result.legs,
+      );
+    }
     if (text == null) {
       final reason = result.blocked;
       return finish(
@@ -860,8 +884,15 @@ const coachLiteAppLiterals = [
   cookSafetyFallbackNote,
 ];
 
-/// True when [sentence] is (part of) one of [coachLiteAppLiterals].
+/// True when [sentence] is one complete sentence of a
+/// [coachLiteAppLiterals] notice, after the read-aloud whitespace
+/// normalization. A fragment ("free of an allergen.") never matches, so a
+/// negation cannot be cut away.
 bool isCoachLiteAppLiteral(String sentence) {
-  final s = sentence.trim();
-  return s.isNotEmpty && coachLiteAppLiterals.any((l) => l.contains(s));
+  String norm(String v) => v.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final s = norm(sentence);
+  if (s.isEmpty) return false;
+  return coachLiteAppLiterals.any(
+    (l) => norm(l).split(RegExp(r'(?<=[.!?])\s+')).contains(s),
+  );
 }
