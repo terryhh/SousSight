@@ -348,6 +348,15 @@ void main() {
       RouteReason.onDevice,
       true,
     ),
+    // A typed label (text only) the local model cannot take still needs
+    // consent before it goes to the cloud.
+    (
+      'typed label in an unsupported language needs consent',
+      _in('label_check', lang: 'xx'),
+      _cloud,
+      RouteReason.languageNotSupported,
+      true,
+    ),
     // A watch frame's explicit cloud check: cloud only, consent always.
     (
       'cloud check, ready',
