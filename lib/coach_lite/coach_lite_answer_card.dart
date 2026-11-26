@@ -47,7 +47,12 @@ class CoachLiteAnswerFooter extends StatelessWidget {
     required this.onStartTimer,
     this.localModelFamily,
     this.question,
+    this.recipeNotes = const [],
   });
+
+  /// App-authored lines from the reviewed recipe, shown when there is no
+  /// model answer (never with one). Labelled "From the recipe (not AI)".
+  final List<String> recipeNotes;
 
   /// The cook's typed question, echoed so the reply reads as a reply.
 
@@ -64,6 +69,7 @@ class CoachLiteAnswerFooter extends StatelessWidget {
     final suggestion = answer.timerSuggestion;
     final status = coachLiteStatusLine(answer);
     final asked = question?.trim() ?? '';
+    final notes = status == null ? const <String>[] : recipeNotes;
     if (answer.legs.isEmpty &&
         suggestion == null &&
         status == null &&
@@ -111,6 +117,27 @@ class CoachLiteAnswerFooter extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+            ),
+          if (notes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 26),
+              child: Column(
+                key: const ValueKey('coach-lite-recipe-notes'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'From the recipe (not AI)',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  for (final note in notes)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('• $note'),
+                    ),
+                ],
               ),
             ),
           if (answer.legs.isNotEmpty)

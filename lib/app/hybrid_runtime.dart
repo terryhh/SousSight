@@ -363,14 +363,11 @@ class HybridRuntime {
   /// Before a cooking session exists (the pantry), it is this app run's id.
   String get sessionId => _cookingSessionId ?? ledger.sessionId;
 
-  /// Binds the ledger to a cooking session. The first cooking session keeps
-  /// the pantry legs that led to it; a later, different session (New cook)
-  /// starts an empty ledger.
-  void bindCookingSession(String id) {
-    final previous = _cookingSessionId;
-    _cookingSessionId = id;
-    if (previous != null && previous != id) ledger.startSession(id);
-  }
+  /// Binds features to a cooking session (consent and dispatch use its id).
+  /// The ledger is one per app run (SS-089): "What we sent" shows the same
+  /// legs from the pantry, every cooking session and every screen, so a
+  /// pantry badge and the ledger never disagree.
+  void bindCookingSession(String id) => _cookingSessionId = id;
 
   /// Ledger hook for cloud senders outside the dispatcher (grounded
   /// research, the Live coach). They record at their own send boundary.

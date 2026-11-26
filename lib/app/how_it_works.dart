@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_policy.dart';
 import '../live/live_backend.dart';
+import 'centered_scroll.dart';
 
 /// Steps shown in the "From pantry to plate" section.
 const howItWorksSteps = [
@@ -58,7 +59,7 @@ Future<void> showHowItWorks(BuildContext context, {bool isDemo = false}) =>
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      constraints: const BoxConstraints(maxWidth: 720),
+      constraints: fullWidthSheet,
       builder: (context) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.85,
@@ -113,10 +114,10 @@ class HowItWorksSheet extends StatelessWidget {
           ),
         );
 
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('how-it-works-sheet'),
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+      bottom: 32,
       children: [
         Semantics(
           header: true,

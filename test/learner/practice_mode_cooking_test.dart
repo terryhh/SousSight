@@ -6,7 +6,10 @@ import 'dart:async';
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:soussight/app/hybrid_controls.dart';
+import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/app/rehearsal_runtime.dart';
+import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/cooking_research.dart';
 import 'package:soussight/learner/cooking_app.dart';
@@ -323,4 +326,66 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets('a real build without Live: plain dock line, and "Check my '
+      'food" still answers (items 2, Maya 5)', (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final services = (await tester.runAsync(fakeServices))!;
+    final runtime = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: const CloudRoutes({}),
+      cloudFallback: const NoCloudInPracticeMode(),
+      isOnline: () => true,
+    );
+    await tester.pumpWidget(
+      CookingApp(services: services, isDemo: false, hybrid: runtime),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Type a question below.'), findsOneWidget);
+    expect(find.textContaining('Coach Lite'), findsNothing);
+    await tester.ensureVisible(find.text('Check my food'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ready'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Check my food'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('You said: Ready.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('readiness: one calm line whose Details opens the sheet', (
+    tester,
+  ) async {
+    const unavailable = HybridAvailability(
+      status: OnDeviceStatus.unavailable,
+      reason: 'device_not_eligible',
+    );
+    final runtime = HybridRuntime.create(
+      inference: FakeHybridInference(
+        textAvailability: unavailable,
+        imageAvailability: unavailable,
+      ),
+      cloudRoutes: const CloudRoutes({}),
+      cloudFallback: const NoCloudInPracticeMode(),
+      isOnline: () => true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: runtime.navigatorKey,
+        home: Scaffold(body: HybridReadinessCard(hybrid: runtime)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('readiness-line')), findsOneWidget);
+    expect(find.byKey(const ValueKey('readiness-panel')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('readiness-details')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('on-device-intro')), findsOneWidget);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('readiness-line')), findsOneWidget);
+  });
 }

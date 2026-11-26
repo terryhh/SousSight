@@ -8,6 +8,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter/material.dart';
 
 import 'privacy_preferences.dart';
+import '../app/centered_scroll.dart';
 
 /// Wraps `HybridInference.prepare`. Must start work when called (the web
 /// download needs the user gesture), not when the stream is listened to.
@@ -35,7 +36,7 @@ Future<void> showOnDeviceAiSheet(
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    constraints: const BoxConstraints(maxWidth: 720),
+    constraints: fullWidthSheet,
     builder: (context) => DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.85,
@@ -219,10 +220,10 @@ class _OnDeviceAiSheetState extends State<OnDeviceAiSheet> {
       ),
     );
 
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('on-device-ai-sheet'),
       controller: widget.controller,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+      bottom: 32,
       children: [
         Semantics(
           header: true,

@@ -9,6 +9,7 @@ import '../ai/hybrid/hybrid_types.dart';
 import 'ledger_source.dart';
 import 'trust_labels.dart';
 import 'trust_motion.dart';
+import '../app/centered_scroll.dart';
 
 /// What the session keeps, and what the Live coach is told. Static, because
 /// it describes the app, not one request. Keep in step with
@@ -41,7 +42,7 @@ Future<void> showLedgerSheet(
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: true,
-  constraints: const BoxConstraints(maxWidth: 720),
+  constraints: fullWidthSheet,
   builder: (context) => DraggableScrollableSheet(
     expand: false,
     initialChildSize: 0.85,
@@ -496,10 +497,10 @@ class LedgerView extends StatelessWidget {
     final localCount = summary.stayedLocal.fold(0, (n, r) => n + r.count);
     final simulatedCount = summary.simulated.fold(0, (n, r) => n + r.count);
 
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('ledger-view'),
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+      bottom: 32,
       children: [
         Semantics(
           header: true,
@@ -583,8 +584,9 @@ class LedgerView extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         note(
-          'This list covers this session only, shows kinds of data and never '
-          'their content, and is cleared when you close SousSight.',
+          'This list covers everything since you opened SousSight, shows '
+          'kinds of data and never their content, and is cleared when you '
+          'close it.',
         ),
       ],
     );

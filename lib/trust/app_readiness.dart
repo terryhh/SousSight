@@ -623,6 +623,18 @@ class _ReadinessCard extends StatelessWidget {
 String? readinessCalmLine(AppReadiness readiness) {
   final states = readiness.states;
   if (states.contains(ReadinessState.ready)) return null;
+  // One honest line for a paused cloud, not three stacked cards (Maya).
+  if (states.contains(ReadinessState.attestationFailed)) {
+    return readiness.localReady
+        ? "Online help is paused: this copy of SousSight couldn't be verified. "
+              'Help on this device still works.'
+        : "Online help is paused: this copy of SousSight couldn't be verified. "
+              'Reloading the page may fix it; meanwhile pick a recipe below.';
+  }
+  if (states.contains(ReadinessState.quotaReached) && !readiness.localReady) {
+    return "Today's online help is used up. Pick a recipe below — steps and "
+        'timers still work.';
+  }
   if (!readiness.canUseAi) {
     return states.contains(ReadinessState.offline)
         ? "You're offline. Pick a recipe below — steps and timers still work."

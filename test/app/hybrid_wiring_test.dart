@@ -224,7 +224,7 @@ void main() {
       expect(inference.config?.cloudModel, 'test-cloud-model');
     });
 
-    test('the first cooking session keeps pantry legs; a new cook clears', () {
+    test('one ledger per app run: cooking sessions keep every leg', () {
       final hybrid = _runtime(FakeHybridInference());
       final runId = hybrid.sessionId;
       expect(runId, startsWith('run-'));
@@ -237,8 +237,10 @@ void main() {
       hybrid.bindCookingSession('s1');
       expect(hybrid.ledgerSource.legs, hasLength(1));
       hybrid.bindCookingSession('s2');
-      expect(hybrid.ledgerSource.legs, isEmpty);
-      expect(hybrid.ledger.sessionId, 's2');
+      expect(hybrid.sessionId, 's2');
+      // SS-089: the pantry leg is still there after a new cook.
+      expect(hybrid.ledgerSource.legs, hasLength(1));
+      expect(hybrid.ledger.sessionId, runId);
     });
 
     test('the ledger source notifies the trust UI', () {

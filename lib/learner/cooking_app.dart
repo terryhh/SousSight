@@ -9,6 +9,7 @@ import '../ai/cooking_research_client.dart';
 import '../research/cooking_research_panel.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../app/cloud_send_recorder.dart';
+import '../app/centered_scroll.dart';
 import '../app/hybrid_controls.dart';
 import '../app/hybrid_runtime.dart';
 import '../app/rehearsal_runtime.dart';
@@ -40,6 +41,7 @@ import 'draft_recipe_chip.dart';
 import 'dinner_review.dart';
 import 'meal_complete.dart';
 import 'plain_research_text.dart';
+import 'recipe_notes.dart';
 
 final cookingTheme = ThemeData(
   useMaterial3: true,
@@ -570,22 +572,25 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   }
 
   @override
+  // The scroll view spans the window; content is centred inside it (max
+  // 1320 px) so the wheel works over the side margins on desktop (SS-089).
   Widget build(BuildContext context) => Scaffold(
     body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1320),
-          child: Column(
+      child: LayoutBuilder(
+        builder: (context, outer) {
+          final extra = centeredSide(outer.maxWidth, maxWidth: 1320);
+          return Column(
             children: [
               Expanded(
                 child: CustomScrollView(
+                  key: const ValueKey('cooking-scroll'),
                   slivers: [
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: EdgeInsets.fromLTRB(
-                          _compact ? 16 : 24,
+                          extra + (_compact ? 16 : 24),
                           _compact ? 10 : 22,
-                          _compact ? 16 : 24,
+                          extra + (_compact ? 16 : 24),
                           _compact ? 6 : 14,
                         ),
                         child: _header(),
@@ -593,10 +598,14 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                     ),
                     if (widget.isDemo)
                       SliverToBoxAdapter(
-                        child: _banner(
-                          'Practice mode (pretend answers) · No real camera, '
-                          'microphone or AI is used, and no messages are sent.',
-                          Icons.science_outlined,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: extra),
+                          child: _banner(
+                            'Practice mode (pretend answers) · No real camera, '
+                            'microphone or AI is used, and no messages are '
+                            'sent.',
+                            Icons.science_outlined,
+                          ),
                         ),
                       ),
                     if (cook.loading)
@@ -606,9 +615,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                     else
                       SliverPadding(
                         padding: EdgeInsets.fromLTRB(
-                          _compact ? 16 : 24,
+                          extra + (_compact ? 16 : 24),
                           8,
-                          _compact ? 16 : 24,
+                          extra + (_compact ? 16 : 24),
                           32,
                         ),
                         sliver: SliverToBoxAdapter(
@@ -645,10 +654,16 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                   ],
                 ),
               ),
-              if (!cook.loading) _controlDock(),
+              if (!cook.loading)
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1320),
+                    child: _controlDock(),
+                  ),
+                ),
             ],
-          ),
-        ),
+          );
+        },
       ),
     ),
   );
@@ -1294,6 +1309,11 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
                 child: CoachLiteAnswerFooter(
                   answer: answer,
                   question: cook.coachLiteQuestion,
+                  recipeNotes: recipeNotesFor(
+                    cook.coachLiteQuestion ?? '',
+                    cook.recipe,
+                    cook.step,
+                  ),
                   onStartTimer: (label, seconds) =>
                       unawaited(cook.startSuggestedTimer(label, seconds)),
                 ),

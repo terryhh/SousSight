@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
+import '../app/centered_scroll.dart';
 import '../app/how_it_works.dart';
 import '../core/models.dart';
 import '../learner/draft_recipe_chip.dart';
@@ -448,12 +449,19 @@ class _PantryScreenState extends State<PantryScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xFFF7EFE1),
+    // The scroll view spans the window and the column is centred inside it,
+    // so the wheel works over the side margins on desktop (SS-089).
     body: SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final side = centeredSide(
+            constraints.maxWidth,
+            maxWidth: 720,
+            gutter: 16,
+          );
+          return SingleChildScrollView(
+            key: const ValueKey('pantry-scroll'),
+            padding: EdgeInsets.fromLTRB(side, 16, side, 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -546,8 +554,8 @@ class _PantryScreenState extends State<PantryScreen> {
                 _skipList(),
               ],
             ),
-          ),
-        ),
+          );
+        },
       ),
     ),
   );

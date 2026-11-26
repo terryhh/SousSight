@@ -464,9 +464,18 @@ $cookingUiInstructions
 
   Future<void> checkNow([String prediction = 'Not sure']) async {
     if (!live.isActive) {
-      alert = liveEnabled
-          ? 'Connect the live coach first, then show your food.'
-          : 'Tap Watch my food for an on-device check of the visible cue.';
+      // Always a visible answer (Maya): the step's own cue to compare with,
+      // plus where a camera check can come from.
+      final cue = step.cue.trim();
+      final compare = cue.isEmpty
+          ? 'Compare your food with the step above.'
+          : 'Compare your food with this step\'s cue: $cue';
+      final how = liveEnabled
+          ? ' To have the coach look, tap Start first.'
+          : watchService != null
+          ? ' Or tap Watch my food for a camera check.'
+          : '';
+      alert = 'You said: $prediction. $compare$how';
       _notify();
       return;
     }

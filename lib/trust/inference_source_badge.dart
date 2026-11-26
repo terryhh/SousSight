@@ -9,6 +9,7 @@ import '../ai/hybrid/hybrid_types.dart';
 import 'route_reason_text.dart';
 import 'trust_labels.dart';
 import 'trust_motion.dart';
+import '../app/centered_scroll.dart';
 
 class InferenceSourceBadge extends StatelessWidget {
   const InferenceSourceBadge({
@@ -177,7 +178,7 @@ Future<void> showInferenceDetails(
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: true,
-  constraints: const BoxConstraints(maxWidth: 720),
+  constraints: fullWidthSheet,
   builder: (context) => InferenceDetails(
     legs: legs,
     localModelFamily: localModelFamily,
@@ -201,10 +202,10 @@ class InferenceDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('inference-details'),
       shrinkWrap: true,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+      bottom: 28,
       children: [
         Semantics(
           header: true,
