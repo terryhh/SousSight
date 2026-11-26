@@ -120,7 +120,7 @@ void main() {
         {
           'title': 'Cook',
           'instruction': 'Cook the chicken in a hot pan.',
-          'cue': 'Strips are browned on all sides and fully cooked.',
+          'cue': 'Strips are browned on all sides.',
           'timerSeconds': 480,
         },
         {'title': 'Serve', 'instruction': 'Plate it.', 'cue': 'On the plate.'},
@@ -128,12 +128,58 @@ void main() {
     );
     final recipe = (await _client(() => jsonEncode(draft)).draft(_request))
         .recipe;
-    // The model's "fully cooked" cue is dropped; colour is never the test.
-    expect(recipe.steps[1].cue, draftThermometerNote('chicken'));
+    // The app adds its thermometer note; colour is never the test.
+    expect(recipe.steps[1].cue, endsWith(draftThermometerNote('chicken')));
     expect(recipe.steps[1].cue, contains('poultry 165°F (74°C)'));
-    expect(recipe.steps[1].cue, isNot(contains('fully cooked')));
     expect(recipe.steps[1].timerSeconds, 480);
     expect(recipe.steps[2].cue, 'On the plate.');
+  });
+
+  group('SS-131 safety gate over the whole draft', () {
+    const probes = [
+      'Serve the chicken as soon as the center is white. Zero peanuts.',
+      'Made without peanuts',
+      'The photo shows the chicken is 165F inside',
+      'Bake at 350°F.',
+      'Cook until the juices run clear.',
+    ];
+    for (final probe in probes) {
+      for (final field in ['title', 'summary', 'instruction', 'cue']) {
+        test('$field: $probe', () {
+          final draft = _draft();
+          if (field == 'title' || field == 'summary') {
+            draft[field] = probe;
+          } else {
+            final steps = [...draft['steps'] as List];
+            steps[1] = {...steps[1] as Map, field: probe};
+            draft['steps'] = steps;
+          }
+          expect(
+            recipeDraftProblem(jsonEncode(draft), _request.confirmedItems),
+            isNotNull,
+          );
+        });
+      }
+    }
+
+    test("the cook's own item names are not the model's claim", () {
+      final draft = _draft();
+      final steps = [...draft['steps'] as List];
+      steps[0] = {
+        'title': 'Open',
+        'instruction': 'Drain the gluten-free beans.',
+        'cue': 'No liquid pools in the can.',
+      };
+      draft['steps'] = steps;
+      expect(
+        recipeDraftProblem(jsonEncode(draft), ['bread', 'gluten-free beans']),
+        isNot(contains('mentioned')),
+      );
+      expect(
+        recipeDraftProblem(jsonEncode(draft), _request.confirmedItems),
+        contains('mentioned'),
+      );
+    });
   });
 
   test('invalid JSON is a safe exception', () async {
@@ -251,10 +297,8 @@ void main() {
     test('the prompt sets thermometer targets and the dried-bean rule', () {
       for (final text in [
         "never use colour or 'juices run clear' as the doneness test",
-        'poultry 165°F/74°C',
-        'ground meat 160°F/71°C',
-        'fish 145°F/63°C',
-        'egg dishes 160°F/71°C',
+        // SS-131: the model writes no temperature; the app adds its note.
+        'Never write a temperature',
         'Dried beans: soak, drain, then boil in fresh water.',
       ]) {
         expect(
@@ -295,7 +339,7 @@ void main() {
       final got = await cues([
         step('Drain the beans into a potato bowl.'),
         step('Stir in the pottery dish.'),
-        step('Spoon onto the warmth-free plate area, the pans aside.'),
+        step('Spoon onto the warmthless plate area, the pans aside.'),
       ]);
       expect(got[0], 'Looks even.');
       expect(got[1], 'Looks even.');
@@ -320,11 +364,11 @@ void main() {
       ]) {
         final got = await cues([
           step('Drain the beans.'),
-          step('Brown the $meat in a pan.', 'No pink is left.'),
+          step('Brown the $meat in a pan.', 'Crumbles look even.'),
           step('Spoon onto the bread.'),
         ]);
         expect(got[1], contains(target), reason: meat);
-        expect(got[1], startsWith('No pink is left. $kColourNotDoneness'));
+        expect(got[1], startsWith('Crumbles look even. $kColourNotDoneness'));
       }
     });
 

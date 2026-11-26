@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import '../ai/cooking_research_client.dart' show kCookingResearchModel;
 import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
+import '../safety/cook_safety.dart';
 import 'recipe_draft.dart';
 
 /// Override with `--dart-define=DRAFT_MODEL=...`; defaults to the research
@@ -86,8 +87,9 @@ VISIBLE cue the cook can judge by eye (texture, color, coverage, bubbling).
 Cues describe what to look for; never certify doneness, internal
 temperature, or food safety, and never say the camera can confirm it.
 For meat, poultry, fish and eggs, never use colour or 'juices run clear' as
-the doneness test; the cue says to check with a thermometer — poultry
-165°F/74°C, ground meat 160°F/71°C, fish 145°F/63°C, egg dishes 160°F/71°C.
+the doneness test. Never write a temperature, a doneness, freshness or
+safety claim, or that a food is free of an allergen: the app adds its own
+thermometer note.
 Dried beans: soak, drain, then boil in fresh water.
 Use timerSeconds (60 to 3600) only for real waiting or heating; omit it
 otherwise. For each ingredient list allergens only from: milk, egg, fish,
@@ -626,6 +628,42 @@ Recipe buildDraftRecipe(
 
   final rawSteps = m['steps'];
   if (rawSteps is! List) throw const FormatException('no steps');
+  // SS-131: the shared safety gate over every model-written field. Any hit
+  // rejects the whole draft, so the retry or the fallback runs. An
+  // ingredient named exactly as a confirmed item is the cook's own word.
+  final confirmedKeys = {for (final c in confirmedItems) draftFoodKey(c)};
+  final modelText = <String>[
+    title,
+    summary,
+    for (final i in ingredients) ...[
+      if (!confirmedKeys.contains(draftFoodKey(i.name))) i.name,
+      i.qty,
+    ],
+    for (final raw in rawSteps)
+      if (raw is Map) ...[
+        _str(raw['title']),
+        _str(raw['instruction']),
+        _str(raw['cue']),
+      ],
+    if (m['equipment'] case final List equipment)
+      for (final e in equipment) _str(e),
+  ];
+  // The cook's own confirmed item names ("leftover salmon") are their
+  // words, not the model's claim: they are taken out before the check.
+  final cookWords = [
+    for (final c in confirmedItems)
+      if (c.trim().isNotEmpty)
+        RegExp(
+          '(?<![\\p{L}])${RegExp.escape(c.trim())}(?![\\p{L}])',
+          caseSensitive: false,
+          unicode: true,
+        ),
+  ];
+  String withoutCookWords(String text) =>
+      cookWords.fold(text, (t, r) => t.replaceAll(r, ' '));
+  if (modelText.map(withoutCookWords).any(touchesFoodSafety)) {
+    throw const UnsafeClaimException();
+  }
   final parsed = <Map<String, Object?>>[];
   for (final raw in rawSteps) {
     if (raw is! Map) continue;
@@ -1040,7 +1078,7 @@ const _simulatedDraft = <String, dynamic>{
     {
       'title': 'Set up the bread',
       'instruction':
-          'Preheat the oven to 400°F (200°C). Lay the bread slices flat on '
+          'Preheat the oven. Lay the bread slices flat on '
           'a baking sheet.',
       'cue': 'Both slices lie flat with space between them.',
     },

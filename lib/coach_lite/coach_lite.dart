@@ -14,6 +14,7 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../core/models.dart';
 import '../genui/cooking_ui_contract.dart';
+import '../safety/cook_safety.dart';
 
 const coachLiteFeature = 'coach_lite';
 
@@ -322,27 +323,11 @@ anything cooked through. If a fact is missing, ask the cook with a stepCue whose
 action is ask_cook. Suggest a timer only if this step needs one.
 ''';
 
-/// Phrases that would certify doneness, temperature or safety. App-authored
-/// notices never pass through this check; model answers always do.
-final _certification = RegExp(
-  r"\bsafe to (eat|serve|consume)\b|"
-  // "is done" / "it's safe", unless it is a condition ("stir until it is
-  // done", "it's done when it coats a spoon").
-  r"(?<!\b(when|once|until|till|if|after|before|whether)\b[^.,;:!?]{0,40})"
-  r"\b(is|are|['\u2019]s|['\u2019]re)\s+"
-  r"(now\s+|definitely\s+|fully\s+|already\s+|completely\s+)*"
-  r"(safe|cooked through|fully cooked|ready to eat|"
-  r"done(?!\s+(when|once|if|after|before|in)\b))\b|"
-  r"\b(is|are)\s+(allergen|gluten|nut|peanut|dairy|egg)[- ]free\b|"
-  r"\breached\s+(a\s+|an\s+|the\s+)?(safe|internal)\b|"
-  r"\bno risk\b",
-  caseSensitive: false,
-);
-
-/// True when [text] would certify doneness, temperature or safety: the same
-/// check every model answer must pass. The read-aloud path (SS-077) applies
-/// it again to each sentence it speaks.
-bool coachLiteCertifies(String text) => _certification.hasMatch(text);
+/// True when [text] touches doneness, temperature, freshness, safety or
+/// allergen status: the shared, conservative safety gate
+/// (lib/safety/cook_safety.dart) every model answer must pass. The
+/// read-aloud path (SS-077) applies it again to each sentence it speaks.
+bool coachLiteCertifies(String text) => touchesFoodSafety(text);
 
 /// Parses and validates model output. Throws [FormatException].
 ({List<Map<String, dynamic>> components, CoachLiteTimerSuggestion? timer})
@@ -387,12 +372,20 @@ parseCoachLiteResponse(String text) {
       throw const FormatException('IDs starting with app_ are reserved.');
     }
   }
-  if (_certification.hasMatch(jsonEncode(cleaned))) {
-    throw const FormatException(
-      'Coach Lite must not certify doneness, temperature or safety.',
-    );
+  // Every cook-facing string, the timer label included (SS-131).
+  if (payloadTouchesFoodSafety({
+    'components': cleaned,
+    'timerSuggestion': decoded['timerSuggestion'],
+  })) {
+    throw const UnsafeClaimException();
   }
   final components = validateLiteCookingUi({'components': cleaned});
+  // A tree of columns with no card says nothing: treat it as malformed so
+  // the retry or the recipe-step fallback runs. The validator has already
+  // checked that every component is reachable from the root.
+  if (!components.any((c) => c['component'] != 'CookingColumn')) {
+    throw const FormatException('Coach Lite answer has no content card.');
+  }
   return (
     components: components,
     timer: CoachLiteTimerSuggestion.fromModel(decoded['timerSuggestion']),
@@ -580,7 +573,14 @@ class CoachLite {
     } on Object catch (e) {
       return finish(
         CoachLiteStatus.invalid,
-        _fallback(step, "The on-device coach's answer could not be shown."),
+        _fallback(
+          step,
+          // A gated answer is replaced by the recipe step, its cue and where
+          // to check what the coach cannot know.
+          e is UnsafeClaimException
+              ? cookSafetyFallbackNote
+              : "The on-device coach's answer could not be shown.",
+        ),
         legs: result.legs,
         error: e is FormatException ? e.message : '$e',
       );
@@ -849,4 +849,19 @@ List<Map<String, dynamic>> _withNotices(
     ...notices,
   ];
   return validateLiteCookingUi({'components': merged});
+}
+
+/// The app's own literal notices: they name doneness, temperature and
+/// allergens on purpose and are never model-written (SS-131).
+const coachLiteAppLiterals = [
+  coachLiteSafetyNotice,
+  coachLiteAllergenNotice,
+  coachLiteFreshnessNotice,
+  cookSafetyFallbackNote,
+];
+
+/// True when [sentence] is (part of) one of [coachLiteAppLiterals].
+bool isCoachLiteAppLiteral(String sentence) {
+  final s = sentence.trim();
+  return s.isNotEmpty && coachLiteAppLiterals.any((l) => l.contains(s));
 }
