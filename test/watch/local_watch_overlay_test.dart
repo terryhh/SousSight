@@ -192,7 +192,9 @@ void main() {
       expect(watchOverlayPhase(rig.local), WatchOverlayPhase.unsure);
       expect(watchNoticeState(rig.service), WatchState.unsure);
 
-      rig.dispatcher.enqueue(verdictJson('ready'));
+      rig.dispatcher.enqueue(
+        verdictJson('ready', see: 'Onions look soft and golden.'),
+      );
       async.elapse(const Duration(seconds: 4));
       rig.frame(); // fresh when the next check is due
       async.elapse(const Duration(seconds: 1));
@@ -387,7 +389,9 @@ void main() {
     Widget? notice;
     fakeAsync((async) {
       final rig = _Rig(async);
-      rig.dispatcher.enqueue(verdictJson(state, see: 'A pan of onions.'));
+      rig.dispatcher.enqueue(
+        verdictJson(state, see: 'Onions look soft and golden.'),
+      );
       rig.begin();
       rig.frame();
       async.flushMicrotasks();
@@ -407,7 +411,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('watch-notice-ready')), findsOneWidget);
     expect(find.text('Looks like the cue — you decide'), findsOneWidget);
-    expect(find.textContaining('A pan of onions.'), findsOneWidget);
+    expect(find.textContaining('Onions look soft and golden.'), findsOneWidget);
     expect(find.textContaining("can't check temperature"), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

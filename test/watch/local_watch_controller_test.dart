@@ -93,19 +93,22 @@ void main() {
     });
   });
 
-  test('shows the cook each local frame and clears it when the watch stops', () {
-    fakeAsync((async) {
-      final rig = Rig(async);
-      rig.fake.enqueue(verdictJson('not_yet', direction: 'more'));
-      rig.begin();
-      expect(rig.watch.previewFrame, isNull);
-      rig.frame(bytes: const [9, 8, 7]);
-      expect(rig.watch.previewFrame, [9, 8, 7]);
-      rig.watch.stop();
-      async.flushMicrotasks();
-      expect(rig.watch.previewFrame, isNull);
-    });
-  });
+  test(
+    'shows the cook each local frame and clears it when the watch stops',
+    () {
+      fakeAsync((async) {
+        final rig = Rig(async);
+        rig.fake.enqueue(verdictJson('not_yet', direction: 'more'));
+        rig.begin();
+        expect(rig.watch.previewFrame, isNull);
+        rig.frame(bytes: const [9, 8, 7]);
+        expect(rig.watch.previewFrame, [9, 8, 7]);
+        rig.watch.stop();
+        async.flushMicrotasks();
+        expect(rig.watch.previewFrame, isNull);
+      });
+    },
+  );
 
   test('a frame acquired 2 s or more ago is skipped', () {
     fakeAsync((async) {
@@ -186,7 +189,10 @@ void main() {
           expect(rig.media.log.last, 'stop');
           // The platform could only abandon the request: its answer still
           // arrives, and is dropped.
-          rig.manual.answer(0, verdictJson('ready'));
+          rig.manual.answer(
+            0,
+            verdictJson('ready', see: 'Onions look soft and golden.'),
+          );
           async.flushMicrotasks();
           expect(rig.watch.verdict, isNull);
           if (trigger == '3-minute limit') {
@@ -215,7 +221,10 @@ void main() {
       rig.frame();
       final second = rig.begin();
       expect(second, isNot(first));
-      rig.manual.answer(0, verdictJson('ready'));
+      rig.manual.answer(
+        0,
+        verdictJson('ready', see: 'Onions look soft and golden.'),
+      );
       async.flushMicrotasks();
       expect(rig.watch.verdict, isNull);
       expect(rig.watch.isActive, isTrue);

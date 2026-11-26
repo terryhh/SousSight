@@ -132,7 +132,7 @@ void main() {
 
     // The headline counts from legs: the photo stayed, the voice clip went.
     expect(
-      find.text('photos left your kitchen since you opened SousSight'),
+      find.text('photos recorded as sent online since you opened SousSight'),
       findsOneWidget,
     );
     expect(

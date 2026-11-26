@@ -14,11 +14,11 @@ List<String> sentences(LedgerCounters c) => [
 
 void main() {
   group('LedgerCounters', () {
-    test('no legs: zero photos left the kitchen', () {
+    test('no legs: zero photos recorded as sent', () {
       final c = LedgerCounters.of(const []);
       expect(
         c.headline.sentence,
-        '0 photos left your kitchen since you opened SousSight',
+        '0 photos recorded as sent online since you opened SousSight',
       );
       expect(c.details, isEmpty);
     });
@@ -47,7 +47,7 @@ void main() {
       expect(c.onDevice(DataKind.image), 2);
       expect(c.sent(DataKind.audio), 1);
       expect(sentences(c), [
-        '0 photos left your kitchen since you opened SousSight',
+        '0 photos recorded as sent online since you opened SousSight',
         '1 voice clip sent online to Google\'s AI',
         '2 photo checks stayed on this device',
       ]);
@@ -89,7 +89,7 @@ void main() {
       // Never "0 photos left" while one may have.
       expect(
         c.headline.sentence,
-        '1 photo may have left your kitchen since you opened SousSight',
+        '1 photo may have been sent online since you opened SousSight',
       );
     });
 
@@ -161,12 +161,12 @@ void main() {
     await pumpPhone(tester, LedgerView(ledger: ledger));
     expect(find.text('0'), findsOneWidget);
     expect(
-      find.text('photos left your kitchen since you opened SousSight'),
+      find.text('photos recorded as sent online since you opened SousSight'),
       findsOneWidget,
     );
     expect(
       find.bySemanticsLabel(
-        '0 photos left your kitchen since you opened SousSight',
+        '0 photos recorded as sent online since you opened SousSight',
       ),
       findsOneWidget,
     );
@@ -242,7 +242,7 @@ void main() {
         ),
       ]);
       expect(sentences(c), [
-        '0 photos left your kitchen since you opened SousSight',
+        '0 photos recorded as sent online since you opened SousSight',
         '1 voice clip may have been sent',
       ]);
     });

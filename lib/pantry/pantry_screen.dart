@@ -194,6 +194,23 @@ class _PantryScreenState extends State<PantryScreen> {
   List<InferenceLeg> _draftLegs = const [];
   int _draftEpoch = 0;
 
+  /// Set when a recipe is chosen and cleared when the cook comes back to
+  /// the pantry: until then the mode switches are off and no capture starts,
+  /// even while the cooking screen is still opening (Codex #221 P1).
+  bool _leaving = false;
+  bool _covered = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_onScreen) {
+      _covered = true;
+    } else if (_covered) {
+      _covered = false;
+      if (_leaving) setState(() => _leaving = false);
+    }
+  }
+
   @override
   void dispose() {
     _recordTimer?.cancel();
@@ -213,6 +230,8 @@ class _PantryScreenState extends State<PantryScreen> {
   /// (Codex #221). A camera-only capture is restarted with the microphone
   /// when Record needs it.
   Future<bool> _ensureMedia({bool microphone = false}) async {
+    // Never after a recipe was chosen or behind another screen.
+    if (_leaving || !_onScreen) return false;
     if (_media != null && (!microphone || _mediaHasMic)) return true;
     if (_media != null) await _stopMedia();
     final factory = widget.mediaFactory;
@@ -243,7 +262,7 @@ class _PantryScreenState extends State<PantryScreen> {
         }),
       ]);
       await (microphone ? media.start() : media.startCameraOnly());
-      if (!mounted || epoch != _mediaEpoch) {
+      if (!mounted || epoch != _mediaEpoch || _leaving || !_onScreen) {
         await media.stop();
         return false;
       }
@@ -301,6 +320,7 @@ class _PantryScreenState extends State<PantryScreen> {
   int _modeEpoch = 0;
 
   Future<void> _selectMode(PantryMode mode) async {
+    if (_leaving) return;
     final changed = mode != _mode;
     final epoch = ++_modeEpoch;
     setState(() {
@@ -593,6 +613,7 @@ class _PantryScreenState extends State<PantryScreen> {
     // opens a camera behind the cooking screen, and no clip is kept
     // (Codex #221).
     _modeEpoch++;
+    setState(() => _leaving = true);
     _recordTimer?.cancel();
     _recording = null;
     _audio = null;
@@ -851,13 +872,15 @@ class _PantryScreenState extends State<PantryScreen> {
           child: Semantics(
             selected: _mode == mode,
             button: true,
+            enabled: !_leaving,
             child: Material(
               color: _mode == mode ? pantryTomato : Colors.white,
               borderRadius: BorderRadius.circular(20),
               child: InkWell(
                 key: ValueKey('mode-${mode.name}'),
                 borderRadius: BorderRadius.circular(20),
-                onTap: () => unawaited(_selectMode(mode)),
+                // Off once a recipe is chosen (Codex #221 P1).
+                onTap: _leaving ? null : () => unawaited(_selectMode(mode)),
                 child: SizedBox(
                   height: 84,
                   child: Column(

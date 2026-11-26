@@ -591,6 +591,12 @@ $cookingUiInstructions
     if (finished) {
       _track(AnalyticsEvents.mealCompleted, {'recipe_id': _recipeLabel});
       draftDinner();
+      // The meal is done: stop any watch and release its camera, since the
+      // last step keeps its id and no step change would (Codex #221 P1).
+      // Also cancels a watch whose camera is still starting.
+      _panelWatchId = null;
+      if (watchService case final service?) unawaited(service.stopWatch());
+      if (live.watchGoal != null) live.stopWatch();
       // The meal is done: end the live session so no more camera frames,
       // audio or follow-up turns reach Gemini. The cook can start it again.
       if (live.isActive) {

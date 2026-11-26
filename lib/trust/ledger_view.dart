@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
 import 'ledger_source.dart';
+import 'privacy_receipt.dart' show cloudFirst;
 import 'trust_labels.dart';
 import 'trust_motion.dart';
 import '../app/centered_scroll.dart';
@@ -132,8 +133,8 @@ class LedgerSummary {
   final List<LedgerRow> simulated;
 }
 
-/// One line of the ledger's headline counter: "0 photos left your kitchen
-/// since you opened SousSight". The ledger spans the app run, across New
+/// One line of the ledger's headline counter: "0 photos recorded as sent
+/// online since you opened SousSight". The ledger spans the app run, across New
 /// cook (Codex #221). [count] is shown large; [phrase] follows it.
 class LedgerCount {
   const LedgerCount(this.count, this.phrase, this.tone);
@@ -174,9 +175,12 @@ class LedgerCounters {
         if (outcome == LegOutcome.maybeSent) liveMaybe++;
         continue;
       }
+      // A cloud-first leg allowed to leave may have sent its input before
+      // the on-device answer came back: the same rule as the receipt.
       final bucket = reportedAsSent(outcome)
           ? sent
-          : outcome == LegOutcome.maybeSent
+          : outcome == LegOutcome.maybeSent ||
+                (outcome == LegOutcome.onDevice && cloudFirst(leg))
           ? maybe
           : outcome == LegOutcome.onDevice
           ? local
@@ -250,7 +254,7 @@ class LedgerCounters {
       return LedgerCount(
         n,
         maybe > 0
-            ? '${noun(DataKind.image, n)} may have left your kitchen since '
+            ? '${noun(DataKind.image, n)} may have been sent online since '
                   'you opened SousSight'
             : '${_liveNoun(n)} may have streamed your camera since you '
                   'opened SousSight',
@@ -259,7 +263,7 @@ class LedgerCounters {
     }
     return LedgerCount(
       0,
-      'photos left your kitchen since you opened SousSight',
+      'photos recorded as sent online since you opened SousSight',
       LegOutcome.onDevice,
     );
   }

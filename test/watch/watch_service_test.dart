@@ -98,7 +98,9 @@ void main() {
     fakeAsync((async) {
       final rig = ServiceRig();
       rig.dispatcher.delay = const Duration(seconds: 3);
-      rig.dispatcher.enqueue(verdictJson('ready'));
+      rig.dispatcher.enqueue(
+        verdictJson('ready', see: 'Onions look soft and golden.'),
+      );
       rig.service.startWatch(step: stepA, sessionId: 's1', liveActive: false);
       async.flushMicrotasks();
       rig.media.emit(DateTime.now());
@@ -206,7 +208,9 @@ void main() {
   test('after a ready verdict and a step change no stale status remains', () {
     fakeAsync((async) {
       final rig = ServiceRig();
-      rig.dispatcher.enqueue(verdictJson('ready'));
+      rig.dispatcher.enqueue(
+        verdictJson('ready', see: 'Onions look soft and golden.'),
+      );
       rig.service.startWatch(step: stepA, sessionId: 's1', liveActive: false);
       async.flushMicrotasks();
       rig.media.emit(DateTime.now());
