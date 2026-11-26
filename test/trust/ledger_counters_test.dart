@@ -191,4 +191,82 @@ void main() {
     expect(find.text('0'), findsNothing);
     expect(find.text('1'), findsOneWidget);
   });
+
+  group('Live maybe-streams', () {
+    InferenceLeg failedLive() => leg(
+      Provenance.unknown,
+      feature: 'live',
+      transferPermitted: true,
+      kinds: {DataKind.image, DataKind.audio},
+      error: HybridErrorCode.network,
+    );
+
+    test('alone, a failed Live connection leads, and is not repeated', () {
+      final c = LedgerCounters.of([failedLive()]);
+      expect(c.liveMaybe, 1);
+      expect(sentences(c), [
+        '1 Live coach connection may have streamed your camera this session',
+      ]);
+    });
+
+    test('behind a sent photo it is its own line', () {
+      final c = LedgerCounters.of([
+        leg(Provenance.sdkCloud, kinds: {DataKind.image}),
+        failedLive(),
+        failedLive(),
+      ]);
+      expect(sentences(c), [
+        '1 photo went to Google cloud this session',
+        '2 Live coach connections may have streamed',
+      ]);
+    });
+
+    test('other kinds that may have been sent get a line each', () {
+      final c = LedgerCounters.of([
+        leg(
+          Provenance.unknown,
+          feature: 'pantry_voice',
+          transferPermitted: true,
+          kinds: {DataKind.audio},
+        ),
+      ]);
+      expect(sentences(c), [
+        '0 photos left your kitchen this session',
+        '1 voice clip may have been sent',
+      ]);
+    });
+  });
+
+  testWidgets('showLedgerSheet opens the sheet with simulated legs listed', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final ledger = ListLedgerSource([
+      leg(Provenance.simulated, transferPermitted: false),
+    ]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showLedgerSheet(context, ledger: ledger),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ledger-headline')), findsOneWidget);
+    expect(find.text('0'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('ledger-simulated')),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.byKey(const ValueKey('ledger-simulated')), findsOneWidget);
+  });
 }

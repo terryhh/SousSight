@@ -666,19 +666,31 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     }
   }
 
+  /// Which ledger legs belong to the local watch running now.
+  final _watchLegs = WatchLegScope();
+
   /// The privacy chip, viewfinder and status over the camera preview while
   /// a local watch shows it. Null when Live owns the preview or no local
-  /// watch is running. Upload wording comes from the session ledger's legs.
+  /// watch is running. Upload wording comes from this watch's ledger legs.
   Widget? _localWatchOverlay() {
     if (cook.live.isActive) return null;
     final local = cook.watchService?.local;
-    if (local == null || local.previewFrame == null) return null;
+    if (local == null) return null;
     final ledger = widget.hybrid?.ledgerSource;
+    // Snapshot the ledger as soon as a watch is seen, before its first frame.
+    if (ledger != null) {
+      _watchLegs.begin(local.isActive ? local.watchId : null, ledger.legs);
+    }
+    if (local.previewFrame == null) return null;
     if (ledger == null) return LocalWatchOverlay.of(local);
     return ListenableBuilder(
       listenable: ledger,
       builder: (context, _) =>
-          LocalWatchOverlay.of(local, ledgerLegs: ledger.legs) ??
+          LocalWatchOverlay.of(
+            local,
+            ledgerLegs: ledger.legs,
+            scope: _watchLegs,
+          ) ??
           const SizedBox.shrink(),
     );
   }

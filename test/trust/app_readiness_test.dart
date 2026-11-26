@@ -427,4 +427,63 @@ void main() {
     expect(actions, [ReadinessAction.useCloudHelp]);
     expect(tester.takeException(), isNull);
   });
+
+  test('text-only local model without cloud help: photos stay off', () {
+    final r = eval(
+      input(
+        cloudApproved: false,
+        capabilities: fakeIosCapabilities,
+        image: _un('device_not_eligible'),
+      ),
+    );
+    final photos = r.items.firstWhere(
+      (i) => i.state == ReadinessState.photosNeedCloud,
+    );
+    expect(photos.message, contains("can't run here"));
+    expect(photos.action, ReadinessAction.typeInstead);
+    expect(photos.cloudPath, isFalse);
+    expect(photos.title, "Photos can't be read here");
+  });
+
+  testWidgets('every action renders as the primary button', (tester) async {
+    for (final action in ReadinessAction.values) {
+      final pressed = <ReadinessAction>[];
+      await pumpPhone(
+        tester,
+        ReadinessPanel(readiness: _single(action), onAction: pressed.add),
+      );
+      await tester.tap(find.byKey(const ValueKey('readiness-action-ready')));
+      expect(pressed, [action]);
+      expect(find.text(action.label), findsOneWidget);
+    }
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// A readiness with one item, for rendering each action.
+AppReadiness _single(ReadinessAction action) => _OneItem(
+  ReadinessItem(
+    ReadinessState.ready,
+    ReadinessLevel.info,
+    'Message',
+    action,
+    title: 'Title',
+  ),
+);
+
+class _OneItem implements AppReadiness {
+  _OneItem(this.item);
+  final ReadinessItem item;
+  @override
+  List<ReadinessItem> get items => [item];
+  @override
+  bool get localReady => true;
+  @override
+  bool get cloudUsable => false;
+  @override
+  ReadinessItem get primary => item;
+  @override
+  bool get canUseAi => true;
+  @override
+  Set<ReadinessState> get states => {item.state};
 }

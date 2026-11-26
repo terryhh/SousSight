@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/coach_lite/coach_lite.dart';
 import 'package:soussight/coach_lite/coach_lite_answer_card.dart';
+import 'package:soussight/coach_lite/timer_suggestion_card.dart';
 
 CoachLiteAnswer answer({
   int sequence = 1,
@@ -108,5 +109,24 @@ void main() {
     await pump(tester, footer(2));
     await tester.pumpAndSettle();
     expect(find.text('Start timer'), findsOneWidget);
+  });
+
+  testWidgets('a new suggestion in the same card resets it', (tester) async {
+    Widget card(CoachLiteTimerSuggestion s) =>
+        TimerSuggestionCard(suggestion: s, onStart: (_, _) {});
+    await pump(
+      tester,
+      card(const CoachLiteTimerSuggestion(label: 'Rest', seconds: 90)),
+    );
+    expect(find.text('Suggested timer · 1 min 30 s'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('timer-suggestion-start')));
+    await tester.pump();
+    expect(find.text('Timer started'), findsOneWidget);
+    await pump(
+      tester,
+      card(const CoachLiteTimerSuggestion(label: 'Rest', seconds: 120)),
+    );
+    expect(find.text('Start timer'), findsOneWidget);
+    expect(find.text('Suggested timer · 2 min'), findsOneWidget);
   });
 }

@@ -84,4 +84,30 @@ void main() {
     expect(find.byKey(const ValueKey('routing-off')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a very narrow sheet stacks the columns', (tester) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: HybridRoutingColumns(
+              cloudRoutes: const CloudRoutes({}),
+              liveBackend: LiveBackend.ephemeral,
+            ),
+          ),
+        ),
+      ),
+    );
+    final device = find.byKey(const ValueKey('routing-column-device'));
+    final cloud = find.byKey(const ValueKey('routing-column-cloud'));
+    expect(tester.getTopLeft(device).dx, tester.getTopLeft(cloud).dx);
+    expect(tester.getTopLeft(device).dy, lessThan(tester.getTopLeft(cloud).dy));
+    // Ephemeral Live needs no route; it is listed in the cloud column.
+    expect(find.text('Live coach'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

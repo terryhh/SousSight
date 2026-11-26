@@ -477,11 +477,6 @@ class _RoutingColumn extends StatelessWidget {
               style: theme.textTheme.bodySmall?.copyWith(color: foreground),
             ),
             const SizedBox(height: 8),
-            if (entries.isEmpty)
-              Text(
-                'Nothing in this build.',
-                style: theme.textTheme.bodySmall?.copyWith(color: foreground),
-              ),
             for (final entry in entries)
               Padding(
                 padding: const EdgeInsets.only(top: 8),

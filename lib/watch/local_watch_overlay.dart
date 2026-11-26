@@ -62,6 +62,50 @@ WatchOverlayPhase? watchOverlayPhase(LocalWatchController watch) {
   return (sent: sent, maybe: maybe);
 }
 
+/// Scopes ledger legs to the watch that is running now, so the overlay's
+/// chip speaks for this watch only: a new watch starts at "nothing
+/// uploaded" even if an earlier watch sent one consented photo. The session
+/// ledger sheet keeps the session-wide counts.
+///
+/// The dispatcher, not the watch, assigns request ids, so the scope
+/// remembers which legs already existed when it first saw a watch id and
+/// counts only legs added after that, plus any leg the watch's own current
+/// verdict carries. Hold one per screen and call [begin] as soon as a watch
+/// is seen (before its first frame).
+class WatchLegScope {
+  String? _watchId;
+  Set<String> _before = const {};
+
+  /// The watch this scope is following, if any.
+  String? get watchId => _watchId;
+
+  /// Starts following [watchId], snapshotting [ledgerLegs] as "before".
+  /// The same id again is a no-op; null forgets the previous watch.
+  void begin(String? watchId, List<InferenceLeg> ledgerLegs) {
+    if (watchId == _watchId) return;
+    _watchId = watchId;
+    _before = watchId == null
+        ? const {}
+        : {for (final leg in ledgerLegs) leg.requestId};
+  }
+
+  /// The ledger legs that belong to [watchId]. Empty when no watch runs.
+  List<InferenceLeg> legsFor(
+    String? watchId,
+    List<InferenceLeg> ledgerLegs, {
+    List<InferenceLeg> verdictLegs = const [],
+  }) {
+    begin(watchId, ledgerLegs);
+    if (watchId == null) return const [];
+    final own = {for (final leg in verdictLegs) leg.requestId};
+    return [
+      for (final leg in ledgerLegs)
+        if (!_before.contains(leg.requestId) || own.contains(leg.requestId))
+          leg,
+    ];
+  }
+}
+
 /// The chip's wording. With no ledger to read, it says where the watch runs
 /// and makes no claim about uploads.
 String watchPrivacyLabel(({int sent, int maybe})? uploads) {
@@ -132,21 +176,35 @@ class LocalWatchOverlay extends StatelessWidget {
 
   /// Reads a running watch and, when given, the session ledger's legs.
   /// Returns null when no local watch is running.
+  ///
+  /// [scope] limits the ledger legs to this watch; without one, every leg
+  /// passed in is counted.
   static LocalWatchOverlay? of(
     LocalWatchController watch, {
     List<InferenceLeg>? ledgerLegs,
+    WatchLegScope? scope,
     Key? key,
   }) {
     final phase = watchOverlayPhase(watch);
     if (phase == null) return null;
     final verdict = watch.verdict;
+    final current = verdict != null && verdict.watchId == watch.watchId
+        ? verdict
+        : null;
+    final legs = ledgerLegs == null
+        ? null
+        : scope == null
+        ? ledgerLegs
+        : scope.legsFor(
+            watch.watchId,
+            ledgerLegs,
+            verdictLegs: current?.legs ?? const [],
+          );
     return LocalWatchOverlay(
       key: key,
       phase: phase,
-      direction: verdict != null && verdict.watchId == watch.watchId
-          ? verdict.direction
-          : WatchDirection.none,
-      uploads: ledgerLegs == null ? null : watchUploads(ledgerLegs),
+      direction: current?.direction ?? WatchDirection.none,
+      uploads: legs == null ? null : watchUploads(legs),
     );
   }
 

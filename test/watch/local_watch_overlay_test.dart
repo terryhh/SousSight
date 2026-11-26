@@ -3,6 +3,7 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
+import 'package:soussight/trust/ledger_source.dart';
 import 'package:soussight/watch/capture_owner.dart';
 import 'package:soussight/watch/local_watch_controller.dart';
 import 'package:soussight/watch/local_watch_overlay.dart';
@@ -29,11 +30,12 @@ InferenceLeg watchLeg(
 );
 
 class _Rig {
-  _Rig(this.async) {
+  _Rig(this.async, {this.consent}) {
     capture = CaptureOwner(media);
     local = LocalWatchController(
       dispatcher: dispatcher,
       capture: capture,
+      consentGate: consent,
       now: () => t0.add(async.elapsed),
       checkInterval: const Duration(seconds: 5),
     );
@@ -45,6 +47,8 @@ class _Rig {
     );
   }
   final FakeAsync async;
+  final FakeConsentGate? consent;
+  final ledger = ListLedgerSource();
   final media = FakeMedia()..micDenied = true;
   final dispatcher = FakeHybridDispatcher();
   late final CaptureOwner capture;
@@ -59,6 +63,24 @@ class _Rig {
   void frame() {
     media.emit(t0.add(async.elapsed));
     async.flushMicrotasks();
+  }
+
+  /// Stands in for the dispatcher's ledger writes: copies the current
+  /// verdict's legs into the session ledger once each.
+  void syncLedger() {
+    final known = {for (final l in ledger.legs) l.requestId};
+    for (final leg in local.verdict?.legs ?? const <InferenceLeg>[]) {
+      if (!known.contains(leg.requestId)) ledger.add(leg);
+    }
+  }
+
+  String? chip(WatchLegScope scope) {
+    final overlay = LocalWatchOverlay.of(
+      local,
+      ledgerLegs: ledger.legs,
+      scope: scope,
+    );
+    return overlay == null ? null : watchPrivacyLabel(overlay.uploads);
   }
 }
 
@@ -240,5 +262,165 @@ void main() {
     // One frame, no settling: the old status is already gone.
     expect(find.text('Not yet — keep going'), findsOneWidget);
     expect(find.text('Watching for the cue'), findsNothing);
+  });
+
+  group('the chip speaks for the current watch only', () {
+    final earlierCheck = watchLeg(
+      Provenance.sdkCloud,
+      feature: kWatchCloudCheckFeature,
+      transferPermitted: true,
+    );
+    final thisCheck = InferenceLeg(
+      requestId: 'r-this-check',
+      feature: kWatchCloudCheckFeature,
+      mode: HybridMode.onlyInCloud,
+      kinds: const {DataKind.image},
+      transferPermitted: true,
+      provenance: Provenance.cloudAdapter,
+    );
+
+    test('legs from before the watch began are not counted', () {
+      final scope = WatchLegScope();
+      final ledger = [earlierCheck];
+      expect(scope.legsFor('w2', ledger), isEmpty);
+      expect(scope.watchId, 'w2');
+      expect(
+        watchPrivacyLabel(watchUploads(scope.legsFor('w2', ledger))),
+        'On this device · nothing uploaded',
+      );
+      // This watch's own consented check is counted.
+      final later = [earlierCheck, thisCheck];
+      expect(scope.legsFor('w2', later), [thisCheck]);
+      expect(
+        watchPrivacyLabel(watchUploads(scope.legsFor('w2', later))),
+        'On this device · 1 photo sent for a cloud check',
+      );
+    });
+
+    test('a leg the current verdict carries always counts', () {
+      final scope = WatchLegScope()..begin('w1', [thisCheck]);
+      expect(scope.legsFor('w1', [thisCheck]), isEmpty);
+      expect(scope.legsFor('w1', [thisCheck], verdictLegs: [thisCheck]), [
+        thisCheck,
+      ]);
+    });
+
+    test('no watch: nothing is scoped and the baseline is forgotten', () {
+      final scope = WatchLegScope()..begin('w1', [earlierCheck]);
+      expect(scope.legsFor(null, [earlierCheck]), isEmpty);
+      expect(scope.watchId, isNull);
+      // A later watch with the same ledger snapshots afresh.
+      expect(scope.legsFor('w3', [earlierCheck]), isEmpty);
+      expect(scope.legsFor('w3', [earlierCheck, thisCheck]), [thisCheck]);
+    });
+
+    test(
+      'earlier watch sent a photo; a new watch starts at nothing uploaded',
+      () {
+        fakeAsync((async) {
+          final rig = _Rig(async, consent: FakeConsentGate());
+          final scope = WatchLegScope();
+
+          // Watch 1: unsure, then one consented cloud check.
+          rig.dispatcher.enqueue(verdictJson('unsure'));
+          rig.begin();
+          scope.begin(rig.local.watchId, rig.ledger.legs);
+          rig.frame();
+          rig.syncLedger();
+          expect(rig.chip(scope), 'On this device · nothing uploaded');
+          rig.frame();
+          rig.local.requestCloudCheck();
+          async.flushMicrotasks();
+          rig.dispatcher.enqueue(
+            verdictJson('not_yet', direction: 'more'),
+            provenance: Provenance.sdkCloud,
+          );
+          rig.consent!.grant();
+          async.flushMicrotasks();
+          rig.syncLedger();
+          expect(
+            rig.chip(scope),
+            'On this device · 1 photo sent for a cloud check',
+          );
+          // The session ledger still has it.
+          expect(watchUploads(rig.ledger.legs).sent, 1);
+
+          // Watch 2 on the same session ledger.
+          rig.service.stopWatch();
+          async.flushMicrotasks();
+          expect(rig.chip(scope), isNull, reason: 'no watch, no overlay');
+          rig.dispatcher.enqueue(verdictJson('not_yet', direction: 'more'));
+          rig.begin();
+          final second = rig.local.watchId;
+          expect(second, isNotNull);
+          scope.begin(second, rig.ledger.legs);
+          rig.frame();
+          rig.syncLedger();
+          expect(rig.chip(scope), 'On this device · nothing uploaded');
+          expect(watchUploads(rig.ledger.legs).sent, 1);
+          rig.service.stopWatch();
+          async.flushMicrotasks();
+        });
+      },
+    );
+
+    test('without a scope every ledger leg passed in is counted', () {
+      fakeAsync((async) {
+        final rig = _Rig(async);
+        rig.dispatcher.enqueue(verdictJson('not_yet'));
+        rig.begin();
+        rig.ledger.add(earlierCheck);
+        final overlay = LocalWatchOverlay.of(
+          rig.local,
+          ledgerLegs: rig.ledger.legs,
+        )!;
+        expect(overlay.uploads, (sent: 1, maybe: 0));
+        expect(LocalWatchOverlay.of(rig.local)!.uploads, isNull);
+        rig.service.stopWatch();
+        async.flushMicrotasks();
+      });
+    });
+  });
+
+  /// The status notice for a watch whose first verdict is [state].
+  Widget? noticeAfter(String state) {
+    Widget? notice;
+    fakeAsync((async) {
+      final rig = _Rig(async);
+      rig.dispatcher.enqueue(verdictJson(state, see: 'A pan of onions.'));
+      rig.begin();
+      rig.frame();
+      async.flushMicrotasks();
+      notice = watchStatusNotice(rig.service);
+      rig.service.stopWatch();
+      async.flushMicrotasks();
+    });
+    return notice;
+  }
+
+  testWidgets('ready below the preview: a calm card that says you decide', (
+    tester,
+  ) async {
+    final notice = noticeAfter('ready');
+    expect(notice, isNotNull);
+    await pumpPreview(tester, SingleChildScrollView(child: notice));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('watch-notice-ready')), findsOneWidget);
+    expect(find.text('Looks like the cue — you decide'), findsOneWidget);
+    expect(find.textContaining('A pan of onions.'), findsOneWidget);
+    expect(find.textContaining("can't check temperature"), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('unsure below the preview: the reframe prompt', (tester) async {
+    final notice = noticeAfter('unsure');
+    await pumpPreview(tester, SingleChildScrollView(child: notice));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('watch-notice-unsure')), findsOneWidget);
+    expect(find.text('Move the pan or bowl into view'), findsOneWidget);
+  });
+
+  test('not yet keeps the plain status line', () {
+    expect(noticeAfter('not_yet'), isNull);
   });
 }
