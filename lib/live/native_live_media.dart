@@ -3,10 +3,8 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'live_types.dart';
-import 'native_live_media_captured_frame.dart';
 import 'native_live_media_encoder.dart';
 
-export 'native_live_media_captured_frame.dart' show CapturedFrame;
 export 'native_live_media_encoder.dart'
     show NativeCameraFrame, NativePixelFormat, NativePlane;
 
@@ -124,7 +122,7 @@ class NativeLiveMedia implements LiveMedia {
   Stream<Uint8List> get frames => _frames.stream;
 
   /// Every captured frame with its capture time, in both modes.
-  // TODO(SS-073): add @override once PR #181 puts this on LiveMedia.
+  @override
   Stream<CapturedFrame> get timedFrames => _timedFrames.stream;
 
   @override
@@ -141,7 +139,7 @@ class NativeLiveMedia implements LiveMedia {
   Future<void> start() => _begin(cameraOnly: false);
 
   /// Camera only. No microphone permission prompt, no recorder, no player.
-  // TODO(SS-073): add @override once PR #181 puts this on LiveMedia.
+  @override
   Future<void> startCameraOnly() => _begin(cameraOnly: true);
 
   Future<void> _begin({required bool cameraOnly}) async {
