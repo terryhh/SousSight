@@ -1,0 +1,361 @@
+// Routing and privacy rules (PLAN.md §4, DESIGN.md §5). Pure Dart, no I/O:
+// everything a decision depends on is in [RouteInput].
+
+import 'dart:convert';
+
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
+
+import 'hybrid_types.dart';
+import 'payload_digest.dart';
+
+/// Optional per-feature overrides from Remote Config (SS-076). Defaults ship
+/// in the app; a missing value means "use the feature default".
+///
+/// Overrides are applied last, after `localOnly`, cloud approval, hard limits
+/// and availability, so they can never loosen any of those. They also cannot
+/// push a feature to the cloud: only on-device-first modes
+/// ([HybridMode.onlyOnDevice], [HybridMode.preferOnDevice]) are honoured, and
+/// a cloud-primary value is ignored. Remote Config can tighten or relax the
+/// SDK's own fallback for a feature, and nothing more.
+class RemoteRouting {
+  const RemoteRouting({this.modes = const {}});
+
+  /// Feature key → mode.
+  final Map<String, HybridMode> modes;
+
+  HybridMode? modeFor(String feature) {
+    final mode = modes[feature];
+    return mode == HybridMode.onlyOnDevice || mode == HybridMode.preferOnDevice
+        ? mode
+        : null;
+  }
+}
+
+/// A feature's built-in route (PLAN.md §4).
+class FeatureRoute {
+  const FeatureRoute(
+    this.defaultMode, {
+    required this.cloudWhenLocalCannot,
+    required this.semanticRetry,
+  });
+
+  /// The mode used when nothing above it in the precedence applies.
+  final HybridMode defaultMode;
+
+  /// When a hard limit (audio, image, size, language, mode support) rules the
+  /// local model out and uploads are permitted, run `onlyInCloud` instead of
+  /// stopping.
+  final bool cloudWhenLocalCannot;
+
+  /// One `onlyInCloud` retry when the caller's validator rejects an on-device
+  /// answer.
+  final bool semanticRetry;
+
+  bool get cloudFirst =>
+      defaultMode == HybridMode.onlyInCloud ||
+      defaultMode == HybridMode.preferInCloud;
+}
+
+/// Feature defaults. Unknown features fail closed to on-device only.
+const featureRoutes = <String, FeatureRoute>{
+  // Typed list or photo. Photo goes to the cloud on iOS (no local image
+  // support), with consent.
+  'pantry_scan': FeatureRoute(
+    HybridMode.preferOnDevice,
+    cloudWhenLocalCannot: true,
+    semanticRetry: true,
+  ),
+  // Audio is never supported on-device.
+  'pantry_voice': FeatureRoute(
+    HybridMode.onlyInCloud,
+    cloudWhenLocalCannot: true,
+    semanticRetry: false,
+  ),
+  // On-device first; one cloud retry on semantic rejection, but not when the
+  // SDK already answered from the cloud.
+  'recipe_draft': FeatureRoute(
+    HybridMode.preferOnDevice,
+    cloudWhenLocalCannot: true,
+    semanticRetry: true,
+  ),
+  // The privacy hero. Sending an "unsure" frame to the cloud is a separate,
+  // explicitly consented feature action, not a fallback.
+  'local_watch': FeatureRoute(
+    HybridMode.onlyOnDevice,
+    cloudWhenLocalCannot: false,
+    semanticRetry: false,
+  ),
+  // On-device; cloud only if the panel fails validation and the cook is
+  // online.
+  'coach_lite': FeatureRoute(
+    HybridMode.onlyOnDevice,
+    cloudWhenLocalCannot: false,
+    semanticRetry: true,
+  ),
+  // On-device only by default; iOS (no local image) photo → cloud with
+  // consent, or the typed-label path.
+  'label_check': FeatureRoute(
+    HybridMode.onlyOnDevice,
+    cloudWhenLocalCannot: true,
+    semanticRetry: false,
+  ),
+};
+
+const _unknownFeature = FeatureRoute(
+  HybridMode.onlyOnDevice,
+  cloudWhenLocalCannot: false,
+  semanticRetry: false,
+);
+
+FeatureRoute featureRouteFor(String feature) =>
+    featureRoutes[feature] ?? _unknownFeature;
+
+class RouteInput {
+  const RouteInput({
+    required this.feature,
+    this.hasImage = false,
+    this.hasAudio = false,
+    this.hasLocation = false,
+    required this.estimatedTokens,
+    required this.languageTag,
+    required this.localOnly,
+    required this.online,
+    required this.cloudApproved,
+    required this.capabilities,
+    required this.status,
+    this.remote,
+  });
+
+  final String feature;
+  final bool hasImage, hasAudio, hasLocation;
+
+  /// §4 token budget; see [estimateLocalTokens].
+  final int estimatedTokens;
+
+  /// BCP 47, e.g. `en` or `en-US`.
+  final String languageTag;
+  final bool localOnly;
+  final bool online;
+
+  /// `CloudRoutes.allows(CloudRoute.hybridFallback)`.
+  final bool cloudApproved;
+  final HybridCapabilities capabilities;
+
+  /// For this request's modality.
+  final OnDeviceStatus status;
+  final RemoteRouting? remote;
+
+  Set<DataKind> get kinds => {
+    DataKind.text,
+    if (hasImage) DataKind.image,
+    if (hasAudio) DataKind.audio,
+    if (hasLocation) DataKind.location,
+  };
+}
+
+class RouteDecision {
+  const RouteDecision({
+    required this.mode,
+    required this.reason,
+    required this.mayUpload,
+    required this.needsConsent,
+  });
+
+  const RouteDecision.blocked(this.reason)
+    : mode = null,
+      mayUpload = false,
+      needsConsent = false;
+
+  /// Null: cannot run. Show [reason] and the next step.
+  final HybridMode? mode;
+  final RouteReason reason;
+
+  /// True for every mode except `onlyOnDevice`.
+  final bool mayUpload;
+  final bool needsConsent;
+
+  bool get blocked => mode == null;
+
+  @override
+  String toString() =>
+      'RouteDecision(${mode?.name ?? 'blocked'}, ${reason.name}, '
+      'mayUpload: $mayUpload, needsConsent: $needsConsent)';
+}
+
+/// Precedence, highest first (DESIGN.md §5): `localOnly` → `cloudApproved`
+/// (and being online) → hard limits → availability → remote overrides →
+/// feature default.
+///
+/// `localOnly`, `!cloudApproved` and offline can only yield `onlyOnDevice` or
+/// a block: `preferOnDevice` may fall back to the cloud inside the SDK.
+RouteDecision decideRoute(RouteInput input) {
+  final route = featureRouteFor(input.feature);
+  final hardLimit = _localHardLimit(input);
+  final notReady = _availabilityBlock(input.status);
+
+  final restriction = input.localOnly
+      ? RouteReason.localOnlySetting
+      : !input.cloudApproved
+      ? RouteReason.cloudNotApproved
+      : !input.online
+      ? RouteReason.offline
+      : null;
+
+  if (restriction != null) {
+    // A hard limit means the request needs the cloud, and the restriction is
+    // what the cook can change. A not-ready model is the better explanation
+    // when the request would otherwise run locally.
+    if (hardLimit != null) return RouteDecision.blocked(restriction);
+    if (notReady != null) return RouteDecision.blocked(notReady);
+    return _local(HybridMode.onlyOnDevice, RouteReason.onDevice);
+  }
+
+  if (hardLimit != null) {
+    return route.cloudWhenLocalCannot
+        ? _cloud(input, HybridMode.onlyInCloud, hardLimit)
+        : RouteDecision.blocked(hardLimit);
+  }
+
+  final wanted = input.remote?.modeFor(input.feature) ?? route.defaultMode;
+
+  if (notReady != null) {
+    // preferOnDevice is exactly the hybrid SDK's job here: it answers from
+    // the cloud while the local model is missing or downloading.
+    if (wanted == HybridMode.preferOnDevice &&
+        input.capabilities.supportedModes.contains(HybridMode.preferOnDevice)) {
+      return _cloud(input, HybridMode.preferOnDevice, notReady);
+    }
+    if (wanted == HybridMode.onlyInCloud ||
+        wanted == HybridMode.preferInCloud) {
+      return _cloud(input, HybridMode.onlyInCloud, notReady);
+    }
+    return RouteDecision.blocked(notReady);
+  }
+
+  switch (wanted) {
+    case HybridMode.onlyOnDevice:
+      return _local(HybridMode.onlyOnDevice, RouteReason.onDevice);
+    case HybridMode.preferOnDevice:
+      // A backend without preferOnDevice still runs the request locally.
+      return input.capabilities.supportedModes.contains(
+            HybridMode.preferOnDevice,
+          )
+          ? _cloud(input, HybridMode.preferOnDevice, RouteReason.onDevice)
+          : _local(HybridMode.onlyOnDevice, RouteReason.onDevice);
+    case HybridMode.preferInCloud:
+    case HybridMode.onlyInCloud:
+      // Only reachable for a cloud-first feature with no hard limit. Its
+      // reason is the modality that makes it cloud-first.
+      return _cloud(
+        input,
+        HybridMode.onlyInCloud,
+        input.hasAudio ? RouteReason.audioNeedsCloud : RouteReason.noLocalModel,
+      );
+  }
+}
+
+/// The decision for a semantic retry (§5 step 5) or a Dart cloud fallback
+/// (§5 step 4): always `onlyInCloud`, and only when uploads are permitted.
+RouteDecision decideCloudRetry({
+  required String feature,
+  required Set<DataKind> kinds,
+  required bool localOnly,
+  required bool cloudApproved,
+  required bool online,
+  RouteReason reason = RouteReason.cloudRetryAfterCheck,
+}) {
+  if (localOnly) {
+    return const RouteDecision.blocked(RouteReason.localOnlySetting);
+  }
+  if (!cloudApproved) {
+    return const RouteDecision.blocked(RouteReason.cloudNotApproved);
+  }
+  if (!online) return const RouteDecision.blocked(RouteReason.offline);
+  return RouteDecision(
+    mode: HybridMode.onlyInCloud,
+    reason: reason,
+    mayUpload: true,
+    needsConsent: consentRequired(feature, kinds),
+  );
+}
+
+/// Consent is asked, per payload, before media (image, audio, location) from
+/// an on-device-first feature may leave the device. Cloud-first features
+/// (the pantry voice clip) are labelled as cloud before the cook records, so
+/// the action itself is the consent. Text from on-device-first features may
+/// fall back without a prompt and is still recorded in the ledger.
+bool consentRequired(String feature, Set<DataKind> kinds) {
+  if (featureRouteFor(feature).cloudFirst) return false;
+  return kinds.contains(DataKind.image) ||
+      kinds.contains(DataKind.audio) ||
+      kinds.contains(DataKind.location);
+}
+
+/// §4 token budget for a local run: (system instruction + all text parts +
+/// serialized schema) characters / 4, plus `imageTokenEstimate` per image,
+/// plus `maxOutputTokens`.
+int estimateLocalTokens(HybridTask task, {required int imageTokenEstimate}) {
+  var chars = task.systemInstruction?.length ?? 0;
+  var images = 0;
+  for (final p in task.parts) {
+    if (p is HybridText) chars += p.text.length;
+    if (isImagePart(p)) images++;
+  }
+  if (task.jsonSchema != null) chars += jsonEncode(task.jsonSchema).length;
+  return (chars / 4).ceil() +
+      images * imageTokenEstimate +
+      task.maxOutputTokens;
+}
+
+/// Used when the bridge reports no local limits.
+const defaultImageTokenEstimate = 1000;
+
+RouteReason? _localHardLimit(RouteInput input) {
+  final local = input.capabilities.local;
+  if (input.hasAudio) return RouteReason.audioNeedsCloud;
+  if (local == null ||
+      !input.capabilities.supportedModes.contains(HybridMode.onlyOnDevice)) {
+    return RouteReason.noLocalModel;
+  }
+  if (input.hasImage && !local.supportsImage) {
+    return RouteReason.imageNeedsCloud;
+  }
+  if (input.estimatedTokens > local.maxTotalTokens) {
+    return RouteReason.tooLargeForDevice;
+  }
+  if (!_languageSupported(input.languageTag, local.validatedLanguages)) {
+    return RouteReason.languageNotSupported;
+  }
+  return null;
+}
+
+bool _languageSupported(String tag, List<String> validated) {
+  final t = tag.toLowerCase();
+  final primary = t.split(RegExp('[-_]')).first;
+  return validated.any((v) {
+    final l = v.toLowerCase();
+    return l == t || l == primary;
+  });
+}
+
+RouteReason? _availabilityBlock(OnDeviceStatus status) => switch (status) {
+  OnDeviceStatus.available => null,
+  OnDeviceStatus.downloading => RouteReason.modelDownloading,
+  OnDeviceStatus.downloadable => RouteReason.modelNotReady,
+  OnDeviceStatus.unavailable => RouteReason.noLocalModel,
+};
+
+RouteDecision _local(HybridMode mode, RouteReason reason) => RouteDecision(
+  mode: mode,
+  reason: reason,
+  mayUpload: false,
+  needsConsent: false,
+);
+
+RouteDecision _cloud(RouteInput input, HybridMode mode, RouteReason reason) =>
+    RouteDecision(
+      mode: mode,
+      reason: reason,
+      mayUpload: true,
+      needsConsent: consentRequired(input.feature, input.kinds),
+    );
