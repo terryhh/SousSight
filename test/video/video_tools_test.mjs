@@ -24,12 +24,19 @@ import {
   PANTRY,
   QUESTION,
   RECIPE,
+  VIDEO_COPY,
   VIEWPORT_SPECS,
   captureConfig,
+  classifyCoachLiteReply,
   clipFfmpegArgs,
+  coachLiteAnswerResult,
+  coachLiteLocators,
   escapeRegExp,
+  sourceBadgeFinished,
   typingDelays,
+  watchUnsureResult,
 } from '../../tool/video/capture.mjs';
+import { COPY } from '../../tool/e2e/copy.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const sample = JSON.parse(readFileSync(join(root, 'tool/video/edl.json'), 'utf8'));
@@ -233,6 +240,192 @@ describe('capture.mjs', () => {
     assert.deepEqual(delays, typingDelays('bread, peanut butter'));
     assert.ok(delays[5] >= 125, 'pause after a comma');
     assert.ok(new Set(delays).size > 5, 'not robotic');
+  });
+});
+
+// An inert stand-in for a Playwright page: a fixed list of semantics nodes
+// ({ role, name, text }) that locators match the way Playwright does
+// (regex test, or case-insensitive substring). Nodes can be added later to
+// model a reply arriving.
+class FakePage {
+  constructor(nodes = []) {
+    this.nodes = [...nodes];
+  }
+  add(node, afterMs = 0) {
+    setTimeout(() => this.nodes.push(node), afterMs);
+  }
+  getByText(pattern) {
+    return new FakeLocator(this, (n) => matches(pattern, n.text));
+  }
+  getByLabel(pattern) {
+    return new FakeLocator(this, (n) => matches(pattern, n.name));
+  }
+  getByRole(role, { name } = {}) {
+    return new FakeLocator(this, (n) => n.role === role && (name === undefined || matches(name, n.name)));
+  }
+}
+
+function matches(pattern, value) {
+  if (value == null) return false;
+  return pattern instanceof RegExp ? pattern.test(value) : value.toLowerCase().includes(String(pattern).toLowerCase());
+}
+
+class FakeLocator {
+  constructor(page, match, index = null) {
+    Object.assign(this, { page, match, index });
+  }
+  node() {
+    return this.page.nodes.filter(this.match)[this.index ?? 0];
+  }
+  first() {
+    return new FakeLocator(this.page, this.match, 0);
+  }
+  nth(i) {
+    return new FakeLocator(this.page, this.match, i);
+  }
+  or(other) {
+    return new FakeLocator(this.page, (n) => this.match(n) || other.match(n));
+  }
+  async count() {
+    return this.page.nodes.filter(this.match).length;
+  }
+  async isVisible() {
+    return Boolean(this.node());
+  }
+  async getAttribute(attr) {
+    return attr === 'aria-label' ? (this.node()?.name ?? null) : null;
+  }
+  async textContent() {
+    return this.node()?.text ?? null;
+  }
+  async waitFor({ timeout = 30_000 } = {}) {
+    const end = Date.now() + timeout;
+    while (!this.node()) {
+      if (Date.now() > end) throw new Error(`timeout ${timeout} ms`);
+      await new Promise((r) => setTimeout(r, 2));
+    }
+  }
+}
+
+// Same shape as tool/e2e/flutter.mjs seen().
+const seen = (page, text) => page.getByText(text).or(page.getByLabel(text)).first();
+const badge = (legs) => ({ role: 'button', name: `Where this ran: ${legs}. Tap for details.` });
+// The cooking screen's always-present controls, including the cook's own
+// prediction chips ("Not sure" is not a watch verdict).
+const cookingScreen = () => [
+  { text: 'Your cooking space' },
+  { text: 'Peanut Butter Sandwich' },
+  { text: 'How does your food look?' },
+  ...['Ready', 'Not yet', 'Not sure'].map((p) => ({ role: 'button', name: p, text: p })),
+];
+
+describe('capture.mjs evidence: a step counts only when its own UI state is asserted', () => {
+  const classify = (page, badgesBefore = 0, timeout = 40) =>
+    classifyCoachLiteReply(coachLiteLocators(page, seen), { badgesBefore, timeout });
+
+  test('uses the shared app copy from tool/e2e/copy.mjs', () => {
+    const source = readFileSync(join(root, 'tool/video/capture.mjs'), 'utf8');
+    assert.match(source, /from '\.\.\/e2e\/copy\.mjs'/);
+    assert.doesNotMatch(source, /Rehearsal mode ·|'What was sent'|'On-device AI'|'Find my meal'/);
+    assert.ok(COPY.rehearsalBanner.test('Practice mode (pretend answers) · nothing is sent'));
+  });
+
+  test('source badge: only a finished last leg is an answer', () => {
+    assert.equal(sourceBadgeFinished(badge('Simulated').name), true);
+    assert.equal(sourceBadgeFinished(badge('On this device · Gemini Nano').name), true);
+    assert.equal(sourceBadgeFinished(badge('Cloud · Gemini').name), true);
+    assert.equal(sourceBadgeFinished(badge('On this device (model not available); Cloud · Gemini').name), true);
+    assert.equal(sourceBadgeFinished(badge("Didn't finish · nothing left this device").name), false);
+    assert.equal(sourceBadgeFinished(badge('May have been sent').name), false);
+    assert.equal(sourceBadgeFinished(badge('On this device (took too long)').name), false);
+    assert.equal(sourceBadgeFinished(badge('Cloud · Gemini; Cloud (connection problem)').name), false);
+    assert.equal(sourceBadgeFinished('Where this ran: Simulated'), false);
+    assert.equal(sourceBadgeFinished(null), false);
+  });
+
+  test('regression: a failed-call badge is not an answer', async () => {
+    // CoachLite keeps a failed attempt's legs, so the footer badge renders
+    // even though no model answered (PR #225 review).
+    const page = new FakePage([...cookingScreen(), badge("Didn't finish · nothing left this device")]);
+    const reply = await classify(page);
+    assert.equal(reply.outcome, 'failed');
+    const result = coachLiteAnswerResult(reply);
+    assert.equal(result.status, 'recorded');
+    assert.equal(result.outcome, 'failed');
+    assert.doesNotMatch(result.shows, /answer with/);
+    assert.match(result.shows, /did not answer/);
+  });
+
+  test('a badge beside a fallback note is a failure or refusal, not an answer', async () => {
+    const failed = new FakePage([...cookingScreen(), badge('On this device (model not available)'),
+      { text: 'The on-device coach could not answer.\nSpread the peanut butter.' }]);
+    assert.equal((await classify(failed)).outcome, 'failed');
+    const invalid = new FakePage([...cookingScreen(), badge('On this device'),
+      { text: "The on-device coach's answer could not be shown.\nSpread the peanut butter." }]);
+    assert.equal((await classify(invalid)).outcome, 'failed');
+    const blocked = new FakePage([...cookingScreen(), badge("Didn't finish · nothing left this device"),
+      { text: "This device can't run the on-device coach right now.\nSpread the peanut butter." }]);
+    const reply = await classify(blocked);
+    assert.equal(reply.outcome, 'blocked');
+    assert.match(coachLiteAnswerResult(reply).shows, /unavailable on this device: .*can't run the on-device coach/);
+  });
+
+  test('an unknown cloud outcome is not an answer', async () => {
+    assert.equal((await classify(new FakePage([badge('May have been sent')]))).outcome, 'failed');
+  });
+
+  test('a finished answer arriving after the question is recorded with its badge', async () => {
+    const page = new FakePage(cookingScreen());
+    page.add(badge('Simulated'), 10);
+    const reply = await classify(page, 0, 500);
+    assert.equal(reply.outcome, 'answered');
+    const result = coachLiteAnswerResult(reply);
+    assert.deepEqual([result.status, result.outcome], ['recorded', 'answered']);
+    assert.match(result.shows, /Simulated/);
+  });
+
+  test('a badge already on screen before the question is never the answer', async () => {
+    // e.g. a watch verdict's badge: unrelated to the question.
+    const page = new FakePage([...cookingScreen(), badge('On this device')]);
+    const reply = await classify(page, 1);
+    assert.equal(reply.outcome, 'none');
+    const result = coachLiteAnswerResult(reply, { badgesBefore: 1 });
+    assert.equal(result.status, 'absent');
+    assert.match(result.shows, /already on screen/);
+  });
+
+  test('consent, live alert and silence keep their own classification', async () => {
+    const consent = new FakePage([{ role: 'button', name: "Don't send", text: "Don't send" }]);
+    assert.equal((await classify(consent)).outcome, 'consent');
+    const live = new FakePage([{ text: 'Connect the live coach to talk or type a question.' }]);
+    assert.equal((await classify(live)).outcome, 'live-alert');
+    const silent = await classify(new FakePage(cookingScreen()));
+    assert.equal(silent.outcome, 'none');
+    assert.equal(coachLiteAnswerResult(silent).status, 'absent');
+    assert.throws(() => coachLiteAnswerResult({ outcome: 'bogus' }), /unknown Coach Lite outcome/);
+  });
+
+  test('regression: the cook\'s "Not sure" chip is not an unsure watch verdict', async () => {
+    // Inert-locator probe from the PR #225 review: only the prediction
+    // choices and a running watch are on screen.
+    const page = new FakePage([...cookingScreen(), { text: 'Watching for the cue' }]);
+    const result = await watchUnsureResult('preview', seen(page, VIDEO_COPY.watchUnsure), { timeout: 40 });
+    assert.deepEqual([result.status, result.outcome], ['absent', 'no-verdict']);
+    for (const chip of ['Ready', 'Not yet', 'Not sure', 'How does your food look?']) {
+      assert.doesNotMatch(chip, VIDEO_COPY.watchUnsure);
+    }
+  });
+
+  test('the watch\'s own unsure verdict is recorded; no watch means no verdict', async () => {
+    const overlay = new FakePage([...cookingScreen(),
+      { name: 'Move the pan or bowl into view\nClear steam or hands, or add some light.' }]);
+    const result = await watchUnsureResult('preview', seen(overlay, VIDEO_COPY.watchUnsure), { timeout: 40 });
+    assert.deepEqual([result.status, result.outcome], ['recorded', 'unsure']);
+    assert.match(result.shows, /Move the pan or bowl into view/);
+    const notice = new FakePage([{ text: "I can't see it clearly. Move the camera closer, clear steam or hands from view, or add light." }]);
+    assert.equal((await watchUnsureResult('preview', seen(notice, VIDEO_COPY.watchUnsure), { timeout: 40 })).status, 'recorded');
+    const refused = await watchUnsureResult('refused', seen(overlay, VIDEO_COPY.watchUnsure), { timeout: 40 });
+    assert.deepEqual([refused.status, refused.outcome], ['absent', 'no-watch']);
   });
 });
 

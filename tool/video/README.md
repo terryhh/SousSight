@@ -52,6 +52,16 @@ Steps (`journey_steps.json`): `home`, `type-list`, `find-meal`,
 `on-device-sheet`, `how-it-works`. A step the build cannot show is recorded as
 `absent` in the manifest, with the reason, and gets no clip.
 
+A step is evidence only of the UI state it asserted, and the manifest's
+`outcome` says which state that was. `coach-lite-answer` is `answered` only
+when a source badge that appeared for this question names a finished leg and
+no fallback note says the coach could not answer. A failed, blocked, declined
+or "Live coach needed" reply keeps its own outcome. `watch-unsure` needs the
+watch's own unsure verdict ("Move the pan or bowl into view"); the cook's
+"Not sure" chip does not count. App copy comes from `tool/e2e/copy.mjs`, which
+accepts the wording from before and after SS-089. Copy that only the video
+needs is in `VIDEO_COPY` in `capture.mjs`.
+
 - Default target: the local **rehearsal** build in `build/web`. The run stops
   if the rehearsal banner is missing, if the page contacts Firebase or any AI,
   Live-token, dinner-message or Vonage endpoint, or if it opens the camera or

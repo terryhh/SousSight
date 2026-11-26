@@ -303,6 +303,15 @@ def segment_cmd(ffmpeg: str, plan: Plan, out: Path) -> List[str]:
     return cmd
 
 
+def concat_list_line(segment: Path) -> str:
+    """One line of an ffmpeg concat list. ffmpeg resolves relative entries
+    against the list file's own directory, not the working directory, so the
+    path is made absolute; single quotes are escaped as ffmpeg's concat
+    demuxer expects ('\\'' closes the quote, adds a literal ', reopens it)."""
+    path = Path(segment).resolve().as_posix()
+    return "file '" + path.replace("'", "'\\''") + "'"
+
+
 def concat_cmd(ffmpeg: str, list_file: Path, out: Path) -> List[str]:
     return [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0",
             "-i", str(list_file), "-c", "copy", str(out)]
@@ -532,7 +541,7 @@ def assemble(args: argparse.Namespace, runner: Runner) -> int:
     for plan in plans:
         out = segdir / f"{plan.placed.index + 1:03d}-{plan.placed.id}.mp4"
         runner.run(segment_cmd(args.ffmpeg, plan, out))
-        list_lines.append(f"file '{out.as_posix()}'")
+        list_lines.append(concat_list_line(out))
     list_file = work / "segments.txt"
     list_file.write_text("\n".join(list_lines) + "\n", encoding="utf-8")
     body = work / "body.mp4"

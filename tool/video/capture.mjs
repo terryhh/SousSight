@@ -28,6 +28,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { COPY } from '../e2e/copy.mjs';
 import { CANVAS, E2E_DIR, JOURNEY_STEPS, PHONE_SCREEN, REPO, VIEWPORTS, loadPlaywright, parseArgs } from './common.mjs';
 import { phoneFrameHtml, renderJobs } from './titles.mjs';
 
@@ -49,6 +50,108 @@ const USAGE = `usage: node tool/video/capture.mjs [--build-dir build/web] [--vie
        [--out build/video/capture] [--port 8791] [--headed] [--no-cursor] [--keep-raw]
        [--pantry "<typed list>"] [--recipe "<recipe title>"] [--question "<coach question>"]
        node tool/video/capture.mjs --base-url <url> --real-services [--allow-ai]`;
+
+/// App copy the video journey matches beyond the hero journey's
+/// (tool/e2e/copy.mjs, which tolerates the wording before and after SS-089).
+/// Each pattern names one specific UI state, so an unrelated control can
+/// never stand in for it.
+export const VIDEO_COPY = Object.freeze({
+  // App-authored notes Coach Lite shows in place of a model answer
+  // (coach_lite.dart _fallback/_blockedSentence; cooking_coordinator.dart).
+  coachFailed: /on-device coach could not answer|on-device coach's answer could not be shown|Coach Lite could not answer/,
+  // A watch's "unsure" verdict: the overlay/notice title and the verdict's
+  // own message (local_watch_overlay.dart, watch_verdict.dart). Never the
+  // cook's "Not sure" prediction chip, which is always on screen.
+  watchUnsure: /Move the pan or bowl into view|I can't see it clearly/,
+  howItWorks: /^How it works$/,
+  howItWorksHeading: /From pantry to plate/,
+});
+
+/// A source badge leg label that reports a finished inference (trust_labels
+/// outcomeLabel without an errorLabel suffix). "Didn't finish", "May have
+/// been sent" and any "(error)" suffix are not answers.
+const FINISHED_LEG = /^(On this device( · [^()]+)?|Cloud · Gemini|Cloud|Simulated)$/;
+
+/// Whether a source badge's accessible name ("Where this ran: <legs>. Tap for
+/// details.") says the answer came from a leg that finished. The answer is
+/// the last leg's (earlier legs may be failed attempts before a fallback).
+export function sourceBadgeFinished(label) {
+  const m = /^Where this ran: (.*)\. Tap for details\.$/s.exec(String(label ?? '').trim());
+  if (!m) return false;
+  const legs = m[1].split('; ');
+  return FINISHED_LEG.test(legs[legs.length - 1].trim());
+}
+
+/// The Coach Lite reply locators on the cooking screen.
+export function coachLiteLocators(page, seen) {
+  return {
+    badges: page.getByRole('button', { name: COPY.sourceBadge }),
+    liveAlert: seen(page, COPY.liveCoachNeeded),
+    consent: page.getByRole('button', { name: COPY.consentDecline }),
+    blocked: seen(page, COPY.coachBlocked),
+    failed: seen(page, VIDEO_COPY.coachFailed),
+  };
+}
+
+const isShown = (locator) => locator.isVisible().catch(() => false);
+const textOf = async (locator) =>
+  ((await locator.getAttribute('aria-label').catch(() => null)) ?? (await locator.textContent().catch(() => null)) ?? '').trim();
+
+/// Decides what the Coach Lite reply on screen is. [badgesBefore] is how many
+/// source badges the cooking screen showed before the question: only a badge
+/// that appeared for this question can be its answer's, so with any badge
+/// already present no answer is attributed. A reply counts as answered only
+/// when that badge's last leg finished AND no fallback note says the coach
+/// could not answer; failures and refusals keep their own classification.
+/// Returns { outcome, target?, detail? }; outcome is one of answered, failed,
+/// blocked, consent, live-alert, none.
+export async function classifyCoachLiteReply(loc, { badgesBefore, timeout = 45_000, settle = async () => {} }) {
+  const answerBadge = badgesBefore === 0 ? loc.badges.first() : null;
+  const signals = [loc.liveAlert, loc.consent, loc.blocked, loc.failed, ...(answerBadge ? [answerBadge] : [])];
+  const arrived = await Promise.any(signals.map((l) => l.waitFor({ timeout }))).then(() => true, () => false);
+  if (!arrived) return { outcome: 'none' };
+  // The badge and a fallback note arrive in the same frame; let it settle.
+  await settle();
+  if (await isShown(loc.consent)) return { outcome: 'consent', target: loc.consent };
+  if (await isShown(loc.failed)) return { outcome: 'failed', target: loc.failed, detail: await textOf(loc.failed) };
+  if (await isShown(loc.blocked)) return { outcome: 'blocked', target: loc.blocked, detail: await textOf(loc.blocked) };
+  if (await isShown(loc.liveAlert)) return { outcome: 'live-alert', target: loc.liveAlert };
+  if (answerBadge && (await isShown(answerBadge))) {
+    const label = await textOf(answerBadge);
+    return { outcome: sourceBadgeFinished(label) ? 'answered' : 'failed', target: answerBadge, detail: label };
+  }
+  return { outcome: 'none' };
+}
+
+/// The manifest entry for the coach-lite-answer step.
+export function coachLiteAnswerResult({ outcome, detail = '' }, { badgesBefore = 0 } = {}) {
+  const quote = (t) => (t ? `: "${t.slice(0, 160)}"` : '');
+  const shows = {
+    'live-alert': 'No Coach Lite in this build: the app says "Connect the live coach to talk or type a question."',
+    answered: `Coach Lite answer with its source badge${quote(detail)}.`,
+    failed: `Coach Lite did not answer; the app says so${quote(detail)}.`,
+    blocked: `Coach Lite unavailable on this device: the recipe step text plus the reason${quote(detail)}.`,
+    consent: 'Coach Lite asked to send the question to the cloud; the run declined ("Don\'t send").',
+    none: badgesBefore
+      ? 'No reply attributed: a source badge was already on screen before the question.'
+      : 'No visible reply within 45 s.',
+  }[outcome];
+  if (!shows) throw new Error(`unknown Coach Lite outcome: ${outcome}`);
+  return { status: outcome === 'none' ? 'absent' : 'recorded', outcome, shows };
+}
+
+/// The watch-unsure step: recorded only when the watch started AND its own
+/// unsure verdict (overlay or verdict notice) appeared.
+export async function watchUnsureResult(watchOutcome, verdict, { timeout = 25_000 } = {}) {
+  if (watchOutcome !== 'preview') {
+    return { status: 'absent', outcome: 'no-watch', shows: 'Not shown: the watch never started in this build, so there is no verdict.' };
+  }
+  const got = await verdict.waitFor({ timeout }).then(() => true, () => false);
+  if (!got) {
+    return { status: 'absent', outcome: 'no-verdict', shows: 'No "unsure" watch verdict within 25 s (a synthetic camera cannot cover a bowl).' };
+  }
+  return { status: 'recorded', outcome: 'unsure', shows: `Watch verdict: unsure, asks for a better view: "${(await textOf(verdict)).slice(0, 160)}".` };
+}
 
 export function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -291,14 +394,21 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
     const start = now();
     const outcome = (await body()) ?? {};
     if ((outcome.status ?? 'recorded') === 'recorded') await pacer.linger(lingerMs);
-    results.push({ step, status: outcome.status ?? 'recorded', start, end: now(), shows: outcome.shows ?? '' });
+    results.push({
+      step,
+      status: outcome.status ?? 'recorded',
+      ...(outcome.outcome ? { outcome: outcome.outcome } : {}),
+      start,
+      end: now(),
+      shows: outcome.shows ?? '',
+    });
   };
 
-  const findMeal = page.getByRole('button', { name: 'Find my meal' });
+  const findMeal = page.getByRole('button', { name: COPY.findMeal });
   await page.goto('/');
   await enableSemantics(page);
   await expect(findMeal).toBeVisible({ timeout: 60_000 });
-  const banner = await seen(page, /^Rehearsal mode ·/).isVisible();
+  const banner = await seen(page, COPY.rehearsalBanner).isVisible();
   if (mode === 'rehearsal' && !banner) throw new Error('rehearsal banner missing: this is not a rehearsal build');
   if (mode === 'real' && banner) throw new Error('--real-services was given but the build is a rehearsal');
   await pacer.wait(800);
@@ -312,13 +422,13 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
       }
     }
     await pacer.wait(900);
-    return { shows: `Pantry home screen${banner ? ' with the "Rehearsal mode" banner' : ''}; pointer passes Scan, Say it, Type it.` };
+    return { shows: `Pantry home screen${banner ? ' with the rehearsal banner' : ''}; pointer passes Scan, Say it, Type it.` };
   });
 
   await record('type-list', async () => {
-    await pacer.click(page.getByRole('button', { name: 'Type it' }));
+    await pacer.click(page.getByRole('button', { name: COPY.typeIt }));
     await pacer.wait(700);
-    const field = page.getByRole('textbox', { name: /canned black beans/ });
+    const field = page.getByRole('textbox', { name: COPY.pantryField });
     await expect(field).toBeVisible();
     await pacer.type(field, pantry, expect);
     await pacer.wait(1000);
@@ -326,11 +436,11 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
   });
 
   let findOutcome = 'none';
-  const unavailable = seen(page, /Ingredient matching is unavailable|could not read that answer/);
+  const unavailable = seen(page, COPY.pantryUnavailable);
   await record('find-meal', async () => {
     await pacer.click(findMeal);
     findOutcome = await Promise.race([
-      seen(page, 'Your pantry haul').waitFor({ timeout: 60_000 }).then(() => 'result'),
+      seen(page, COPY.pantryResult).waitFor({ timeout: 60_000 }).then(() => 'result'),
       unavailable.waitFor({ timeout: 60_000 }).then(() => 'unavailable'),
     ]).catch(() => 'none');
     await pacer.wait(2200);
@@ -340,7 +450,7 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
       shows:
         findOutcome === 'result'
           ? `"Find my meal" tapped; "Your pantry haul" result appears${mode === 'rehearsal' ? ' (fixed simulated result)' : ''}.`
-          : '"Find my meal" tapped; "Ingredient matching is unavailable right now" (no on-device or approved cloud model).',
+          : '"Find my meal" tapped; the app says ingredient matching is unavailable (no on-device or approved cloud model).',
     };
   });
 
@@ -352,7 +462,7 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
       cook = page.getByRole('button', { name: new RegExp(`^${escapeRegExp(recipe)}`) });
       return { status: 'absent', shows: 'No result, so no source badge (matching unavailable in this build).' };
     }
-    const badge = page.getByRole('button', { name: /^Where this ran:/ }).first();
+    const badge = page.getByRole('button', { name: COPY.sourceBadge }).first();
     await expect(badge).toBeVisible();
     const label = (await badge.getAttribute('aria-label')) ?? (await badge.textContent()) ?? '';
     await pacer.scrollIntoView(badge, { top: 0.25, bottom: 0.5 });
@@ -369,69 +479,55 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
     await pacer.hover(cook);
     await pacer.wait(1200);
     await cook.click();
-    await expect(seen(page, 'Your cooking space')).toBeVisible({ timeout: 60_000 });
+    await expect(seen(page, COPY.cookingSpace)).toBeVisible({ timeout: 60_000 });
     await pacer.wait(900);
     return { shows: `Recipe "${recipe}" opened; cooking screen appears.` };
   });
 
   await record('cooking-screen', async () => {
-    await expect(seen(page, recipe)).toBeVisible();
-    const next = seen(page, 'Your next move');
-    if (await next.count()) await pacer.hover(next);
+    const title = seen(page, recipe);
+    await expect(title).toBeVisible();
+    await pacer.hover(title);
     await pacer.wait(1800);
-    const watch = page.getByRole('button', { name: /Watch my food/ });
+    const watch = page.getByRole('button', { name: COPY.watch });
     if (await watch.count()) await pacer.hover(watch);
     await pacer.wait(1600);
     return { shows: 'Cooking screen: camera card ("Your counter is the canvas"), ingredients, first step, allergen chip.' };
   });
 
-  const composer = page.getByRole('textbox', { name: /Ask the coach|Ask Coach Lite|Your answer/ });
-  const ledgerButton = page.getByRole('button', { name: 'What was sent' });
-  const onDeviceButton = page.getByRole('button', { name: 'On-device AI' });
+  const composer = page.getByRole('textbox', { name: COPY.composer });
+  const ledgerButton = page.getByRole('button', { name: COPY.ledgerButton });
+  const onDeviceButton = page.getByRole('button', { name: COPY.onDeviceButton });
   const hasHybrid = (await ledgerButton.count()) > 0;
+  const coach = coachLiteLocators(page, seen);
+  let badgesBefore = 0;
 
   await record('coach-lite-question', async () => {
     await expect(composer).toBeVisible();
     await pacer.type(composer, question, expect);
     await pacer.wait(700);
-    await pacer.click(page.getByRole('button', { name: 'Send message' }));
+    badgesBefore = await coach.badges.count();
+    await pacer.click(page.getByRole('button', { name: COPY.send }));
     return { shows: `Question typed into the composer and sent: "${question}"` };
   });
 
   await record('coach-lite-answer', async () => {
-    const badge = page.getByRole('button', { name: /^Where this ran:/ }).first();
-    const liveAlert = seen(page, /Connect the live coach to talk or type a question/);
-    const consent = page.getByRole('button', { name: "Don't send" });
-    const blocked = seen(page, /on-device coach (is still downloading|can't|isn't ready|is not available|could not answer)|can't run the on-device coach|Nothing was sent\./);
-    const outcome = await Promise.race([
-      liveAlert.waitFor({ timeout: 45_000 }).then(() => 'live-alert'),
-      consent.waitFor({ timeout: 45_000 }).then(() => 'consent'),
-      badge.waitFor({ timeout: 45_000 }).then(() => 'answered'),
-      blocked.waitFor({ timeout: 45_000 }).then(() => 'blocked'),
-    ]).catch(() => 'none');
-    const target = { 'live-alert': liveAlert, answered: badge, blocked, consent }[outcome];
-    if (target) await pacer.scrollIntoView(target, { top: 0.2, bottom: 0.75 });
+    const reply = await classifyCoachLiteReply(coach, { badgesBefore, settle: () => pacer.wait(600) });
+    if (reply.target) await pacer.scrollIntoView(reply.target, { top: 0.2, bottom: 0.75 });
     await pacer.wait(3800);
-    if (outcome === 'consent') {
-      await pacer.click(consent);
+    if (reply.outcome === 'consent') {
+      await pacer.click(coach.consent);
       await pacer.wait(1200);
     }
-    const shows = {
-      'live-alert': 'No Coach Lite in this build: the app says "Connect the live coach to talk or type a question."',
-      answered: 'Coach Lite answer with a source badge.',
-      blocked: 'Coach Lite unavailable on this device: the recipe step text plus the reason.',
-      consent: 'Coach Lite asked to send the question to the cloud; the run declined ("Don\'t send").',
-      none: 'No visible reply within 45 s.',
-    }[outcome];
-    return { status: outcome === 'none' ? 'absent' : 'recorded', shows };
+    return coachLiteAnswerResult(reply, { badgesBefore });
   });
 
   let watchOutcome = 'none';
   await record('watch-start', async () => {
-    const watch = page.getByRole('button', { name: /Watch my food/ });
+    const watch = page.getByRole('button', { name: COPY.watch });
     await pacer.scrollIntoView(watch, { top: 0.4, bottom: 0.75 });
-    const placeholder = seen(page, 'Your counter is the canvas');
-    const refused = seen(page, /Watch needs a real camera connection|can't look at photos|watch could not start|camera could not start|so I can't watch|isn't ready yet|still downloading|could not start a watch/);
+    const placeholder = seen(page, COPY.cameraPlaceholder);
+    const refused = seen(page, COPY.watchRefused);
     await pacer.click(watch);
     watchOutcome = await Promise.race([
       placeholder.waitFor({ state: 'hidden', timeout: 30_000 }).then(() => 'preview'),
@@ -442,6 +538,7 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
     const reason = watchOutcome === 'refused' ? ((await refused.textContent()) ?? '').trim() : '';
     return {
       status: watchOutcome === 'none' ? 'absent' : 'recorded',
+      outcome: watchOutcome,
       shows: {
         preview: 'Watch started: the camera card shows frames (Chrome fake camera or simulated frames).',
         refused: `Watch did not start; the app explains why${reason && reason !== 'Dismiss' ? `: "${reason.slice(0, 160)}"` : ' ("Watch needs a real camera connection…")'}.`,
@@ -451,22 +548,20 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
   });
 
   await record('watch-unsure', async () => {
-    if (watchOutcome !== 'preview') {
-      return { status: 'absent', shows: 'Not shown: the watch never started in this build, so there is no verdict.' };
+    const verdict = seen(page, VIDEO_COPY.watchUnsure);
+    const result = await watchUnsureResult(watchOutcome, verdict);
+    if (result.status === 'recorded') {
+      await pacer.scrollIntoView(verdict, { top: 0.2, bottom: 0.75 });
+      await pacer.wait(3500);
     }
-    const unsure = seen(page, /unsure|not sure|better view|can't see|cannot see/i);
-    const got = await unsure.waitFor({ timeout: 25_000 }).then(() => true).catch(() => false);
-    if (!got) return { status: 'absent', shows: 'No "unsure" verdict within 25 s (a synthetic camera cannot cover a bowl).' };
-    await pacer.scrollIntoView(unsure, { top: 0.2, bottom: 0.75 });
-    await pacer.wait(3500);
-    return { shows: 'Watch verdict: unsure, asks for a better view.' };
+    return result;
   });
 
   await record('ledger', async () => {
     if (!hasHybrid) return { status: 'absent', shows: 'Not shown: "What was sent" does not exist without a hybrid runtime (rehearsal before SS-089).' };
     await pacer.scrollIntoView(ledgerButton.first(), { top: 0, bottom: 0.6 });
     await pacer.click(ledgerButton.first());
-    await expect(seen(page, 'What left this device')).toBeVisible();
+    await expect(page.getByRole('heading', { name: COPY.ledgerHeading }).first()).toBeVisible();
     await pacer.wait(4500);
     await page.keyboard.press('Escape');
     await pacer.wait(700);
@@ -477,7 +572,7 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
     if (!hasHybrid) return { status: 'absent', shows: 'Not shown: "On-device AI" does not exist without a hybrid runtime (rehearsal before SS-089).' };
     await pacer.scrollIntoView(onDeviceButton.first(), { top: 0, bottom: 0.6 });
     await pacer.click(onDeviceButton.first());
-    await expect(page.getByRole('heading', { name: 'On-device AI' }).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: COPY.onDeviceHeading }).first()).toBeVisible();
     await pacer.wait(4500);
     await page.keyboard.press('Escape');
     await pacer.wait(700);
@@ -485,10 +580,10 @@ async function runJourney(page, { pw, mode, pacer, now, cfg, lingerMs = 4000 }) 
   });
 
   await record('how-it-works', async () => {
-    const info = page.getByRole('button', { name: 'How it works' }).first();
+    const info = page.getByRole('button', { name: VIDEO_COPY.howItWorks }).first();
     await pacer.scrollIntoView(info, { top: 0, bottom: 0.5 });
     await pacer.click(info);
-    await expect(seen(page, 'From pantry to plate')).toBeVisible();
+    await expect(seen(page, VIDEO_COPY.howItWorksHeading)).toBeVisible();
     await pacer.wait(1800);
     const { width, height } = page.viewportSize();
     await pacer.glideTo(width / 2, height * 0.6);

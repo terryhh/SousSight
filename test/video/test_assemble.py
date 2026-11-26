@@ -1,11 +1,16 @@
 """Unit tests for tool/video/assemble.py. No ffmpeg, node or `say` needed:
-external commands are captured by a fake Runner or mocked subprocess.
+external commands are captured by a fake Runner or mocked subprocess. One
+concat regression also runs the real ffmpeg when it is on PATH (skipped
+otherwise).
 
     python3 -I -m unittest discover -s test/video -p 'test_*.py'
 """
 import contextlib
 import io
 import json
+import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -328,6 +333,61 @@ class PlanAndCommandTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("-ss") + 1], "3.250")
 
 
+@contextlib.contextmanager
+def working_directory(path):
+    previous = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
+
+
+def concat_entry_path(line):
+    """Undoes concat_list_line: the path ffmpeg reads from one list line."""
+    assert line.startswith("file '") and line.endswith("'"), line
+    return line[len("file '"):-1].replace("'\\''", "'")
+
+
+class ConcatListTests(unittest.TestCase):
+    def test_relative_segment_paths_become_absolute(self):
+        # Regression (PR #225 review): with --work-dir build/work the list held
+        # build/work/segments/001-a.mp4, which ffmpeg resolves against the
+        # list's own directory (build/work/build/work/segments/...).
+        with tempfile.TemporaryDirectory() as tmp, working_directory(tmp):
+            line = assemble.concat_list_line(Path("build/work/segments/001-a.mp4"))
+            path = Path(concat_entry_path(line))
+            self.assertTrue(path.is_absolute())
+            self.assertEqual(path, (Path(tmp) / "build/work/segments/001-a.mp4").resolve())
+
+    def test_apostrophes_are_escaped_for_the_concat_demuxer(self):
+        line = assemble.concat_list_line(Path("/w/Terry's demo/001-a.mp4"))
+        self.assertEqual(line, "file '/w/Terry'\\''s demo/001-a.mp4'")
+        self.assertEqual(concat_entry_path(line), "/w/Terry's demo/001-a.mp4")
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg not on PATH")
+    def test_real_ffmpeg_concats_from_a_relative_work_dir(self):
+        with tempfile.TemporaryDirectory() as tmp, working_directory(tmp):
+            work = Path("build/work d'or")
+            segdir = work / "segments"
+            segdir.mkdir(parents=True)
+            lines = []
+            for i in range(2):
+                out = segdir / f"00{i + 1}-s.mp4"
+                subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                                "color=c=black:s=64x64:r=30:d=0.5", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                                str(out)], check=True)
+                lines.append(assemble.concat_list_line(out))
+            list_file = work / "segments.txt"
+            list_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            body = work / "body.mp4"
+            done = subprocess.run(assemble.concat_cmd("ffmpeg", list_file, body), capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            duration = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of",
+                                       "csv=p=0", str(body)], capture_output=True, text=True, check=True).stdout
+            self.assertAlmostEqual(float(duration), 1.0, delta=0.1)
+
+
 class OutputCheckTests(unittest.TestCase):
     def probe(self, duration=170.0, vcodec="h264", acodec="aac", size=(1920, 1080)):
         return {"format": {"duration": str(duration)}, "streams": [
@@ -493,6 +553,30 @@ class EndToEndPlanTests(unittest.TestCase):
         mix = log[[i for i, c in enumerate(log) if "-filter_complex" in c and "amix" in c[c.index("-filter_complex") + 1]][0]]
         self.assertIn(str(clip), mix)
         self.assertIn("volume=0.35", mix[mix.index("-filter_complex") + 1])
+
+    def test_relative_work_dir_writes_a_concat_list_ffmpeg_can_resolve(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name).resolve()
+        (base / "edl.json").write_text(json.dumps([title("a"), title("b")]))
+        probe = {"format": {"duration": "8.0"}, "streams": [
+            {"codec_type": "video", "codec_name": "h264", "width": 1920, "height": 1080},
+            {"codec_type": "audio", "codec_name": "aac"}]}
+        runner = FakeRunner({(lambda c: c[0] == "ffprobe" and "json" in c): json.dumps(probe)})
+        with working_directory(base):
+            args = assemble.parse_args(["--edl", "edl.json", "--work-dir", "build/work", "--out", "out/draft.mp4",
+                                        "--contact-sheet", "out/sheet.png", "--no-voiceover"])
+            with mock.patch.object(assemble.shutil, "which", return_value="/bin/x"), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(assemble.assemble(args, runner), 0)
+        list_file = base / "build/work/segments.txt"
+        entries = [concat_entry_path(l) for l in list_file.read_text().splitlines()]
+        rendered = [base / c[-1] for c in runner.log if c[0] == "ffmpeg" and "/segments/" in c[-1]]
+        self.assertEqual(len(entries), 2)
+        for entry, segment in zip(entries, rendered):
+            self.assertTrue(Path(entry).is_absolute(), entry)
+            # What ffmpeg opens: the entry joined onto the list file's directory.
+            self.assertEqual((list_file.parent / entry).resolve(), segment.resolve())
 
     def test_missing_tool_exits_127(self):
         tmp = tempfile.TemporaryDirectory()
