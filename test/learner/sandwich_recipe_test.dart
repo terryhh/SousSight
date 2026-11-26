@@ -126,7 +126,19 @@ void main() {
       expect(find.textContaining('minute timer'), findsNothing);
       expect(find.textContaining('bowl'), findsNothing);
       expect(find.textContaining('chickpea'), findsNothing);
-      expect(find.byType(Image), findsNothing);
+      // No chickpea reference photo; only the sandwich's own labelled AI
+      // illustration (SS-098) may appear.
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Image &&
+              !(w.image is AssetImage &&
+                  (w.image as AssetImage).assetName.startsWith(
+                    'assets/illustrations/peanut_butter_sandwich_v1/',
+                  )),
+        ),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
       await cook.connect();
       await tester.pumpAndSettle();
