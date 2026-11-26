@@ -10,11 +10,15 @@ class DemoLiveMedia implements LiveMedia {
   @override
   Stream<Uint8List> get frames => const Stream.empty();
   @override
+  Stream<CapturedFrame> get timedFrames => const Stream.empty();
+  @override
   Stream<Uint8List> get microphone => const Stream.empty();
   @override
   Stream<String> get errors => const Stream.empty();
   @override
   Future<void> start() async {}
+  @override
+  Future<void> startCameraOnly() async {}
   @override
   Future<void> stop() async {}
   @override
