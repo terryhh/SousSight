@@ -102,7 +102,7 @@ class GenerateCoordinator(
             delay(request.timeoutMs)
             if (call.fail(HybridErrorCode.TIMEOUT, "Timed out after ${request.timeoutMs} ms")) {
                 pending.remove(request.requestId, call)
-                call.work?.cancel()
+                call.work?.cancel(DeadlineExceeded())
             }
         }
         val work = scope.launch {
@@ -241,3 +241,6 @@ class DownloadProgress {
         is DownloadEvent.Failed -> throw ErrorMapping.classify(event.error)
     }
 }
+
+/** Cancels a call's work when its own deadline passes (as opposed to a caller's cancel). */
+class DeadlineExceeded : CancellationException("Deadline exceeded")

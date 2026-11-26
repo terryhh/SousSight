@@ -116,20 +116,31 @@ class AutoModelEngine(
     override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult {
         if (config.androidModel != AndroidModelOption.AUTO) return inner.generate(config, request)
         val option = selected // never waits for the selection
+        val onPreview = option == AndroidModelOption.PREVIEW && request.mode != HybridMode.ONLY_IN_CLOUD
         try {
             return inner.generate(config.copy(androidModel = option), request)
         } catch (e: CancellationException) {
+            // The request's own deadline (not a caller's cancel) on a preview that may run
+            // locally: it hung, so later requests use stable. This one still times out.
+            if (onPreview && isDeadline(e)) demote("a call on preview hit its deadline")
             throw e
         } catch (e: Throwable) {
-            // The cook's own input or a cloud-only call says nothing about preview.
-            if (option == AndroidModelOption.PREVIEW &&
-                request.mode != HybridMode.ONLY_IN_CLOUD &&
-                ErrorMapping.classify(e).code != HybridErrorCode.UNSUPPORTED_INPUT
-            ) {
+            // Only preview's own NOT_AVAILABLE says preview is broken; cloud errors (App
+            // Check, quota), the cook's input or an ML Kit cancel do not.
+            if (onPreview && ErrorMapping.isModelNotAvailable(e)) {
                 demote("a call on preview failed (${describe(e)})")
             }
             throw e
         }
+    }
+
+    private fun isDeadline(e: CancellationException): Boolean {
+        var cur: Throwable? = e
+        repeat(8) {
+            if (cur is TimeoutCancellationException || cur is DeadlineExceeded) return true
+            cur = cur?.cause ?: return false
+        }
+        return false
     }
 
     private fun demote(why: String) {

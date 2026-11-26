@@ -365,16 +365,79 @@ internal class AutoModelEngineTest {
     }
 
     @Test
-    fun aBusyPreviewFailureAlsoRatchets() = runBlocking<Unit> {
+    fun failuresThatAreNotAboutPreviewKeepIt() = runBlocking<Unit> {
+        val errors = listOf<Throwable>(
+            RuntimeException("Firebase App Check token is invalid."), // a cloud-side failure
+            GenAiException("cancelled", null, GenAiException.ErrorCode.CANCELLED), // ML Kit cancel
+            GenAiException("busy", null, GenAiException.ErrorCode.BUSY),
+            HybridError(HybridErrorCode.UNSUPPORTED_INPUT, "bad image"),
+        )
+        for (error in errors) {
+            for (mode in listOf(HybridMode.PREFER_ON_DEVICE, HybridMode.PREFER_IN_CLOUD, HybridMode.ONLY_ON_DEVICE)) {
+                val inner = FakeEngine(onGenerate = { option, req ->
+                    if (req.requestId == AutoModelEngine.PROBE_REQUEST_ID) {
+                        GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
+                    } else {
+                        throw error
+                    }
+                })
+                val e = engine(inner).selected()
+                assertSame(error, assertFailsWith<Throwable> { e.generate(auto, request(mode)) })
+                assertEquals(AndroidModelOption.PREVIEW, e.decision, "$error in $mode")
+            }
+        }
+    }
+
+    @Test
+    fun aPreviewThatHangsPastItsDeadlineGivesWayToStable() = runBlocking<Unit> {
+        // Through the production coordinator: its deadline, not a caller's cancel.
         val inner = FakeEngine(onGenerate = { option, req ->
             if (option == AndroidModelOption.PREVIEW && req.requestId != AutoModelEngine.PROBE_REQUEST_ID) {
-                throw GenAiException("busy", null, GenAiException.ErrorCode.BUSY)
+                awaitCancellation()
             }
             GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
         })
         val e = engine(inner).selected()
-        assertFailsWith<GenAiException> { e.generate(auto, request(HybridMode.PREFER_ON_DEVICE)) }
-        assertEquals(AndroidModelOption.STABLE, e.decision)
+        assertEquals(AndroidModelOption.PREVIEW, e.decision)
+        val coordinator = GenerateCoordinator(lifetime, e) { auto }
+        fun send(id: String): Pair<String, Any?> {
+            val answer = CompletableDeferred<Pair<String, Any?>>()
+            coordinator.start(
+                mapOf(
+                    "requestId" to id, "mode" to "onlyOnDevice", "feature" to "f",
+                    "parts" to listOf(mapOf("type" to "text", "text" to "hi")),
+                    "maxOutputTokens" to 8, "timeoutMs" to 80,
+                ),
+                object : Reply {
+                    override fun success(value: Any?) { answer.complete("success" to value) }
+                    override fun error(code: String, message: String?) { answer.complete(code to message) }
+                },
+            )
+            return runBlocking { withTimeout(5_000) { answer.await() } }
+        }
+        assertEquals(HybridErrorCode.TIMEOUT.wire, send("r1").first, "the first request still times out")
+        withTimeout(5_000) { while (e.decision != AndroidModelOption.STABLE) delay(10) }
+        val second = send("r2")
+        assertEquals("success", second.first)
+        assertEquals("nano-v3", (second.second as Map<*, *>)["modelLabel"])
+    }
+
+    @Test
+    fun aCallersCancelDoesNotDemotePreview() = runBlocking<Unit> {
+        val started = CompletableDeferred<Unit>()
+        val inner = FakeEngine(onGenerate = { option, req ->
+            if (option == AndroidModelOption.PREVIEW && req.requestId != AutoModelEngine.PROBE_REQUEST_ID) {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+            GenerateResult("OK", InferenceSourceWire.ON_DEVICE, FakeEngine.label(option))
+        })
+        val e = engine(inner).selected()
+        val call = async(Dispatchers.Default) { e.generate(auto, request()) }
+        withTimeout(5_000) { started.await() }
+        call.cancel()
+        call.join()
+        assertEquals(AndroidModelOption.PREVIEW, e.decision)
     }
 
     @Test
