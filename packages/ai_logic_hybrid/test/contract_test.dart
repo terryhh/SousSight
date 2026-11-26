@@ -27,6 +27,19 @@ void main() {
     expect((map['parts'] as List).last, containsPair('type', 'inlineData'));
   });
 
+  test('hasImage and hasAudio look at the attachment type', () {
+    HybridTask task(String mime) => HybridTask(
+      feature: 'f',
+      parts: [HybridInlineData(Uint8List(1), mime)],
+      maxOutputTokens: 8,
+      timeout: const Duration(seconds: 1),
+    );
+    expect(task('audio/wav').hasImage, isFalse);
+    expect(task('audio/wav').hasAudio, isTrue);
+    expect(task('image/jpeg').hasImage, isTrue);
+    expect(task('image/jpeg').hasAudio, isFalse);
+  });
+
   test('a cancelled call keeps its own scripted answer', () async {
     final fake = FakeHybridInference()
       ..enqueueText('old-frame')
