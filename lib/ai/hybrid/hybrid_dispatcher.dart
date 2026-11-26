@@ -197,6 +197,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
           run,
           reason: decision.reason,
           viaAdapter: true,
+          carriedGrant: failed.unspentGrant,
         );
         return _finish(op, run, fallback, validate, allowRetry: false);
       case _Ok():
@@ -245,6 +246,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     _Run run, {
     required RouteReason reason,
     required bool viaAdapter,
+    ConsentGrant? carriedGrant,
   }) async {
     await _probe(run);
     if (op.cancelled || _stale(run)) {
@@ -279,6 +281,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       HybridMode.onlyInCloud,
       needsConsent: decision.needsConsent,
       viaAdapter: useAdapter,
+      carriedGrant: carriedGrant,
     );
     if (outcome case _Blocked(:final reason, :final recorded)
         when reason != RouteReason.cancelled && !recorded) {
@@ -290,7 +293,8 @@ class DefaultHybridDispatcher implements HybridDispatcher {
   bool _adapterApplies(_Failed failed, HybridMode mode, _Run run) {
     if (_adapter == null || mode == HybridMode.onlyOnDevice) return false;
     if (failed.code == HybridErrorCode.unavailable) return true;
-    return failed.code == HybridErrorCode.unsupportedInput &&
+    return (failed.code == HybridErrorCode.unsupportedInput ||
+            failed.code == HybridErrorCode.rejectedBeforeSend) &&
         mode == HybridMode.onlyInCloud &&
         run.task.parts.any((p) => p is HybridInlineData);
   }
@@ -302,6 +306,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     HybridMode mode, {
     required bool needsConsent,
     required bool viaAdapter,
+    ConsentGrant? carriedGrant,
   }) async {
     final mayUpload = mode != HybridMode.onlyOnDevice;
     final feature = run.task.feature;
@@ -326,7 +331,7 @@ class DefaultHybridDispatcher implements HybridDispatcher {
     if (mayUpload && needsConsent) {
       // A grant the feature supplied is used if it fits (and is unspent);
       // otherwise the cook is asked.
-      final offered = run.suppliedGrant;
+      final offered = carriedGrant ?? run.suppliedGrant;
       grant = offered != null && _grantFits(offered, run)
           ? offered
           : await _askConsent(run, mode);
@@ -464,11 +469,15 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       if (op.cancelled || e.code == HybridErrorCode.cancelled) {
         return const _Blocked(RouteReason.cancelled);
       }
-      // The grant stays spent, whatever the code: the request reached the
-      // backend, and nothing here proves the rejection came before any
-      // transfer (a backend could report unsupportedInput after sending).
-      // A fallback asks the cook again.
-      return _Failed(e.code, sent: true);
+      // The grant stays spent once a request reached the backend: nothing
+      // proves a rejection came before any transfer (a backend could report
+      // unsupportedInput after sending), so a fallback asks the cook again.
+      // Only rejectedBeforeSend, a bridge's explicit proof that nothing was
+      // sent (SS-105), refunds the grant and carries it to the adapter.
+      final refund =
+          e.code == HybridErrorCode.rejectedBeforeSend && grant != null;
+      if (refund) _spent.remove(grant);
+      return _Failed(e.code, sent: true, unspentGrant: refund ? grant : null);
     } catch (_) {
       finish(Provenance.unknown, error: HybridErrorCode.failed);
       if (op.cancelled) return const _Blocked(RouteReason.cancelled);
@@ -611,11 +620,14 @@ class _Ok extends _Outcome {
 }
 
 class _Failed extends _Outcome {
-  const _Failed(this.code, {required this.sent});
+  const _Failed(this.code, {required this.sent, this.unspentGrant});
   final HybridErrorCode code;
 
   /// False when nothing reached the bridge (bridge unavailable).
   final bool sent;
+
+  /// A grant refunded on `rejectedBeforeSend`, which the fallback may use.
+  final ConsentGrant? unspentGrant;
 }
 
 class _Blocked extends _Outcome {

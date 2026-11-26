@@ -24,7 +24,7 @@ void main() {
     );
     expect(
       legLabel(leg(Provenance.unknown, transferPermitted: false)),
-      "Didn't finish · nothing left this device",
+      'Running or stopped · nothing left this device',
     );
   });
 
@@ -50,7 +50,9 @@ void main() {
       ),
     );
     expect(
-      find.text("Didn't finish · nothing left this device (took too long)"),
+      find.text(
+        'Running or stopped · nothing left this device (took too long)',
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('May have been sent'), findsNothing);
