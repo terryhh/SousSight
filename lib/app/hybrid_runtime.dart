@@ -19,6 +19,7 @@ import '../ai/hybrid/inference_ledger.dart';
 import '../config/remote_policy.dart';
 import '../core/cloud_send.dart';
 import '../label/household_allergens.dart';
+import '../learner/recipe_preview_household.dart';
 import '../label/label_check_controller.dart';
 import '../trust/ledger_source.dart';
 import '../trust/privacy_preferences.dart';
@@ -375,8 +376,9 @@ class HybridRuntime {
   final bool Function() isOnline;
   final String cloudModel;
 
-  /// The household's allergens for label check. On this device only.
-  final HouseholdAllergens household = InMemoryHouseholdAllergens();
+  /// The household's allergens for label check and the recipe preview.
+  /// Saved on this device only, so they survive a reload (SS-099).
+  final HouseholdAllergens household = DeviceHouseholdAllergens();
 
   /// A fresh label-check controller (the sheet disposes it on close).
   LabelCheckController labelCheck(String sessionId) => LabelCheckController(
@@ -403,6 +405,16 @@ class HybridRuntime {
     final previous = _cookingSessionId;
     _cookingSessionId = id;
     if (previous != null && previous != id) ledger.startSession(id);
+  }
+
+  /// The cook is back at the pantry after a cooking session (SS-099). The
+  /// new pantry visit gets its own scope, so its legs (scans, recipe-preview
+  /// swaps) are not filed under the meal just left; the next
+  /// [bindCookingSession] keeps them, as for the first meal.
+  void startPantryVisit() {
+    if (_cookingSessionId == null) return;
+    _cookingSessionId = null;
+    ledger.startSession(_newRunId());
   }
 
   /// Ledger hook for cloud senders outside the dispatcher (grounded

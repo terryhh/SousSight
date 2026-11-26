@@ -252,12 +252,14 @@ void main() {
 
     test('the prompt sets thermometer targets and the dried-bean rule', () {
       for (final text in [
-        "never use colour or 'juices run clear' as the doneness test",
-        'poultry 165°F/74°C',
-        'ground meat 160°F/71°C',
-        'fish 145°F/63°C',
-        'egg dishes 160°F/71°C',
-        'Dried beans: soak, drain, then boil in fresh water.',
+        // SS-099: the prompt now steers drafts away from denied words and
+        // gives the one allowed thermometer sentence with each target.
+        'Cook until a food thermometer reads 165°F.',
+        'poultry 165°F',
+        'ground meat 160°F',
+        'fish 145°F',
+        'egg dishes 160°F',
+        'Dried beans: soak, drain, then boil in new water.',
       ]) {
         expect(
           recipeDraftInstruction.replaceAll('\n', ' '),
@@ -297,7 +299,8 @@ void main() {
       final got = await cues([
         step('Drain the beans into a potato bowl.'),
         step('Stir in the pottery dish.'),
-        step('Spoon onto the warmth-free plate area, the pans aside.'),
+        // SS-099: "free" now rejects a draft, so this fixture avoids it.
+        step('Spoon onto the cool plate area, the pans aside.'),
       ]);
       expect(got[0], 'Looks even.');
       expect(got[1], 'Looks even.');
@@ -322,11 +325,12 @@ void main() {
       ]) {
         final got = await cues([
           step('Drain the beans.'),
-          step('Brown the $meat in a pan.', 'No pink is left.'),
+          // SS-099: "pink" now rejects a draft; a neutral cue keeps the test.
+          step('Brown the $meat in a pan.', 'Browned all over.'),
           step('Spoon onto the bread.'),
         ]);
         expect(got[1], contains(target), reason: meat);
-        expect(got[1], startsWith('No pink is left. $kColourNotDoneness'));
+        expect(got[1], startsWith('Browned all over. $kColourNotDoneness'));
       }
     });
 

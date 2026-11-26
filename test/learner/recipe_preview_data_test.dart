@@ -189,6 +189,63 @@ void main() {
       expect(have('chickpea_wrap_v1', ['fresh lemon juice']), ['lemon']);
     });
 
+    test('an article needs a space: "acorn" is not "a corn"', () {
+      expect(have('black_bean_corn_salsa_v1', ['acorn']), isEmpty);
+      expect(have('black_bean_corn_salsa_v1', ['a corn']), ['corn']);
+      expect(have('black_bean_corn_salsa_v1', ['2cups corn']), ['corn']);
+    });
+
+    test('a container is fine when the reviewed swap names none', () {
+      final sandwich = byId['peanut_butter_sandwich_v1']!;
+      final result = previewIngredients(sandwich, const [
+        'a jar of sunflower seed butter',
+      ], pantryChecked: true);
+      expect(result.substituted.single.ingredient.id, 'peanut_butter');
+      expect(result.missing.map((i) => i.id), isNot(contains('peanut_butter')));
+    });
+
+    test('a combined requirement is met by its parts, and only by both', () {
+      expect(have('chickpea_wrap_v1', ['salt', 'black pepper']), [
+        'salt_pepper',
+      ]);
+      expect(have('chickpea_wrap_v1', ['salt']), isEmpty);
+      expect(have('chickpea_wrap_v1', ['black pepper']), isEmpty);
+    });
+
+    test('raw and cooked are different foods, also for a draft', () {
+      Recipe recipe(String id, String name) => Recipe(
+        id: id,
+        version: 1,
+        title: 'Chicken salad',
+        summary: '',
+        ingredients: [Ingredient(id: 'chicken', name: name, qty: '')],
+        equipment: const [],
+        steps: const [],
+        checkpoints: const [],
+        reviewedSubstitutions: const [],
+        adjustmentLabels: const {},
+      );
+      for (final id in ['draft_salad', 'salad_v1']) {
+        final cooked = recipe(id, 'Cooked chicken');
+        final i = cooked.ingredients.single;
+        expect(previewHasIngredient(cooked, i, ['raw chicken']), isFalse);
+        expect(previewHasIngredient(cooked, i, ['cooked chicken']), isTrue);
+        final raw = recipe(id, 'Raw chicken');
+        expect(
+          previewHasIngredient(raw, raw.ingredients.single, [
+            'roasted chicken',
+          ]),
+          isFalse,
+        );
+      }
+      // Without a stated state on one side, the food still matches.
+      final plain = recipe('draft_salad', 'Chicken');
+      expect(
+        previewHasIngredient(plain, plain.ingredients.single, ['raw chicken']),
+        isTrue,
+      );
+    });
+
     test('leading amounts and units are ignored on the confirmed side', () {
       expect(have('black_bean_corn_salsa_v1', ['1 cup corn']), ['corn']);
       expect(have('black_bean_corn_salsa_v1', ['1 cup corn starch']), isEmpty);
@@ -525,6 +582,15 @@ void main() {
         isEmpty,
       );
       expect(previewAllergenHints(named(['Milk', 'Greek yogurt'])), ['milk']);
+      // Dairy is found by the dairy word itself: a plant word cancels only
+      // the term it qualifies.
+      expect(previewAllergenHints(named(["Coconut yogurt with cow's milk"])), [
+        'milk',
+      ]);
+      expect(previewAllergenHints(named(['Almond milk and butter'])), [
+        'milk',
+        'tree nut',
+      ]);
       expect(previewAllergenHints(named(['Butter', 'Tahini', 'Shrimp'])), [
         'milk',
         'shellfish',

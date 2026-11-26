@@ -49,34 +49,47 @@ Recipe _build(Map<String, dynamic> json) => buildDraftRecipe(
 );
 
 void main() {
-  group('draftTextCertifies', () {
+  group('draftTextCertifies (allowlist)', () {
     for (final claim in [
       'The camera can confirm the chicken is fully cooked.',
-      'The camera confirms the chicken has reached 165°F.',
+      'The camera  confirms the chicken has reached 165°F.',
+      'The camera says the chicken is 165°F inside.',
+      'The chicken is fully cooked without a thermometer.',
+      'Contains no peanuts.',
+      'No peanuts in this one.',
       'This tahini is sesame-free.',
       'Sesame-free tahini toast',
       'It is free of nuts.',
       'This dish has no allergens.',
       'It is safe to eat now.',
       'Do not serve until it is safe to eat.',
-      'Safe-for-eating once warm.',
       'The chicken is cooked through.',
       'The chicken is fully cooked when it looks white.',
       'It is done once the edges turn golden.',
       'Cook until no longer pink.',
-      'Done when the juices run clear.',
+      'Juices run clear.',
+      'It is done when a thermometer reads 165°F (74°C).',
+      'Cook until a thermometer confirms the chicken is done, regardless of '
+          'whether it looks pink.',
+      'Cook until a food thermometer reads 165°F and it looks white.',
+      'Use fresh basil.',
+      'Cooked chicken',
+      'Heat to 180 degrees.',
+      'Serve when ready.',
     ]) {
-      test('flags "$claim"', () => expect(draftTextCertifies(claim), isTrue));
+      test('rejects "$claim"', () => expect(draftTextCertifies(claim), isTrue));
     }
     for (final guidance in [
+      'Cook until a food thermometer reads 165°F.',
       'Cook until a thermometer reads 165°F (74°C).',
-      'It is done when a thermometer reads 165°F (74°C).',
+      'Brown the chicken.  Cook until a food thermometer reads 165 °F.',
       'Toast the bread for about 3 minutes.',
       'Cook until golden brown on both sides.',
+      'Heat the oven to 400F (200C).',
       'Check the label for sesame.',
     ]) {
       test(
-        'keeps "$guidance"',
+        'allows "$guidance"',
         () => expect(draftTextCertifies(guidance), isFalse),
       );
     }
@@ -128,7 +141,7 @@ void main() {
       );
     });
 
-    test('a safe draft passes unchanged', () {
+    test('a safe draft passes unchanged, thermometer sentence included', () {
       final json = _draftJson(
         bakeInstruction: 'Toast until golden. Do not leave it unattended.',
       );
@@ -139,6 +152,23 @@ void main() {
         'Toast until golden. Do not leave it unattended.',
       );
       expect(recipe.summary, 'Warm toast with a crunchy topping.');
+      final thermo = _build(
+        _draftJson(
+          bakeInstruction:
+              'Toast the bread. Cook until a food thermometer reads 165°F.',
+        ),
+      );
+      expect(
+        thermo.steps.first.instruction,
+        'Toast the bread. Cook until a food thermometer reads 165°F.',
+      );
+    });
+
+    test('the builder-to-preview path: "Contains no peanuts" never shows', () {
+      expect(
+        () => _build(_draftJson(summary: 'Contains no peanuts.')),
+        throwsFormatException,
+      );
     });
   });
 

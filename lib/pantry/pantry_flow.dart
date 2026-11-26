@@ -165,12 +165,15 @@ class _PantryFlowState extends State<PantryFlow> {
     }
     if (!mounted) return;
     unawaited(
-      navigator.push(
-        MaterialPageRoute<void>(
-          builder: (context) =>
-              _cooking(recipe, () => Navigator.of(context).maybePop()),
-        ),
-      ),
+      navigator
+          .push(
+            MaterialPageRoute<void>(
+              builder: (context) =>
+                  _cooking(recipe, () => Navigator.of(context).maybePop()),
+            ),
+          )
+          // Back at the pantry: a new visit scope for the next meal.
+          .whenComplete(() => widget.hybrid?.startPantryVisit()),
     );
   }
 

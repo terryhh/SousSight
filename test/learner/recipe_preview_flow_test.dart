@@ -380,6 +380,62 @@ void main() {
     expect(analytics.events, isEmpty); // rehearsal logs nothing
   });
 
+  testWidgets('back at the pantry after meal A, a swap for meal B is filed '
+      'in a new visit whose legs carry into meal B', (tester) async {
+    await setUp360(tester);
+    final inference = FakeHybridInference()..enqueueText(_liteAnswer());
+    final hybrid = HybridRuntime.create(
+      inference: inference,
+      cloudRoutes: const CloudRoutes({}),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+      cloudModel: 'test-model',
+    );
+    hybrid.bindCookingSession('meal-a');
+    await tester.pumpWidget(flow(hybrid: hybrid));
+    await tester.pumpAndSettle();
+    // Meal A: skip list → preview → cooking → back to the pantry.
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('skip-chickpea_wrap_v1')),
+    );
+    await tester.tap(find.byKey(const ValueKey('preview-start-cooking')));
+    await tester.pumpAndSettle();
+    expect(hybrid.sessionId, 'meal-a');
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    final visit = hybrid.sessionId;
+    expect(visit, isNot('meal-a'));
+    expect(hybrid.ledgerSource.legs, isEmpty);
+
+    // Meal B's preview: a swap is asked under the new visit.
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: cookingTheme,
+        navigatorKey: hybrid.navigatorKey,
+        home: RecipePreviewScreen(
+          recipe: recipes.firstWhere((r) => r.id == 'black_bean_corn_salsa_v1'),
+          confirmedItems: const ['canned black beans'],
+          swapCoach: RecipeSwapCoach.forRuntime(hybrid),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tapVisible(tester, find.byKey(const ValueKey('find-swap-corn')));
+    expect(find.text('Try frozen corn'), findsOneWidget);
+    expect(hybrid.ledgerSource.legs, hasLength(1));
+
+    // Starting meal B keeps that leg (the first bind after a visit).
+    hybrid.bindCookingSession('meal-b');
+    expect(hybrid.ledgerSource.legs.single.feature, coachLiteFeature);
+    // Leaving meal B starts another visit; a second call is a no-op.
+    hybrid.startPantryVisit();
+    final next = hybrid.sessionId;
+    hybrid.startPantryVisit();
+    expect(hybrid.sessionId, next);
+    expect(hybrid.ledgerSource.legs, isEmpty);
+  });
+
   testWidgets('real build: household allergens from this device and a swap '
       'through the runtime Coach Lite', (tester) async {
     await setUp360(tester);

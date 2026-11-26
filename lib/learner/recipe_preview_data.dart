@@ -251,19 +251,38 @@ Set<int> _forms(String phrase) {
 }
 
 const _freshState = -1;
+const _rawState = -2;
+const _cookedState = -3;
 
-/// Stated preparation states: the packaged forms plus "fresh".
+/// Stated preparation states: the packaged forms, "fresh", "raw" and
+/// "cooked". Raw and cooked differ for food safety, so they never match.
 Set<int> _states(String phrase) => {
   ..._forms(phrase),
   if (RegExp(r'\bfresh\b', caseSensitive: false).hasMatch(phrase)) _freshState,
+  if (RegExp(r'\b(?:raw|uncooked)\b', caseSensitive: false).hasMatch(phrase))
+    _rawState,
+  if (RegExp(
+    r'\b(?:cooked|precooked|pre-cooked|roasted|rotisserie)\b',
+    caseSensitive: false,
+  ).hasMatch(phrase))
+    _cookedState,
 };
+
+/// Whether stated states on both sides exist and share none.
+bool _statesContradict(String item, String name) {
+  final a = _states(item);
+  final b = _states(name);
+  return a.isNotEmpty && b.isNotEmpty && a.intersection(b).isEmpty;
+}
 
 /// A leading amount and measuring unit on a confirmed item ("1 cup corn",
 /// "2 tbsp peanut butter", "½ lb of beef"). Containers ("a can of") are kept:
 /// they say what form the food is in.
 final _leadingAmount = RegExp(
-  r'^\s*(?:(?:\d+(?:[./]\d+)?|[½¼¾⅓⅔]|a|an|one|two|three|four|half|'
-  r'some|few)\s*)+'
+  // Numbers may touch the unit ("2cups"); word amounts and articles need a
+  // following space, so "acorn" is not "a corn".
+  r'^\s*(?:(?:\d+(?:[./]\d+)?|[½¼¾⅓⅔])\s*|'
+  r'(?:a|an|one|two|three|four|half|some|few)\s+)+'
   r'(?:(?:cups?|tbsps?|tsps?|tablespoons?|teaspoons?|oz|ounces?|lbs?|'
   r'pounds?|g|grams?|kg|ml|l|liters?|litres?|pinch(?:es)?|handfuls?|'
   r'cloves?|slices?|pieces?|sticks?)\b\.?\s*(?:of\s+)?)?',
@@ -280,21 +299,18 @@ String _withoutLeadingAmount(String item) =>
 bool previewItemMatches(String item, Ingredient ingredient) {
   final words = previewFoodWords(_withoutLeadingAmount(item));
   if (words.isEmpty) return false;
-  final itemStates = _states(item);
-  final nameStates = _states(ingredient.name);
-  if (itemStates.isNotEmpty &&
-      nameStates.isNotEmpty &&
-      itemStates.intersection(nameStates).isEmpty) {
-    return false;
-  }
+  if (_statesContradict(item, ingredient.name)) return false;
   return previewIngredientIdentities(ingredient)
       .any((identity) => setEquals(identity, words));
 }
 
 /// Whether [item] is the reviewed substitute [sub], in the substitute's own
 /// packaged form.
+/// packaged form. A substitute that names no packaging accepts any ordinary
+/// container ("a jar of sunflower seed butter").
 bool _isSubstitute(String item, ReviewedSubstitution sub) =>
-    _forms(sub.substitute).containsAll(_forms(item)) &&
+    (_forms(sub.substitute).isEmpty ||
+        _forms(sub.substitute).containsAll(_forms(item))) &&
     previewItemMatches(
       item,
       Ingredient(id: sub.ingredientId, name: sub.substitute, qty: ''),
@@ -324,12 +340,30 @@ bool previewHasIngredient(
   Iterable<String> confirmedItems,
 ) {
   final draftKey = isDraftRecipe(recipe) ? draftFoodKey(ingredient.name) : '';
-  return confirmedItems.any(
+  bool single(Ingredient wanted) => confirmedItems.any(
     (item) =>
-        (previewItemMatches(item, ingredient) &&
+        (previewItemMatches(item, wanted) &&
             !_isSubstituteNotIngredient(recipe, ingredient, item)) ||
-        (draftKey.isNotEmpty && draftFoodKey(item) == draftKey),
+        // The draft key drops states, so a stated raw/cooked (or fresh/
+        // canned) difference still blocks it.
+        (draftKey.isNotEmpty &&
+            !_statesContradict(item, ingredient.name) &&
+            draftFoodKey(item) == draftKey),
   );
+  if (single(ingredient)) return true;
+  // A combined requirement ("Salt and black pepper") is met when each part
+  // was confirmed separately.
+  final head = ingredient.name.split(RegExp(r'[,(]')).first;
+  final parts = head.split(RegExp(r'\s+(?:and|&)\s+'));
+  return parts.length > 1 &&
+      parts.every(
+        (part) => confirmedItems.any(
+          (item) => previewItemMatches(
+            item,
+            Ingredient(id: ingredient.id, name: part, qty: ''),
+          ),
+        ),
+      );
 }
 
 /// The recipe's reviewed substitution for [ingredient] that the cook
@@ -511,45 +545,32 @@ const kPreviewAllergenNameHints = <String, List<String>>{
   'sesame': ['sesame', 'tahini'],
 };
 
-// A plant word anywhere in a name ("Coconut milk", "Milk (coconut)",
-// "Sunflower seed butter") means its milk, butter or cream is not dairy.
-const _plantWords = {
-  'peanut',
-  'peanuts',
-  'nut',
-  'nuts',
-  'almond',
-  'cashew',
-  'seed',
-  'seeds',
-  'sunflower',
-  'apple',
-  'coconut',
-  'oat',
-  'oats',
-  'rice',
-  'soy',
-  'soya',
-};
-const _plantableDairyWords = {
-  'milk',
-  'butter',
-  'cream',
-  'yogurt',
-  'yoghurt',
-  'cheese',
-};
+// A plant word that directly qualifies a dairy word ("coconut milk",
+// "sunflower seed butter", "Milk (coconut)") means that word is not dairy.
+// Only the qualified term is removed: "Coconut yogurt with cow's milk" still
+// mentions milk.
+const _plantPattern =
+    r'(?:peanut|nut|almond|cashew|hazelnut|seed|sunflower|apple|coconut|oat|'
+    r'rice|soy|soya|pea|hemp)s?';
+const _plantableDairyPattern = r'(?:milk|butter|cream|yogurt|yoghurt|cheese)';
+final _plantQualifiedDairy = RegExp(
+  '\\b(?:$_plantPattern\\s+)+$_plantableDairyPattern\\b|'
+  '\\b$_plantableDairyPattern\\s*\\([^)]*\\b$_plantPattern\\b[^)]*\\)',
+  caseSensitive: false,
+);
 
 /// [kLabelAllergens] that [text] (one food's name) suggests, in label order.
+/// Dairy is detected by the dairy word itself, minus terms a plant word
+/// directly qualifies.
 List<String> previewAllergenHintsFor(String text) {
-  final words = text.toLowerCase().split(RegExp(r'[^a-z]+')).toSet();
-  final plant = words.any(_plantWords.contains);
+  Set<String> wordsOf(String t) =>
+      t.toLowerCase().split(RegExp(r'[^a-z]+')).toSet();
+  final words = wordsOf(text);
+  final dairyWords = wordsOf(text.replaceAll(_plantQualifiedDairy, ' '));
   final found = <String>{};
   for (final MapEntry(key: allergen, value: hints)
       in kPreviewAllergenNameHints.entries) {
-    final pool = allergen == 'milk' && plant
-        ? words.difference(_plantableDairyWords)
-        : words;
+    final pool = allergen == 'milk' ? dairyWords : words;
     if (hints.any(pool.contains)) found.add(allergen);
   }
   return [

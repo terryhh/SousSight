@@ -7,6 +7,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:ai_logic_hybrid/ai_logic_hybrid.dart' show HybridTask;
+
+import '../ai/hybrid/hybrid_types.dart';
 import '../app/hybrid_runtime.dart';
 import '../coach_lite/coach_lite.dart';
 import '../core/models.dart';
@@ -32,6 +35,44 @@ const kSwapStale =
 const kSwapCoachUnavailable =
     'Coach Lite isn’t running in this mode. Start cooking and ask your coach:';
 
+/// Binds each operation to the session it started in. The dispatcher runs
+/// the validator on every answer before deciding on a semantic retry, so
+/// that is where a changed session is caught: the operation is cancelled and
+/// the answer is not retried, so no cloud attempt runs for a session the cook
+/// has left. The caller then drops the stale answer.
+class SessionBoundDispatcher implements HybridDispatcher {
+  SessionBoundDispatcher(this._inner, {required this.sessionId});
+
+  final HybridDispatcher _inner;
+
+  /// Read at start and at each answer; never cached.
+  final String Function() sessionId;
+
+  @override
+  HybridOperation start(
+    HybridTask task, {
+    required String sessionId,
+    ResultValidator? validate,
+    ConsentGrant? grant,
+  }) {
+    final startedIn = this.sessionId();
+    late final HybridOperation operation;
+    operation = _inner.start(
+      task,
+      sessionId: sessionId,
+      grant: grant,
+      validate: (text) {
+        if (this.sessionId() != startedIn) {
+          operation.cancel();
+          return null; // accept as-is: no retry; the caller drops it
+        }
+        return validate?.call(text);
+      },
+    );
+    return operation;
+  }
+}
+
 /// Coach Lite plus the session it asks under, for the preview.
 class RecipeSwapCoach {
   RecipeSwapCoach({required this.coachLite, required this.sessionId});
@@ -39,7 +80,10 @@ class RecipeSwapCoach {
   /// The same Coach Lite wiring the cooking screen uses.
   factory RecipeSwapCoach.forRuntime(HybridRuntime hybrid) => RecipeSwapCoach(
     coachLite: CoachLite(
-      dispatcher: hybrid.dispatcher,
+      dispatcher: SessionBoundDispatcher(
+        hybrid.dispatcher,
+        sessionId: () => hybrid.sessionId,
+      ),
       privacy: hybrid.privacy,
       cloudRoutes: hybrid.cloudRoutes,
       isOnline: hybrid.isOnline,

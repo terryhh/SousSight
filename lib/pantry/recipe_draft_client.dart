@@ -83,12 +83,15 @@ them. Any other ingredient the cook did not confirm also uses "basic" and
 must be optional.
 Write 3 to 7 steps. Each step has a short title, a short instruction, and a
 VISIBLE cue the cook can judge by eye (texture, color, coverage, bubbling).
-Cues describe what to look for; never certify doneness, internal
-temperature, or food safety, and never say the camera can confirm it.
-For meat, poultry, fish and eggs, never use colour or 'juices run clear' as
-the doneness test; the cue says to check with a thermometer — poultry
-165°F/74°C, ground meat 160°F/71°C, fish 145°F/63°C, egg dishes 160°F/71°C.
-Dried beans: soak, drain, then boil in fresh water.
+Cues describe what to look for (texture, colour, coverage); the app adds its
+own food-safety notes. Anywhere in the recipe, never use these words or
+symbols: done, cooked, ready, safe, fresh, raw, temperature, degrees, °,
+thermometer, juices, pink, edible, camera, allergen, contains, free. The one
+exception: for meat, poultry, fish and eggs, a step may end with exactly
+"Cook until a food thermometer reads 165°F." (poultry 165°F, ground meat
+160°F, fish 145°F, egg dishes 160°F) as its own sentence. Write oven
+settings without a degree sign, like 400F (200C).
+Dried beans: soak, drain, then boil in new water.
 Use timerSeconds (60 to 3600) only for real waiting or heating; omit it
 otherwise. For each ingredient list allergens only from: milk, egg, fish,
 shellfish, tree nut, peanut, wheat, soy, sesame (lowercase). Never claim an
@@ -724,73 +727,41 @@ final _certainty = RegExp(
   caseSensitive: false,
 );
 
-// Categorical allergen-absence claims ("sesame-free", "free of nuts", "no
-// allergens"). Only a package label can say that.
-final _allergenAbsence = RegExp(
-  r'\b(?:allergen|allergy|gluten|nut|peanut|dairy|milk|lactose|egg|soy|'
-  r'sesame|wheat|shellfish|fish)s?[- ]free\b|'
-  r'\bfree (?:of|from) (?:all )?(?:allergens?|gluten|nuts?|peanuts?|dairy|'
-  r'milk|eggs?|soy|sesame|wheat|shellfish|fish)\b|'
-  r'\b(?:no|zero) allergens?\b|\bsafe for (?:anyone|everyone|people) with\b',
+// SS-099: drafted text is held to a conservative allowlist, the same idea
+// as the shared certification gate (#240). Any doneness, temperature,
+// safety, freshness, camera or allergen-status vocabulary, in any form,
+// rejects the whole draft; the dispatcher's retry or fallback then runs.
+// Over-blocking is intended: a deny-list of phrasings always misses one.
+final _draftDeniedVocabulary = RegExp(
+  r'°|\b(?:done|doneness|cooked|uncooked|undercooked|overcooked|ready|'
+  r'safe|safely|safety|unsafe|fresh|freshly|freshness|stale|spoil\w*|'
+  r'expire[sd]?|rotten|temperatures?|temp|degrees?|thermometers?|juices?|'
+  r'pink|pinkish|raw|edible|inedible|allerg\w*|contains?|containing|free|'
+  r'camera|certif\w*|verif\w*)\b|'
+  r'\bno\s+(?:milk|dairy|eggs?|fish|shellfish|nuts?|tree\s+nuts?|peanuts?|'
+  r'wheat|gluten|soy|soya|sesame)\b',
   caseSensitive: false,
 );
 
-// "Safe to eat" in any form, and crediting the camera.
-final _safeOrCameraClaim = RegExp(
-  r'\bsafe[\s-]+(?:to|for)[\s-]+(?:eat|eating|serve|serving|consume|'
-  r'consumption)\b|\bfood[\s-]+safe\b|done when the camera|'
-  r'camera (?:can |will )?(?:confirms?|tells?|verif(?:y|ies)|shows?)',
+// The one exception, as its own sentence: "Cook until a (food) thermometer
+// reads 165°F." with an optional Celsius conversion in brackets.
+final _thermometerInstruction = RegExp(
+  r'^cook until (?:a|the) (?:food )?thermometer reads \d{2,3} ?° ?[FC]'
+  r'(?: \(\d{2,3} ?° ?[FC]\))?\.?$',
   caseSensitive: false,
 );
 
-// "It is cooked through" stated as fact. "Cook until it is cooked through" is
-// an instruction, so this alone only counts outside a condition or a
-// thermometer check.
-final _doneClaim = RegExp(
-  r"\b(?:is|are|it's|they're) (?:now |definitely |completely |fully )?"
-  r'(?:fully cooked|cooked through|done|safe)\b',
-  caseSensitive: false,
-);
-final _conditionOrCheck = RegExp(
-  r'\b(?:until|when|once|if|thermometer)\b',
-  caseSensitive: false,
-);
-
-// Appearance as a doneness test, conditional or not: "fully cooked when it
-// looks white", "done once golden", "no longer pink", "juices run clear".
-// Colour cannot establish internal doneness.
-final _doneness = RegExp(
-  r'\b(?:fully cooked|cooked through|done|doneness|safe|ready to eat)\b',
-  caseSensitive: false,
-);
-final _appearance = RegExp(
-  r'\b(?:looks?|appears?|turns?|colou?r|white|opaque|brown|browned|golden|'
-  r'pink|clear|firm)\b',
-  caseSensitive: false,
-);
-final _visualDonenessPhrase = RegExp(
-  r'\bno longer pink\b|\bjuices? runs? clear\b',
-  caseSensitive: false,
-);
-
-/// True when [text] certifies doneness, temperature or food safety, credits
-/// the camera, uses appearance as a doneness test, or claims an allergen is
-/// absent. The single call site for drafted text: when the shared
-/// certification module lands, switch this function.
+/// True when [text] has any doneness, temperature, safety, freshness, camera
+/// or allergen-status vocabulary, other than the exact thermometer
+/// instruction standing alone as a sentence. Whitespace is normalized first,
+/// as the builder does before display. The single call site for drafted
+/// text; it does not yet call #240's shared gate, and switching to it means
+/// replacing this function's body.
 bool draftTextCertifies(String text) {
-  if (_allergenAbsence.hasMatch(text) ||
-      _safeOrCameraClaim.hasMatch(text) ||
-      _visualDonenessPhrase.hasMatch(text)) {
-    return true;
-  }
-  for (final sentence in text.split(RegExp(r'(?<=[.!?;])\s+'))) {
-    if (_doneness.hasMatch(sentence) && _appearance.hasMatch(sentence)) {
-      return true;
-    }
-    if (_doneClaim.hasMatch(sentence) &&
-        !_conditionOrCheck.hasMatch(sentence)) {
-      return true;
-    }
+  final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  for (final sentence in normalized.split(RegExp(r'(?<=[.!?;])\s+'))) {
+    if (_thermometerInstruction.hasMatch(sentence.trim())) continue;
+    if (_draftDeniedVocabulary.hasMatch(sentence)) return true;
   }
   return false;
 }
@@ -1142,7 +1113,7 @@ const _simulatedDraft = <String, dynamic>{
     {
       'title': 'Set up the bread',
       'instruction':
-          'Preheat the oven to 400°F (200°C). Lay the bread slices flat on '
+          'Heat the oven to 400F (200C). Lay the bread slices flat on '
           'a baking sheet.',
       'cue': 'Both slices lie flat with space between them.',
     },

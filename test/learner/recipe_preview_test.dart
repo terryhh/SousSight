@@ -2,6 +2,7 @@
 // against FakeHybridDispatcher only: no model or network call is made, so
 // these tests say nothing about how a real on-device model answers.
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
@@ -100,6 +101,25 @@ class _NoCloud implements CloudFallbackSender {
 
   @override
   Future<void> cancel(String requestId) async {}
+}
+
+class _ValidatorDispatcher implements HybridDispatcher {
+  ResultValidator? validate;
+  bool cancelled = false;
+  @override
+  HybridOperation start(
+    HybridTask task, {
+    required String sessionId,
+    ResultValidator? validate,
+    ConsentGrant? grant,
+  }) {
+    this.validate = validate;
+    return HybridOperation(
+      'op',
+      Completer<DispatchResult>().future,
+      () => cancelled = true,
+    );
+  }
 }
 
 class _ThrowingLite extends CoachLite {
@@ -646,6 +666,25 @@ void main() {
         await tester.pumpAndSettle();
       });
 
+      testWidgets('a session change while the malformed answer is pending: '
+          'no cloud retry, and the stale answer is dropped', (tester) async {
+        await openSwap(tester);
+        await tester.pump(const Duration(milliseconds: 200));
+        final before = hybrid.sessionId;
+        hybrid.bindCookingSession('cooking-session-b');
+        expect(hybrid.sessionId, isNot(before));
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pumpAndSettle();
+
+        expect(inference.requests, hasLength(1));
+        expect(inference.requests.single.mode, HybridMode.onlyOnDevice);
+        expect(cloud.sent, isEmpty);
+        expect(find.byType(AlertDialog), findsNothing);
+        expect(cloudLegs(), isEmpty);
+        expect(find.text(kSwapStale), findsOneWidget);
+        expect(find.text('Try sunflower seed butter'), findsNothing);
+      });
+
       testWidgets('dismissed while the malformed answer is pending: no '
           'semantic retry and no cloud leg', (tester) async {
         await openSwap(tester);
@@ -668,6 +707,42 @@ void main() {
         expect(leg.error, HybridErrorCode.cancelled);
         expect(leg.transferPermitted, isFalse);
       });
+    });
+
+    test('a session-bound dispatcher passes the validator through while the '
+        'session holds', () async {
+      var session = 'a';
+      final inner = _ValidatorDispatcher();
+      final bound = SessionBoundDispatcher(inner, sessionId: () => session);
+      final op = bound.start(
+        const HybridTask(
+          feature: coachLiteFeature,
+          parts: [HybridText('q')],
+          maxOutputTokens: 10,
+          timeout: Duration(seconds: 1),
+        ),
+        sessionId: 'a',
+        validate: (text) => text == 'ok' ? null : 'bad',
+      );
+      expect(inner.validate!('ok'), isNull);
+      expect(inner.validate!('nope'), 'bad');
+      expect(inner.cancelled, isFalse);
+      session = 'b';
+      expect(inner.validate!('nope'), isNull); // accepted: no retry
+      expect(inner.cancelled, isTrue);
+      expect(op.operationId, 'op');
+      // No validator from the caller: still bound to the session.
+      session = 'a';
+      bound.start(
+        const HybridTask(
+          feature: coachLiteFeature,
+          parts: [HybridText('q')],
+          maxOutputTokens: 10,
+          timeout: Duration(seconds: 1),
+        ),
+        sessionId: 'a',
+      );
+      expect(inner.validate!('anything'), isNull);
     });
 
     testWidgets('nested columns render every card in display order', (
