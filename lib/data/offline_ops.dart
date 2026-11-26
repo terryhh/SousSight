@@ -123,6 +123,9 @@ CookingSession applyStepOp(StepOp op, CookingSession s) {
   return timer == null ? next : withTimer(next, timer);
 }
 
+CookingSession withoutTimer(CookingSession s) =>
+    s.copyWith(timerDeadline: null, timerLabel: null, timerId: null);
+
 CookingSession withTimer(CookingSession s, OpTimer timer) => s.copyWith(
   timerDeadline: timer.endsAt,
   timerLabel: timer.label,
@@ -253,11 +256,19 @@ class OfflineStepQueue extends ChangeNotifier {
   /// Saves a timer that no pending step change carries.
   Future<void> Function(OpTimer timer)? saveTimer;
 
+  /// Clears the saved timer if, and only if, it is still [timerId].
+  Future<void> Function(String timerId)? clearTimer;
+
   /// Told when a save failed while the device looked online.
   void Function(Object error)? onSaveFailed;
 
   final List<StepOp> _pending = [];
   OpTimer? _looseTimer;
+
+  /// A dismissed timer that a sent (possibly already saved) step change may
+  /// carry. The sent change stays as it was; after it is answered, the timer
+  /// is cleared, but only if the session still has this timer.
+  String? _clearTimerId;
   String? _sessionId;
   int _epoch = 0;
   Future<void>? _draining;
@@ -269,7 +280,8 @@ class OfflineStepQueue extends ChangeNotifier {
   bool get online => _isOnline();
   List<StepOp> get pending => List.unmodifiable(_pending);
   int get pendingSteps => _pending.length;
-  bool get hasPendingWork => _pending.isNotEmpty || _looseTimer != null;
+  bool get hasPendingWork =>
+      _pending.isNotEmpty || _looseTimer != null || _clearTimerId != null;
 
   /// Starts tracking [sessionId]. Work queued for another session is dropped.
   void bind(String sessionId) {
@@ -278,6 +290,7 @@ class OfflineStepQueue extends ChangeNotifier {
     _sessionId = sessionId;
     _pending.clear();
     _looseTimer = null;
+    _clearTimerId = null;
     _retry?.cancel();
     _changes ??= _connectivityChanges?.listen((_) {
       if (_disposed) return;
@@ -308,6 +321,7 @@ class OfflineStepQueue extends ChangeNotifier {
   /// Records a timer to save later: with the newest step change if that has
   /// not been sent yet, otherwise on its own after the step changes.
   void recordTimer(OpTimer timer) {
+    if (_clearTimerId == timer.id) _clearTimerId = null;
     final last = _pending.lastOrNull;
     if (last != null && !last.sent) {
       last._timer = timer;
@@ -317,7 +331,9 @@ class OfflineStepQueue extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Forgets a pending (unsent) timer the cook dismissed. True if one was.
+  /// Forgets a pending timer the cook dismissed. An unsent change drops it;
+  /// a sent one is left unchanged and the timer is cleared after it is
+  /// answered ([clearTimerLater]). True if a pending change carried it.
   bool dismissTimer(String timerId) {
     var found = false;
     if (_looseTimer?.id == timerId) {
@@ -325,13 +341,23 @@ class OfflineStepQueue extends ChangeNotifier {
       found = true;
     }
     for (final op in _pending) {
-      if (!op.sent && op.timer?.id == timerId) {
+      if (op.timer?.id != timerId) continue;
+      found = true;
+      if (op.sent) {
+        _clearTimerId = timerId;
+      } else {
         op._timer = null;
-        found = true;
       }
     }
     if (found) notifyListeners();
     return found;
+  }
+
+  /// Clears the saved timer [timerId] once pending step changes are saved,
+  /// and only if the session still holds that timer then.
+  void clearTimerLater(String timerId) {
+    _clearTimerId = timerId;
+    notifyListeners();
   }
 
   /// [base] (the last saved state) with every pending change re-applied.
@@ -342,6 +368,7 @@ class OfflineStepQueue extends ChangeNotifier {
         s = applyStepOp(op, s).copyWith(revision: s.revision + 1);
       }
     }
+    if (_clearTimerId case final id? when s.timerId == id) s = withoutTimer(s);
     final loose = _looseTimer;
     return loose == null ? s : withTimer(s, loose);
   }
@@ -383,6 +410,20 @@ class OfflineStepQueue extends ChangeNotifier {
         if (!current()) return;
         _pending.remove(op);
         onSettled?.call(op, commit);
+        notifyListeners();
+        continue;
+      }
+      final clearId = _clearTimerId;
+      final clear = clearTimer;
+      if (clearId != null && clear != null) {
+        try {
+          await clear(clearId);
+        } catch (error) {
+          if (current()) _failed(error);
+          return;
+        }
+        if (!current()) return;
+        if (_clearTimerId == clearId) _clearTimerId = null;
         notifyListeners();
         continue;
       }

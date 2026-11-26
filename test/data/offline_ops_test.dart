@@ -576,6 +576,94 @@ void main() {
       expect(f.cook.step.id, 'mix');
       expect(f.cook.pendingStepSaves, 0);
       expect(f.cook.alert, contains('changed somewhere else'));
+      expect(_stepPanelTitle(f.cook), 'Mix');
+    });
+
+    test('a newer snapshot from elsewhere that arrives before the conflict is '
+        'answered redraws the step and resets step state (Codex P2)', () async {
+      await f.setOnline(false);
+      f.dispatcher.enqueue(_liteJson());
+      await f.cook.advanceStep(); // prep -> mash, queued
+      expect(_stepPanelTitle(f.cook), 'Mash');
+      await f.cook.say('How chunky?');
+      await _flush();
+      expect(f.cook.coachLiteAnswer, isNotNull);
+      // Another device finished prep and mash; its snapshot arrives while
+      // this device is still offline, before the queued change is answered.
+      await f.server.update(
+        f.cook.session!.id,
+        (s) => s.copyWith(
+          currentStepId: 'mix',
+          completedStepIds: ['prep', 'mash'],
+          revision: s.revision + 1,
+        ),
+      );
+      await _flush();
+      expect(f.cook.step.id, 'mix');
+      expect(_stepPanelTitle(f.cook), 'Mix');
+      expect(f.cook.coachLiteAnswer, isNull);
+      // Answering the conflict later changes nothing on screen.
+      await f.setOnline(true);
+      expect(f.server.outcomes, [StepOpOutcome.stale]);
+      expect(_stepPanelTitle(f.cook), 'Mix');
+    });
+
+    test('a timer dismissed while the step change carrying it is in flight '
+        'is cleared after the acknowledgement, not saved (Codex P2)', () async {
+      await f.setOnline(false);
+      await f.cook.advanceStep(); // prep -> mash, queued
+      await f.cook.startStepTimer(); // rides with the queued change
+      final timer = f.cook.ui.timers.single;
+      f.server.gate = Completer<void>();
+      await f.setOnline(true); // the change (with its timer) is now in flight
+      expect(f.server.applied, isEmpty);
+      f.cook.ui.dismissTimer(timer.id);
+      await _flush();
+      expect(f.cook.session!.timerId, isNull);
+      f.server.gate!.complete();
+      await _flush();
+      // The in-flight change was saved as sent, timer included...
+      expect(f.server.applied.single.timer!.id, timer.id);
+      // ...and then the timer was cleared, so a reload shows none.
+      final saved = await f.saved();
+      expect(saved.currentStepId, 'mash');
+      expect(saved.timerId, isNull);
+      expect(saved.timerDeadline, isNull);
+      expect(f.cook.pendingStepSaves, 0);
+      expect(f.cook.session!.timerId, isNull);
+    });
+
+    test('a timer started after an in-flight dismissal survives the delayed '
+        'clear', () async {
+      await f.setOnline(false);
+      await f.cook.advanceStep();
+      await f.cook.startStepTimer();
+      final first = f.cook.ui.timers.single;
+      f.server.gate = Completer<void>();
+      await f.setOnline(true);
+      f.cook.ui.dismissTimer(first.id);
+      await _flush();
+      f.now = f.now.add(const Duration(seconds: 5));
+      await f.cook.startTimer('second', 'Second', 30);
+      f.server.gate!.complete();
+      await _flush();
+      final saved = await f.saved();
+      expect(saved.timerId, 'second');
+      expect(saved.timerDeadline, f.now.add(const Duration(seconds: 30)));
+    });
+
+    test('dismissing the saved timer offline clears it on reconnect', () async {
+      await f.cook.startStepTimer(); // no timer on prep: nothing happens
+      await f.cook.startTimer('t1', 'Rest', 60);
+      expect((await f.saved()).timerId, 't1');
+      await f.setOnline(false);
+      f.cook.ui.dismissTimer('t1');
+      await _flush();
+      expect(f.cook.session!.timerId, isNull);
+      expect(f.cook.error, isNull);
+      expect((await f.saved()).timerId, 't1');
+      await f.setOnline(true);
+      expect((await f.saved()).timerId, isNull);
     });
 
     test('a lost acknowledgement on an ordinary step is recognised by its '
@@ -650,3 +738,7 @@ CookingSession _stale(String id) => CookingSession(
   createdAt: DateTime.utc(2026, 11, 25),
   updatedAt: DateTime.utc(2026, 11, 25),
 );
+
+String? _stepPanelTitle(CookingCoordinator cook) =>
+    cook.ui.components.where((c) => c['id'] == 'step').firstOrNull?['title']
+        as String?;
