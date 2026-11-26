@@ -116,12 +116,17 @@ class CoachLiteAnswerFooter extends StatelessWidget {
           if (answer.legs.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+              // Wraps, so the badge drops under the label at large text
+              // sizes or on narrow screens instead of overflowing.
+              child: Wrap(
+                key: const ValueKey('coach-lite-header'),
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                runSpacing: 6,
                 children: [
                   ExcludeSemantics(
                     child: Text(
-                      'YOUR QUESTION',
+                      'ANSWER',
                       style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.5,
@@ -129,14 +134,11 @@ class CoachLiteAnswerFooter extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: InferenceSourceBadge(
-                      key: const ValueKey('coach-lite-source'),
-                      legs: answer.legs,
-                      reason: answer.blocked,
-                      localModelFamily: localModelFamily,
-                    ),
+                  InferenceSourceBadge(
+                    key: const ValueKey('coach-lite-source'),
+                    legs: answer.legs,
+                    reason: answer.blocked,
+                    localModelFamily: localModelFamily,
                   ),
                 ],
               ),

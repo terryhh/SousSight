@@ -115,6 +115,12 @@ String watchPrivacyLabel(
 }) {
   if (simulated) return 'Practice mode · pretend checks, nothing sent';
   if (uploads == null) return 'On this device';
+  String photos(int n) => n == 1 ? 'photo' : 'photos';
+  // Uncertainty is never hidden behind a confirmed send.
+  if (uploads.sent > 0 && uploads.maybe > 0) {
+    return 'On this device · ${uploads.sent} ${photos(uploads.sent)} sent '
+        'for a cloud check, ${uploads.maybe} more may have been sent';
+  }
   if (uploads.sent > 0) {
     return 'On this device · ${uploads.sent} '
         '${uploads.sent == 1 ? 'photo' : 'photos'} sent for a cloud check';
@@ -296,13 +302,15 @@ class _PrivacyChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final u = uploads;
+    // Practice mode never claims a real run; otherwise any "may have been
+    // sent" wins the colour: it is the warning.
     final outcome = simulated
         ? LegOutcome.simulated
         : u == null || (u.sent == 0 && u.maybe == 0)
         ? LegOutcome.onDevice
-        : u.sent > 0
-        ? LegOutcome.cloudSdk
-        : LegOutcome.maybeSent;
+        : u.maybe > 0
+        ? LegOutcome.maybeSent
+        : LegOutcome.cloudSdk;
     final colors = outcomeColors(outcome);
     final label = watchPrivacyLabel(u, simulated: simulated);
     return DecoratedBox(

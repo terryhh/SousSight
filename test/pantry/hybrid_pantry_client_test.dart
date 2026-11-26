@@ -174,7 +174,7 @@ void main() {
         (kPantryScanFeature, Provenance.sdkOnDevice),
       ]);
       expect(result.legs.map(pantryLegLabel), [
-        "Voice list · sent online to Google\'s AI",
+        "Voice list · sent online to Google's AI",
         'Meal match · on this device',
       ]);
       expect(result.notice, isNull);
@@ -540,7 +540,7 @@ void main() {
           error: HybridErrorCode.network,
         ),
       ),
-      "Meal match · may have been sent online to Google\'s AI · did not finish",
+      "Meal match · may have been sent online to Google's AI · did not finish",
     );
   });
 }

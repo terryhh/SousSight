@@ -1,7 +1,6 @@
 // Watch wording for builds without Live and for practice mode (SS-089).
 // Fakes only.
 
-import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';

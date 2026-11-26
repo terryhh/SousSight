@@ -423,4 +423,62 @@ void main() {
   test('not yet keeps the plain status line', () {
     expect(noticeAfter('not_yet'), isNull);
   });
+
+  // Regression (Codex review of #201): a confirmed send must not hide a
+  // possible one.
+  test('sent and may-have-been-sent are both said', () {
+    final uploads = watchUploads([
+      watchLeg(
+        Provenance.cloudAdapter,
+        feature: kWatchCloudCheckFeature,
+        transferPermitted: true,
+      ),
+      InferenceLeg(
+        requestId: 'r-failed-check',
+        feature: kWatchCloudCheckFeature,
+        mode: HybridMode.onlyInCloud,
+        kinds: const {DataKind.image},
+        transferPermitted: true,
+        provenance: Provenance.unknown,
+        error: HybridErrorCode.network,
+      ),
+    ]);
+    expect(uploads, (sent: 1, maybe: 1));
+    expect(
+      watchPrivacyLabel(uploads),
+      'On this device · 1 photo sent for a cloud check, 1 more may have '
+      'been sent',
+    );
+    expect(
+      watchPrivacyLabel((sent: 2, maybe: 3)),
+      'On this device · 2 photos sent for a cloud check, 3 more may have '
+      'been sent',
+    );
+  });
+
+  testWidgets('any may-have-been-sent turns the chip into a warning', (
+    tester,
+  ) async {
+    await pumpPreview(
+      tester,
+      const LocalWatchOverlay(
+        phase: WatchOverlayPhase.watching,
+        uploads: (sent: 1, maybe: 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final chip = find.byKey(const ValueKey('watch-privacy-chip'));
+    expect(
+      find.descendant(of: chip, matching: find.byIcon(Icons.question_mark)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chip,
+        matching: find.textContaining('may have been sent'),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

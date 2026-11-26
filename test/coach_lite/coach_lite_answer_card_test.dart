@@ -216,4 +216,95 @@ void main() {
       expect(find.byKey(const ValueKey('coach-lite-footer')), findsNothing);
     });
   });
+
+  // Regression (Codex review of #201): the header overflowed at large text.
+  for (final scale in [2.0, 3.0]) {
+    testWidgets(
+      'readable at ${(scale * 100).round()}% text on a 320 px phone',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(
+                size: const Size(320, 900),
+                textScaler: TextScaler.linear(scale),
+              ),
+              child: Scaffold(
+                body: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: CoachLiteAnswerFooter(
+                    answer: answer(
+                      legs: const [onDeviceLeg],
+                      timer: const CoachLiteTimerSuggestion(
+                        label: 'Simmer the sauce',
+                        seconds: 600,
+                      ),
+                    ),
+                    localModelFamily: 'Gemini Nano',
+                    onStartTimer: (_, _) {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: 'no overflow');
+        // The badge drops below the label rather than squeezing beside it.
+        final label = tester.getRect(find.text('ANSWER'));
+        final badge = tester.getRect(
+          find.byKey(const ValueKey('coach-lite-source')),
+        );
+        expect(badge.top, greaterThanOrEqualTo(label.bottom));
+        expect(badge.right, lessThanOrEqualTo(320 - 16 + 0.5));
+        expect(find.text('Start timer'), findsOneWidget);
+      },
+    );
+  }
+
+  // Regression (Codex review of #201): toggling Reduce Motion must not
+  // rebuild the card and re-enable Start timer.
+  testWidgets('a started timer stays started when Reduce Motion changes', (
+    tester,
+  ) async {
+    final started = <(String, int)>[];
+    final footerAnswer = answer(
+      legs: const [onDeviceLeg],
+      timer: const CoachLiteTimerSuggestion(label: 'Rest', seconds: 120),
+    );
+    Widget app({required bool reduce}) => MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(
+          size: const Size(390, 844),
+          disableAnimations: reduce,
+        ),
+        child: Scaffold(
+          body: SingleChildScrollView(
+            child: CoachLiteAnswerFooter(
+              answer: footerAnswer,
+              onStartTimer: (label, seconds) => started.add((label, seconds)),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(app(reduce: false));
+    await tester.pumpAndSettle();
+    final start = find.byKey(const ValueKey('timer-suggestion-start'));
+    await tester.tap(start);
+    await tester.pump();
+    expect(started, hasLength(1));
+
+    for (final reduce in [true, false, true]) {
+      await tester.pumpWidget(app(reduce: reduce));
+      await tester.pumpAndSettle();
+      expect(find.text('Timer started'), findsOneWidget, reason: '$reduce');
+      await tester.tap(start, warnIfMissed: false);
+      await tester.pump();
+      expect(started, hasLength(1), reason: 'no duplicate timer');
+    }
+  });
 }

@@ -1,7 +1,6 @@
 // Practice-mode (rehearsal) hybrid runtime, SS-089. Fakes only: no model,
 // camera or network is used.
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;

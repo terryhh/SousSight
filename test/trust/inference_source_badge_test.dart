@@ -255,7 +255,15 @@ void main() {
         ),
       ),
     );
-    expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
+    // Fully shown on the very first frame: the transition takes no time.
+    final opacity = tester.widget<Opacity>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('inference-source-badge')),
+        matching: find.byType(Opacity),
+      ),
+    );
+    expect(opacity.opacity, 1);
+    expect(tester.hasRunningAnimations, isFalse);
     expect(find.text("Sent online to Google's AI"), findsOneWidget);
   });
 }
