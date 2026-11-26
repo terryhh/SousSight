@@ -87,18 +87,33 @@ class CoverageGateTest(unittest.TestCase):
         self.assertIn('SF:lib/ai/a.dart\nDA:1,1', merged)
 
     def test_fails_below_the_minimum_and_names_the_root(self):
-        self.standard(lib_min=86)
+        # 17/20 = 85%; even with one line of jitter forgiven (90%) it is below 91.
+        self.standard(lib_min=91)
         code, out = self.gate()
         self.assertEqual(code, 1, out)
         self.assertIn('Gate: FAIL', out)
-        self.assertIn('lib: 85.0% is below the minimum 86%', out)
+        self.assertIn('lib: 85.0% is below the minimum 91%', out)
         self.assertNotIn('plugin: ', out.split('Gate: FAIL')[1])
 
+    def test_one_line_of_jitter_is_forgiven_but_not_two(self):
+        # 89/100 lines against a 90% minimum passes (one line short); 88/100 fails.
+        for covered, expected in ((90, 0), (89, 0), (88, 1)):
+            with self.subTest(covered=covered):
+                self.write(app={'lib/a.dart': hits(covered, 100 - covered)},
+                           plugin={'lib/p.dart': hits(1, 0)},
+                           baseline={'minimum_line_coverage': {'lib': 90, 'plugin': 100}})
+                code, out = self.gate()
+                self.assertEqual(code, expected, out)
+                if expected:
+                    self.assertIn('lib: 88.0% is below the minimum 90% (even allowing 1 line', out)
+
     def test_plugin_root_is_gated_independently(self):
-        self.standard(plugin_min=76)
+        self.write(app={'lib/ai/a.dart': hits(9, 1)}, plugin={'lib/src/contract.dart': hits(2, 2)},
+                   baseline={'minimum_line_coverage': {'lib': 80, 'plugin': 76}})
         code, out = self.gate()
         self.assertEqual(code, 1, out)
-        self.assertIn('plugin: 75.0% is below the minimum 76%', out)
+        self.assertIn('plugin: 50.0% is below the minimum 76%', out)
+        self.assertNotIn('lib: ', out.split('Gate: FAIL')[1])
 
     def test_update_baseline_raises_to_the_floor_of_the_measurement(self):
         self.write(app={'lib/ai/a.dart': hits(2, 1)}, plugin={'lib/src/c.dart': hits(7, 1)},

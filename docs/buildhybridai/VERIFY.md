@@ -81,8 +81,12 @@ measures **line coverage** — the share of lcov `DA` lines with a hit — for t
 Excluded as generated: `lib/firebase_options.dart`, `*.g.dart`, `*.freezed.dart`,
 `*.mocks.dart`.
 
-Each root must be at or above its integer minimum in `tool/coverage/baseline.json`. The
-minimums were set to the measured coverage on the trunk, rounded down. `--update-baseline`
+Each root must be at or above its integer minimum in `tool/coverage/baseline.json`, allowing
+one uncovered line per root: the Dart VM does not report a const constructor's line the same
+way on every run (seen on the plugin's `HybridConfig`, 195 vs 196 of 215 lines across identical
+runs), and in the small plugin root one line is about half a point. The
+minimums were set to the measured coverage on the trunk after #193 (lib 85.9%, plugin 91.2%),
+rounded down: lib 85, plugin 91. `--update-baseline`
 raises each minimum to the current measurement rounded down and never lowers one; run it (or
 `./tool/verify_all.sh --update-baseline`) after adding tests and commit the new baseline with
 them. A root with no coverage data fails even at a zero minimum, and a missing lcov file is an
