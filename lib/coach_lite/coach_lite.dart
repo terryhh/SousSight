@@ -397,6 +397,17 @@ parseCoachLiteResponse(String text) {
     );
   }
   final components = validateLiteCookingUi({'components': cleaned});
+  // An empty root, or one whose children name no card, says nothing: treat
+  // it as malformed so the retry or the recipe-step fallback runs.
+  final cards = {
+    for (final c in components)
+      if (c['id'] != 'root' && c['component'] != 'CookingColumn') c['id'],
+  };
+  final root = components.where((c) => c['id'] == 'root').firstOrNull;
+  final children = root?['children'];
+  if (children is! List || !children.any(cards.contains)) {
+    throw const FormatException('Coach Lite answer has no content card.');
+  }
   return (
     components: components,
     timer: CoachLiteTimerSuggestion.fromModel(decoded['timerSuggestion']),

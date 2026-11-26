@@ -38,6 +38,26 @@ void main() {
     expect(ok.timer?.label, 'Simmer');
   });
 
+  test('an empty root with no reachable card is malformed', () {
+    for (final root in [
+      {'id': 'root', 'component': 'CookingColumn', 'children': <String>[]},
+      {
+        'id': 'root',
+        'component': 'CookingColumn',
+        'children': ['missing'],
+      },
+    ]) {
+      final text = jsonEncode({
+        'components': [
+          root,
+          {'id': 'orphan', 'component': 'stepCue', 'title': 'T', 'body': 'B'},
+        ],
+      });
+      expect(validateCoachLiteResponse(text), isNotNull, reason: '$root');
+    }
+    expect(validateCoachLiteResponse(_answer()), isNull);
+  });
+
   group('Spanish questions are classified', () {
     const cases = {
       '¿Contiene maní?': CoachLiteQuestionKind.safety,
