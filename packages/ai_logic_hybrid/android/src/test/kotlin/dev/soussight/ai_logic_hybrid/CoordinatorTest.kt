@@ -287,7 +287,7 @@ internal class CoordinatorTest {
     }
 
     @Test
-    fun availabilityAnswersForTheCurrentConfig() = runBlocking {
+    fun availabilityAnswersForTheCurrentConfig() = runBlocking<Unit> {
         var current: HybridConfig? = config
         val asked = CopyOnWriteArrayList<AndroidModelOption>()
         val engine = object : HybridEngine by FakeEngine() {

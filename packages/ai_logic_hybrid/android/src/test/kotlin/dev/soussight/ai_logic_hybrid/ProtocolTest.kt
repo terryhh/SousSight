@@ -31,7 +31,10 @@ internal class ProtocolTest {
             listOf("preferOnDevice", "onlyOnDevice", "preferInCloud", "onlyInCloud"),
             HybridMode.entries.map { it.wire },
         )
-        assertEquals(listOf("preview", "previewFast", "stable"), AndroidModelOption.entries.map { it.wire })
+        assertEquals(
+            listOf("preview", "previewFast", "stable"),
+            AndroidModelOption.entries.map { it.wire },
+        )
         assertEquals(
             listOf("available", "downloadable", "downloading", "unavailable"),
             OnDeviceStatus.entries.map { it.wire },
@@ -52,6 +55,19 @@ internal class ProtocolTest {
             mapOf("cloudModel" to "gemini-x", "androidModel" to "previewFast", "languages" to listOf("en", "ko")),
         )
         assertEquals(HybridConfig("gemini-x", AndroidModelOption.PREVIEW_FAST, listOf("en", "ko")), c)
+    }
+
+    @Test
+    fun configureDefaultsToStable() {
+        assertEquals(
+            HybridConfig("m", AndroidModelOption.STABLE, listOf("en")),
+            Protocol.parseConfig(mapOf("cloudModel" to "m")),
+        )
+        // auto is gone: an unknown option fails rather than guessing.
+        assertEquals(
+            HybridErrorCode.FAILED,
+            assertFailsWith<HybridError> { Protocol.parseConfig(mapOf("cloudModel" to "m", "androidModel" to "auto")) }.code,
+        )
     }
 
     @Test
@@ -117,6 +133,13 @@ internal class ProtocolTest {
             generateArgs("requestId" to null),
             generateArgs("timeoutMs" to 0),
             generateArgs("maxOutputTokens" to null),
+            // Range-checked before narrowing: 2^32 + 1 would otherwise become 1.
+            generateArgs("maxOutputTokens" to 4_294_967_297L),
+            generateArgs("maxOutputTokens" to Int.MAX_VALUE.toLong() + 1),
+            generateArgs("maxOutputTokens" to 0L),
+            generateArgs("maxOutputTokens" to -5),
+            generateArgs("maxOutputTokens" to 64.0),
+            generateArgs("maxOutputTokens" to "64"),
             generateArgs("parts" to "hello"),
             generateArgs("jsonSchema" to "object"),
         )) {
@@ -125,6 +148,15 @@ internal class ProtocolTest {
         assertEquals(
             HybridErrorCode.FAILED,
             assertFailsWith<HybridError> { Protocol.parseGenerate(null) }.code,
+        )
+    }
+
+    @Test
+    fun maxOutputTokensAcceptsIntsAndInRangeLongs() {
+        assertEquals(64, Protocol.parseGenerate(generateArgs("maxOutputTokens" to 64L)).maxOutputTokens)
+        assertEquals(
+            Int.MAX_VALUE,
+            Protocol.parseGenerate(generateArgs("maxOutputTokens" to Int.MAX_VALUE.toLong())).maxOutputTokens,
         )
     }
 
@@ -154,11 +186,15 @@ internal class ProtocolTest {
         )
         assertEquals(
             setOf(
-                "modelFamily", "supportsImage", "supportsJsonSchema", "maxTotalTokens",
+                "modelFamily", "modelOption", "supportsImage", "supportsJsonSchema", "maxTotalTokens",
                 "defaultOutputReserve", "imageTokenEstimate", "validatedLanguages",
             ),
             local.keys,
         )
+        // Not configured yet: null.
+        assertNull(local["modelOption"])
+        val chosen = Protocol.capabilities(AndroidModelOption.STABLE)["local"] as Map<*, *>
+        assertEquals("stable", chosen["modelOption"])
     }
 
     @Test
@@ -168,8 +204,14 @@ internal class ProtocolTest {
             Protocol.resultMap("r9", GenerateResult("ok", InferenceSourceWire.ON_DEVICE, null)),
         )
         assertEquals(
-            mapOf("status" to "unavailable", "reason" to "not_enrolled", "modelLabel" to null),
+            mapOf("status" to "unavailable", "reason" to "not_enrolled", "modelLabel" to null, "modelOption" to null),
             Protocol.availabilityMap(AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.NOT_ENROLLED)),
+        )
+        assertEquals(
+            mapOf("status" to "available", "reason" to null, "modelLabel" to "nano-v3", "modelOption" to "stable"),
+            Protocol.availabilityMap(
+                AvailabilityResult(OnDeviceStatus.AVAILABLE, modelLabel = "nano-v3", modelOption = AndroidModelOption.STABLE),
+            ),
         )
         assertEquals(mapOf("fraction" to null), Protocol.fractionEvent(null))
         assertTrue(Protocol.parseWithImage(mapOf("withImage" to true)))
