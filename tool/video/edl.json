@@ -1,0 +1,283 @@
+[
+  {
+    "id": "s01",
+    "start": "0:00",
+    "duration_s": 12,
+    "source": "terry",
+    "terry_clip": "T01-pantry-counter-hook",
+    "terry_instructions": "On a tripod phone camera, film a steady wide shot of your hands unpacking chickpeas, lemon, celery, red onion, mayo, and tortillas from a plain paper bag beside a bowl and your open laptop.",
+    "caption": "SousSight: Counter Intelligence",
+    "voiceover": "A food pantry hands you chickpeas, a lemon and tortillas. Getting the food is half of dinner. Cooking it shouldn't take an unlimited data plan, or streaming your kitchen to the cloud.",
+    "gate": ""
+  },
+  {
+    "id": "s02",
+    "start": "0:12",
+    "duration_s": 3,
+    "source": "capture",
+    "capture": {
+      "journey_step": "home",
+      "viewport": "desktop"
+    },
+    "caption": "An AI sous-chef for pantry cooks",
+    "voiceover": "This is SousSight.",
+    "gate": ""
+  },
+  {
+    "id": "s03",
+    "start": "0:15",
+    "duration_s": 5,
+    "source": "capture",
+    "capture": {
+      "journey_step": "type-list",
+      "viewport": "desktop"
+    },
+    "caption": "Type what's in the bag",
+    "voiceover": "I type what's in the bag and tap Find my meal.",
+    "gate": "G2c"
+  },
+  {
+    "id": "s04",
+    "start": "0:20",
+    "duration_s": 4,
+    "source": "terry",
+    "terry_clip": "T02-wifi-connected-scan",
+    "terry_instructions": "On desktop Chrome (D1) via OBS or QuickTime, capture the full screen showing the macOS Wi-Fi icon visibly connected while you tap Find my meal in a clean Chrome profile.",
+    "caption": "Wi-Fi on, running on-device",
+    "voiceover": "Wi-Fi is on, and Firebase AI Logic still runs this",
+    "gate": "G2c"
+  },
+  {
+    "id": "s05",
+    "start": "0:24",
+    "duration_s": 4,
+    "source": "capture",
+    "capture": {
+      "journey_step": "find-meal",
+      "viewport": "desktop"
+    },
+    "caption": "Chrome built-in Gemini Nano",
+    "voiceover": "on Chrome's built-in Gemini Nano.",
+    "gate": "G2c"
+  },
+  {
+    "id": "s06",
+    "start": "0:28",
+    "duration_s": 6,
+    "source": "capture",
+    "capture": {
+      "journey_step": "result-badge",
+      "viewport": "desktop"
+    },
+    "caption": "On this device · Gemini Nano",
+    "voiceover": "That badge, \"On this device\", isn't a setting. It's what the SDK reported.",
+    "gate": "G2c"
+  },
+  {
+    "id": "s07",
+    "start": "0:34",
+    "duration_s": 8,
+    "source": "capture",
+    "capture": {
+      "journey_step": "open-recipe",
+      "viewport": "desktop"
+    },
+    "caption": "Confirm items and allergy check",
+    "voiceover": "I confirm my items, pick the chickpea wrap and answer the allergy check. Nothing counts until I tap it.",
+    "gate": ""
+  },
+  {
+    "id": "s08",
+    "start": "0:42",
+    "duration_s": 4,
+    "source": "terry",
+    "terry_clip": "T03-onion-pickle-cutaway",
+    "terry_instructions": "On the tripod phone camera, film a close counter cutaway of your hands putting sliced red onion into a small cup with a squeeze of lemon and a pinch of salt.",
+    "caption": "Quick-pickle the red onion",
+    "voiceover": "Step one: the onion pickles for five minutes,",
+    "gate": ""
+  },
+  {
+    "id": "s09",
+    "start": "0:46",
+    "duration_s": 4,
+    "source": "capture",
+    "capture": {
+      "journey_step": "cooking-screen",
+      "viewport": "desktop"
+    },
+    "caption": "Real 5-minute timer running",
+    "voiceover": "so I start a real timer and move on.",
+    "gate": ""
+  },
+  {
+    "id": "s10",
+    "start": "0:50",
+    "duration_s": 10,
+    "source": "capture",
+    "capture": {
+      "journey_step": "watch-start",
+      "viewport": "desktop"
+    },
+    "caption": "Camera only, no mic, no live stream",
+    "voiceover": "While it runs, I tap Watch my food. Camera only: no microphone, no live stream. Each frame is checked on this laptop.",
+    "gate": "SS-075"
+  },
+  {
+    "id": "s11",
+    "start": "1:00",
+    "duration_s": 5,
+    "source": "terry",
+    "terry_clip": "T04-hand-over-bowl-watch",
+    "terry_instructions": "On the tripod phone camera, film your hands mashing chickpeas in the bowl with a fork, then holding one hand flat over the bowl in front of the laptop webcam.",
+    "caption": "Hand over bowl to test watch",
+    "voiceover": "When my hand blocks the bowl, it doesn't guess.",
+    "gate": "SS-075"
+  },
+  {
+    "id": "s12",
+    "start": "1:05",
+    "duration_s": 13,
+    "source": "capture",
+    "capture": {
+      "journey_step": "watch-unsure",
+      "viewport": "desktop"
+    },
+    "caption": "Unsure? It asks. It doesn't guess.",
+    "voiceover": "It says it's unsure and asks for a better view. And it never calls food done or safe. That's my call.",
+    "gate": "SS-075"
+  },
+  {
+    "id": "s13",
+    "start": "1:18",
+    "duration_s": 6,
+    "source": "terry",
+    "terry_clip": "T05-chrome-wifi-off",
+    "terry_instructions": "On desktop Chrome (D1) via OBS or QuickTime, click Wi-Fi off in the macOS menu bar so the app shows its offline status while the onion timer keeps ticking.",
+    "caption": "Wi-Fi off. Still cooking.",
+    "voiceover": "Now the Wi-Fi drops, which in a lot of kitchens is just Tuesday.",
+    "gate": "SS-072"
+  },
+  {
+    "id": "s14",
+    "start": "1:24",
+    "duration_s": 5,
+    "source": "capture",
+    "capture": {
+      "journey_step": "coach-lite-question",
+      "viewport": "desktop"
+    },
+    "caption": "Offline step help on-device",
+    "voiceover": "I ask anyway: how smooth should this be?",
+    "gate": "SS-072"
+  },
+  {
+    "id": "s15",
+    "start": "1:29",
+    "duration_s": 11,
+    "source": "capture",
+    "capture": {
+      "journey_step": "coach-lite-answer",
+      "viewport": "desktop"
+    },
+    "caption": "On this device: Coach Lite answers",
+    "voiceover": "Coach Lite answers on the device: chunky, like tuna salad, a few whole chickpeas are fine. My onion timer is still running.",
+    "gate": "SS-072"
+  },
+  {
+    "id": "s16",
+    "start": "1:40",
+    "duration_s": 14,
+    "source": "capture",
+    "capture": {
+      "journey_step": "ledger",
+      "viewport": "desktop"
+    },
+    "caption": "AI requests stayed on this device",
+    "voiceover": "What was sent? Scan, watch, coaching: every one of those AI requests ran on this device. And it's honest about the rest: my cooking session is saved, so I can pick it up later.",
+    "gate": ""
+  },
+  {
+    "id": "s17",
+    "start": "1:54",
+    "duration_s": 6,
+    "source": "terry",
+    "terry_clip": "T06-wifi-on-ask-research",
+    "terry_instructions": "On desktop Chrome (D1) via OBS or QuickTime, turn Wi-Fi back on in the macOS menu bar, tap Research a cooking question, and submit \"Can I use Greek yogurt instead of mayo?\"",
+    "caption": "Wi-Fi back on for web research",
+    "voiceover": "Wi-Fi back on. Some questions need the web. Can I use Greek yogurt instead of mayo?",
+    "gate": "G1"
+  },
+  {
+    "id": "s18",
+    "start": "2:00",
+    "duration_s": 14,
+    "source": "terry",
+    "terry_clip": "T07-cloud-answer-and-ledger",
+    "terry_instructions": "On desktop Chrome (D1) via OBS or QuickTime, show the Cloud · Gemini research answer with clickable Google Search sources, then tap What was sent to display the single new row under Reported as sent.",
+    "caption": "Cloud only when it earns it",
+    "voiceover": "That one goes to Gemini in the cloud, grounded with Google Search, with sources I can open. The badge says Cloud, and the ledger has one new entry.",
+    "gate": "G1"
+  },
+  {
+    "id": "s19",
+    "start": "2:14",
+    "duration_s": 8,
+    "source": "capture",
+    "capture": {
+      "journey_step": "how-it-works",
+      "viewport": "desktop"
+    },
+    "caption": "One hybrid bridge, one policy",
+    "voiceover": "Flutter has no hybrid API, so we bridged Firebase AI Logic's web, Android and Apple SDKs behind one policy.",
+    "gate": ""
+  },
+  {
+    "id": "s20",
+    "start": "2:22",
+    "duration_s": 8,
+    "source": "capture",
+    "capture": {
+      "journey_step": "on-device-sheet",
+      "viewport": "desktop"
+    },
+    "caption": "Keep on this device switches",
+    "voiceover": "The cloud is used only when the device can't do the job, this build allows it, and my switches say yes.",
+    "gate": ""
+  },
+  {
+    "id": "s21",
+    "start": "2:30",
+    "duration_s": 4,
+    "source": "terry",
+    "terry_clip": "T08-roll-and-cut-wrap",
+    "terry_instructions": "On the tripod phone camera, film a warm counter shot of your hands rolling the chickpea salad into a tortilla and slicing it cleanly in half.",
+    "caption": "Wrap rolled, dinner's ready",
+    "voiceover": "Wrap's rolled.",
+    "gate": ""
+  },
+  {
+    "id": "s22",
+    "start": "2:34",
+    "duration_s": 5,
+    "source": "terry",
+    "terry_clip": "T09-simulated-dinner-text",
+    "terry_instructions": "On desktop Chrome (D1) via OBS or QuickTime, tap Text the household: dinner is ready on the meal-complete screen and hold clearly on the Simulated — no SMS sent review sheet.",
+    "caption": "Simulated — no SMS sent",
+    "voiceover": "Dinner's ready, and the household text is simulated for judging.",
+    "gate": ""
+  },
+  {
+    "id": "s23",
+    "start": "2:39",
+    "duration_s": 8,
+    "source": "title",
+    "title": {
+      "text": "SousSight: Counter Intelligence",
+      "sub": "Built with Firebase AI Logic · github.com/terryhh/SousSight"
+    },
+    "caption": "",
+    "voiceover": "SousSight watches your counter on your device, and the cloud only comes to dinner when it earns a seat.",
+    "gate": ""
+  }
+]
