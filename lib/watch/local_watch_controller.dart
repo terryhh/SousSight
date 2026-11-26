@@ -96,6 +96,10 @@ class LocalWatchController extends ChangeNotifier {
   bool get isChecking => _inFlight != null;
   bool get awaitingConsent => _consentFrame != null;
 
+  /// The latest camera frame while a local watch runs, for the on-screen
+  /// preview only. Cleared when the watch stops. Never sent anywhere.
+  Uint8List? previewFrame;
+
   /// The exact frame the cook is being asked about, so the prompt can show it.
   CapturedFrame? get consentFrame => _consentFrame;
 
@@ -173,6 +177,9 @@ class LocalWatchController extends ChangeNotifier {
     _frames = capture.framesFor(lease).listen((frame) {
       if (_token != token) return;
       _latest = frame;
+      // The cook sees what the watch sees. The frame stays on this device.
+      previewFrame = frame.bytes;
+      _notify();
       if (!_checkedOnce) unawaited(_check(token));
     });
     _errors = capture.media.errors.listen((message) {
@@ -211,6 +218,7 @@ class LocalWatchController extends ChangeNotifier {
     _inFlight?.operation.cancel();
     _inFlight = null;
     _latest = null;
+    previewFrame = null;
     _consentFrame = null;
     if (notice != null) this.notice = notice;
     if (token != null) _notify();

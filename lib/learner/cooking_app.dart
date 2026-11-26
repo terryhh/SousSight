@@ -696,7 +696,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
         borderRadius: BorderRadius.circular(26),
         child: Stack(
           children: [
-            if (cook.live.latestFrame case final frame?)
+            if (cook.live.latestFrame ??
+                    cook.watchService?.local.previewFrame
+                case final frame?)
               AspectRatio(
                 aspectRatio: 4 / 3,
                 child: Image.memory(
