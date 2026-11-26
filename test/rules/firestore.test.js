@@ -41,6 +41,17 @@ test('cook creates, reads, updates timers and facts, and deletes their session',
   await assertSucceeds(deleteDoc(ref));
 });
 
+test('owner saves an offline step change with its bounded op-id list', async () => {
+  await seed('sessions/meal', session());
+  const ref = doc(db(), 'sessions/meal');
+  await assertSucceeds(updateDoc(ref, { revision: 1, currentStepId: 'wrap', completedStepIds: ['mash'],
+    appliedOpIds: ['op-1'], updatedAt: Timestamp.fromMillis(2000) }));
+  await assertFails(updateDoc(ref, { revision: 2, appliedOpIds: 'op-2' }));
+  await assertFails(updateDoc(ref, { revision: 2,
+    appliedOpIds: Array.from({ length: 33 }, (_, i) => `op-${i}`) }));
+  await assertFails(updateDoc(doc(db('cook-b'), 'sessions/meal'), { appliedOpIds: [] }));
+});
+
 test('unauthenticated callers and another cook cannot access a private session', async () => {
   await seed('sessions/meal', session());
   for (const client of [environment.unauthenticatedContext().firestore(), db('cook-b')]) {

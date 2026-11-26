@@ -46,7 +46,7 @@ service cloud.firestore {
             'learnerId', 'recipeId', 'recipeVersion', 'ingredients',
             'substitutions', 'currentStepId', 'completedStepIds', 'revision',
             'createdAt', 'updatedAt', 'language', 'timerDeadline',
-            'timerLabel', 'timerId', 'confirmedFacts'
+            'timerLabel', 'timerId', 'confirmedFacts', 'appliedOpIds'
           ])
           && shortText(data.learnerId, 128)
           && shortText(data.recipeId, 128) && data.recipeId.size() > 0
@@ -63,7 +63,10 @@ service cloud.firestore {
           && optionalText(data.get('timerLabel', null), 160)
           && optionalText(data.get('timerId', null), 128)
           && data.get('confirmedFacts', []) is list
-          && data.get('confirmedFacts', []).size() <= 100;
+          && data.get('confirmedFacts', []).size() <= 100
+          // Ids of saved offline step changes (SS-072), bounded by the client.
+          && data.get('appliedOpIds', []) is list
+          && data.get('appliedOpIds', []).size() <= 32;
       }
 
       allow read, delete: if owns(resource.data);
@@ -75,7 +78,7 @@ service cloud.firestore {
         && changed().hasOnly([
           'ingredients', 'substitutions', 'currentStepId', 'completedStepIds',
           'revision', 'updatedAt', 'language', 'timerDeadline', 'timerLabel',
-          'timerId', 'confirmedFacts'
+          'timerId', 'confirmedFacts', 'appliedOpIds'
         ])
         && request.resource.data.revision >= resource.data.revision;
 
