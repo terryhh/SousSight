@@ -844,7 +844,8 @@ def main(argv=None, *, freezer=None):
     parser.add_argument("ref", help="commit SHA or tag to freeze")
     parser.add_argument("--apk", help="release APK to hash (only if gate G4 passed)")
     parser.add_argument("--defines", help="build defines JSON to check instead of the repository variables")
-    parser.add_argument("--tag", help="create this annotated tag locally at the commit, after every check passed")
+    parser.add_argument("--tag", help="create this annotated tag locally at the commit, after every check passed "
+                                      "and the report is staged (needs a report file, not --output -)")
     parser.add_argument("--output",
                         help=f"where to write the identity (default {DEFAULT_OUTPUT} in the repo; '-' for stdout)")
     parser.add_argument("--repo", default=DEFAULT_REPO)
@@ -853,6 +854,9 @@ def main(argv=None, *, freezer=None):
     freezer = freezer or Freezer(repo=args.repo, hosted_url=args.hosted_url)
     target = None if args.output == "-" else Path(args.output) if args.output else freezer.root / DEFAULT_OUTPUT
     try:
+        if target is None and args.tag:
+            # A tag needs its report on disk: stdout can fail after the tag exists (Codex #247).
+            raise UsageError("--tag needs a report file; it cannot be used with --output -.")
         if target is not None:
             check_destination(target)
         ok = freezer.run(args.ref, apk=args.apk, defines_path=args.defines, tag=args.tag)
@@ -872,7 +876,13 @@ def main(argv=None, *, freezer=None):
               file=sys.stderr)
         return 1
     if target is None:
-        sys.stdout.write(document)
+        # No tag can exist here (--tag is refused with --output -), so a failed write leaves nothing behind.
+        try:
+            sys.stdout.write(document)
+            sys.stdout.flush()
+        except OSError:
+            print("NOT FROZEN: the report could not be written to stdout.", file=sys.stderr)
+            return 1
     else:
         print(f"Frozen. Wrote {target}.")
     return 0

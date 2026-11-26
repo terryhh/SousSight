@@ -621,13 +621,43 @@ class TagTests(FreezeTestCase):
         self.assertEqual(list(self.dir.iterdir()), [], "the staged report is removed")
         self.assertIn("the tag could not be created", self.stderr)
 
-    def test_tag_with_stdout_output(self):
-        out = io.StringIO()
-        self.last = self.freezer()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(freeze.main([SHA, "--tag", "buildhybridai-2026", "--output", "-"], freezer=self.last), 0)
-        self.assertIn("| Tag | `buildhybridai-2026` |", out.getvalue())
-        self.assertEqual(self.runner.tags["buildhybridai-2026"], SHA)
+    def test_tag_with_stdout_output_is_refused_before_any_command(self):
+        # Codex #247: stdout can fail (ENOSPC, at write or flush) after a tag exists.
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            code = freeze.main([SHA, "--tag", "buildhybridai-2026", "--output", "-"], freezer=self.freezer())
+        self.assertEqual(code, 2)
+        self.assertIn("--tag needs a report file", err.getvalue())
+        self.assertEqual(self.runner.commands, [])
+        self.assertNotIn("buildhybridai-2026", self.runner.tags)
+
+
+class FailingStream(io.StringIO):
+    def __init__(self, fail_on):
+        super().__init__()
+        self.fail_on = fail_on
+
+    def write(self, text):
+        if self.fail_on == "write" and text.startswith("# Release identity"):
+            raise OSError(28, "No space left on device")
+        return super().write(text)
+
+    def flush(self):
+        if self.fail_on == "flush" and "# Release identity" in self.getvalue():
+            raise OSError(28, "No space left on device")
+        return super().flush()
+
+
+class StdoutTests(FreezeTestCase):
+    def test_stdout_write_or_flush_failure_exits_cleanly(self):
+        for fail_on in ("write", "flush"):
+            with self.subTest(fail_on=fail_on):
+                err = io.StringIO()
+                with contextlib.redirect_stdout(FailingStream(fail_on)), contextlib.redirect_stderr(err):
+                    code = freeze.main([SHA, "--output", "-"], freezer=self.freezer())
+                self.assertEqual(code, 1)
+                self.assertIn("NOT FROZEN: the report could not be written to stdout.", err.getvalue())
+                self.assertNotIn(("git", "tag"), [tuple(c[:2]) for c in self.runner.commands])
 
 
 class OutputTests(FreezeTestCase):
