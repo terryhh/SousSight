@@ -153,7 +153,6 @@ class HybridReadinessCard extends StatefulWidget {
 
 class _HybridReadinessCardState extends State<HybridReadinessCard> {
   ReadinessInput? _input;
-  bool _dismissed = false;
   int _load = 0;
 
   @override
@@ -209,24 +208,17 @@ class _HybridReadinessCardState extends State<HybridReadinessCard> {
     return null;
   }
 
-  Future<void> _onAction(ReadinessAction action) async {
-    switch (action) {
-      case ReadinessAction.openOnDeviceSetup ||
-          ReadinessAction.showDownloadProgress ||
-          ReadinessAction.showEnableSteps:
-        await openOnDeviceAi(context, widget.hybrid);
-        await _refresh();
-      case ReadinessAction.reload || ReadinessAction.checkConnection:
-        await _refresh();
-      default:
-        setState(() => _dismissed = true);
-    }
+  /// "Details": the full readiness lives in the on-device sheet; closing it
+  /// re-reads what the plugin and the connection report.
+  Future<void> _openDetails() async {
+    await openOnDeviceAi(context, widget.hybrid);
+    if (mounted) await _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
     final input = _input;
-    if (input == null || _dismissed) return const SizedBox.shrink();
+    if (input == null) return const SizedBox.shrink();
     final readiness = AppReadiness.evaluate(
       input.withCloudError(_latestCloudError),
     );
@@ -241,7 +233,7 @@ class _HybridReadinessCardState extends State<HybridReadinessCard> {
       child: ReadinessLine(
         readiness: readiness,
         pantryLocalOnly: _pantryLocalOnly,
-        onDetails: () => unawaited(_onAction(ReadinessAction.showEnableSteps)),
+        onDetails: () => unawaited(_openDetails()),
       ),
     );
   }

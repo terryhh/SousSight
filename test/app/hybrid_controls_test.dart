@@ -9,7 +9,6 @@ import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/hybrid_controls.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
-import 'package:soussight/trust/app_readiness.dart';
 
 class _NoCloud implements CloudFallbackSender {
   @override
@@ -53,12 +52,6 @@ Future<void> _pump(WidgetTester tester, Widget child) async {
   );
   await tester.pumpAndSettle();
 }
-
-/// The panel's button for an action (its title can repeat the label).
-Finder _action(String label) => find.ancestor(
-  of: find.text(label),
-  matching: find.bySubtype<ButtonStyleButton>(),
-);
 
 void main() {
   group('HybridHeaderButtons', () {
@@ -113,9 +106,9 @@ void main() {
     });
   });
 
-  group('HybridReadinessCard', () {
-    testWidgets('a downloadable model offers set-up: the action opens the '
-        'on-device sheet and re-reads readiness afterwards', (tester) async {
+  group('HybridReadinessCard (one calm line, SS-089)', () {
+    testWidgets('a downloadable model: Details opens the on-device sheet and '
+        'readiness is re-read afterwards', (tester) async {
       final inference = _CountingInference(
         textAvailability: const HybridAvailability(
           status: OnDeviceStatus.downloadable,
@@ -123,14 +116,15 @@ void main() {
       );
       final hybrid = _runtime(inference);
       await _pump(tester, HybridReadinessCard(hybrid: hybrid));
-      expect(find.byKey(const ValueKey('readiness-panel')), findsOneWidget);
+      expect(find.byKey(const ValueKey('readiness-line')), findsOneWidget);
+      expect(find.byKey(const ValueKey('readiness-panel')), findsNothing);
       final reads = inference.capabilityReads;
 
-      await tester.tap(_action(ReadinessAction.openOnDeviceSetup.label));
+      await tester.tap(find.byKey(const ValueKey('readiness-details')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('on-device-ai-sheet')), findsOneWidget);
 
-      // Closing the sheet lets the card refresh what the plugin reports.
+      // Closing the sheet lets the line refresh what the plugin reports.
       inference.textAvailability = const HybridAvailability(
         status: OnDeviceStatus.available,
       );
@@ -140,13 +134,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byKey(const ValueKey('on-device-ai-sheet')), findsNothing);
-      // openOnDeviceAi does not read capabilities itself; the refresh does.
       expect(inference.capabilityReads, greaterThan(reads));
-      expect(find.text(ReadinessAction.openOnDeviceSetup.label), findsNothing);
+      // Ready now: nothing to say.
+      expect(find.byKey(const ValueKey('readiness-line')), findsNothing);
     });
 
-    testWidgets('offline with no local model: "Try again" re-checks the '
-        'connection and clears the card once back online', (tester) async {
+    testWidgets('offline with no local model: one calm line, re-checked '
+        'after Details', (tester) async {
       var online = false;
       final inference = FakeHybridInference(
         textAvailability: const HybridAvailability(
@@ -156,31 +150,27 @@ void main() {
       );
       final hybrid = _runtime(inference, isOnline: () => online);
       await _pump(tester, HybridReadinessCard(hybrid: hybrid));
-      expect(find.textContaining("You're offline"), findsWidgets);
-
-      // Still offline: the retry keeps saying so.
-      await tester.tap(_action(ReadinessAction.checkConnection.label));
-      await tester.pumpAndSettle();
-      expect(find.textContaining("You're offline"), findsWidgets);
+      expect(find.textContaining("You're offline."), findsOneWidget);
 
       online = true;
-      await tester.tap(_action(ReadinessAction.checkConnection.label));
+      await tester.tap(find.byKey(const ValueKey('readiness-details')));
+      await tester.pumpAndSettle();
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey('on-device-ai-sheet'))),
+      ).pop();
       await tester.pumpAndSettle();
       expect(find.textContaining("You're offline"), findsNothing);
+      expect(find.byKey(const ValueKey('readiness-line')), findsOneWidget);
     });
 
-    testWidgets('offline with a ready local model: "Keep cooking" dismisses '
-        'the card', (tester) async {
+    testWidgets('offline with a ready local model: the plain invitation, '
+        'no warning stack', (tester) async {
       final hybrid = _runtime(FakeHybridInference(), isOnline: () => false);
       await _pump(tester, HybridReadinessCard(hybrid: hybrid));
       expect(
-        find.textContaining('On-device help keeps working'),
+        find.text('Type what you have, or pick a recipe below.'),
         findsOneWidget,
       );
-
-      await tester.tap(_action(ReadinessAction.keepCooking.label));
-      await tester.pumpAndSettle();
-
       expect(find.byKey(const ValueKey('readiness-panel')), findsNothing);
     });
   });
