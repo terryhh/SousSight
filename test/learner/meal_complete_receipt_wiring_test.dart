@@ -37,6 +37,7 @@ void main() {
   Future<CookingCoordinator> cookToTheEnd(
     WidgetTester tester, {
     HybridRuntime? hybrid,
+    void Function()? beforeNextFrame,
   }) async {
     tester.view.physicalSize = const Size(412, 2400);
     tester.view.devicePixelRatio = 1;
@@ -68,6 +69,8 @@ void main() {
       while (!cook.complete) {
         await cook.advanceStep();
       }
+      // Runs right after the completion event, before any frame.
+      beforeNextFrame?.call();
     });
     await tester.pumpAndSettle();
     expect(cook.complete, isTrue);
@@ -141,6 +144,40 @@ void main() {
     tester.view.physicalSize = const Size(412, 2400);
     await tester.pumpAndSettle();
     expect(receipt, findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('the receipt binds at completion, not at the first build', (
+    tester,
+  ) async {
+    final hybrid = HybridRuntime.create(
+      inference: FakeHybridInference(),
+      cloudRoutes: CloudRoutes.parse(''),
+      cloudFallback: _NoCloud(),
+      isOnline: () => true,
+      cloudModel: 'test-cloud-model',
+    );
+    await cookToTheEnd(
+      tester,
+      hybrid: hybrid,
+      // Meal B starts and sends a photo before the panel's first frame.
+      beforeNextFrame: () {
+        hybrid.ledger.startSession('meal-b');
+        hybrid.ledger.record(
+          const InferenceLeg(
+            requestId: 'meal-b-photo',
+            feature: 'label_check',
+            mode: HybridMode.onlyInCloud,
+            kinds: {DataKind.image},
+            transferPermitted: true,
+            provenance: Provenance.cloudAdapter,
+          ),
+        );
+      },
+    );
+    expect(find.byKey(const ValueKey('meal-complete')), findsOneWidget);
+    // Bound to meal A's generation at completion: B's photo never prints.
+    expect(find.byKey(const ValueKey('privacy-receipt')), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -206,7 +206,10 @@ void main() {
     expect(r.nothingRecordedLeft, isFalse);
     expect(
       r.summary,
-      endsWith('recorded requests that sent photos: 0, and 2 more may have.'),
+      endsWith(
+        'recorded requests that sent photos: 0; 2 other attempts may also '
+        'have.',
+      ),
     );
   });
 
@@ -396,6 +399,29 @@ void main() {
     expect(local.photoRequestsMaybeSent, 0);
     expect(local.maybeSent, isEmpty);
     expect(local.unfinished, 1);
+  });
+
+  test('an iOS bridge refusal then a Dart send reads as one sent, one '
+      'other attempt', () {
+    final r = PrivacyReceipt.fromLegs([
+      leg(
+        Provenance.unknown,
+        feature: 'label_check',
+        kinds: _photo,
+        transferPermitted: true,
+        error: HybridErrorCode.unsupportedInput,
+      ),
+      leg(Provenance.cloudAdapter, feature: 'label_check', kinds: _photo),
+    ]);
+    expect(r.photoRequestsSent, 1);
+    expect(r.photoRequestsMaybeSent, 1);
+    expect(
+      r.summary,
+      endsWith(
+        'recorded requests that sent photos: 1; 1 other attempt may also '
+        'have.',
+      ),
+    );
   });
 
   test('a semantic rejection leaves no error, so it is not claimed', () {

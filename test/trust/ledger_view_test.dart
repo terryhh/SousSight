@@ -198,7 +198,9 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('ledger-not-finished')),
-        matching: find.text("photo · Didn't finish · nothing left this device"),
+        matching: find.text(
+          'photo · Running or stopped · nothing left this device',
+        ),
       ),
       findsOneWidget,
     );

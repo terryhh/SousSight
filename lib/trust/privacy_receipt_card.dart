@@ -98,8 +98,12 @@ class _PrivacyReceiptCardState extends State<PrivacyReceiptCard> {
     // The save belongs to the meal it started for: that exact binding must
     // stay installed on this card, and current, through every step.
     final binding = widget.binding;
+    // A popped route (the cook left this screen) ends the save too.
     bool stillThisMeal() =>
-        mounted && identical(widget.binding, binding) && binding.isCurrent;
+        mounted &&
+        (ModalRoute.of(context)?.isActive ?? true) &&
+        identical(widget.binding, binding) &&
+        binding.isCurrent;
     if (_saving || !stillThisMeal()) return;
     final messenger = ScaffoldMessenger.maybeOf(context);
     setState(() => _saving = true);
@@ -656,9 +660,13 @@ class _PhotosSent extends StatelessWidget {
     } else if (zero) {
       note = 'No recorded request sent a photo tonight.';
     } else if (r.photoRequestsMaybeSent > 0) {
+      final n = r.photoRequestsMaybeSent;
+      // Each attempt is its own leg, so a retry of a request already counted
+      // above is listed here as another attempt, never as another photo.
       note =
-          '${r.photoRequestsMaybeSent} more may have: allowed to leave, not '
-          'confirmed either way.';
+          '$n other ${n == 1 ? 'attempt' : 'attempts'} may also have sent a '
+          'photo: allowed to leave, not confirmed either way. A retry of the '
+          'same request counts as its own attempt.';
     } else {
       note = 'Each request is listed below, with where it went.';
     }

@@ -328,7 +328,11 @@ void main() {
     expect(find.text('Pantry scan · photo'), findsOneWidget);
     expect(_photos(tester), '1');
     expect(
-      find.text('1 more may have: allowed to leave, not confirmed either way.'),
+      find.text(
+        '1 other attempt may also have sent a photo: allowed to leave, not '
+        'confirmed either way. A retry of the same request counts as its own '
+        'attempt.',
+      ),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
@@ -722,6 +726,46 @@ void main() {
       saver.gate!.complete(ReceiptSaveResult.downloaded);
       await _settleSave(tester);
       expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('leaving the screen mid-save ends the save', (tester) async {
+      final saver = _Saver()..gate = Completer();
+      final ledger = ListLedgerSource([_leg('a', Provenance.sdkOnDevice)]);
+      final binding = PrivacyReceiptBinding(generation: () => 1);
+      final nav = GlobalKey<NavigatorState>();
+      tester.view.physicalSize = const Size(360, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: nav, home: const Scaffold()),
+      );
+      unawaited(
+        nav.currentState!.push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              body: SingleChildScrollView(
+                child: PrivacyReceiptCard(
+                  ledger: ledger,
+                  binding: binding,
+                  saveImage: saver.call,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await _tapSave(tester);
+      expect(saver.calls, hasLength(1));
+      expect(saver.isCurrent!(), isTrue);
+      nav.currentState!.pop();
+      await tester.pump();
+      // The route is popped (still animating out): not current any more.
+      expect(saver.isCurrent!(), isFalse);
+      saver.gate!.complete(ReceiptSaveResult.downloaded);
+      await _settleSave(tester);
+      expect(find.byType(SnackBar), findsNothing);
+      await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets('a retired receipt cannot be saved by a stale handler', (

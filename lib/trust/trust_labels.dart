@@ -49,7 +49,9 @@ String outcomeLabel(LegOutcome outcome, {String? localModel}) =>
       LegOutcome.cloudSdk => 'Cloud · Gemini',
       LegOutcome.cloudAdapter => 'Cloud',
       LegOutcome.maybeSent => 'May have been sent',
-      LegOutcome.notFinishedLocal => "Didn't finish · nothing left this device",
+      // Also a local-only leg that is still running: never "didn't finish".
+      LegOutcome.notFinishedLocal =>
+        'Running or stopped · nothing left this device',
       LegOutcome.simulated => 'Simulated',
     };
 
@@ -72,8 +74,8 @@ String outcomeExplanation(LegOutcome outcome) => switch (outcome) {
         'it may still be running, or it stopped before saying whether it was '
         'sent.',
   LegOutcome.notFinishedLocal =>
-    "This didn't finish, and it wasn't allowed to leave, so nothing left "
-        'this device.',
+    'This is still running, or it stopped without finishing. It is not '
+        'allowed to leave, so nothing left this device.',
   LegOutcome.simulated =>
     'Simulated for this rehearsal. No model ran and nothing was sent.',
 };

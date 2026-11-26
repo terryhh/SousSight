@@ -223,9 +223,12 @@ class PrivacyReceipt {
   /// requests, never photos.
   final int photoRequestsSent;
 
-  /// Non-Live requests carrying a photo that were allowed to leave and are
+  /// Non-Live attempts carrying a photo that were allowed to leave and are
   /// not confirmed either way (still running, or stopped without saying).
-  /// A request rejected before any send is not counted.
+  /// Each attempt is its own leg: a fallback or retry of a request counted
+  /// in [photoRequestsSent] appears here as another attempt (for example on
+  /// iOS, where the bridge refuses an attachment and the Dart client then
+  /// sends it; the leg cannot prove the refusal happened before a send).
   final int photoRequestsMaybeSent;
 
   /// Runs that happened (an observed source) and then ended in an error the
@@ -277,8 +280,10 @@ class PrivacyReceipt {
       );
     }
     final photos = photoRequestsMaybeSent > 0
-        ? 'recorded requests that sent photos: $photoRequestsSent, and '
-              '$photoRequestsMaybeSent more may have'
+        ? 'recorded requests that sent photos: $photoRequestsSent; '
+              '$photoRequestsMaybeSent other '
+              '${photoRequestsMaybeSent == 1 ? 'attempt' : 'attempts'} may '
+              'also have'
         : 'recorded requests that sent photos: $photoRequestsSent';
     return '${parts.join(', ')}; $photos.';
   }

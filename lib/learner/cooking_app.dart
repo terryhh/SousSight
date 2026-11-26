@@ -399,8 +399,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     with WidgetsBindingObserver {
   late final CookingCoordinator cook;
 
-  /// Tonight's privacy receipt binding: created when the meal first shows
-  /// complete and kept here, outside the layout, so a retired receipt stays
+  /// Tonight's privacy receipt binding: created at the coordinator's
+  /// completion notification (or the first build of an already complete
+  /// meal) and kept here, outside the layout, so a retired receipt stays
   /// retired across breakpoint rebuilds (SS-105).
   PrivacyReceiptBinding? _receipt;
   PrivacyReceiptBinding? _receiptBinding() => switch (widget.hybrid) {
@@ -475,6 +476,9 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
 
   void _onChange() {
     if (!mounted) return;
+    // Bind tonight's receipt at the completion event itself, before any
+    // later ledger reset can land ahead of the next frame (SS-105).
+    if (cook.complete) _receiptBinding();
     _speaker?.sync(
       answer: cook.coachLiteAnswer,
       busy: cook.coachLiteBusy,

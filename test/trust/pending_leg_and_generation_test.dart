@@ -31,6 +31,25 @@ void main() {
     expect(legOutcome(failed), LegOutcome.maybeSent);
   });
 
+  test(
+    'a local-only leg, pending or stopped, never reads "didn\'t finish"',
+    () {
+      final pending = leg(Provenance.unknown, transferPermitted: false);
+      final stopped = leg(
+        Provenance.unknown,
+        transferPermitted: false,
+        error: HybridErrorCode.timeout,
+      );
+      for (final l in [pending, stopped]) {
+        expect(legOutcome(l), LegOutcome.notFinishedLocal);
+        expect(legLabel(l), 'Running or stopped · nothing left this device');
+      }
+      final text = outcomeExplanation(LegOutcome.notFinishedLocal);
+      expect(text, startsWith('This is still running, or it stopped'));
+      expect(text, isNot(contains("didn't finish")));
+    },
+  );
+
   testWidgets('the source-details sheet says a pending request is running', (
     tester,
   ) async {
