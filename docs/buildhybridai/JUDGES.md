@@ -39,8 +39,9 @@ what's happening rather than failing quietly.
   so. <!-- VERIFY: gate G1 approved hybridFallback; gate G2 cloud fallback passed. If not, these features say they can't run here instead -->
 - **Features that stay on the device by design** (the camera watch, Coach Lite, label check)
   say on-device AI isn't available here and how to set it up. They don't switch to the cloud
-  on their own. The camera watch only sends a frame to the cloud if you tap
-  *Ask the cloud about this photo* and then **Allow once** for that exact frame.
+  on their own. The on-device watch only sends a frame to the cloud if you tap
+  *Ask the cloud about this photo* and then **Allow once** for that exact frame. (If the Live
+  coach is on, *Watch my food* uses the Live coach's cloud watch instead; see section 5.)
 - If you turn on **Keep on this device** for a feature in the *On-device AI* sheet, that
   feature never uses the cloud, whatever else happens.
 
@@ -58,7 +59,8 @@ Steps:
 1. **For photos** (pantry photo, camera watch, label check), open
    `chrome://flags/#prompt-api-for-gemini-nano-multimodal-input`, set it to **Enabled** and
    relaunch Chrome. Typed features don't need the flag.
-2. Open SousSight, tap **On-device AI**, then **Set up on-device AI**. A progress bar shows
+2. Open SousSight, tap the **On-device AI** button (next to *How it works* on the pantry
+   screen), then **Set up on-device AI**. A progress bar shows
    the download. Keep the tab open until it finishes.
 3. The sheet then shows text and photo availability separately. If photos still say
    unavailable, check the flag from step 1.
@@ -68,8 +70,8 @@ Steps:
 
 ## 4. A five-minute path through the app
 
-1. **Scan.** Type `canned chickpeas, mayonnaise, lemon, celery, red onion, tortillas` and scan.
-   Tap the items to confirm them. Look at the badge: **On this device · Gemini Nano** (or **Cloud · Gemini**
+1. **Scan.** Type `canned chickpeas, mayonnaise, lemon, celery, red onion, tortillas` and tap
+   **Find my meal**. Tap the items to confirm them. Look at the badge: **On this device · Gemini Nano** (or **Cloud · Gemini**
    if your Chrome has no model). <!-- VERIFY: exact badge model label shown on the hosted build -->
 2. **Cook.** Open the *Smashed Chickpea Salad Wrap*, or tap *Make a meal from these
    ingredients* for a draft recipe.
@@ -79,12 +81,16 @@ Steps:
 4. **Go offline.** Turn off Wi-Fi, or open DevTools → Network → **Offline**. Type a question
    such as "How smooth should the mash be?" Coach Lite answers on the device with a small
    panel. If it suggests a timer, tap **Start timer**. <!-- VERIFY: SS-072 scope; Coach Lite answer offline on the hosted build -->
-5. **Read the ledger.** Tap **Ledger**. The watch and Coach Lite rows are under *Stayed on
-   this device*. *Reported as sent* is empty unless you used a cloud feature.
-6. **Back online, one cloud moment.** Ask "Can I use Greek yogurt instead of mayo?" That
-   question goes to grounded research with Google Search, shows its sources and Search
+5. **Read the ledger.** Tap the **What was sent** button. The sheet, *What left this device*,
+   lists AI requests only. The watch and Coach Lite rows are under *Stayed on this device*, and
+   *Reported as sent* is empty unless you used a cloud feature. Its last section, *What this
+   session keeps*, says what is saved outside the AI ledger: your cooking session (recipe, step,
+   confirmed items and allergy answers) is saved to Firestore so a reload doesn't lose it.
+6. **Back online, one cloud moment.** Tap **Research a cooking question** and ask "Can I use
+   Greek yogurt instead of mayo?" That question goes to grounded research with Google Search, shows its sources and Search
    suggestions, and appears in the ledger as a cloud request. <!-- VERIFY: gate G1 approved the research route -->
-7. **Dinner's ready.** Finish the recipe and review the "dinner is ready" message. It's
+7. **Dinner's ready.** Finish the recipe and tap **Text the household: dinner is ready** (or,
+   while cooking, **Review dinner message**). It's
    **simulated**: see section 7.
 
 ## 5. What to look for
@@ -94,13 +100,23 @@ Steps:
   the request), *May have been sent* (allowed to leave, then failed, so we can't be sure), or
   *Simulated*. A pantry scan with a voice clip shows two badges, because the voice clip is its
   own cloud request.
-- **The ledger.** It separates what SousSight *allowed* to leave from what the SDK *reported*
-  as sent. It lists kinds of data (text, image, audio, location), never content. It also says
-  what the session saves to Firestore and what the Live coach is told.
+- **The ledger** (*What was sent*). It covers AI requests. It separates what SousSight
+  *allowed* to leave from what the SDK *reported* as sent, and shows a request that was allowed
+  and then failed as *May have been sent*, never as stayed. It lists kinds of data (text,
+  image, audio, location), never content. Separately, it says what the session saves to
+  Firestore and what the Live coach is told. "Stayed on this device" means the AI request did,
+  not that nothing about the session was saved.
 - **Offline behaviour.** On-device features keep working with the network off. Cloud features
   say they can't run and why.
-- **Consent.** Any photo that might leave the device asks first, names the data and the
-  recipient, and covers that one payload only.
+- **Consent.** A still photo in a hybrid feature (pantry photo, label check) that might go to
+  the cloud, and a watch frame you send with *Ask the cloud about this photo*, each ask first
+  with **Allow once** / **Don't send**, name the data and the recipient, and cover that one
+  payload only.
+- **The Live coach is different.** If this build has it, tapping **Start** (tooltip
+  *Cook with me*) opens a continuous camera and microphone stream to Gemini Live through
+  Firebase AI Logic. There is no per-frame prompt; the stream runs until you tap **Stop**, the
+  coach says it is cloud, and the ledger records the connect. While Live is on, *Watch my food*
+  uses that stream (cloud vision) instead of the on-device watch, and says so.
 - **Safety wording.** The camera describes what it sees. It never says food is cooked, at a safe
   temperature, fresh or allergen-free.
 
@@ -135,8 +151,8 @@ Steps:
   device or in the cloud as the badge says. (Rehearsal mode, where every AI answer is canned and
   labelled *Simulated*, is a separate developer build and is not the hosted app.)
 - **The live voice coach** is <!-- VERIFY: gate G3 --> available through Firebase AI Logic if
-  the *Live* button is shown. If it isn't shown, this build has no Live coach, and typed
-  questions go to Coach Lite.
+  the cooking screen shows a **Start** button (tooltip *Cook with me*). If it doesn't, this
+  build has no Live coach, and typed questions go to Coach Lite.
 
 ## 8. Building from source
 

@@ -20,11 +20,11 @@ SousSight started in Central Florida, with food pantries, community gardens and 
 
 Our first version (DevFest Florida 2026) answered that with a live voice-and-vision coach in the browser. It worked, and it taught us who we were really building for. Pantry cooks often have prepaid data plans, patchy kitchen Wi-Fi and a camera pointed at their own home. They tell the app who in the household has a peanut allergy. In that version, every one of those things went to the cloud, every time.
 
-So for #BuildHybridAI we rebuilt SousSight around one rule: **what happens at the counter stays at the counter.** The model on your device does the everyday work. The cloud is used for what only the cloud can do, and the app shows you, answer by answer, which one ran.
+So for #BuildHybridAI we rebuilt SousSight around one rule: **what happens at the counter stays at the counter, unless the cook chooses the cloud.** The model on your device does the everyday AI work. The cloud is used for what only the cloud can do, and the app shows you, answer by answer, which one ran.
 
 ## Value proposition
 
-- **Private by default.** Pantry scans, step help, the camera watch and label checks run on the device when the device can run them. The camera watch never uploads a frame unless the cook approves that exact frame.
+- **Private by default.** Pantry scans, step help, the camera watch and label checks run on the device when the device can run them. The on-device watch keeps its frames on the device. It sends one frame to the cloud only if the cook asks and approves that exact frame. The Live coach is different, and labelled as cloud: once the cook taps **Start**, it streams the camera and microphone to Gemini Live until they stop it.
 - **Free and resilient.** Help keeps coming when the signal drops or the data plan runs out, because the everyday features don't need a connection.
 - **Cloud when it earns it.** Grounded research with sources, nearby food help and the live voice coach use Gemini in the cloud. Each cloud request is recorded in a ledger the cook can read.
 - **Honest about where it ran.** Every answer has a badge for each request it took: "On this device" or "Cloud · Gemini", as reported by the Firebase AI Logic SDK. The badge never just repeats the setting.
@@ -39,10 +39,11 @@ The hero journey is a Smashed Chickpea Salad Wrap made from pantry staples.
    - When the bowl is blocked or blurred, it **asks for a better view** instead of guessing.
    - If you want a second opinion, *Ask the cloud about this photo* shows you the exact frame and sends it only after you tap **Allow once**. That approval covers that frame only.
    - It describes only what the camera can see. It never says food is done, hot enough, fresh or allergen-free.
+   - If the Live coach is already on, *Watch my food* uses the Live coach's watch instead. That is cloud vision over the continuous Live stream, with no per-frame prompt, and the app says so when it starts.
 4. **Coach Lite when the coach is off or the Wi-Fi drops.** Type a question about the step and the on-device model answers with a small generated panel: step cues and comparisons from a trusted Flutter GenUI catalog, validated before it renders. If it suggests a timer, the cook taps **Start timer**. The model can't start one on its own. <!-- VERIFY: SS-072 offline scope (an already-open session) if the claim covers step changes while offline -->
 5. **Label check.** Photograph an ingredient label. The on-device model lists the allergens the label mentions and compares them with the household allergens stored on this device. The wording is always "the label mentions…, read it yourself". An unreadable label never becomes "no allergens".
-6. **The trust surface.** A source badge for each request, a session ledger ("Allowed to leave", "Reported as sent", "May have been sent", "Stayed on this device"), an *On-device AI* sheet with per-feature keep-on-device switches, and first-run states that explain what to do when there's no model yet, the hardware can't run one, the camera is blocked or the network is down.
-7. **The cloud moments.** Substitution research grounded with Google Search (with sources and Search suggestions), nearby food help grounded with Google Maps, and the Gemini Live voice-and-vision coach. Each is a separate cloud request, enabled only if the build allows that route, and written to the ledger. <!-- VERIFY: gate G1 for each route; gate G3 for the Live coach on web -->
+6. **The trust surface.** A source badge for each request, a session ledger of AI requests (**What was sent**: "Allowed to leave", "Reported as sent", "May have been sent", "Stayed on this device", plus what the session saves to Firestore), an *On-device AI* sheet with per-feature keep-on-device switches, and first-run states that explain what to do when there's no model yet, the hardware can't run one, the camera is blocked or the network is down.
+7. **The cloud moments.** Substitution research grounded with Google Search (with sources and Search suggestions), nearby food help grounded with Google Maps, and the Gemini Live voice-and-vision coach. Each is enabled only if the build allows that route, and written to the ledger. Research and nearby lookups are single requests. Live is a continuous camera and microphone stream that the cook starts and stops, and the ledger records each connect. <!-- VERIFY: gate G1 for each route; gate G3 for the Live coach on web -->
 8. **Call everyone to the table.** The cook reviews a "dinner is ready" text before it goes. In the judged build this send is **simulated**: it goes to a fictional "Demo household", every status says "Simulated — no SMS sent.", and no SMS provider is contacted.
 
 ## How we built it
@@ -65,8 +66,8 @@ On the web, the SDK does not pass `responseSchema` or `systemInstruction` to Chr
 - **A pure, table-tested routing policy** picks the mode. Highest priority first: the cook's keep-on-device setting, then whether this build allows the cloud route, then hard limits (audio, images on a text-only model, the token budget, language), then model availability, then the feature's default.
   - Keep-on-device, offline and an unapproved cloud route can only give `onlyOnDevice` or "can't run here". Nothing can loosen them.
   - Modes are never widened. If a backend reports a cloud source for an `onlyOnDevice` request, the result is recorded and discarded.
-- **Consent is bound to one payload.** When media might leave the device, the cook approves that exact payload (by SHA-256 digest) for this session, once. The dispatcher re-reads privacy settings, cloud routes and connectivity immediately before every send, including after the consent dialog closes.
-- **The ledger is written at dispatch.** Each request is logged before it's sent, with the kinds of data it carries (never the content), whether it was allowed to leave, and what the SDK then reported. Live connects, grounded research and nearby lookups write to the same ledger.
+- **Consent is bound to one payload.** When a hybrid request's photo might leave the device, or the cook asks the cloud about a watch frame, the cook approves that exact payload (by SHA-256 digest) for this session, once. (The Live coach is a separate, labelled stream: starting it is the cook's consent for the whole session, and it has no per-frame prompt.) The dispatcher re-reads privacy settings, cloud routes and connectivity immediately before every send, including after the consent dialog closes.
+- **The ledger is written at dispatch.** Each AI request is logged before it's sent, with the kinds of data it carries (never the content), whether it was allowed to leave, and what the SDK then reported. A request that was allowed to leave and then failed is shown as "may have been sent", never as "stayed". Live connects, grounded research and nearby lookups write to the same ledger. The ledger covers AI requests only. It also says, in plain words, that the cooking session itself (recipe, step, confirmed items and allergy answers) is saved to Firestore so the cook can pick it up again.
 - **Stale answers are dropped.** Watch verdicts and Coach Lite panels carry the session, step and request they belong to. A late answer from an earlier step is thrown away.
 
 ### The rest of the stack
@@ -89,7 +90,7 @@ On the web, the SDK does not pass `responseSchema` or `systemInstruction` to Chr
 
 - A hybrid app on Firebase AI Logic built in Flutter, which has no hybrid API, with a policy that is the same on every platform.
 - A camera watch that runs on the device, asks for a better view when it's unsure, and doesn't guess. <!-- VERIFY: SS-075 evidence -->
-- A ledger that tells the cook what left the kitchen, kept as each request is sent, not reconstructed afterwards.
+- A ledger that tells the cook which AI requests left the device, kept as each request is sent, not reconstructed afterwards, and honest about what the session saves.
 - Privacy that holds at send time: one setting, read live, overrides every retry, fallback and remote value.
 - Honest labels throughout: on-device vs. cloud, allowed vs. sent, AI-drafted vs. reviewed recipe, simulated vs. real message.
 

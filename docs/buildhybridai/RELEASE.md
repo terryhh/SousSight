@@ -57,7 +57,8 @@ the hosted `version.json`.
 | `LIVE_BACKEND` | `none`, or `aiLogic` only if G3 passed | **Never `ephemeral`.** `aiLogic` also needs `live` in `CLOUD_ROUTES` |
 | `DINNER_MODE` | `simulated` | CI's `--judged` check requires it |
 | `FAKE_BACKEND` | absent / `false` | The judged build is not Rehearsal mode |
-| `HYBRID_CLOUD_MODEL` | __________ | A model G1 confirmed free on this project |
+| `RESEARCH_MODEL` | __________ | A model G1 confirmed free on this project. The workflow forwards this define (repo variable, default `gemini-3.8-flash`). **It is also the effective hybrid cloud model**: `HYBRID_CLOUD_MODEL` defaults to `RESEARCH_MODEL` (`lib/app/hybrid_runtime.dart`) |
+| `HYBRID_CLOUD_MODEL` | not set | **Not forwarded by `.github/workflows/firebase.yml` today**, so a repo variable has no effect. Leave it unset and pick the model with `RESEARCH_MODEL`. Using a different hybrid model would first need the workflow to forward it and `check_web_bundle.sh` / `version.json` to report it |
 | `APPCHECK_DEBUG_TOKEN` | absent | Never in a deployed or released build |
 | Server: `ENABLE_DINNER_MESSAGES` | `false` | Real SMS disabled server-side (G1) |
 
@@ -65,6 +66,10 @@ the hosted `version.json`.
       `curl -s <HOSTED_URL>/version.json`
       - `commit` equals the final SHA;
       - `config.LIVE_BACKEND`, `config.DINNER_MODE`, `config.CLOUD_ROUTES` equal the table.
+      - `version.json` does not report the model. Confirm `RESEARCH_MODEL` from the repository
+        variable (Settings → Secrets and variables → Actions → Variables; unset means the
+        workflow default `gemini-3.8-flash`) and record it in `docs/COST-LEDGER.md` next to the
+        G1 entry.
 - [ ] `tool/check_web_bundle.sh` passed in the deploy job (no debug token, no
       `generativelanguage.googleapis.com`).
 
