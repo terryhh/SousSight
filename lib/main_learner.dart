@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'a11y/web_semantics.dart';
 import 'app/hybrid_runtime.dart';
 import 'app/services_scope.dart';
 import 'config/firebase_remote_config_source.dart';
@@ -10,6 +11,9 @@ import 'pantry/recipe_catalog.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Screen readers, voice control and audits see the app without first
+  // pressing Flutter's hidden "Enable accessibility" button (SS-118).
+  enableWebSemantics();
   runApp(const SousSightBootstrap());
 }
 
