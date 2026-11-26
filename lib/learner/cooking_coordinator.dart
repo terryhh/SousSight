@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import '../ai/hybrid/hybrid_types.dart';
 import '../app/services_scope.dart';
 import '../coach_lite/coach_lite.dart';
 import '../core/analytics.dart';
@@ -42,7 +41,6 @@ class CookingCoordinator extends ChangeNotifier {
     WatchService Function(LiveCookingController live)? watchServiceFactory,
     this.onSessionReady,
     this.researchAllowed,
-    this.recordCloudLeg,
   }) : recipe = recipe ?? services.bundledRecipe,
        liveEnabled = transportFactory != null {
     ui = CookingUiController(onAction: _onUiAction, clock: services.clock);
@@ -77,9 +75,6 @@ class CookingCoordinator extends ChangeNotifier {
 
   /// Read immediately before every grounded research send. Null allows it.
   final bool Function()? researchAllowed;
-
-  /// Records a send made outside the dispatcher (Live connect, research).
-  final void Function(String feature, Set<DataKind> kinds)? recordCloudLeg;
 
   /// The applied Coach Lite answer; its timer suggestion feeds the card.
   CoachLiteAnswer? coachLiteAnswer;
@@ -269,11 +264,6 @@ $cookingUiInstructions
     }
     await live.start(cookingContext: cookingContext);
     if (!wasActive && live.isActive) {
-      recordCloudLeg?.call('live', const {
-        DataKind.text,
-        DataKind.image,
-        DataKind.audio,
-      });
       _track(AnalyticsEvents.liveCoachConnected, {'recipe_id': _recipeLabel});
     }
   }
@@ -735,7 +725,6 @@ $cookingUiInstructions
       _notify();
       return null;
     }
-    recordCloudLeg?.call('research', const {DataKind.text});
     researching = true;
     researchQuestion = query.question;
     researchResult = null;

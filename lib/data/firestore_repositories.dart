@@ -106,8 +106,10 @@ class FirestoreSessionRepository implements SessionRepository {
       .map((s) => CookingSession.fromMap(s.id, s.data()!));
 
   @override
-  Future<CookingSession> update(String sessionId,
-      CookingSession Function(CookingSession current) mutate) {
+  Future<CookingSession> update(
+    String sessionId,
+    CookingSession Function(CookingSession current) mutate,
+  ) {
     final ref = _sessions.doc(sessionId);
     return _db.runTransaction((tx) async {
       final snap = await tx.get(ref);

@@ -196,8 +196,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
     final detail = _clarificationController.text.trim();
     if (detail.isEmpty) {
       setState(() {
-        _clarificationError =
-            'Enter a short answer so we can research the right option for your kitchen.';
+        _clarificationError = 'Enter a short answer so we can research the right option for your kitchen.';
       });
       return;
     }
@@ -221,8 +220,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
     final fact = _confirmationController.text.trim();
     if (fact.isEmpty) {
       setState(() {
-        _confirmationError =
-            'Review or type the substitution fact you want to use before confirming.';
+        _confirmationError = 'Review or type the substitution fact you want to use before confirming.';
       });
       return;
     }
@@ -349,8 +347,9 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
           key: const Key('research_toggle_collapse_button'),
           onPressed: () => setState(() => _isExpanded = !_isExpanded),
           constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-          tooltip:
-              _isExpanded ? 'Minimize research panel' : 'Expand research panel',
+          tooltip: _isExpanded
+              ? 'Minimize research panel'
+              : 'Expand research panel',
           icon: Icon(
             _isExpanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
           ),
@@ -372,7 +371,9 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
       key: const Key('research_original_question_box'),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.45,
+        ),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -566,9 +567,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
             child: FilledButton.tonalIcon(
               key: const Key('research_retry_button'),
               onPressed: _isLoading ? null : _retryCurrentQuestion,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(120, 48),
-              ),
+              style: FilledButton.styleFrom(minimumSize: const Size(120, 48)),
               icon: const Icon(Icons.refresh_rounded),
               label: const Text('Retry search'),
             ),
@@ -685,7 +684,9 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
         key: const Key('research_no_citations_notice'),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.4,
+          ),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -825,9 +826,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
             child: FilledButton.icon(
               key: const Key('research_clarification_submit_button'),
               onPressed: _isLoading ? null : _submitClarification,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(160, 48),
-              ),
+              style: FilledButton.styleFrom(minimumSize: const Size(160, 48)),
               icon: const Icon(Icons.search_rounded, size: 18),
               label: const Text('Update research'),
             ),
@@ -885,7 +884,8 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
             onSubmitted: (_) => _confirmFact(),
             decoration: InputDecoration(
               labelText: 'Fact to record for your session',
-              hintText: 'e.g., Using 1 tbsp apple cider vinegar instead of lemon',
+              hintText:
+                  'e.g., Using 1 tbsp apple cider vinegar instead of lemon',
               errorText: _confirmationError,
             ),
           ),
@@ -918,9 +918,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
             child: FilledButton.icon(
               key: const Key('research_confirm_fact_button'),
               onPressed: _confirmFact,
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(180, 48),
-              ),
+              style: FilledButton.styleFrom(minimumSize: const Size(180, 48)),
               icon: const Icon(Icons.check_rounded, size: 18),
               label: const Text('Confirm for my cook'),
             ),
@@ -959,9 +957,7 @@ class _CookingResearchPanelState extends State<CookingResearchPanel> {
         TextButton.icon(
           key: const Key('research_footer_retry_button'),
           onPressed: _isLoading ? null : _retryCurrentQuestion,
-          style: TextButton.styleFrom(
-            minimumSize: const Size(88, 48),
-          ),
+          style: TextButton.styleFrom(minimumSize: const Size(88, 48)),
           icon: const Icon(Icons.refresh_rounded, size: 18),
           label: const Text('Retry'),
         ),
