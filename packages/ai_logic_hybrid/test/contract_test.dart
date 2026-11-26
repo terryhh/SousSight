@@ -27,6 +27,32 @@ void main() {
     expect((map['parts'] as List).last, containsPair('type', 'inlineData'));
   });
 
+  test('a cancelled call keeps its own scripted answer', () async {
+    final fake = FakeHybridInference()
+      ..enqueueText('old-frame')
+      ..enqueueText('new-frame')
+      ..delay = const Duration(milliseconds: 20);
+    final a = fake.generate(_req('A'));
+    await fake.cancel('A');
+    await expectLater(
+      a,
+      throwsA(isA<HybridException>().having((e) => e.code, 'code', HybridErrorCode.cancelled)),
+    );
+    final b = await fake.generate(_req('B'));
+    expect(b.text, 'new-frame');
+    expect(b.requestId, 'B');
+  });
+
+  test('the fake honours task.timeout and discards the late result', () async {
+    final fake = FakeHybridInference()
+      ..enqueueText('late')
+      ..delay = const Duration(milliseconds: 50);
+    await expectLater(
+      fake.generate(_req('T', timeout: const Duration(milliseconds: 5))),
+      throwsA(isA<HybridException>().having((e) => e.code, 'code', HybridErrorCode.timeout)),
+    );
+  });
+
   test('fake returns scripted results with the request id and records calls', () async {
     final fake = FakeHybridInference()..enqueueText('ok', source: InferenceSource.cloud);
     final r = await fake.generate(const HybridRequest(
@@ -39,3 +65,15 @@ void main() {
     expect(fake.requests, hasLength(1));
   });
 }
+
+HybridRequest _req(String id, {Duration timeout = const Duration(seconds: 1)}) =>
+    HybridRequest(
+      requestId: id,
+      mode: HybridMode.preferOnDevice,
+      task: HybridTask(
+        feature: 'f',
+        parts: const [HybridText('q')],
+        maxOutputTokens: 8,
+        timeout: timeout,
+      ),
+    );
