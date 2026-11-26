@@ -16,6 +16,7 @@ paths = ['''^lib/firebase_options\.dart$''']
 regexes = [
   '''^AIzaSyAmHNYWdxNPq6qgark3xXfDiqVXAEQ1Ff4$''',
   '''^AIzaSyD_pIsMs49Y3cbEHtCHEJds89b8jzdODgk$''',
+  '''^AIzaSyBIvqiXsaU5r1NxL9UcyYdVy3tO9h8Aeic$''',
 ]
 
 [[allowlists]]
