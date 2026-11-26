@@ -616,3 +616,92 @@ class _ReadinessCard extends StatelessWidget {
     );
   }
 }
+
+/// One calm line for the first screen (SS-089): what the cook can do now,
+/// never a stack of warnings. The full detail lives in the "On this device"
+/// sheet behind "Details". Null when there is nothing worth saying.
+///
+/// [pantryLocalOnly] is the cook's effective "keep Pantry scan on this
+/// device" setting: with it on, the line never says the list is sent online.
+String? readinessCalmLine(
+  AppReadiness readiness, {
+  bool pantryLocalOnly = false,
+}) {
+  final states = readiness.states;
+  if (states.contains(ReadinessState.ready)) return null;
+  // One honest line for a paused cloud, not three stacked cards (Maya).
+  if (states.contains(ReadinessState.attestationFailed)) {
+    return readiness.localReady
+        ? "Online help is paused: this copy of SousSight couldn't be verified. "
+              'Help on this device still works.'
+        : "Online help is paused: this copy of SousSight couldn't be verified. "
+              'Reloading the page may fix it; meanwhile pick a recipe below.';
+  }
+  if (states.contains(ReadinessState.quotaReached) && !readiness.localReady) {
+    return "Today's online help is used up. Pick a recipe below — steps and "
+        'timers still work.';
+  }
+  if (!readiness.canUseAi) {
+    return states.contains(ReadinessState.offline)
+        ? "You're offline. Pick a recipe below — steps and timers still work."
+        : "Pick a recipe below to start cooking. Matching your food may not "
+              'work on this device right now.';
+  }
+  if (readiness.items.any((i) => i.cloudPath) && !readiness.localReady) {
+    return pantryLocalOnly
+        ? "You chose to keep pantry scans on this device, and it can't run "
+              'them here. Pick a recipe below to start cooking.'
+        // No definite transfer claim here: whether a request goes online is
+        // decided per request (policy, settings) and each answer says where
+        // it ran (Codex #221).
+        : 'Type what you have, or pick a recipe below. This device may not '
+              "answer on its own; if a request goes online to Google's AI, "
+              'its answer says so.';
+  }
+  return 'Type what you have, or pick a recipe below.';
+}
+
+/// The compact form of [ReadinessPanel]: [readinessCalmLine] and a
+/// "Details" button. Renders nothing when the line is null.
+class ReadinessLine extends StatelessWidget {
+  const ReadinessLine({
+    super.key,
+    required this.readiness,
+    required this.onDetails,
+    this.pantryLocalOnly = false,
+  });
+
+  final AppReadiness readiness;
+  final VoidCallback onDetails;
+
+  /// See [readinessCalmLine].
+  final bool pantryLocalOnly;
+
+  @override
+  Widget build(BuildContext context) {
+    final line = readinessCalmLine(readiness, pantryLocalOnly: pantryLocalOnly);
+    if (line == null) return const SizedBox.shrink();
+    const ink = Color(0xff5c4a2e);
+    return Row(
+      key: const ValueKey('readiness-line'),
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const ExcludeSemantics(
+          child: Icon(Icons.info_outline, size: 18, color: ink),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            line,
+            style: const TextStyle(fontSize: 14, height: 1.35, color: ink),
+          ),
+        ),
+        TextButton(
+          key: const ValueKey('readiness-details'),
+          onPressed: onDetails,
+          child: const Text('Details'),
+        ),
+      ],
+    );
+  }
+}

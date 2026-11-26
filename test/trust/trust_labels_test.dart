@@ -49,7 +49,8 @@ void main() {
   });
 
   test('unknown features get a readable fallback label', () {
-    expect(featureLabel('coach_lite'), 'Coach Lite');
+    expect(featureLabel('coach_lite'), 'Typed question');
+    expect(featureLabel('local_watch_cloud_check'), 'Photo check online');
     expect(featureLabel('spice_rack'), 'Spice rack');
     expect(featureLabel('_'), 'Feature');
   });

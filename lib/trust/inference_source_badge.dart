@@ -9,6 +9,7 @@ import '../ai/hybrid/hybrid_types.dart';
 import 'route_reason_text.dart';
 import 'trust_labels.dart';
 import 'trust_motion.dart';
+import '../app/centered_scroll.dart';
 
 class InferenceSourceBadge extends StatelessWidget {
   const InferenceSourceBadge({
@@ -29,7 +30,7 @@ class InferenceSourceBadge extends StatelessWidget {
   final RouteReason? reason;
 
   String _label(InferenceLeg leg) {
-    final base = legLabel(leg, localModel: localModelFamily);
+    final base = legLabel(leg);
     final error = leg.error;
     return error == null ? base : '$base (${errorLabel(error)})';
   }
@@ -177,7 +178,7 @@ Future<void> showInferenceDetails(
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: true,
-  constraints: const BoxConstraints(maxWidth: 720),
+  constraints: fullWidthSheet,
   builder: (context) => InferenceDetails(
     legs: legs,
     localModelFamily: localModelFamily,
@@ -201,10 +202,10 @@ class InferenceDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('inference-details'),
       shrinkWrap: true,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
+      bottom: 28,
       children: [
         Semantics(
           header: true,
@@ -257,7 +258,8 @@ class _LegDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final outcome = legOutcome(leg);
     final colors = outcomeColors(outcome);
-    final where = legLabel(leg, localModel: localModelFamily);
+    final where = legLabel(leg);
+    final model = legModelName(leg, localModel: localModelFamily);
     final kinds = dataKindsPhrase(leg.kinds);
     final permission = leg.transferPermitted
         ? 'Allowed to leave this device: $kinds.'
@@ -295,7 +297,8 @@ class _LegDetail extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(outcomeExplanation(outcome)),
+                    Text(legExplanation(leg)),
+                    if (model != null) Text('Model: $model'),
                     Text('Used: $kinds. $permission'),
                     if (leg.error case final error?)
                       Text("This attempt didn't finish: ${errorLabel(error)}."),

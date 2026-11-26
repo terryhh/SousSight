@@ -125,7 +125,8 @@ void main() {
         await _pumpButtons(tester, hybrid);
         await _outlastStartup(tester);
         expect(tester.takeException(), isNull);
-        expect(find.byKey(const ValueKey('readiness-panel')), findsOneWidget);
+        // SS-089 shows one calm readiness line; details sit behind it.
+        expect(find.byKey(const ValueKey('readiness-line')), findsOneWidget);
       });
     });
   }

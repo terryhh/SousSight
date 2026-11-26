@@ -27,6 +27,12 @@ enum LiveCookingStatus {
   error,
 }
 
+/// Shown when the Live coach would watch while the cook keeps Watch my food
+/// on this device.
+const kLiveWatchLocalOnlyNotice =
+    'You chose to keep Watch my food on this device, so the Live coach '
+    "won't watch. Tap Stop to end Live, then start the watch.";
+
 /// Coordinates one user-started camera/microphone session. It never sends
 /// notifications or advances recipe state without the host's tool handler.
 class LiveCookingController extends ChangeNotifier {
@@ -40,6 +46,7 @@ class LiveCookingController extends ChangeNotifier {
     this.sessionWarningLead = const Duration(minutes: 1),
     this.idleLimit = const Duration(minutes: 3),
     this.watchLimit = const Duration(minutes: 3),
+    this.watchLocalOnly,
   }) : _clock = clock ?? DateTime.now,
        sessionLimit =
            sessionLimit ?? const Duration(minutes: liveSessionMaxMinutes);
@@ -58,6 +65,18 @@ class LiveCookingController extends ChangeNotifier {
   final Duration sessionWarningLead;
   final Duration idleLimit;
   final Duration watchLimit;
+
+  /// The cook's "Keep Watch my food on this device" setting, read live at
+  /// every start and every periodic check: while on, Live never watches
+  /// (Codex #221).
+  final bool Function()? watchLocalOnly;
+
+  /// Completed coach turns; the UI reveals a reply once per turn.
+  int completedTurns = 0;
+
+  /// Bumped whenever reply text arrives, so a turn with no new text (a
+  /// tool-only turn) never re-reveals the previous reply.
+  int coachTranscriptVersion = 0;
   LiveCookingStatus status = LiveCookingStatus.idle;
   String? error;
   String? notice;
@@ -270,6 +289,12 @@ class LiveCookingController extends ChangeNotifier {
     Duration interval = const Duration(seconds: 15),
   }) {
     if (!isActive || goal.trim().isEmpty) return null;
+    if (watchLocalOnly?.call() ?? false) {
+      stopWatch();
+      notice = kLiveWatchLocalOnlyNotice;
+      _notify();
+      return null;
+    }
     stopWatch();
     watchGoal = goal.trim();
     final id = 'watch-$_epoch-${++_watchSequence}';
@@ -281,6 +306,12 @@ class LiveCookingController extends ChangeNotifier {
         ? const Duration(seconds: 3)
         : interval;
     _watchTimer = Timer.periodic(period, (_) {
+      if (watchLocalOnly?.call() ?? false) {
+        stopWatch();
+        notice = kLiveWatchLocalOnlyNotice;
+        _notify();
+        return;
+      }
       if (status != LiveCookingStatus.listening ||
           !hasFreshFrame ||
           _readyReported) {
@@ -344,6 +375,7 @@ class LiveCookingController extends ChangeNotifier {
               _newCoachTranscript ? '' : coachTranscript,
               text,
             );
+            coachTranscriptVersion++;
             _newCoachTranscript = false;
           }
           if (finished) _newCoachTranscript = true;
@@ -352,6 +384,7 @@ class LiveCookingController extends ChangeNotifier {
       case LiveTurnComplete():
         _newUserTranscript = true;
         _newCoachTranscript = true;
+        completedTurns++;
         status = LiveCookingStatus.listening;
       case LiveInterrupted():
         _newCoachTranscript = true;

@@ -7,35 +7,49 @@ import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
 import 'ledger_source.dart';
+import 'privacy_receipt.dart' show cloudFirst;
 import 'trust_labels.dart';
 import 'trust_motion.dart';
+import '../app/centered_scroll.dart';
 
 /// What the session keeps, and what the Live coach is told. Static, because
 /// it describes the app, not one request. Keep in step with
 /// `FirestoreSessionRepository`, `CookingSession.toMap` and
 /// `CookingCoordinator.cookingContext`.
 const sessionStorageNote =
-    'Your cooking session is saved to Firestore so you can pick it up again: '
+    'Your cooking session is saved online so you can pick it up again: '
     'the recipe, ingredient checks, substitutions, step progress, your timer, '
     'the facts you confirm (including allergy answers) and the delivery status '
     'of any dinner-ready message. Camera frames and voice clips are not saved '
     'there.';
+
+/// The technical version, shown only under "Details".
+const sessionStorageDetails =
+    'Sessions are stored in Cloud Firestore. AI requests go through Firebase '
+    'AI Logic: on this device with the browser or phone model when it can, '
+    "otherwise online to Google's Gemini models where this build allows it.";
 
 const liveCoachNote =
     'When the Live coach is on, it is told the recipe, the facts you confirmed '
     "and the recipe's allergy context, and it hears and sees what you share "
     'while it is connected.';
 
+/// Practice mode keeps its pretend session in memory (Codex #221).
+const practiceStorageNote =
+    'Practice mode keeps this cooking session in memory on this device only. '
+    'Nothing is saved online, and it is gone when you close SousSight.';
+
 Future<void> showLedgerSheet(
   BuildContext context, {
   required LedgerSource ledger,
   String? localModelFamily,
+  bool practice = false,
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: true,
-  constraints: const BoxConstraints(maxWidth: 720),
+  constraints: fullWidthSheet,
   builder: (context) => DraggableScrollableSheet(
     expand: false,
     initialChildSize: 0.85,
@@ -45,6 +59,7 @@ Future<void> showLedgerSheet(
       ledger: ledger,
       localModelFamily: localModelFamily,
       controller: controller,
+      practice: practice,
     ),
   ),
 );
@@ -118,8 +133,9 @@ class LedgerSummary {
   final List<LedgerRow> simulated;
 }
 
-/// One line of the ledger's headline counter: "0 photos left your kitchen
-/// this session". [count] is shown large; [phrase] follows it.
+/// One line of the ledger's headline counter: "0 photos recorded as sent
+/// online since you opened SousSight". The ledger spans the app run, across New
+/// cook (Codex #221). [count] is shown large; [phrase] follows it.
 class LedgerCount {
   const LedgerCount(this.count, this.phrase, this.tone);
   final int count;
@@ -159,9 +175,12 @@ class LedgerCounters {
         if (outcome == LegOutcome.maybeSent) liveMaybe++;
         continue;
       }
+      // A cloud-first leg allowed to leave may have sent its input before
+      // the on-device answer came back: the same rule as the receipt.
       final bucket = reportedAsSent(outcome)
           ? sent
-          : outcome == LegOutcome.maybeSent
+          : outcome == LegOutcome.maybeSent ||
+                (outcome == LegOutcome.onDevice && cloudFirst(leg))
           ? maybe
           : outcome == LegOutcome.onDevice
           ? local
@@ -217,7 +236,8 @@ class LedgerCounters {
     if (photos > 0) {
       return LedgerCount(
         photos,
-        '${noun(DataKind.image, photos)} went to Google cloud this session',
+        '${noun(DataKind.image, photos)} sent online to Google\'s AI since '
+        'you opened SousSight',
         LegOutcome.cloudSdk,
       );
     }
@@ -225,7 +245,7 @@ class LedgerCounters {
       return LedgerCount(
         liveStreams,
         '${_liveNoun(liveStreams)} streamed your camera and microphone to '
-        'Google cloud this session',
+        'Google\'s AI since you opened SousSight',
         LegOutcome.cloudSdk,
       );
     }
@@ -234,15 +254,16 @@ class LedgerCounters {
       return LedgerCount(
         n,
         maybe > 0
-            ? '${noun(DataKind.image, n)} may have left your kitchen this '
-                  'session'
-            : '${_liveNoun(n)} may have streamed your camera this session',
+            ? '${noun(DataKind.image, n)} may have been sent online since '
+                  'you opened SousSight'
+            : '${_liveNoun(n)} may have streamed your camera since you '
+                  'opened SousSight',
         LegOutcome.maybeSent,
       );
     }
     return LedgerCount(
       0,
-      'photos left your kitchen this session',
+      'photos recorded as sent online since you opened SousSight',
       LegOutcome.onDevice,
     );
   }
@@ -301,7 +322,7 @@ class LedgerCounters {
         lines.add(
           LedgerCount(
             n,
-            '${noun(kind, n)} went to Google cloud',
+            '${noun(kind, n)} sent online to Google\'s AI',
             LegOutcome.cloudSdk,
           ),
         );
@@ -442,11 +463,15 @@ class LedgerView extends StatelessWidget {
     required this.ledger,
     this.localModelFamily,
     this.controller,
+    this.practice = false,
   });
 
   final LedgerSource ledger;
   final String? localModelFamily;
   final ScrollController? controller;
+
+  /// Practice mode: the storage note describes the in-memory session.
+  final bool practice;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -482,24 +507,23 @@ class LedgerView extends StatelessWidget {
         : Column(
             key: ValueKey('ledger-$section'),
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final row in rows)
-                _LedgerRowTile(row: row, localModelFamily: localModelFamily),
-            ],
+            children: [for (final row in rows) _LedgerRowTile(row: row)],
           );
 
     final sentCount = summary.reportedSent.fold(0, (n, r) => n + r.count);
     final localCount = summary.stayedLocal.fold(0, (n, r) => n + r.count);
+    final simulatedCount = summary.simulated.fold(0, (n, r) => n + r.count);
+    final maybeCount = summary.maybeSent.fold(0, (n, r) => n + r.count);
 
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('ledger-view'),
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+      bottom: 32,
       children: [
         Semantics(
           header: true,
           child: Text(
-            'What left this device',
+            'What we sent',
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
             ),
@@ -512,16 +536,22 @@ class LedgerView extends StatelessWidget {
           liveRegion: true,
           child: Text(
             summary.total == 0
-                ? 'No AI requests yet this session.'
-                : '${summary.total} AI ${summary.total == 1 ? 'request' : 'requests'} '
-                      'this session: $localCount stayed on this device, '
-                      '$sentCount reported as sent.',
+                ? 'No AI requests or location shares recorded since you '
+                      'opened SousSight. '
+                      "A question or scan that couldn't start isn't listed: "
+                      'nothing ran and nothing was sent for it.'
+                : '${summary.total} ${summary.total == 1 ? 'request' : 'requests'} '
+                      'since you opened SousSight: $localCount answered on '
+                      'this device, '
+                      '$sentCount sent online'
+                      '${maybeCount == 0 ? '' : ', $maybeCount may have been sent'}'
+                      '${simulatedCount == 0 ? '' : ', $simulatedCount practice (pretend)'}.',
             key: const ValueKey('ledger-summary'),
           ),
         ),
         heading('Allowed to leave'),
         note(
-          'SousSight allowed these to go to the cloud. Being allowed is not '
+          'SousSight allowed these to be sent online. Being allowed is not '
           'proof that anything was sent.',
         ),
         rows(
@@ -531,7 +561,7 @@ class LedgerView extends StatelessWidget {
         ),
         heading('Reported as sent'),
         note(
-          'The Firebase AI Logic SDK or our own client said these went out.',
+          "Google's AI tools or SousSight's own app said these went online.",
         ),
         rows(summary.reportedSent, 'Nothing was reported as sent.', 'sent'),
         if (summary.maybeSent.isNotEmpty) ...[
@@ -555,18 +585,34 @@ class LedgerView extends StatelessWidget {
           rows(summary.notFinishedLocal, '', 'not-finished'),
         ],
         if (summary.simulated.isNotEmpty) ...[
-          heading('Simulated'),
-          note('Rehearsal only. No model ran and nothing was sent.'),
+          heading(kPracticeLabel),
+          note('No AI ran and nothing was sent.'),
           rows(summary.simulated, '', 'simulated'),
         ],
         heading('What this session keeps'),
-        const Text(sessionStorageNote, key: ValueKey('ledger-storage-note')),
+        Text(
+          practice ? practiceStorageNote : sessionStorageNote,
+          key: const ValueKey('ledger-storage-note'),
+        ),
         const SizedBox(height: 8),
         const Text(liveCoachNote, key: ValueKey('ledger-live-note')),
+        if (!practice)
+          ExpansionTile(
+            key: const ValueKey('ledger-details'),
+            tilePadding: EdgeInsets.zero,
+            title: const Text(
+              'Details',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            childrenPadding: const EdgeInsets.only(bottom: 8),
+            children: const [Text(sessionStorageDetails)],
+          ),
         const SizedBox(height: 12),
         note(
-          'This list covers this session only, shows kinds of data and never '
-          'their content, and is cleared when you close SousSight.',
+          'This list covers everything since you opened SousSight, shows '
+          'kinds of data and never their content, and is cleared when you '
+          'close it.',
         ),
       ],
     );
@@ -574,15 +620,14 @@ class LedgerView extends StatelessWidget {
 }
 
 class _LedgerRowTile extends StatelessWidget {
-  const _LedgerRowTile({required this.row, this.localModelFamily});
+  const _LedgerRowTile({required this.row});
 
   final LedgerRow row;
-  final String? localModelFamily;
 
   @override
   Widget build(BuildContext context) {
     final colors = outcomeColors(row.outcome);
-    final where = outcomeLabel(row.outcome, localModel: localModelFamily);
+    final where = outcomeLabel(row.outcome);
     final times = row.count == 1 ? '' : ' · ${row.count} times';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),

@@ -83,9 +83,12 @@ void main() {
         'Jam (optional) · about 1 tbsp',
       ],
     );
-    // Before Live connects, a visual check asks the cook to connect first;
-    // nothing is judged from the camera.
+    // Before Live connects, a visual check points to the step's own cue and
+    // to Start; nothing is judged from the camera, and nothing is attributed
+    // to the cook who made no choice (SS-089).
     await cook.checkNow();
-    expect(cook.alert, 'Connect the live coach first, then show your food.');
+    expect(cook.alert, startsWith("Compare your food with this step's cue:"));
+    expect(cook.alert, endsWith('To have the coach look, tap Start first.'));
+    expect(cook.alert, isNot(contains('You said')));
   });
 }

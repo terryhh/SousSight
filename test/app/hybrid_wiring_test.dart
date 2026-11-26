@@ -227,7 +227,8 @@ void main() {
       expect(kAndroidModel, AndroidModelOption.deviceList);
     });
 
-    test('the first cooking session keeps pantry legs; a new cook clears', () {
+    test('the first cooking session keeps the pantry legs; New cook starts '
+        'an empty ledger', () {
       final hybrid = _runtime(FakeHybridInference());
       final runId = hybrid.sessionId;
       expect(runId, startsWith('run-'));
@@ -240,8 +241,9 @@ void main() {
       hybrid.bindCookingSession('s1');
       expect(hybrid.ledgerSource.legs, hasLength(1));
       hybrid.bindCookingSession('s2');
+      expect(hybrid.sessionId, 's2');
+      // A different session (New cook) starts its own ledger.
       expect(hybrid.ledgerSource.legs, isEmpty);
-      expect(hybrid.ledger.sessionId, 's2');
     });
 
     test('the ledger source notifies the trust UI', () {

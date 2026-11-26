@@ -66,8 +66,19 @@ class PantryResult {
 
 /// What the cook shared. Media stays in memory for one request only.
 class PantryInput {
-  const PantryInput({this.text = '', this.photoJpeg, this.audioWav});
+  const PantryInput({
+    this.text = '',
+    this.photoJpeg,
+    this.audioWav,
+    this.simulatedPhoto = false,
+    this.simulatedAudio = false,
+  });
   final String text;
+
+  /// Practice mode: a pretend photo or voice clip was "attached" (no bytes),
+  /// so the practice ledger can record the right kinds (Codex #221).
+  final bool simulatedPhoto;
+  final bool simulatedAudio;
   final Uint8List? photoJpeg;
   final Uint8List? audioWav;
 

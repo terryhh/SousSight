@@ -118,6 +118,14 @@ void main() {
 
   Future<void> review(WidgetTester tester) async {
     final button = find.byKey(const ValueKey('new-cook'));
+    // A research answer may have scrolled the header away (SS-089 reveal).
+    if (button.evaluate().isEmpty) {
+      await tester.dragUntilVisible(
+        button,
+        find.byType(CustomScrollView).first,
+        const Offset(0, 300),
+      );
+    }
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pump();
@@ -154,6 +162,14 @@ void main() {
       final gate = Completer<void>();
       f.sessions.gate = gate;
       final button = find.byKey(const ValueKey('new-cook'));
+      // The Live reply was scrolled into view (SS-089); back to the header.
+      if (button.evaluate().isEmpty) {
+        await tester.dragUntilVisible(
+          button,
+          find.byType(CustomScrollView).first,
+          const Offset(0, 300),
+        );
+      }
       final start = tester.widget<TextButton>(button).onPressed!;
 
       // Two events can use the same enabled callback before Flutter rebuilds.

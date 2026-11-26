@@ -84,6 +84,9 @@ void main() {
       'peanut_butter',
     );
     expect(matchIngredientId('butter', sandwich), isNull);
+    // Codex #221: a different food that contains the name is not it.
+    expect(matchIngredientId('peanut butter cups', sandwich), isNull);
+    expect(matchIngredientId('sunflower seed butter', sandwich), isNull);
   });
 
   test('pantry handoff seeds the same learner+recipe session', () async {

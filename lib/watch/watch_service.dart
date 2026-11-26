@@ -16,6 +16,10 @@ enum WatchRoute {
   live,
 }
 
+const _liveLocalOnlyMessage =
+    'You chose to keep Watch my food on this device. Tap Stop to end the '
+    'Live coach, then start the watch.';
+
 /// The outcome of [WatchService.startWatch]. [message] is cook-facing and
 /// always states which route was chosen, or why none could start.
 @immutable
@@ -36,11 +40,19 @@ class WatchService extends ChangeNotifier {
     required this.startLiveWatch,
     required this.stopLiveWatch,
     FutureOr<bool> Function()? localVisionSupported,
+    this.liveAvailable = true,
+    this.simulated = false,
   }) : _localVisionSupported = localVisionSupported ?? (() => true) {
     local.addListener(_onLocal);
   }
 
   final LocalWatchController local;
+
+  /// False in builds without the Live coach: messages never point to it.
+  final bool liveAvailable;
+
+  /// Practice mode: messages say the watch is pretend.
+  final bool simulated;
 
   /// `LiveCookingController.startWatch`: returns a watch id or null.
   final String? Function(String goal) startLiveWatch;
@@ -80,8 +92,11 @@ class WatchService extends ChangeNotifier {
   String? get statusText => switch (activeRoute) {
     WatchRoute.local => local.statusText,
     WatchRoute.live =>
-      'The Live coach is watching (cloud vision): camera and microphone are '
-          'streaming to Gemini Live.',
+      simulated
+          ? 'Practice mode: the pretend live coach is "watching". Nothing is '
+                'streamed.'
+          : 'The Live coach is watching: camera and microphone are streaming '
+                "online to Google's AI.",
     null => local.statusText ?? _message,
   };
 
@@ -108,8 +123,18 @@ class WatchService extends ChangeNotifier {
       );
     }
     if (liveActive) {
+      // "Keep Watch my food on this device" never becomes a cloud watch
+      // through Live: ask the cook to stop Live first (Codex #221).
+      if (local.privacy?.localOnly(kLocalWatchFeature) ?? false) {
+        return _result(const WatchStart(message: _liveLocalOnlyMessage));
+      }
       await local.stop();
       if (!current()) return superseded;
+      // Re-read right before the Live watch starts: the setting may have
+      // changed while the local watch stopped (Codex #221).
+      if (local.privacy?.localOnly(kLocalWatchFeature) ?? false) {
+        return _result(const WatchStart(message: _liveLocalOnlyMessage));
+      }
       final id = startLiveWatch(cue);
       _liveWatchId = id;
       return _result(
@@ -128,10 +153,12 @@ class WatchService extends ChangeNotifier {
     if (!current()) return superseded;
     if (!supported) {
       return _result(
-        const WatchStart(
-          message:
-              'The on-device model here can\'t look at photos. Connect the '
-              'Live coach to watch with cloud vision.',
+        WatchStart(
+          message: liveAvailable
+              ? 'The on-device model here can\'t look at photos. Connect the '
+                    'Live coach to watch with cloud vision.'
+              : "This device can't check photos yet — \"On this device\" "
+                    'shows how to set it up. Meanwhile, look for: $cue',
         ),
       );
     }
@@ -152,6 +179,9 @@ class WatchService extends ChangeNotifier {
         watchId: id,
         message: id == null
             ? (local.notice ?? 'The on-device watch could not start.')
+            : simulated
+            ? 'Practice watch: pretend checks of a practice camera picture. '
+                  'Nothing is sent.'
             : 'Watching on this device: camera on, microphone off. Photos '
                   'are checked by the on-device model.',
       ),
@@ -210,6 +240,15 @@ class WatchService extends ChangeNotifier {
     _invalidateStartup();
     await local.onLiveConnecting();
     await capture.handOffToLive();
+  }
+
+  /// Call when Live's own watch ended while Live stays connected (for
+  /// example, Watch local-only turned on mid-watch): the status no longer
+  /// says the Live coach is watching (Codex #221).
+  void liveWatchEnded() {
+    if (_liveWatchId == null) return;
+    _liveWatchId = null;
+    _notify();
   }
 
   /// Call when Live stops for any reason.

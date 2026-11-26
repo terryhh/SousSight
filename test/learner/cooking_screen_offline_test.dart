@@ -245,10 +245,10 @@ void main() {
     );
     await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pump();
-    expect(find.text('Coach Lite is thinking…'), findsOneWidget);
+    expect(find.textContaining('Thinking about'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 20));
     await tester.pumpAndSettle();
-    expect(find.text('Coach Lite is thinking…'), findsNothing);
+    expect(find.textContaining('Thinking about'), findsNothing);
     expect(find.byKey(const ValueKey('coach-lite-source')), findsOneWidget);
     expect(find.byType(TimerSuggestionCard), findsOneWidget);
     expect(find.text(offlineBannerText), findsOneWidget);
@@ -299,7 +299,10 @@ void main() {
     expect(research.queries.single.question, contains('look for'));
     researchOk = false;
     await tester.tap(researchButton);
-    await tester.pumpAndSettle();
+    // The first research request is still running, so the dock's
+    // "Checking sources…" spinner (SS-089) keeps animating: no settle.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
     expect(find.textContaining('Grounded research is off'), findsOneWidget);
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);

@@ -122,7 +122,7 @@ class WatchVerdict {
     final seen = whatISee.isEmpty ? '' : ' I can see: $whatISee';
     final where = switch (source) {
       WatchVerdictSource.cloud => ' (cloud check of one photo)',
-      WatchVerdictSource.simulated => ' (simulated)',
+      WatchVerdictSource.simulated => ' (practice mode, pretend answer)',
       _ => '',
     };
     return switch (state) {
@@ -206,17 +206,48 @@ const _fillerStems = {
   'clea', 'show',
 };
 
+/// Food and cookware nouns. Naming the food ("chicken", "peanut butter")
+/// or the pan says nothing about whether the cue's visible change happened,
+/// so they never count as overlap (Codex #221 P1).
+const _foodNouns = {
+  'apple', 'avocado', 'bacon', 'banana', 'basil', 'batter', 'bean', //
+  'beef', 'berry', 'board', 'bowl', 'bread', 'broccoli', 'broth', 'butter',
+  'cabbage', 'carrot', 'cheese', 'chicken', 'chickpea', 'cilantro', 'corn',
+  'cream', 'cucumber', 'dish', 'dough', 'dressing', 'egg', 'filling', 'fish',
+  'flour', 'fruit', 'garlic', 'ham', 'herb', 'honey', 'jam', 'jelly',
+  'juice', 'kale', 'lemon', 'lentil', 'lettuce', 'lime', 'mayonnaise',
+  'meat', 'milk', 'mushroom', 'mustard', 'noodle', 'oil', 'onion', 'oven',
+  'pan', 'parsley', 'pasta', 'pea', 'peanut', 'pepper', 'piece', 'plate',
+  'pork', 'pot', 'potato', 'rice', 'salmon', 'salsa', 'salt', 'sauce',
+  'sausage', 'shrimp', 'skillet', 'slice', 'soup', 'spice', 'spinach',
+  'spoon', 'steak', 'stock', 'stove', 'sugar', 'toast', 'tofu', 'tomato',
+  'tortilla', 'tray', 'turkey', 'vegetable', 'veggie', 'water', 'zucchini',
+};
+
+bool _isFoodNoun(String word) =>
+    _foodNouns.contains(word) ||
+    (word.endsWith('ies') &&
+        _foodNouns.contains('${word.substring(0, word.length - 3)}y')) ||
+    (word.endsWith('es') &&
+        _foodNouns.contains(word.substring(0, word.length - 2))) ||
+    (word.endsWith('s') &&
+        _foodNouns.contains(word.substring(0, word.length - 1)));
+
 Set<String> _contentStems(String text) => {
   for (final word in RegExp(
     r'[a-záéíóúñü]+',
   ).allMatches(text.toLowerCase()).map((m) => m[0]!))
-    if (word.length >= 4 && !_fillerStems.contains(word.substring(0, 4)))
+    if (word.length >= 4 &&
+        !_isFoodNoun(word) &&
+        !_fillerStems.contains(word.substring(0, 4)))
       word.substring(0, 4),
 };
 
-/// True when [observation] shares at least one content word with [cue]
+/// True when [observation] shares a cue-specific visual word with [cue]
 /// ("Golden edges." and "golden at the edges"), so a positive verdict
-/// points at the thing the step asked the camera to look for.
+/// points at the change the step asked the camera to look for. Food and
+/// cookware nouns don't count: "The chicken is in the pan" says nothing
+/// about "Chicken is golden".
 bool relatesToCue(String observation, String cue) =>
     _contentStems(observation).intersection(_contentStems(cue)).isNotEmpty;
 

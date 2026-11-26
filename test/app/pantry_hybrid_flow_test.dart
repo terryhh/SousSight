@@ -70,7 +70,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('readiness-panel')), findsOneWidget);
+    // SS-089: a ready device gets no warning stack and no calm line.
+    expect(find.byKey(const ValueKey('readiness-panel')), findsNothing);
+    expect(find.byKey(const ValueKey('readiness-line')), findsNothing);
     expect(find.byKey(const ValueKey('open-on-device-ai')), findsOneWidget);
     expect(find.byKey(const ValueKey('open-ledger')), findsOneWidget);
     expect(find.byKey(const ValueKey('open-label-check')), findsOneWidget);

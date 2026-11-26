@@ -28,8 +28,10 @@ const List<({String feature, String label, String detail})> privacyFeatures = [
   ),
   (
     feature: 'coach_lite',
-    label: 'Coach Lite',
-    detail: 'Typed questions while you cook.',
+    label: 'Questions to Coach Lite',
+    detail:
+        'Typed questions answered without the Live coach. This switch '
+        "doesn't cover Live chat or the Research button.",
   ),
   (
     feature: 'label_check',

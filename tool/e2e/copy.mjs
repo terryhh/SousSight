@@ -53,6 +53,7 @@ export const COPY = {
   watchRefused: any(
     'Watch needs a real camera connection',
     "can't look at photos",
+    "can't check photos yet",
     'Watch stopped',
     'watch could not start',
     'camera could not start',

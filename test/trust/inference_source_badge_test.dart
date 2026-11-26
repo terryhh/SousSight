@@ -10,14 +10,23 @@ import 'trust_test_helpers.dart';
 
 void main() {
   test('each leg gets a label from its provenance and permission', () {
-    expect(
-      legLabel(leg(Provenance.sdkOnDevice), localModel: 'Gemini Nano'),
-      'On this device · Gemini Nano',
-    );
+    // SS-089: plain labels; the model name is only in the details sheet.
     expect(legLabel(leg(Provenance.sdkOnDevice)), 'On this device');
-    expect(legLabel(leg(Provenance.sdkCloud)), 'Cloud · Gemini');
-    expect(legLabel(leg(Provenance.cloudAdapter)), 'Cloud');
-    expect(legLabel(leg(Provenance.simulated)), 'Simulated');
+    expect(
+      legModelName(leg(Provenance.sdkOnDevice), localModel: 'Gemini Nano'),
+      'Gemini Nano',
+    );
+    expect(legModelName(leg(Provenance.sdkCloud), localModel: 'X'), isNull);
+    expect(legModelName(leg(Provenance.sdkOnDevice)), isNull);
+    expect(legLabel(leg(Provenance.sdkCloud)), "Sent online to Google's AI");
+    expect(
+      legLabel(leg(Provenance.cloudAdapter)),
+      "Sent online to Google's AI",
+    );
+    expect(
+      legLabel(leg(Provenance.simulated)),
+      'Practice mode (pretend answers)',
+    );
     expect(
       legLabel(leg(Provenance.unknown, transferPermitted: true)),
       'May have been sent',
@@ -90,8 +99,9 @@ void main() {
       ),
     );
 
-    expect(find.text('Cloud · Gemini'), findsOneWidget);
-    expect(find.text('On this device · Gemini Nano'), findsOneWidget);
+    expect(find.text("Sent online to Google's AI"), findsOneWidget);
+    expect(find.text('On this device'), findsOneWidget);
+    expect(find.textContaining('Gemini Nano'), findsNothing);
     expect(find.byKey(const ValueKey('inference-leg-0')), findsOneWidget);
     expect(find.byKey(const ValueKey('inference-leg-1')), findsOneWidget);
 
@@ -100,7 +110,7 @@ void main() {
     );
     expect(
       semantics.label,
-      'Where this ran: Cloud · Gemini; On this device · Gemini Nano. '
+      "Where this ran: Sent online to Google's AI; On this device. "
       'Tap for details.',
     );
 
@@ -123,10 +133,14 @@ void main() {
       find.text('Used: photo and text. Not allowed to leave this device.'),
       findsOneWidget,
     );
+    // The model name appears in the details sheet only.
+    expect(find.text('Model: Gemini Nano'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('an observed model label wins over the family', (tester) async {
+  testWidgets('an observed model label wins over the family in details', (
+    tester,
+  ) async {
     await pumpPhone(
       tester,
       InferenceSourceBadge(
@@ -134,7 +148,11 @@ void main() {
         legs: [leg(Provenance.sdkOnDevice, modelLabel: 'gemini-nano-4')],
       ),
     );
-    expect(find.text('On this device · gemini-nano-4'), findsOneWidget);
+    expect(find.text('On this device'), findsOneWidget);
+    expect(find.textContaining('gemini-nano-4'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('inference-leg-0')));
+    await tester.pumpAndSettle();
+    expect(find.text('Model: gemini-nano-4'), findsOneWidget);
   });
 
   testWidgets('a failed permitted send says it may have been sent', (
@@ -155,7 +173,7 @@ void main() {
       find.text('May have been sent (connection problem)'),
       findsOneWidget,
     );
-    expect(find.text('Simulated'), findsOneWidget);
+    expect(find.text('Practice mode (pretend answers)'), findsOneWidget);
   });
 
   testWidgets('no legs renders nothing', (tester) async {
@@ -248,6 +266,6 @@ void main() {
     );
     expect(opacity.opacity, 1);
     expect(tester.hasRunningAnimations, isFalse);
-    expect(find.text('Cloud · Gemini'), findsOneWidget);
+    expect(find.text("Sent online to Google's AI"), findsOneWidget);
   });
 }

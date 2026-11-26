@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_policy.dart';
+import '../data/dinner_mode.dart';
 import '../live/live_backend.dart';
+import 'centered_scroll.dart';
 
 /// Steps shown in the "From pantry to plate" section.
 const howItWorksSteps = [
@@ -37,6 +39,33 @@ const howItWorksTechnologies = [
   'Vonage Messages API with signed status webhooks',
 ];
 
+/// [howItWorksSteps] for this build: without a Live coach the cooking step
+/// never promises one (SS-089).
+List<(String, String)> howItWorksStepsFor({required bool live}) => [
+  for (final step in howItWorksSteps)
+    if (!live && step.$1 == 'Cook with a live coach')
+      (
+        'Cook step by step',
+        'Follow each step with real timers and type a question any time; '
+            'where this device supports it, the camera can watch for a '
+            "step's visible cue.",
+      )
+    else
+      step,
+];
+
+/// [howItWorksTechnologies] actually in this build: Gemini Live only with a
+/// Live backend, Vonage only when DINNER_MODE is real (SS-089).
+List<String> howItWorksTechnologiesFor({
+  required bool live,
+  required bool vonage,
+}) => [
+  for (final tech in howItWorksTechnologies)
+    if ((live || !tech.startsWith('Gemini Live API')) &&
+        (vonage || !tech.startsWith('Vonage')))
+      tech,
+];
+
 /// Small info button that opens the How it works sheet.
 class HowItWorksButton extends StatelessWidget {
   const HowItWorksButton({super.key, this.isDemo = false});
@@ -58,7 +87,7 @@ Future<void> showHowItWorks(BuildContext context, {bool isDemo = false}) =>
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      constraints: const BoxConstraints(maxWidth: 720),
+      constraints: fullWidthSheet,
       builder: (context) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.85,
@@ -76,7 +105,24 @@ class HowItWorksSheet extends StatelessWidget {
     this.controller,
     this.cloudRoutes,
     this.liveBackend,
+    this.dinnerMode,
   });
+
+  /// Defaults to this build's DINNER_MODE.
+  final DinnerMode? dinnerMode;
+
+  /// Whether this build can start a Live coach: the same rule as the Start
+  /// control (an AI Logic backend also needs the `live` cloud route).
+  /// Rehearsal always has its simulated Live coach (Codex #221).
+  bool get _liveAvailable {
+    if (isDemo) return true;
+    return switch (liveBackend ?? configuredLiveBackend) {
+      LiveBackend.none => false,
+      LiveBackend.ephemeral => true,
+      LiveBackend.aiLogic =>
+        (cloudRoutes ?? CloudRoutes.fromEnvironment()).allows(CloudRoute.live),
+    };
+  }
 
   final bool isDemo;
   final ScrollController? controller;
@@ -113,10 +159,10 @@ class HowItWorksSheet extends StatelessWidget {
           ),
         );
 
-    return ListView(
+    return CenteredListView(
       key: const ValueKey('how-it-works-sheet'),
       controller: controller,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
+      bottom: 32,
       children: [
         Semantics(
           header: true,
@@ -154,7 +200,9 @@ class HowItWorksSheet extends StatelessWidget {
           ),
         ],
         heading('From pantry to plate'),
-        for (final (index, (title, body)) in howItWorksSteps.indexed)
+        for (final (index, (title, body)) in howItWorksStepsFor(
+          live: _liveAvailable,
+        ).indexed)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Row(
@@ -187,7 +235,12 @@ class HowItWorksSheet extends StatelessWidget {
             ),
           ),
         heading('Built with'),
-        for (final tech in howItWorksTechnologies)
+        for (final tech in howItWorksTechnologiesFor(
+          live: _liveAvailable,
+          vonage:
+              !isDemo &&
+              (dinnerMode ?? configuredDinnerMode) == DinnerMode.real,
+        ))
           bullet(tech, icon: Icons.build_circle_outlined),
         heading('Your privacy'),
         bullet(

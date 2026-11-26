@@ -163,7 +163,16 @@ void main() {
         privacy: InMemoryPrivacyPreferences(),
       ),
     );
-    expect(find.text('Ready on this device (Gemini Nano).'), findsOneWidget);
+    expect(find.text('Ready on this device.'), findsNWidgets(2));
+    expect(find.textContaining('Gemini Nano'), findsNothing);
+    expect(
+      find.text(
+        'Text and photo help can run right here on this device, even '
+        'offline. Each answer shows where it actually ran.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('stay here'), findsNothing);
     expect(find.byKey(const ValueKey('set-up-on-device')), findsNothing);
   });
 
@@ -199,6 +208,8 @@ void main() {
     // SS-096: nearby lookups have their own switch.
     final nearby = find.byKey(const ValueKey('local-only-nearby'));
     await tester.scrollUntilVisible(nearby, 200, scrollable: _sheetScroll);
+    await tester.ensureVisible(nearby);
+    await tester.pumpAndSettle();
     expect(
       find.descendant(
         of: nearby,
@@ -228,6 +239,14 @@ void main() {
       'chrome://flags/#prompt-api-for-gemini-nano-multimodal-input',
       findRichText: true,
     );
+    // SS-089: setup steps (22 GB, flags) live under "Details".
+    expect(flag, findsNothing);
+    final details = find.byKey(const ValueKey('on-device-details'));
+    await tester.scrollUntilVisible(details, 200, scrollable: _sheetScroll);
+    await tester.ensureVisible(details);
+    await tester.pumpAndSettle();
+    await tester.tap(details);
+    await tester.pumpAndSettle();
     await tester.scrollUntilVisible(flag, 200, scrollable: _sheetScroll);
     expect(flag, findsOneWidget);
     expect(find.text('Chrome on a computer (this device)'), findsOneWidget);
@@ -254,6 +273,8 @@ void main() {
       200,
       scrollable: _sheetScroll,
     );
+    await tester.drag(_sheetScroll, const Offset(0, -200));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('iPhone'));
     await tester.pumpAndSettle();
     expect(
@@ -267,5 +288,141 @@ void main() {
       find.textContaining(RegExp(r'iOS \d'), findRichText: true),
       findsNothing,
     );
+  });
+
+  group('SS-089: the intro never contradicts the status rows', () {
+    Future<String> intro(
+      WidgetTester tester, {
+      required HybridAvailability text,
+      bool practice = false,
+      HybridCapabilities capabilities = fakeWebCapabilities,
+    }) async {
+      await pumpPhone(
+        tester,
+        OnDeviceAiSheet(
+          capabilities: capabilities,
+          textAvailability: text,
+          imageAvailability: text,
+          prepare: _Prepare().call,
+          privacy: InMemoryPrivacyPreferences(),
+          practice: practice,
+        ),
+      );
+      return tester
+          .widget<Text>(find.byKey(const ValueKey('on-device-intro')))
+          .data!;
+    }
+
+    testWidgets('unsupported device: says it cannot help offline', (
+      tester,
+    ) async {
+      final line = await intro(
+        tester,
+        text: const HybridAvailability(
+          status: OnDeviceStatus.unavailable,
+          reason: 'device_not_eligible',
+        ),
+      );
+      expect(line, startsWith("This device can't help offline right now."));
+      expect(line, isNot(contains('stay here')));
+      expect(find.text("This device isn't supported."), findsNWidgets(2));
+    });
+
+    testWidgets('downloadable: says it works once set up', (tester) async {
+      final line = await intro(
+        tester,
+        text: const HybridAvailability(status: OnDeviceStatus.downloadable),
+      );
+      expect(line, contains('once it is set up'));
+      expect(find.text('Set up offline help'), findsOneWidget);
+    });
+
+    testWidgets('practice mode: says nothing real runs', (tester) async {
+      final line = await intro(tester, text: _available, practice: true);
+      expect(line, startsWith('Practice mode (pretend answers)'));
+      expect(line, contains('no AI runs here'));
+      expect(find.text('Ready on this device.'), findsNothing);
+      expect(
+        find.text('Pretend answers only (practice mode).'),
+        findsNWidgets(2),
+      );
+    });
+
+    testWidgets('technical names only under Details', (tester) async {
+      await intro(
+        tester,
+        text: const HybridAvailability(
+          status: OnDeviceStatus.available,
+          modelLabel: 'gemini-nano-4',
+        ),
+      );
+      expect(find.textContaining('Gemini Nano'), findsNothing);
+      expect(find.textContaining('Firebase'), findsNothing);
+      final details = find.byKey(const ValueKey('on-device-details'));
+      await tester.scrollUntilVisible(details, 200, scrollable: _sheetScroll);
+      await tester.ensureVisible(details);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(details);
+      await tester.pumpAndSettle();
+      await tester.tap(details);
+      await tester.pumpAndSettle();
+      final technical = tester
+          .widget<Text>(find.byKey(const ValueKey('on-device-technical')))
+          .data!;
+      expect(technical, contains('Gemini Nano (gemini-nano-4)'));
+      expect(technical, contains('Firebase AI Logic'));
+    });
+
+    test('status text keeps model names out of the rows', () {
+      expect(
+        onDeviceStatusText(
+          const HybridAvailability(
+            status: OnDeviceStatus.available,
+            modelLabel: 'gemini-nano-4',
+          ),
+          image: false,
+        ),
+        'Ready on this device.',
+      );
+      expect(
+        onDeviceStatusText(
+          _available,
+          image: true,
+          local: fakeIosCapabilities.local,
+        ),
+        'Reads text only on this device.',
+      );
+      expect(
+        onDeviceStatusText(
+          const HybridAvailability(
+            status: OnDeviceStatus.unavailable,
+            reason: 'bridge_unavailable',
+          ),
+          image: false,
+        ),
+        "Offline help didn't start in this build.",
+      );
+    });
+  });
+
+  testWidgets('Codex #221: a text-only device states text and photos '
+      'separately and promises no transfer', (tester) async {
+    await pumpPhone(
+      tester,
+      OnDeviceAiSheet(
+        capabilities: fakeIosCapabilities,
+        textAvailability: _available,
+        imageAvailability: _available,
+        prepare: _Prepare().call,
+        privacy: InMemoryPrivacyPreferences(),
+      ),
+    );
+    final intro = tester
+        .widget<Text>(find.byKey(const ValueKey('on-device-intro')))
+        .data!;
+    expect(intro, contains('Text help can run right here'));
+    expect(intro, contains("Photo checks can't run here yet"));
+    expect(intro, isNot(contains('photos and notes stay here')));
+    expect(find.text('Reads text only on this device.'), findsOneWidget);
   });
 }

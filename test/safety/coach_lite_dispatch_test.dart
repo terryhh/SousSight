@@ -2,6 +2,7 @@
 // dispatcher's rejection path. Fakes only.
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,9 +18,9 @@ class _Privacy implements PrivacySettings {
   bool localOnly(String feature) => false;
 }
 
-class _Consent implements ConsentGate {
+class _Consent extends ConsentGate {
   @override
-  Future<ConsentGrant?> request(ConsentAsk ask) async => ConsentGrant(ask);
+  Future<bool> confirm(ConsentAsk ask, {Uint8List? preview}) async => true;
 }
 
 String _answer(String body) => jsonEncode({

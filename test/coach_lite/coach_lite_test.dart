@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/coach_lite/coach_lite.dart';
+import 'package:soussight/coach_lite/coach_lite_answer_card.dart';
 import 'package:soussight/coach_lite/timer_suggestion_card.dart';
 import 'package:soussight/core/models.dart';
 import 'package:soussight/genui/cooking_ui.dart';
@@ -134,6 +135,24 @@ String answerJson({
   ],
   'timerSuggestion': ?timer,
 });
+
+/// Its operation's result fails with an error when [fail] is called.
+class _FailingDispatcher implements HybridDispatcher {
+  final pending = <Completer<DispatchResult>>[];
+  @override
+  HybridOperation start(
+    HybridTask task, {
+    required String sessionId,
+    ResultValidator? validate,
+    ConsentGrant? grant,
+  }) {
+    final done = Completer<DispatchResult>();
+    pending.add(done);
+    return HybridOperation('op-${pending.length}', done.future, () {});
+  }
+
+  void fail(int index) => pending[index].completeError(StateError('bridge'));
+}
 
 void main() {
   late FakeHybridDispatcher dispatcher;
@@ -335,8 +354,10 @@ void main() {
     // The fallback is app-authored from the recipe and is itself lite-valid.
     expect(validateLiteCookingUi(answer.payload), hasLength(2));
     final body = answer.components.last['body'] as String;
-    expect(body, contains("answer could not be shown"));
+    // SS-089: the reason is a status line beside the step, not in it.
+    expect(body, isNot(contains('could not be shown')));
     expect(body, contains('simmer the tomato sauce'));
+    expect(coachLiteStatusLine(answer), contains("couldn't show that answer"));
   });
 
   test('answers that certify doneness or safety are rejected', () {
@@ -735,9 +756,10 @@ void main() {
     expect(answer.blocked, RouteReason.noLocalModel);
     expect(answer.legs, isEmpty);
     expect(validateLiteCookingUi(answer.payload), hasLength(2));
+    expect(answer.components.last['body'], isNot(contains("can't run")));
     expect(
-      answer.components.last['body'],
-      startsWith("This device can't run the on-device coach right now."),
+      coachLiteStatusLine(answer),
+      startsWith("I can't answer questions on this device right now."),
     );
   });
 
@@ -789,6 +811,48 @@ void main() {
             4 +
         coachLiteMaxOutputTokens;
     expect(tokens, lessThanOrEqualTo(coachLiteDefaultMaxTotalTokens));
+  });
+
+  group('SS-089: a send that throws still gives the step, never a reason '
+      'inside it', () {
+    test(
+      'failed: the recipe step, with the reason only in the status line',
+      () async {
+        final failing = _FailingDispatcher();
+        final lite = coach(failing);
+        final pending = ask(lite, 'How often should I stir?');
+        await Future<void>.delayed(Duration.zero);
+        failing.fail(0);
+        final answer = await pending;
+        expect(answer.status, CoachLiteStatus.failed);
+        expect(answer.error, contains('bridge'));
+        expect(validateLiteCookingUi(answer.payload), hasLength(2));
+        final body = answer.components.last['body'] as String;
+        expect(body, contains('simmer the tomato sauce'));
+        expect(body, isNot(contains('could not answer')));
+        expect(
+          coachLiteStatusLine(answer),
+          "I can't answer that right now — try the recipe step text below.",
+        );
+      },
+    );
+
+    test('superseded while failing: cancelled, with no status line', () async {
+      final failing = _FailingDispatcher();
+      final lite = coach(failing);
+      final first = ask(lite, 'How often should I stir?');
+      await Future<void>.delayed(Duration.zero);
+      lite.cancel(); // a newer question or Live took over
+      failing.fail(0);
+      final answer = await first;
+      expect(answer.status, CoachLiteStatus.cancelled);
+      expect(answer.error, isNull);
+      expect(coachLiteStatusLine(answer), isNull);
+      expect(
+        (answer.components.last['body'] as String),
+        contains('simmer the tomato sauce'),
+      );
+    });
   });
 
   testWidgets('the timer card resets for a new suggestion and shows seconds', (

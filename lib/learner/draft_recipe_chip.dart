@@ -10,10 +10,23 @@ const draftRecipeAdvice =
 
 /// Outlined amber chip marking an AI-drafted, unreviewed recipe. Renders
 /// nothing for reviewed (bundled) recipes.
+/// What the chip says in practice mode, where no model drafted anything.
+const kPracticeDraftLabel = 'Practice recipe (pretend answer)';
+const practiceDraftAdvice =
+    'This is a pretend recipe for practice mode: no AI made it and nothing '
+    'was sent. Check each step yourself before cooking for real.';
+
 class DraftRecipeChip extends StatelessWidget {
-  const DraftRecipeChip({super.key, required this.recipe});
+  const DraftRecipeChip({
+    super.key,
+    required this.recipe,
+    this.practice = false,
+  });
 
   final Recipe recipe;
+
+  /// Practice mode (rehearsal): the chip never claims an AI drafted it.
+  final bool practice;
 
   @override
   Widget build(BuildContext context) {
@@ -22,8 +35,8 @@ class DraftRecipeChip extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         icon: const Icon(Icons.auto_awesome_outlined),
-        title: const Text(kDraftRecipeLabel),
-        content: const Text(draftRecipeAdvice),
+        title: Text(practice ? kPracticeDraftLabel : kDraftRecipeLabel),
+        content: Text(practice ? practiceDraftAdvice : draftRecipeAdvice),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -34,7 +47,9 @@ class DraftRecipeChip extends StatelessWidget {
     );
     return Semantics(
       button: true,
-      label: '$kDraftRecipeLabel. Tap for safety advice.',
+      label:
+          '${practice ? kPracticeDraftLabel : kDraftRecipeLabel}. Tap for '
+          'safety advice.',
       excludeSemantics: true,
       onTap: showAdvice,
       child: Material(
@@ -49,21 +64,21 @@ class DraftRecipeChip extends StatelessWidget {
           onTap: showAdvice,
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 44),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.auto_awesome_outlined,
                     size: 18,
                     color: Color(0xFF7A4A00),
                   ),
-                  SizedBox(width: 6),
+                  const SizedBox(width: 6),
                   Flexible(
                     child: Text(
-                      kDraftRecipeLabel,
-                      style: TextStyle(
+                      practice ? kPracticeDraftLabel : kDraftRecipeLabel,
+                      style: const TextStyle(
                         color: Color(0xFF5C3300),
                         fontWeight: FontWeight.w700,
                       ),
