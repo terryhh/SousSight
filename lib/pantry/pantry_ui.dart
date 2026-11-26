@@ -154,8 +154,12 @@ class PantryUiController extends ChangeNotifier {
 
 /// The cook's typed list as lower-case entries, without leading amounts
 /// ("2 tomatoes" → "tomatoes").
+///
+/// Only commas, semicolons and new lines separate foods: "and" is kept, so a
+/// compound name ("macaroni and cheese") stays one food and never ticks a
+/// loose "cheese" guess (Codex #221).
 List<String> pantryTypedEntries(String typed) => [
-  for (final raw in typed.split(RegExp(r'[,;\n]+|\band\b')))
+  for (final raw in typed.split(RegExp(r'[,;\n]+')))
     if (raw
             .trim()
             .replaceFirst(RegExp(r'^(\d+[\d/.]*\s*|a\s+|an\s+|some\s+)+'), '')

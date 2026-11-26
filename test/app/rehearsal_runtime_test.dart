@@ -78,7 +78,7 @@ void main() {
                 'ingredients': ['Bread', 'Jam?'],
               },
             ],
-            'typedByCook': '2 apples and a pear',
+            'typedByCook': '2 apples, a pear',
           }),
         ),
       ) as Map<String, dynamic>;

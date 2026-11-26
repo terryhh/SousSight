@@ -32,6 +32,11 @@ const _ignoredWords = {
   'whole',
   'for',
   'serving',
+  // Textures and styles of the same food ("creamy peanut butter").
+  'creamy',
+  'crunchy',
+  'smooth',
+  'plain',
 };
 
 String _stem(String word) {

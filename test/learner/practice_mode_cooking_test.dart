@@ -504,4 +504,26 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('a finished Live reply is scrolled into view (Codex #221)', (
+    tester,
+  ) async {
+    await pumpPractice(tester);
+    await tester.tap(find.byKey(const ValueKey('live-session-toggle')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('cooking-message-input')),
+      'What next?',
+    );
+    await tester.tap(find.byKey(const ValueKey('send-message')));
+    await tester.pumpAndSettle();
+    final caption = find.byKey(const ValueKey('coach-caption-scroll'));
+    expect(caption, findsOneWidget);
+    final box = tester.getRect(caption);
+    final dock = rectOf(tester, 'cooking-control-dock');
+    expect(box.bottom, greaterThan(0));
+    expect(box.top, lessThan(dock.top));
+    await tester.tap(find.byKey(const ValueKey('live-session-toggle')));
+    await tester.pumpWidget(const SizedBox());
+  });
 }

@@ -162,6 +162,14 @@ void main() {
     final gate = Completer<void>();
     f.sessions.gate = gate;
     final button = find.byKey(const ValueKey('new-cook'));
+    // The Live reply was scrolled into view (SS-089); go back to the header.
+    if (button.evaluate().isEmpty) {
+      await tester.dragUntilVisible(
+        button,
+        find.byType(CustomScrollView).first,
+        const Offset(0, 300),
+      );
+    }
     final start = tester.widget<TextButton>(button).onPressed!;
 
     // Two events can use the same enabled callback before Flutter rebuilds.
