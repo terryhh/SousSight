@@ -15,6 +15,7 @@ import '../ai/cooking_research_client.dart';
 import '../ai/hybrid/hybrid_dispatcher.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_ledger.dart';
+import '../config/remote_policy.dart';
 import '../label/household_allergens.dart';
 import '../label/label_check_controller.dart';
 import '../trust/ledger_source.dart';
@@ -285,6 +286,11 @@ class HybridRuntime {
 
   /// Production wiring. [inference] defaults to the platform backend,
   /// configured once with [cloudModel].
+  ///
+  /// [remote] (SS-076) supplies the cloud model chosen at startup, the
+  /// per-feature routing overrides (read at every decision) and the
+  /// `hybrid_enabled` kill switch, applied on top of [cloudRoutes]. It can
+  /// only tighten them.
   factory HybridRuntime.create({
     HybridInference? inference,
     CloudRoutes? cloudRoutes,
@@ -293,14 +299,17 @@ class HybridRuntime {
     bool Function()? isOnline,
     String cloudModel = kHybridCloudModel,
     GlobalKey<NavigatorState>? navigatorKey,
+    RemotePolicy? remote,
   }) {
+    if (remote != null) cloudModel = remote.cloudModel;
     final key = navigatorKey ?? GlobalKey<NavigatorState>();
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
       HybridConfig(cloudModel: cloudModel),
     );
     final prefs = privacy ?? InMemoryPrivacyPreferences();
-    final routes = cloudRoutes ?? CloudRoutes.fromEnvironment();
+    final compiledRoutes = cloudRoutes ?? CloudRoutes.fromEnvironment();
+    final routes = remote?.gate(compiledRoutes) ?? compiledRoutes;
     final online = isOnline ?? deviceOnline;
     final ledger = InferenceLedger(sessionId: _newRunId());
     final consent = DialogConsentGate(
@@ -325,6 +334,7 @@ class HybridRuntime {
         cloudFallback:
             cloudFallback ?? FirebaseAiCloudSender(model: cloudModel),
         isOnline: online,
+        remoteRouting: remote?.routing,
       ),
     );
   }
