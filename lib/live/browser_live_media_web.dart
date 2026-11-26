@@ -16,6 +16,7 @@ external _MediaHandle _createMedia(
 
 extension type _MediaHandle(JSObject _) implements JSObject {
   external JSPromise<JSAny?> start();
+  external JSPromise<JSAny?> startCameraOnly();
   external void stop();
   external void mute(JSBoolean value);
   external void play(JSUint8Array value);
@@ -29,6 +30,7 @@ LiveMedia createBrowserLiveMedia() => BrowserLiveMedia();
 class BrowserLiveMedia implements LiveMedia {
   final _microphone = StreamController<Uint8List>.broadcast();
   final _frames = StreamController<Uint8List>.broadcast();
+  final _timedFrames = StreamController<CapturedFrame>.broadcast();
   final _errors = StreamController<String>.broadcast();
   _MediaHandle? _handle;
   int _epoch = 0;
@@ -38,27 +40,45 @@ class BrowserLiveMedia implements LiveMedia {
   @override
   Stream<Uint8List> get frames => _frames.stream;
   @override
+  Stream<CapturedFrame> get timedFrames => _timedFrames.stream;
+  @override
   Stream<String> get errors => _errors.stream;
 
   @override
-  Future<void> start() async {
+  Future<void> start() => _begin(cameraOnly: false);
+
+  @override
+  Future<void> startCameraOnly() => _begin(cameraOnly: true);
+
+  Future<void> _begin({required bool cameraOnly}) async {
     if (_bridge == null) {
       throw StateError('Live media bridge is missing from index.html.');
     }
     final epoch = ++_epoch;
     final handle = _createMedia(
       ((JSUint8Array data) {
-        if (_epoch == epoch) _microphone.add(data.toDart);
+        if (_epoch == epoch && !cameraOnly) _microphone.add(data.toDart);
       }).toJS,
-      ((JSUint8Array data) {
-        if (_epoch == epoch) _frames.add(data.toDart);
+      ((JSUint8Array data, JSNumber capturedAt) {
+        if (_epoch != epoch) return;
+        final bytes = data.toDart;
+        // Camera-only frames never reach the Live coach's stream.
+        if (!cameraOnly) _frames.add(bytes);
+        _timedFrames.add(
+          CapturedFrame(
+            bytes: bytes,
+            capturedAt: DateTime.fromMillisecondsSinceEpoch(
+              capturedAt.toDartDouble.round(),
+            ),
+          ),
+        );
       }).toJS,
       ((JSString error) {
         if (_epoch == epoch) _errors.add(error.toDart);
       }).toJS,
     );
     _handle = handle;
-    await handle.start().toDart;
+    await (cameraOnly ? handle.startCameraOnly() : handle.start()).toDart;
     if (_epoch != epoch) handle.stop();
   }
 
