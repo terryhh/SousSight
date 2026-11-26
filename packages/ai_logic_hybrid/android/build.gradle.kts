@@ -45,12 +45,12 @@ android {
     }
 
     defaultConfig {
-        minSdk = 24
+        // firebase-ai-ondevice and ML Kit GenAI declare minSdk 26.
+        minSdk = 26
     }
 
     testOptions {
         unitTests {
-            isIncludeAndroidResources = true
             all {
                 it.useJUnitPlatform()
 
@@ -71,7 +71,23 @@ kotlin {
     }
 }
 
+// Versions verified on maven.google.com (2026-11-25). firebase-ai-ondevice is not in the
+// Firebase BoM; 16.0.0-beta08 pairs with firebase-ai 18.2.0 (both depend on
+// firebase-ai-ondevice-interop 16.0.0-beta08). FlutterFire's BoM 35.1.0 recommends firebase-ai
+// 18.1.0; a BoM is a non-strict platform constraint, so Gradle resolves the higher 18.2.0.
+val firebaseAiVersion = "18.2.0"
+val firebaseAiOnDeviceVersion = "16.0.0-beta08"
+// The ML Kit GenAI version firebase-ai-ondevice 16.0.0-beta08 pulls in (via genai-prompt).
+// Needed at compile time only to read GenAiException error codes (BUSY, battery quota, ...).
+val mlkitGenAiVersion = "1.0.0-beta5"
+val coroutinesVersion = "1.10.2"
+
 dependencies {
-    testImplementation("org.jetbrains.kotlin:kotlin-test")
-    testImplementation("org.mockito:mockito-core:5.0.0")
+    implementation("com.google.firebase:firebase-ai:$firebaseAiVersion")
+    implementation("com.google.firebase:firebase-ai-ondevice:$firebaseAiOnDeviceVersion")
+    implementation("com.google.mlkit:genai-common:$mlkitGenAiVersion")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
