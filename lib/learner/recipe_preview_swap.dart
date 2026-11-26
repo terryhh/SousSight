@@ -44,12 +44,17 @@ const kSwapCoachUnavailable =
 /// while the answer was pending, the operation is cancelled and the caller
 /// drops the answer.
 class SessionBoundDispatcher implements HybridDispatcher {
-  SessionBoundDispatcher(this._inner, {required this.sessionId});
+  SessionBoundDispatcher(this._inner, {required this.sessionId, this.changes});
 
   final HybridDispatcher _inner;
 
   /// Read at start and at each answer; never cached.
   final String Function() sessionId;
+
+  /// Fires when the session may have changed. The operation is cancelled at
+  /// once, so the dispatcher stops before its next send (it checks
+  /// cancellation after every await, before any leg begins).
+  final Listenable? changes;
 
   @override
   HybridOperation start(
@@ -60,16 +65,27 @@ class SessionBoundDispatcher implements HybridDispatcher {
   }) {
     final startedIn = this.sessionId();
     late final HybridOperation operation;
+    void onChange() {
+      if (this.sessionId() != startedIn) operation.cancel();
+    }
+
     operation = _inner.start(
       task,
       sessionId: sessionId,
       grant: grant,
       // Never a reason: no semantic retry, so nothing is sent to the cloud.
       validate: (_) {
-        if (this.sessionId() != startedIn) operation.cancel();
+        onChange();
         return null;
       },
     );
+    final changes = this.changes;
+    if (changes != null) {
+      changes.addListener(onChange);
+      operation.result
+          .whenComplete(() => changes.removeListener(onChange))
+          .ignore();
+    }
     return operation;
   }
 }
@@ -84,6 +100,7 @@ class RecipeSwapCoach {
       dispatcher: SessionBoundDispatcher(
         hybrid.dispatcher,
         sessionId: () => hybrid.sessionId,
+        changes: hybrid.sessionChanges,
       ),
       privacy: hybrid.privacy,
       cloudRoutes: hybrid.cloudRoutes,

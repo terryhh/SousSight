@@ -7,8 +7,7 @@ import 'package:flutter/foundation.dart' show setEquals;
 import '../core/models.dart';
 import '../label/label_check.dart' show kLabelAllergens;
 import '../pantry/recipe_draft.dart' show isDraftRecipe;
-import '../pantry/recipe_draft_client.dart'
-    show draftFoodKey, draftStatesContradict;
+import '../pantry/recipe_draft_client.dart' show draftFoodKey;
 import 'recipe_allergens.dart';
 
 /// Hands-on minutes the preview assumes for a step without a recipe timer.
@@ -90,6 +89,12 @@ const _previewIgnoredWords = {
   'my',
   'for',
   'can',
+  'cans',
+  'tin',
+  'tins',
+  'tinned',
+  'jars',
+  'bottles',
   'canned',
   'jar',
   'jarred',
@@ -251,11 +256,58 @@ Set<int> _forms(String phrase) {
   };
 }
 
-/// Whether stated preparation states on both sides exist and share none:
-/// fresh, canned, jarred, bottled, dried, frozen, raw, cooked. The same rule
-/// the draft builder applies to `fromConfirmed` (SS-099).
-bool _statesContradict(String item, String name) =>
-    draftStatesContradict(item, name);
+// Packaging and preparation are compared separately (SS-099).
+final _packagingFamilies = <RegExp>[
+  RegExp(r'\b(?:cans?|canned|tins?|tinned)\b', caseSensitive: false),
+  RegExp(r'\b(?:jars?|jarred)\b', caseSensitive: false),
+  RegExp(r'\b(?:bottles?|bottled)\b', caseSensitive: false),
+];
+final _preparationFamilies = <RegExp>[
+  RegExp(r'\bfresh\b', caseSensitive: false),
+  RegExp(r'\b(?:dried|dry)\b', caseSensitive: false),
+  RegExp(r'\bfrozen\b', caseSensitive: false),
+  RegExp(r'\b(?:raw|uncooked)\b', caseSensitive: false),
+  RegExp(
+    r'\b(?:cooked|precooked|pre-cooked|roasted|rotisserie)\b',
+    caseSensitive: false,
+  ),
+];
+final _freshWord = RegExp(r'\bfresh\b', caseSensitive: false);
+final _driedWord = RegExp(r'\b(?:dried|dry)\b', caseSensitive: false);
+
+Set<int> _familiesOf(List<RegExp> families, String phrase) => {
+  for (var i = 0; i < families.length; i++)
+    if (families[i].hasMatch(phrase)) i,
+};
+
+bool _disjointStated(List<RegExp> families, String a, String b) {
+  final x = _familiesOf(families, a);
+  final y = _familiesOf(families, b);
+  return x.isNotEmpty && y.isNotEmpty && x.intersection(y).isEmpty;
+}
+
+/// Whether a confirmed [item] is a different form of the food than the
+/// ingredient [name]: stated packaging that differs (canned vs jarred),
+/// stated preparation that differs (fresh, dried, frozen, raw, cooked), or a
+/// dried item for an ingredient that is not dried ("jar of dried kidney
+/// beans" is not "Jarred kidney beans": dried beans must be cooked first).
+bool _statesContradict(String item, String name) {
+  if (_disjointStated(_packagingFamilies, item, name) ||
+      _disjointStated(_preparationFamilies, item, name) ||
+      (_driedWord.hasMatch(item) && !_driedWord.hasMatch(name))) {
+    return true;
+  }
+  // Fresh is not a packaged product, unless the name allows both ("Lemon
+  // juice, fresh or bottled").
+  final itemFresh = _freshWord.hasMatch(item);
+  final nameFresh = _freshWord.hasMatch(name);
+  final itemPack = _familiesOf(_packagingFamilies, item);
+  final namePack = _familiesOf(_packagingFamilies, name);
+  return (itemFresh && namePack.isNotEmpty && !nameFresh) ||
+      (nameFresh &&
+          itemPack.isNotEmpty &&
+          itemPack.difference(namePack).isNotEmpty);
+}
 
 /// A leading amount and measuring unit on a confirmed item ("1 cup corn",
 /// "2 tbsp peanut butter", "½ lb of beef"). Containers ("a can of") are kept:
@@ -449,8 +501,14 @@ String _list(List<String> names) => switch (names.length) {
 /// Words in an ingredient name that suggest one of [kLabelAllergens]. Used
 /// only to warn: a hint is never treated as proof either way.
 const kPreviewAllergenNameHints = <String, List<String>>{
+  // Synonyms count: "dairy solids" is milk, "lactose", "casein" too.
   'milk': [
     'milk',
+    'dairy',
+    'lactose',
+    'casein',
+    'curd',
+    'curds',
     'cheese',
     'butter',
     'cream',
@@ -463,7 +521,7 @@ const kPreviewAllergenNameHints = <String, List<String>>{
     'mozzarella',
     'cheddar',
   ],
-  'egg': ['egg', 'eggs', 'mayonnaise', 'mayo', 'aioli'],
+  'egg': ['egg', 'eggs', 'mayonnaise', 'mayo', 'aioli', 'albumen', 'meringue'],
   'fish': [
     'fish',
     'salmon',
@@ -511,6 +569,10 @@ const kPreviewAllergenNameHints = <String, List<String>>{
   'peanut': ['peanut', 'peanuts'],
   'wheat': [
     'wheat',
+    'gluten',
+    'semolina',
+    'durum',
+    'spelt',
     'flour',
     'bread',
     'pasta',
@@ -550,7 +612,9 @@ final _treeNutName = RegExp(r'\btree\s+nuts?\b', caseSensitive: false);
 /// [kLabelAllergens] that [text] (one food's name) suggests, in label order.
 /// Dairy is detected by the dairy word itself, minus terms a plant word
 /// directly qualifies.
-List<String> previewAllergenHintsFor(String text) {
+List<String> previewAllergenHintsFor(String raw) {
+  // Punctuation inside names is a space: "tree-nut butter" is "tree nut".
+  final text = raw.replaceAll(RegExp(r"[-_/]"), ' ');
   Set<String> wordsOf(String t) =>
       t.toLowerCase().split(RegExp(r'[^a-z]+')).toSet();
   final words = wordsOf(text);
@@ -759,3 +823,28 @@ class RecipePreviewData {
 String swapQuestion(Ingredient ingredient, Recipe recipe) =>
     'What can I use instead of "${ingredient.name.trim()}" in '
     '${recipe.title.trim()}?';
+
+/// Shown in place of a drafted title that fails [previewTitle]'s check.
+const kDraftTitleFallback = 'AI-drafted recipe';
+
+// A minimal check for a drafted title (the full drafted-text gate is SS-131):
+// any doneness, temperature, safety, freshness, camera/photo or
+// allergen-status word, or an over-long title, and the title is replaced.
+final _draftTitleClaim = RegExp(
+  r'[°]|\b\d+\s*(?:f|c)\b|\b(?:done|cooked|uncooked|undercooked|raw|ready|'
+  r'safe|safely|safety|fresh|temperature|degrees?|thermometer|camera|photo|'
+  r'allerg\w*|free|contains?|zero|without|no|certif\w*|verif\w*|'
+  r'healthy|cure\w*)\b',
+  caseSensitive: false,
+);
+
+/// The title to show: a reviewed recipe's own title, or a drafted title that
+/// passes a minimal check, otherwise [kDraftTitleFallback].
+String previewTitle(Recipe recipe) {
+  final title = recipe.title.trim();
+  if (!isDraftRecipe(recipe)) return title;
+  if (title.isEmpty || title.length > 60 || _draftTitleClaim.hasMatch(title)) {
+    return kDraftTitleFallback;
+  }
+  return title;
+}

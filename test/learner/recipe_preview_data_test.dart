@@ -245,6 +245,28 @@ void main() {
         expect(previewHasIngredient(beans, i, ['dried kidney beans']), isFalse);
         expect(previewHasIngredient(beans, i, ['canned kidney beans']), isTrue);
       }
+      // Packaging and preparation are separate: dried beans in a jar are not
+      // jarred (ready-to-use) beans.
+      final jarred = recipe('draft_salad', 'Jarred kidney beans');
+      expect(
+        previewHasIngredient(jarred, jarred.ingredients.single, [
+          'jar of dried kidney beans',
+        ]),
+        isFalse,
+      );
+      expect(
+        previewHasIngredient(jarred, jarred.ingredients.single, [
+          'a jar of kidney beans',
+        ]),
+        isTrue,
+      );
+      final dried = recipe('herb_v1', 'Dried oregano');
+      expect(
+        previewHasIngredient(dried, dried.ingredients.single, [
+          'a jar of dried oregano',
+        ]),
+        isTrue,
+      );
       // Without a stated state on one side, the food still matches.
       final plain = recipe('draft_salad', 'Chicken');
       expect(
@@ -261,6 +283,8 @@ void main() {
         'peanut_butter',
       ]);
       expect(have('black_bean_corn_salsa_v1', ['a can of corn']), ['corn']);
+      expect(have('black_bean_corn_salsa_v1', ['1 tin of corn']), ['corn']);
+      expect(have('black_bean_corn_salsa_v1', ['2 tins corn']), ['corn']);
     });
 
     test('a reviewed swap is found before the optional branch', () {
@@ -603,6 +627,21 @@ void main() {
         ['milk', 'shellfish'],
       );
       expect(previewAllergenHints(named(['Mixed tree nuts'])), ['tree nut']);
+      // Synonyms and punctuation: "tree-nut butter", "dairy solids".
+      expect(
+        previewAllergenHints(named(['Tree-nut butter and dairy solids'])),
+        ['milk', 'tree nut'],
+      );
+      expect(previewAllergenHints(named(['Whey protein, casein'])), ['milk']);
+      expect(previewAllergenHints(named(['Semolina pasta'])), ['wheat']);
+      expect(previewAllergenHints(named(['Egg albumen'])), ['egg']);
+      expect(
+        PreviewAllergens(named(['Tree-nut butter and dairy solids']), const {
+          'tree nut',
+          'milk',
+        }).householdLine,
+        contains('suggests milk and tree nut, which are on your household'),
+      );
       expect(
         PreviewAllergens(
           named(['Cow\'s milk (with coconut flakes)', 'Shellfish stock']),

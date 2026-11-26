@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:soussight/label/label_check.dart';
 import 'package:soussight/learner/recipe_preview_household.dart';
 
 void main() {
@@ -57,6 +58,16 @@ void main() {
     final again = DeviceHouseholdAllergens();
     await again.loaded;
     expect(again.allergens, {'milk', 'peanut'});
+  });
+
+  test('where the list is entered, the wording says it is saved in this app '
+      'on this device', () {
+    expect(
+      kHouseholdStaysHereWording,
+      startsWith('Your household list is saved in this app on this device.'),
+    );
+    expect(kHouseholdStaysHereWording, contains('never sent to a model'));
+    expect(kHouseholdStaysHereWording, isNot(contains('not saved')));
   });
 
   test('Android excludes app preferences from cloud backup and transfer', () {

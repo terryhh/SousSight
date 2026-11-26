@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../core/models.dart';
 import '../label/household_allergens.dart';
-import '../pantry/recipe_draft_client.dart' show draftTextCertifies;
 import '../trust/inference_source_badge.dart';
 import 'draft_recipe_chip.dart';
 import 'recipe_preview_data.dart';
@@ -237,11 +236,8 @@ class _Hero extends StatelessWidget {
           Semantics(
             header: true,
             child: Text(
-              // Drafted text that certifies is never shown (the builder also
-              // rejects such drafts); the label stands in for the title.
-              data.isDraft && draftTextCertifies(recipe.title)
-                  ? 'AI-drafted recipe'
-                  : recipe.title,
+              // A drafted title passes a minimal check or is replaced.
+              previewTitle(recipe),
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 28,
@@ -251,10 +247,9 @@ class _Hero extends StatelessWidget {
               ),
             ),
           ),
-          // A drafted summary is model text: shown only when it passes the
-          // draft safety check, otherwise the title stands alone.
-          if (recipe.summary.trim().isNotEmpty &&
-              !(data.isDraft && draftTextCertifies(recipe.summary))) ...[
+          // A drafted summary is model prose: never shown. Reviewed recipes
+          // show their reviewed summary.
+          if (!data.isDraft && recipe.summary.trim().isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               recipe.summary.trim(),
@@ -698,9 +693,9 @@ class _AllergenCard extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           const Text(
-            'Your household list is saved only in this app: it is never sent '
-            'to a model or added to your cooking session. The camera and the '
-            'coach can’t confirm allergens.',
+            'Your household list is saved in this app on this device. It is '
+            'never sent to a model or added to your cooking session. The '
+            'camera and the coach can’t confirm allergens.',
             style: TextStyle(fontSize: 12, color: _muted, height: 1.35),
           ),
         ],

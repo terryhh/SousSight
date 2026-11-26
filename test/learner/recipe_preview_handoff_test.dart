@@ -90,7 +90,7 @@ void main() {
         const PantryHandoff(
           confirmedItems: [
             'fresh black beans',
-            '1 cup corn',
+            '1 tin of corn',
             '1 cup corn starch',
           ],
         ),

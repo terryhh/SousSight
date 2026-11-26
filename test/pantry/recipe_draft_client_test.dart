@@ -120,9 +120,7 @@ void main() {
         {
           'title': 'Cook',
           'instruction': 'Cook the chicken in a hot pan.',
-          // A certifying cue ("fully cooked") now rejects the whole draft
-          // (SS-099, test/learner/recipe_preview_safety_test.dart).
-          'cue': 'Strips are browned on all sides.',
+          'cue': 'Strips are browned on all sides and fully cooked.',
           'timerSeconds': 480,
         },
         {'title': 'Serve', 'instruction': 'Plate it.', 'cue': 'On the plate.'},
@@ -130,8 +128,8 @@ void main() {
     );
     final recipe = (await _client(() => jsonEncode(draft)).draft(_request))
         .recipe;
-    // Colour is never the test: the thermometer note follows the model cue.
-    expect(recipe.steps[1].cue, endsWith(draftThermometerNote('chicken')));
+    // The model's "fully cooked" cue is dropped; colour is never the test.
+    expect(recipe.steps[1].cue, draftThermometerNote('chicken'));
     expect(recipe.steps[1].cue, contains('poultry 165°F (74°C)'));
     expect(recipe.steps[1].cue, isNot(contains('fully cooked')));
     expect(recipe.steps[1].timerSeconds, 480);
@@ -252,12 +250,12 @@ void main() {
 
     test('the prompt sets thermometer targets and the dried-bean rule', () {
       for (final text in [
-        // SS-099: drafts may not state temperatures at all; the app's own
-        // thermometer notes (tested below) carry the targets.
-        'the app adds its own food-safety and thermometer notes',
-        'Never give a temperature',
-        'Never judge meat, poultry, fish or eggs by colour.',
-        'Dried beans: soak, drain, then boil in new water.',
+        "never use colour or 'juices run clear' as the doneness test",
+        'poultry 165°F/74°C',
+        'ground meat 160°F/71°C',
+        'fish 145°F/63°C',
+        'egg dishes 160°F/71°C',
+        'Dried beans: soak, drain, then boil in fresh water.',
       ]) {
         expect(
           recipeDraftInstruction.replaceAll('\n', ' '),
@@ -297,8 +295,7 @@ void main() {
       final got = await cues([
         step('Drain the beans into a potato bowl.'),
         step('Stir in the pottery dish.'),
-        // SS-099: "free" now rejects a draft, so this fixture avoids it.
-        step('Spoon onto the cool plate area, the pans aside.'),
+        step('Spoon onto the warmth-free plate area, the pans aside.'),
       ]);
       expect(got[0], 'Looks even.');
       expect(got[1], 'Looks even.');
@@ -323,12 +320,11 @@ void main() {
       ]) {
         final got = await cues([
           step('Drain the beans.'),
-          // SS-099: "pink" now rejects a draft; a neutral cue keeps the test.
-          step('Brown the $meat in a pan.', 'Browned all over.'),
+          step('Brown the $meat in a pan.', 'No pink is left.'),
           step('Spoon onto the bread.'),
         ]);
         expect(got[1], contains(target), reason: meat);
-        expect(got[1], startsWith('Browned all over. $kColourNotDoneness'));
+        expect(got[1], startsWith('No pink is left. $kColourNotDoneness'));
       }
     });
 

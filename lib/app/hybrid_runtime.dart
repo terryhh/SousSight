@@ -403,9 +403,17 @@ class HybridRuntime {
   /// starts an empty ledger.
   void bindCookingSession(String id) {
     final previous = _cookingSessionId;
+    final before = sessionId;
     _cookingSessionId = id;
     if (previous != null && previous != id) ledger.startSession(id);
+    if (sessionId != before) _sessionChanges.value++;
   }
+
+  final ValueNotifier<int> _sessionChanges = ValueNotifier(0);
+
+  /// Notifies synchronously whenever [sessionId] changes, so work bound to a
+  /// session (a recipe-preview swap) can cancel before its next send.
+  Listenable get sessionChanges => _sessionChanges;
 
   /// The cook is back at the pantry after a cooking session (SS-099). The
   /// new pantry visit gets its own scope, so its legs (scans, recipe-preview
@@ -415,6 +423,7 @@ class HybridRuntime {
     if (_cookingSessionId == null) return;
     _cookingSessionId = null;
     ledger.startSession(_newRunId());
+    _sessionChanges.value++;
   }
 
   /// Ledger hook for cloud senders outside the dispatcher (grounded

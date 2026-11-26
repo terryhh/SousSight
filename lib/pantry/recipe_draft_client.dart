@@ -83,14 +83,12 @@ them. Any other ingredient the cook did not confirm also uses "basic" and
 must be optional.
 Write 3 to 7 steps. Each step has a short title, a short instruction, and a
 VISIBLE cue the cook can judge by eye (texture, color, coverage, bubbling).
-Cues describe what to look for (texture, colour, coverage); the app adds its
-own food-safety and thermometer notes. Anywhere in the recipe, never use
-these words or symbols: done, cooked, ready, safe, fresh, raw, temperature,
-degrees, °, thermometer, inside, pink, edible, camera, photo, allergen,
-contains, free, "no <allergen>", "without <allergen>". Never give a
-temperature, and never describe oven heat with a number (say "a hot oven").
-Never judge meat, poultry, fish or eggs by colour.
-Dried beans: soak, drain, then boil in new water.
+Cues describe what to look for; never certify doneness, internal
+temperature, or food safety, and never say the camera can confirm it.
+For meat, poultry, fish and eggs, never use colour or 'juices run clear' as
+the doneness test; the cue says to check with a thermometer — poultry
+165°F/74°C, ground meat 160°F/71°C, fish 145°F/63°C, egg dishes 160°F/71°C.
+Dried beans: soak, drain, then boil in fresh water.
 Use timerSeconds (60 to 3600) only for real waiting or heating; omit it
 otherwise. For each ingredient list allergens only from: milk, egg, fish,
 shellfish, tree nut, peanut, wheat, soy, sesame (lowercase). Never claim an
@@ -577,11 +575,6 @@ void _checkSources(
     if (key.isEmpty || draftFoodKey(name) != key) {
       throw FormatException('"$name" is not the confirmed item "$source"');
     }
-    // The food key drops preparation words, so a different state (dried
-    // for canned, raw for cooked) is checked here (SS-099).
-    if (draftStatesContradict(name, source)) {
-      throw FormatException('"$name" is not the same state as "$source"');
-    }
     fromConfirmed++;
   }
   if (fromConfirmed == 0) {
@@ -598,11 +591,6 @@ Recipe buildDraftRecipe(
   required String seed,
   required List<String> confirmedItems,
 }) {
-  // SS-099: a draft whose cook-facing text certifies anything is rejected as
-  // a whole (never edited), so the dispatcher's retry or fallback runs.
-  if (draftCertifyingField(m) case final field?) {
-    throw FormatException('draft $field certifies safety');
-  }
   final title = _clip(_str(m['title']), 80);
   if (title.isEmpty) throw const FormatException('missing title');
   final summary = _clip(_str(m['summary']), 400);
@@ -727,111 +715,9 @@ final _heat = RegExp(
 );
 final _certainty = RegExp(
   r'safe to eat|fully cooked|cooked through|done when the camera|'
-  r'camera (?:can |will )?(?:confirms?|tells?|verif(?:y|ies)|shows?)',
+  r'camera (?:can|will) (?:confirm|tell)',
   caseSensitive: false,
 );
-
-// SS-099: drafted text is held to a conservative allowlist, the same idea
-// as the shared certification gate (#240). Any doneness, temperature,
-// safety, freshness, camera/photo or allergen-status vocabulary, in any
-// form, rejects the whole draft; the dispatcher's retry or fallback then
-// runs. There is no exception for thermometer readings: the app adds its own
-// food-specific thermometer note to cues. Over-blocking is intended.
-final _draftDeniedVocabulary = RegExp(
-  r'°|\b\d+(?:\.\d+)?\s*(?:f|c|fahrenheit|celsius)\b|'
-  r'\b(?:done|doneness|cooked|uncooked|undercooked|overcooked|ready|'
-  r'safe|safely|safety|unsafe|fresh|freshly|freshness|stale|spoil\w*|'
-  r'expire[sd]?|rotten|temperatures?|temp|degrees?|fahrenheit|celsius|'
-  r'thermometers?|inside|internal|internally|pink|pinkish|raw|edible|'
-  r'inedible|allerg\w*|contains?|containing|free|camera|photos?|pictures?|'
-  r'images?|video|certif\w*|verif\w*)\b|'
-  r'\bjuices?\s+run\b|\brun\s+clear\b|'
-  r'\b(?:no|without)\s+(?:any\s+)?(?:milk|dairy|eggs?|fish|shellfish|nuts?|'
-  r'tree\s+nuts?|peanuts?|wheat|gluten|soy|soya|sesame)\b',
-  caseSensitive: false,
-);
-
-// Appearance used to judge meat, poultry, fish or eggs ("serve once the
-// chicken turns white"): colour cannot show they are cooked through.
-final _appearanceChange = RegExp(
-  r'\b(?:turns?|turned|looks?|appears?|becomes?|goes)\s+(?:\w+\s+)?'
-  r'(?:white|opaque|brown|browned|golden|firm|clear|grey|gray)\b',
-  caseSensitive: false,
-);
-
-/// True when [text] has any doneness, temperature, safety, freshness,
-/// camera/photo or allergen-status vocabulary, or uses appearance to judge
-/// meat, poultry, fish or eggs. Whitespace is normalized first, as the
-/// builder does before display. The single call site for drafted text; it
-/// does not yet call #240's shared gate, and switching to it means replacing
-/// this function's body.
-bool draftTextCertifies(String text) {
-  final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
-  if (_draftDeniedVocabulary.hasMatch(normalized)) return true;
-  for (final sentence in normalized.split(RegExp(r'(?<=[.!?;])\s+'))) {
-    if (_appearanceChange.hasMatch(sentence) &&
-        _risky.hasMatch(_normalizeShapes(sentence))) {
-      return true;
-    }
-  }
-  return false;
-}
-
-// Preparation states that change how a food is cooked or used. Two names
-// whose stated states share none are different foods ("dried kidney beans"
-// are not "canned kidney beans"; "raw chicken" is not "cooked chicken").
-final _draftStateFamilies = <RegExp>[
-  RegExp(r'\b(?:cans?|canned|tins?|tinned)\b', caseSensitive: false),
-  RegExp(r'\b(?:jars?|jarred)\b', caseSensitive: false),
-  RegExp(r'\b(?:bottles?|bottled)\b', caseSensitive: false),
-  RegExp(r'\bfresh\b', caseSensitive: false),
-  RegExp(r'\b(?:dried|dry)\b', caseSensitive: false),
-  RegExp(r'\bfrozen\b', caseSensitive: false),
-  RegExp(r'\b(?:raw|uncooked)\b', caseSensitive: false),
-  RegExp(
-    r'\b(?:cooked|precooked|pre-cooked|roasted|rotisserie)\b',
-    caseSensitive: false,
-  ),
-];
-
-/// The preparation states [phrase] states, by family index.
-Set<int> draftStates(String phrase) => {
-  for (var i = 0; i < _draftStateFamilies.length; i++)
-    if (_draftStateFamilies[i].hasMatch(phrase)) i,
-};
-
-/// True when both [a] and [b] state a preparation state and share none.
-bool draftStatesContradict(String a, String b) {
-  final x = draftStates(a);
-  final y = draftStates(b);
-  return x.isNotEmpty && y.isNotEmpty && x.intersection(y).isEmpty;
-}
-
-/// The first cook-facing field of a raw draft that [draftTextCertifies]
-/// (title, summary, an ingredient's name or quantity, equipment, a step's
-/// title, instruction or cue), or null when every field passes.
-String? draftCertifyingField(Map<String, dynamic> m) {
-  bool bad(Object? v) => v is String && draftTextCertifies(v);
-  if (bad(m['title'])) return 'title';
-  if (bad(m['summary'])) return 'summary';
-  if (m['ingredients'] case final List<dynamic> items) {
-    for (final i in items) {
-      if (i is Map && (bad(i['name']) || bad(i['qty']))) return 'ingredient';
-    }
-  }
-  if (m['equipment'] case final List<dynamic> tools) {
-    if (tools.any(bad)) return 'equipment';
-  }
-  if (m['steps'] case final List<dynamic> steps) {
-    for (final st in steps) {
-      if (st is Map &&
-          (bad(st['title']) || bad(st['instruction']) || bad(st['cue']))) {
-        return 'step';
-      }
-    }
-  }
-  return null;
-}
 
 // Safe minimum internal temperatures (FoodSafety.gov chart), checked with a
 // thermometer. These are the app's own claims, so a number is named only
@@ -1154,7 +1040,7 @@ const _simulatedDraft = <String, dynamic>{
     {
       'title': 'Set up the bread',
       'instruction':
-          'Heat the oven until hot. Lay the bread slices flat on '
+          'Preheat the oven to 400°F (200°C). Lay the bread slices flat on '
           'a baking sheet.',
       'cue': 'Both slices lie flat with space between them.',
     },

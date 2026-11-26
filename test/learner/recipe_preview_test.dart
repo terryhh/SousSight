@@ -103,6 +103,16 @@ class _NoCloud implements CloudFallbackSender {
   Future<void> cancel(String requestId) async {}
 }
 
+/// Holds every capabilities lookup until [open] completes.
+class _GatedInference extends FakeHybridInference {
+  final open = Completer<void>();
+  @override
+  Future<HybridCapabilities> capabilities() async {
+    await open.future;
+    return super.capabilities();
+  }
+}
+
 class _ValidatorDispatcher implements HybridDispatcher {
   ResultValidator? validate;
   bool cancelled = false;
@@ -685,6 +695,45 @@ void main() {
         expect(find.text('Try sunflower seed butter'), findsNothing);
       });
 
+      testWidgets('a session change before the first send cancels it: the '
+          'model is never asked', (tester) async {
+        await phone(tester);
+        final gated = _GatedInference()..enqueueText(_answerJson());
+        inference = gated;
+        cloud = _NoCloud();
+        hybrid = HybridRuntime.create(
+          inference: inference,
+          cloudRoutes: const CloudRoutes({CloudRoute.hybridFallback}),
+          cloudFallback: cloud,
+          isOnline: () => true,
+          cloudModel: 'test-model',
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: cookingTheme,
+            navigatorKey: hybrid.navigatorKey,
+            home: RecipePreviewScreen(
+              recipe: _sandwich,
+              confirmedItems: const ['bread', 'banana'],
+              swapCoach: RecipeSwapCoach.forRuntime(hybrid),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final swap = find.byKey(const ValueKey('find-swap-peanut_butter'));
+        await tester.ensureVisible(swap);
+        await tester.pumpAndSettle();
+        await tester.tap(swap);
+        await tester.pump(); // the sheet asks; the dispatcher awaits caps
+        expect(find.byKey(const ValueKey('swap-busy')), findsOneWidget);
+        hybrid.bindCookingSession('cooking-session-b');
+        gated.open.complete(); // the dispatcher resumes after the change
+        await tester.pumpAndSettle();
+        expect(inference.requests, isEmpty);
+        expect(hybrid.ledgerSource.legs, isEmpty);
+        expect(find.text('Try sunflower seed butter'), findsNothing);
+      });
+
       testWidgets('dismissed while the malformed answer is pending: no '
           'semantic retry and no cloud leg', (tester) async {
         await openSwap(tester);
@@ -707,6 +756,31 @@ void main() {
         expect(leg.error, HybridErrorCode.cancelled);
         expect(leg.transferPermitted, isFalse);
       });
+    });
+
+    test('a session change cancels the operation at once, before any send', () {
+      var session = 'a';
+      final changes = ValueNotifier(0);
+      final inner = _ValidatorDispatcher();
+      final bound = SessionBoundDispatcher(
+        inner,
+        sessionId: () => session,
+        changes: changes,
+      );
+      bound.start(
+        const HybridTask(
+          feature: coachLiteFeature,
+          parts: [HybridText('q')],
+          maxOutputTokens: 10,
+          timeout: Duration(seconds: 1),
+        ),
+        sessionId: 'a',
+      );
+      changes.value++; // same session: nothing happens
+      expect(inner.cancelled, isFalse);
+      session = 'b';
+      changes.value++;
+      expect(inner.cancelled, isTrue);
     });
 
     test('the swap dispatcher never asks for a retry, and cancels when the '
