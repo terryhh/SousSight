@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genui/genui.dart';
 import 'package:image/image.dart' as img;
+import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/services_scope.dart';
 import 'package:soussight/core/analytics.dart';
 import 'package:soussight/core/models.dart';
@@ -27,6 +28,51 @@ class _RecordingClient implements PantryClient {
   }
 }
 
+/// A hybrid-shaped result: a cloud voice leg and an on-device scan leg.
+class _TwoLegClient implements PantryClient {
+  @override
+  Future<PantryResult> identify(PantryInput input, List<Recipe> recipes) async {
+    final base = await const FakePantryClient(delay: Duration.zero)
+        .identify(input, recipes);
+    InferenceLeg leg(String feature, Provenance provenance) => InferenceLeg(
+      requestId: feature,
+      feature: feature,
+      mode: null,
+      kinds: const {DataKind.text},
+      transferPermitted: provenance != Provenance.sdkOnDevice,
+      provenance: provenance,
+    );
+    return base.copyWith(
+      legs: [
+        leg(kPantryVoiceFeature, Provenance.sdkCloud),
+        leg(kPantryScanFeature, Provenance.sdkOnDevice),
+      ],
+      notice: kPantryVoiceSkippedNotice,
+    );
+  }
+}
+
+/// Fails after a voice leg was already sent to the cloud.
+class _DeclinedAfterVoiceClient implements PantryClient {
+  @override
+  Future<PantryResult> identify(PantryInput input, List<Recipe> recipes) =>
+      Future.error(
+        const PantryException(
+          'Okay, your list was not sent.',
+          legs: [
+            InferenceLeg(
+              requestId: 'v',
+              feature: kPantryVoiceFeature,
+              mode: null,
+              kinds: {DataKind.audio},
+              transferPermitted: true,
+              provenance: Provenance.sdkCloud,
+            ),
+          ],
+        ),
+      );
+}
+
 class _FakeMedia implements LiveMedia {
   final frames$ = StreamController<Uint8List>.broadcast();
   final mic$ = StreamController<Uint8List>.broadcast();
@@ -39,7 +85,11 @@ class _FakeMedia implements LiveMedia {
   @override
   Stream<String> get errors => const Stream.empty();
   @override
+  Stream<CapturedFrame> get timedFrames => const Stream.empty();
+  @override
   Future<void> start() async => started = true;
+  @override
+  Future<void> startCameraOnly() async => started = true;
   @override
   Future<void> stop() async => stopped = true;
   @override
@@ -122,7 +172,10 @@ void main() {
       // Nothing is confirmed until the cook taps it; model confidence is
       // not cook confirmation. The cook confirms two items, toggles one on
       // and off again, and answers the question.
-      await tapVisible(tester, find.bySemanticsLabel('canned black beans, clear'));
+      await tapVisible(
+        tester,
+        find.bySemanticsLabel('canned black beans, clear'),
+      );
       await tapVisible(tester, find.bySemanticsLabel('canned corn, clear'));
       await tapVisible(tester, find.bySemanticsLabel('bread, clear'));
       await tapVisible(tester, find.bySemanticsLabel('bread, clear'));
@@ -145,8 +198,11 @@ void main() {
       ))!;
       expect(session.ingredients.keys, containsAll(['black_beans', 'corn']));
       expect(session.ingredients['lime'], isNull, reason: 'never tapped');
-      expect(session.ingredients['tomato'], isNull,
-          reason: 'medium/high confidence alone is not confirmation');
+      expect(
+        session.ingredients['tomato'],
+        isNull,
+        reason: 'medium/high confidence alone is not confirmation',
+      );
       expect(
         session.confirmedFacts.first,
         allOf(contains('canned black beans'), isNot(contains('bread'))),
@@ -205,16 +261,24 @@ void main() {
     );
     await tester.pumpWidget(flow(isDemo: true));
     await tester.pumpAndSettle();
-    await tapVisible(tester, find.byKey(const ValueKey('skip-chickpea_wrap_v1')));
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('skip-chickpea_wrap_v1')),
+    );
     expect(analytics.events, isEmpty);
 
     await tester.pumpWidget(const SizedBox()); // drop the pushed cooking route
     await tester.pumpWidget(flow(isDemo: false));
     await tester.pumpAndSettle();
-    await tapVisible(tester, find.byKey(const ValueKey('skip-chickpea_wrap_v1')));
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('skip-chickpea_wrap_v1')),
+    );
     expect(find.text('Cooking chickpea_wrap_v1'), findsOneWidget);
     expect(analytics.names, [AnalyticsEvents.recipeChosen]);
-    expect(analytics.events.single.parameters, {'recipe_id': 'chickpea_wrap_v1'});
+    expect(analytics.events.single.parameters, {
+      'recipe_id': 'chickpea_wrap_v1',
+    });
   });
 
   testWidgets('deep link skips the pantry and can return to it', (
@@ -333,33 +397,71 @@ void main() {
     );
   });
 
-  testWidgets('a camera start still pending when the cook leaves never activates', (
+  testWidgets('each inference leg and a dropped-voice notice are shown', (
     tester,
   ) async {
     await setUp360(tester);
-    final gate = Completer<void>();
-    final media = _SlowMedia(gate.future);
-    await tester.pumpWidget(app(isDemo: false, media: () => media));
+    await tester.pumpWidget(app(client: _TwoLegClient()));
     await tester.pumpAndSettle();
-    // The camera spinner animates while start is pending, so pump explicitly.
-    Future<void> tapNow(Finder finder) async {
-      await tester.ensureVisible(finder);
-      await tester.tap(finder);
-      for (var i = 0; i < 5; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-    }
-
-    await tapNow(find.byKey(const ValueKey('mode-scan')));
-    expect(media.startCalls, 1, reason: 'scan requested the camera');
-    await tapNow(find.byKey(const ValueKey('skip-chickpea_wrap_v1')));
-    expect(find.text('Cooking chickpea_wrap_v1'), findsOneWidget);
-    gate.complete();
-    await tester.pumpAndSettle();
-    expect(media.stopped, isTrue,
-        reason: 'late permission grant must release capture immediately');
-    expect(media.started, isFalse);
+    await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    expect(find.text('Voice list · Google cloud'), findsOneWidget);
+    expect(find.text('Meal match · on this device'), findsOneWidget);
+    expect(find.text(kPantryVoiceSkippedNotice), findsOneWidget);
   });
+
+  testWidgets('a failed scan still shows legs that already ran', (
+    tester,
+  ) async {
+    await setUp360(tester);
+    await tester.pumpWidget(app(client: _DeclinedAfterVoiceClient()));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    expect(find.text('Okay, your list was not sent.'), findsOneWidget);
+    expect(find.text('Voice list · Google cloud'), findsOneWidget);
+  });
+
+  testWidgets('rehearsal results show a simulated leg', (tester) async {
+    await setUp360(tester);
+    await tester.pumpWidget(app(client: _RecordingClient()));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('pantry-text')), 'beans');
+    await tapVisible(tester, find.byKey(const ValueKey('find-meal')));
+    expect(find.text('Meal match · simulated, no model used'), findsOneWidget);
+  });
+
+  testWidgets(
+    'a camera start still pending when the cook leaves never activates',
+    (tester) async {
+      await setUp360(tester);
+      final gate = Completer<void>();
+      final media = _SlowMedia(gate.future);
+      await tester.pumpWidget(app(isDemo: false, media: () => media));
+      await tester.pumpAndSettle();
+      // The camera spinner animates while start is pending, so pump explicitly.
+      Future<void> tapNow(Finder finder) async {
+        await tester.ensureVisible(finder);
+        await tester.tap(finder);
+        for (var i = 0; i < 5; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      await tapNow(find.byKey(const ValueKey('mode-scan')));
+      expect(media.startCalls, 1, reason: 'scan requested the camera');
+      await tapNow(find.byKey(const ValueKey('skip-chickpea_wrap_v1')));
+      expect(find.text('Cooking chickpea_wrap_v1'), findsOneWidget);
+      gate.complete();
+      await tester.pumpAndSettle();
+      expect(
+        media.stopped,
+        isTrue,
+        reason: 'late permission grant must release capture immediately',
+      );
+      expect(media.started, isFalse);
+    },
+  );
 }
 
 class _SlowMedia extends _FakeMedia {

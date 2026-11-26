@@ -3,7 +3,15 @@
 // always labelled as unreviewed and passes validation and safety rules before
 // the live coach can use it.
 
+import '../ai/hybrid/hybrid_types.dart' show InferenceLeg;
 import '../core/models.dart';
+
+/// Ledger key for the hybrid recipe draft task (DESIGN.md §6, SS-066).
+const kRecipeDraftFeature = 'recipe_draft';
+
+/// The `fromConfirmed` value for pantry basics (salt, pepper, oil, water) and
+/// optional extras the cook did not confirm. Such ingredients are optional.
+const kDraftBasicSource = 'basic';
 
 /// Recipe IDs for drafts start with this prefix so every surface can label
 /// them as AI-drafted and unreviewed.
@@ -33,8 +41,18 @@ class RecipeDraftException implements Exception {
   String toString() => message;
 }
 
+/// A validated draft plus every inference attempt behind it.
+class RecipeDraftResult {
+  const RecipeDraftResult(this.recipe, {this.legs = const []});
+  final Recipe recipe;
+
+  /// Every attempt, in order (DESIGN.md §5), including a rejected on-device
+  /// draft followed by a cloud retry.
+  final List<InferenceLeg> legs;
+}
+
 abstract class RecipeDraftClient {
-  /// Returns a validated draft [Recipe] whose id starts with
+  /// Returns a validated draft whose recipe id starts with
   /// [kDraftRecipePrefix], or throws [RecipeDraftException].
-  Future<Recipe> draft(RecipeDraftRequest request);
+  Future<RecipeDraftResult> draft(RecipeDraftRequest request);
 }
