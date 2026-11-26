@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import 'route_reason_text.dart';
 import 'trust_labels.dart';
+import 'trust_motion.dart';
 
 class InferenceSourceBadge extends StatelessWidget {
   const InferenceSourceBadge({
@@ -43,62 +44,102 @@ class InferenceSourceBadge extends StatelessWidget {
       localModelFamily: localModelFamily,
       reason: reason,
     );
-    return Semantics(
-      button: true,
-      excludeSemantics: true,
-      label: 'Where this ran: ${labels.join('; ')}. Tap for details.',
-      onTap: open,
-      child: Wrap(
-        key: const ValueKey('inference-source-badge'),
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          for (var i = 0; i < legs.length; i++)
-            _LegChip(
-              key: ValueKey('inference-leg-$i'),
-              outcome: legOutcome(legs[i]),
-              label: labels[i],
-              onTap: open,
-            ),
-        ],
+    // A new result (different legs) replays the arrival transition.
+    final signature = [
+      for (final leg in legs)
+        '${leg.requestId}:${leg.provenance.name}:${leg.error?.name}',
+    ].join('|');
+    return ArrivalTransition(
+      signature: signature,
+      child: Semantics(
+        button: true,
+        excludeSemantics: true,
+        label: 'Where this ran: ${labels.join('; ')}. Tap for details.',
+        onTap: open,
+        child: Wrap(
+          key: const ValueKey('inference-source-badge'),
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (var i = 0; i < legs.length; i++)
+              _LegChip(
+                key: ValueKey('inference-leg-$i'),
+                outcome: legOutcome(legs[i]),
+                label: labels[i],
+                // With several legs, show which data each one carried.
+                kinds: legs.length > 1 ? legs[i].kinds : const {},
+                onTap: open,
+              ),
+          ],
+        ),
       ),
     );
   }
 }
+
+/// A small glyph for each data kind, in the trust surface's order.
+IconData dataKindIcon(DataKind kind) => switch (kind) {
+  DataKind.image => Icons.photo_camera_outlined,
+  DataKind.audio => Icons.mic_none,
+  DataKind.location => Icons.place_outlined,
+  DataKind.text => Icons.notes,
+};
 
 class _LegChip extends StatelessWidget {
   const _LegChip({
     super.key,
     required this.outcome,
     required this.label,
+    required this.kinds,
     required this.onTap,
   });
 
   final LegOutcome outcome;
   final String label;
+  final Set<DataKind> kinds;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = outcomeColors(outcome);
+    final onDevice = outcome == LegOutcome.onDevice;
     return Material(
       color: colors.background,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: colors.border),
+      shape: StadiumBorder(
+        side: BorderSide(color: colors.border, width: onDevice ? 1.4 : 1),
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(20),
+        customBorder: const StadiumBorder(),
         onTap: onTap,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(outcomeIcon(outcome), size: 16, color: colors.foreground),
-                const SizedBox(width: 6),
+                // The outcome icon sits in a solid disc so on-device and
+                // cloud read apart at a glance, not by colour alone.
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.border,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(5),
+                    child: Icon(
+                      outcomeIcon(outcome),
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                for (final kind in orderedDataKinds(kinds)) ...[
+                  Icon(dataKindIcon(kind), size: 15, color: colors.foreground),
+                  const SizedBox(width: 4),
+                ],
                 Flexible(
                   child: Text(
                     label,
@@ -106,8 +147,15 @@ class _LegChip extends StatelessWidget {
                       color: colors.foreground,
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
+                      letterSpacing: 0.1,
                     ),
                   ),
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.chevron_right,
+                  size: 16,
+                  color: colors.foreground.withValues(alpha: 0.7),
                 ),
               ],
             ),
