@@ -38,6 +38,12 @@ test('cook creates, reads, updates timers and facts, and deletes their session',
   await assertSucceeds(getDoc(ref));
   await assertSucceeds(updateDoc(ref, { revision: 1, timerDeadline: Timestamp.fromMillis(60000),
     timerLabel: 'Rest', timerId: 'timer-1', confirmedFacts: ['No dairy'], updatedAt: Timestamp.fromMillis(2000) }));
+  // A step timer that ran out before it was dismissed (SS-100).
+  await assertSucceeds(updateDoc(ref, { revision: 2, timerDeadline: null, timerLabel: null, timerId: null,
+    finishedTimerStepIds: ['pickle_onion'], updatedAt: Timestamp.fromMillis(3000) }));
+  await assertFails(updateDoc(ref, { revision: 3, finishedTimerStepIds: 'pickle_onion' }));
+  await assertFails(updateDoc(ref, { revision: 3,
+    finishedTimerStepIds: Array.from({ length: 101 }, (_, i) => `step-${i}`) }));
   await assertSucceeds(deleteDoc(ref));
 });
 
@@ -95,6 +101,7 @@ test('malformed sessions, invalid ingredient states and nonzero initial revision
   const ref = doc(db(), 'sessions/meal');
   for (const patch of [{ revision: 1 }, { ingredients: { chickpeas: 'unsafe' } },
     { timerDeadline: 'tomorrow' }, { confirmedFacts: 'fact' }, { language: null },
+    { finishedTimerStepIds: 'mash' },
     { currentStepId: '' }, { recipeVersion: 0 }, { extra: true }]) {
     await assertFails(setDoc(ref, { ...session(), ...patch }));
   }

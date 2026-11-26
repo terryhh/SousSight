@@ -9,6 +9,7 @@ import 'package:soussight/data/dinner_status.dart';
 import 'package:soussight/learner/cooking_app.dart';
 import 'package:soussight/learner/cooking_coordinator.dart';
 import 'package:soussight/learner/demo_live.dart';
+import 'package:soussight/learner/dinner_review.dart';
 import 'package:soussight/live/live_types.dart';
 
 class _DraftTransport extends DemoLiveTransport {
@@ -30,12 +31,26 @@ void main() {
   late List<DinnerMessageRequest> submissions;
   late Completer<DinnerMessageResult> response;
   late FakeDinnerBackend status;
+  late AppServices lastServices;
 
   String readyText() =>
       'SousSight: Dinner is ready! ${cook.recipe.title} is on the table.';
 
-  Future<void> pumpScreen(WidgetTester tester) async {
-    final services = (await tester.runAsync(fakeServices))!;
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    AppServices Function(AppServices)? adapt,
+    String? recipeId,
+    AppServices? resume,
+  }) async {
+    final loaded =
+        resume ??
+        (await tester.runAsync(
+          () => recipeId == null
+              ? fakeServices()
+              : fakeServices(recipeId: recipeId),
+        ))!;
+    final services = resume ?? adapt?.call(loaded) ?? loaded;
+    lastServices = services;
     transport = _DraftTransport();
     submissions = [];
     response = Completer<DinnerMessageResult>();
@@ -76,8 +91,20 @@ void main() {
     expect(find.byType(AlertDialog), findsOneWidget);
   }
 
+  /// Advances the cook to the recipe's final step (not completing it).
+  Future<void> toFinalStep(WidgetTester tester) async {
+    while (cook.stepIndex < cook.recipe.steps.length - 1) {
+      await tester.runAsync(cook.advanceStep);
+      await tester.pumpAndSettle();
+    }
+    expect(cook.step.id, cook.recipe.steps.last.id);
+    expect(cook.complete, isFalse);
+  }
+
   Future<void> openDraft(WidgetTester tester) async {
     await pumpScreen(tester);
+    // "Dinner is ready!" belongs to the final step (SS-100).
+    await toFinalStep(tester);
     await cook.connect();
     transport.source.add(
       const LiveToolCall(
@@ -402,6 +429,251 @@ void main() {
     );
   }
 
+  group('the dinner button follows the step (SS-100)', () {
+    String preview(WidgetTester tester) =>
+        tester.widget<Text>(find.byKey(const Key('dinner-preview'))).data!;
+
+    testWidgets('on an early step it says started, with the time to go', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      expect(cook.stepIndex, 0);
+      final expected = dinnerDraftFor(
+        steps: cook.recipe.steps,
+        currentStepId: cook.session?.currentStepId,
+        complete: false,
+        now: cook.services.clock(),
+        timers: cook.ui.timers,
+      );
+      expect(expected.kind, DinnerKind.started);
+      await open(tester, 'Review dinner message');
+      expect(find.text('Text household: started cooking'), findsWidgets);
+      final minutes = tester
+          .widget<TextField>(field('Minutes until dinner'))
+          .controller!
+          .text;
+      expect(minutes, expected.minutes?.toString() ?? '');
+      final time = expected.minutes == null
+          ? ''
+          : ', about ${expected.minutes} minutes to go';
+      expect(
+        preview(tester),
+        "SousSight: Dinner's started$time. "
+        'Your cook is making ${cook.recipe.title}.',
+      );
+      expect(find.text(readyText()), findsNothing);
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('a finished, dismissed step timer does not add its time back', (
+      tester,
+    ) async {
+      var now = DateTime(2026, 11, 26, 18);
+      await pumpScreen(
+        tester,
+        recipeId: 'chickpea_wrap_v1',
+        adapt: (s) => AppServices(
+          auth: s.auth,
+          recipes: s.recipes,
+          sessions: s.sessions,
+          bundledRecipe: s.bundledRecipe,
+          clock: () => now,
+        ),
+      );
+      final steps = cook.recipe.steps;
+      expect(cook.step.timerSeconds, 300);
+      int laterMinutes() {
+        final seconds = steps
+            .skip(1)
+            .fold<int>(0, (sum, step) => sum + (step.timerSeconds ?? 0));
+        return (seconds / 60).ceil();
+      }
+
+      Future<String> openedMinutes() async {
+        await open(tester, 'Review dinner message');
+        final text = tester
+            .widget<TextField>(field('Minutes until dinner'))
+            .controller!
+            .text;
+        await tester.tap(find.widgetWithText(TextButton, 'Close'));
+        await tester.pumpAndSettle();
+        return text;
+      }
+
+      // Before the onion timer starts, its five minutes count.
+      expect(await openedMinutes(), '${5 + laterMinutes()}');
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      final timer = cook.ui.timers.single;
+      // The five minutes pass; the cook dismisses the finished timer.
+      now = now.add(const Duration(minutes: 6));
+      await tester.pump(const Duration(seconds: 2));
+      cook.ui.dismissTimer(timer.id);
+      await tester.pumpAndSettle();
+      expect(cook.ui.timers, isEmpty);
+      expect(cook.step.id, steps.first.id);
+      final after = await openedMinutes();
+      expect(after, laterMinutes() == 0 ? '' : '${laterMinutes()}');
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('a finished, dismissed step timer stays finished after a '
+        'reload', (tester) async {
+      var now = DateTime(2026, 11, 26, 18);
+      await pumpScreen(
+        tester,
+        recipeId: 'chickpea_wrap_v1',
+        adapt: (s) => AppServices(
+          auth: s.auth,
+          recipes: s.recipes,
+          sessions: s.sessions,
+          bundledRecipe: s.bundledRecipe,
+          clock: () => now,
+        ),
+      );
+      final later = cook.recipe.steps
+          .skip(1)
+          .fold<int>(0, (sum, step) => sum + (step.timerSeconds ?? 0));
+      final laterMinutes = (later / 60).ceil();
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      now = now.add(const Duration(minutes: 6));
+      await tester.pump(const Duration(seconds: 2));
+      cook.ui.dismissTimer(cook.ui.timers.single.id);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pumpAndSettle();
+      final firstStep = cook.recipe.steps.first.id;
+      expect(cook.session?.finishedTimerStepIds, [firstStep]);
+
+      // Reload: a new screen and coordinator resume the same saved session.
+      final sessionId = cook.session!.id;
+      final services = lastServices;
+      await tester.pumpWidget(const SizedBox());
+      await pumpScreen(tester, resume: services);
+      expect(cook.session?.id, sessionId);
+      expect(cook.step.id, firstStep);
+      expect(cook.ui.timers, isEmpty);
+      await open(tester, 'Review dinner message');
+      expect(
+        tester
+            .widget<TextField>(field('Minutes until dinner'))
+            .controller!
+            .text,
+        laterMinutes == 0 ? '' : '$laterMinutes',
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('the first-step card copy matches the started message', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+      final copy = tester.widget<Text>(
+        find.byKey(const Key('dinner-card-copy')),
+      );
+      expect(copy.data, contains("dinner's started"));
+      expect(copy.data, contains('household message'));
+      expect(copy.data, isNot(contains('Call everyone to the table')));
+      await toFinalStep(tester);
+      final last = tester.widget<Text>(
+        find.byKey(const Key('dinner-card-copy')),
+      );
+      expect(last.data, startsWith('Call everyone to the table.'));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('startStepTimer matches the exact step, never a prefix', (
+      tester,
+    ) async {
+      await pumpScreen(tester, recipeId: 'chickpea_wrap_v1');
+      final stepId = cook.step.id;
+      // Another step's timer whose ID shares this step's prefix.
+      final other = cook.ui.startTimer(
+        id: 'step-$stepId-sauce-1-0',
+        label: 'Sauce',
+        seconds: 60,
+      );
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      expect(cook.ui.timers, hasLength(2));
+      final mine = cook.ui.timers.singleWhere((t) => t.id != other.id);
+      expect(isStepTimerFor(mine.id, stepId), isTrue);
+      expect(mine.deadline, isNot(other.deadline));
+      // Starting it again reuses this step's own timer.
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      expect(cook.ui.timers, hasLength(2));
+      for (final t in [...cook.ui.timers]) {
+        cook.ui.dismissTimer(t.id);
+      }
+      await tester.pumpAndSettle();
+      // Cancelled with time left: no step is saved as finished.
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      expect(cook.session?.finishedTimerStepIds, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('a cancelled step timer still counts after its time passes', (
+      tester,
+    ) async {
+      var now = DateTime(2026, 11, 26, 18);
+      await pumpScreen(
+        tester,
+        recipeId: 'chickpea_wrap_v1',
+        adapt: (s) => AppServices(
+          auth: s.auth,
+          recipes: s.recipes,
+          sessions: s.sessions,
+          bundledRecipe: s.bundledRecipe,
+          clock: () => now,
+        ),
+      );
+      final later = cook.recipe.steps
+          .skip(1)
+          .fold<int>(0, (sum, step) => sum + (step.timerSeconds ?? 0));
+      final full = '${5 + (later / 60).ceil()}';
+      await tester.runAsync(cook.startStepTimer);
+      await tester.pumpAndSettle();
+      // Cancelled at once, before any cooking; then five minutes go by.
+      cook.ui.dismissTimer(cook.ui.timers.single.id);
+      await tester.pumpAndSettle();
+      now = now.add(const Duration(minutes: 6));
+      await tester.pump(const Duration(seconds: 2));
+      await open(tester, 'Review dinner message');
+      expect(
+        tester
+            .widget<TextField>(field('Minutes until dinner'))
+            .controller!
+            .text,
+        full,
+      );
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('on the final step it says Dinner is ready!', (tester) async {
+      await pumpScreen(tester);
+      await toFinalStep(tester);
+      await open(tester, 'Review dinner message');
+      expect(find.text('Dinner is ready'), findsOneWidget);
+      expect(preview(tester), readyText());
+      expect(field('Minutes until dinner'), findsNothing);
+      await tester.tap(find.widgetWithText(TextButton, 'Close'));
+      await tester.pumpAndSettle();
+      expect(submissions, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
   testWidgets(
     'started-cooking text is opt-in, previewed and keeps its ID on reopen',
     (tester) async {
@@ -414,7 +686,8 @@ void main() {
       await tester.pump();
       expect(
         find.text(
-          'SousSight: Terry started ${cook.recipe.title}. Dinner in about 25 min.',
+          "SousSight: Dinner's started, about 25 minutes to go. "
+          'Terry is making ${cook.recipe.title}.',
         ),
         findsOneWidget,
       );

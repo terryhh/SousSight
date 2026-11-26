@@ -403,6 +403,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   late final KitchenMode _kitchen;
   final _message = TextEditingController();
   final _dinnerAttempts = DinnerAttemptMemory();
+  final _dinnerTimers = DinnerTimerMemory();
   final _fakeDinner = FakeDinnerBackend();
   late final DinnerMessageSender _deliverDinner =
       widget.sendDinner ??
@@ -441,6 +442,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     cook = widget.cook;
+    _dinnerTimers.attach(cook.ui);
     // Screen stays on while this session is cooking; Big text (SS-107).
     _kitchen = KitchenModeScope.createFor(context)
       ..followSession(cook, () => cook.session != null && !cook.complete);
@@ -516,6 +518,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     cook.removeListener(_onChange);
+    _dinnerTimers.detach();
     _kitchen.dispose();
     _speaker?.dispose();
     _message.dispose();
@@ -1287,9 +1290,13 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
             children: [
               const Icon(Icons.sms_outlined),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
+                // Matches the message the button opens (SS-100).
                 child: Text(
-                  'Call everyone to the table.\nReview a dinner-ready message before sending.',
+                  _dinnerDraft().kind == DinnerKind.ready
+                      ? 'Call everyone to the table.\nReview a dinner-ready message before sending.'
+                      : "Let everyone know dinner's started.\nReview a household message before sending.",
+                  key: const Key('dinner-card-copy'),
                 ),
               ),
               IconButton(
@@ -1329,12 +1336,29 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
     child: _inlineNotice(text, icon),
   );
 
-  Future<void> _reviewDinner() => _reviewHousehold(DinnerKind.ready);
+  /// "Started" or "ready" from the cook's step, with a time estimate (SS-100).
+  DinnerDraft _dinnerDraft() => dinnerDraftFor(
+    steps: cook.recipe.steps,
+    currentStepId: cook.session?.currentStepId,
+    complete: cook.complete,
+    now: cook.services.clock(),
+    timers: cook.ui.timers,
+    pastTimers: _dinnerTimers.pastTimers,
+    finishedStepIds: cook.session?.finishedTimerStepIds ?? const [],
+  );
+
+  Future<void> _reviewDinner() {
+    final draft = _dinnerDraft();
+    return _reviewHousehold(draft.kind, initialMinutes: draft.minutes);
+  }
 
   /// Opt-in "started cooking" text; opens the same review, never auto-sends.
-  Future<void> _reviewStarted() => _reviewHousehold(DinnerKind.started);
+  Future<void> _reviewStarted() => _reviewHousehold(
+    DinnerKind.started,
+    initialMinutes: _dinnerDraft().minutes,
+  );
 
-  Future<void> _reviewHousehold(DinnerKind kind) async {
+  Future<void> _reviewHousehold(DinnerKind kind, {int? initialMinutes}) async {
     final session = cook.session;
     if (session == null) return;
     await showDinnerReview(
@@ -1347,6 +1371,7 @@ class _CookingSessionScreenState extends State<_CookingSessionScreen>
       mode: configuredDinnerMode,
       memory: _dinnerAttempts,
       isDemo: widget.isDemo,
+      initialMinutes: initialMinutes,
     );
   }
 }

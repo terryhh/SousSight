@@ -108,14 +108,37 @@ free-form client or model text reaches the household:
   "recipeTitle": "Chickpea wraps",
   "minutes": 25,
   "cookName": "Optional, started only",
-  "simulateOutcome": null
+  "simulateOutcome": null,
+  "templateVersion": 2
 }
 ```
 
-Templates (`kind`):
+Templates (`kind`). The fixed template text is GSM-7 only, so with ASCII slots a
+message is one SMS segment. Accented letters that are in the GSM-7 alphabet
+(for example `René`, `é`, `ñ`, `ü`) keep it GSM-7. Only a character outside the
+GSM-7 repertoire (for example `豆腐`, `ç` or `ő`, which the sanitizer below keeps
+as letters) makes the SMS UCS-2, which can then take more than one segment.
+
+Idempotency fingerprints hash the stable request fields, not the rendered
+`message`, so a template change never turns a replay into a conflict; records
+written before that change (whole-request hashes) are still recognised.
+
+`templateVersion` is the wording the cook previewed. Version 2 is current; a
+request without it comes from a client older than SS-100 and gets version 1,
+so the household never receives wording the cook did not review. Each claim
+stores its version, and a duplicate replay returns the wording originally sent.
+
+Version 1 templates (unversioned requests):
 
 - `started`: `SousSight: {cookName or 'Your cook'} started {recipeTitle}. Dinner in about {minutes} min.`
   (`minutes` required, integer 1-120)
+- `ready`: `SousSight: Dinner is ready! {recipeTitle} is on the table.`
+
+Version 2 templates by `kind`:
+
+- `started`: `SousSight: Dinner's started, about {minutes} minutes to go. {cookName or 'Your cook'} is making {recipeTitle}.`
+  (`minutes` optional, integer 1-120; when absent or null the time is left out:
+  `SousSight: Dinner's started. {cookName or 'Your cook'} is making {recipeTitle}.`)
 - `ready`: `SousSight: Dinner is ready! {recipeTitle} is on the table.` (no `minutes`)
 
 `recipeTitle` (raw <= 200 chars) and `cookName` (raw <= 80) are reduced to
