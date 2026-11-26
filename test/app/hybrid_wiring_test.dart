@@ -272,8 +272,8 @@ void main() {
           Provenance.sdkOnDevice,
         );
         // No cloud route approved: preferOnDevice narrows to onlyOnDevice so
-      // the SDK cannot fall back to the cloud on its own.
-      expect(inference.requests.single.mode, HybridMode.onlyOnDevice);
+        // the SDK cannot fall back to the cloud on its own.
+        expect(inference.requests.single.mode, HybridMode.onlyOnDevice);
       },
     );
 
