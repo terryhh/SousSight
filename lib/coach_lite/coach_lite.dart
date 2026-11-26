@@ -290,6 +290,11 @@ final _certification = RegExp(
   caseSensitive: false,
 );
 
+/// True when [text] would certify doneness, temperature or safety: the same
+/// check every model answer must pass. The read-aloud path (SS-077) applies
+/// it again to each sentence it speaks.
+bool coachLiteCertifies(String text) => _certification.hasMatch(text);
+
 /// Parses and validates model output. Throws [FormatException].
 ({List<Map<String, dynamic>> components, CoachLiteTimerSuggestion? timer})
 parseCoachLiteResponse(String text) {

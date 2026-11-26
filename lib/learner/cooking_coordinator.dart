@@ -72,7 +72,8 @@ class CookingCoordinator extends ChangeNotifier {
           ..onSettled = _onStepOpSettled
           ..onSaveFailed = _onStepSaveFailed
           ..saveTimer = _saveTimer
-          ..addListener(_notify);
+          ..clearTimer = _clearTimer
+          ..addListener(_onOpsChanged);
     live = LiveCookingController(
       transportFactory: transportFactory ?? _noLiveTransport,
       media: media,
@@ -132,6 +133,10 @@ class CookingCoordinator extends ChangeNotifier {
 
   /// The last saved session; [session] is this plus pending step changes.
   CookingSession? _saved;
+
+  /// The step whose panel is on screen, so any accepted session that moves
+  /// the step also redraws it.
+  String? _renderedStepId;
 
   /// True while the device is offline (the cooking screen shows a banner).
   bool get offline => !_ops.online;
@@ -264,7 +269,12 @@ $cookingUiInstructions
         const <String>[],
   );
 
-  void showIngredients() => ui.applyToolPayload({
+  void showIngredients() {
+    _renderedStepId = step.id;
+    _showIngredientsPanel();
+  }
+
+  void _showIngredientsPanel() => ui.applyToolPayload({
     'components': [
       {
         'id': 'root',
@@ -508,9 +518,10 @@ $cookingUiInstructions
     );
   }
 
-  /// Shown while a step change is on screen but its save keeps failing.
+  /// Shown while a step change or timer is on screen but its save keeps
+  /// failing.
   static const unsavedStepError =
-      "Your step changed on this screen but isn't saved yet. We'll keep trying.";
+      "Your progress is shown here but isn't saved yet. We'll keep trying.";
 
   /// Moves to the next step (or finishes the last) on this device at once,
   /// then saves it: now when online, otherwise on reconnect (SS-072).
@@ -525,11 +536,11 @@ $cookingUiInstructions
       expectedStepId: from.id,
       toStepId: last ? from.id : recipe.steps[index + 1].id,
     );
-    _setSaved(saved);
     // A double tap while the first save runs must not skip a step. Offline
     // there is no save to wait for; the next tap is a new step change.
     advancing = _ops.online;
-    _onStepShown();
+    // Finishing the last step keeps its id, so redraw it explicitly.
+    _setSaved(saved, reshow: true);
     final finished = complete;
     _track(AnalyticsEvents.stepCompleted, {
       'recipe_id': _recipeLabel,
@@ -568,6 +579,7 @@ $cookingUiInstructions
 
   /// Resets step-scoped state for the step now on screen.
   void _onStepShown() {
+    _renderedStepId = step.id;
     // A pending question belongs to the previous step; text typed now is a
     // new message, not an answer to the old question.
     cookQuestion = null;
@@ -586,21 +598,30 @@ $cookingUiInstructions
     });
   }
 
-  void _setSaved(CookingSession saved) {
+  /// Accepts a saved session from any source (snapshot, save, commit) and,
+  /// if the step it shows is not the one on screen, redraws the step and
+  /// resets step-scoped state (question, watch, Coach Lite).
+  void _setSaved(CookingSession saved, {bool reshow = false}) {
     _saved = saved;
     session = _ops.overlay(saved);
+    if (_renderedStepId != null && (reshow || step.id != _renderedStepId)) {
+      _onStepShown();
+    }
   }
 
   void _onStepOpSettled(StepOp op, StepOpCommit commit) {
     if (_disposed || commit.session.id != _saved?.id) return;
-    final shown = step.id;
     _setSaved(commit.session);
     if (commit.outcome == StepOpOutcome.stale) {
       alert =
           'Your progress was changed somewhere else, so this screen now shows '
           'the saved step.';
-      if (step.id != shown) _onStepShown();
     }
+    _notify();
+  }
+
+  /// The unsaved-progress error lasts only while work is still pending.
+  void _onOpsChanged() {
     if (!_ops.hasPendingWork && error == unsavedStepError) error = null;
     _notify();
   }
@@ -613,6 +634,11 @@ $cookingUiInstructions
 
   Future<void> _saveTimer(OpTimer timer) =>
       _save((current) => withTimer(current, timer));
+
+  /// Clears the saved timer only if it is still [timerId].
+  Future<void> _clearTimer(String timerId) => _save(
+    (current) => current.timerId == timerId ? withoutTimer(current) : current,
+  );
 
   Future<void> startStepTimer() {
     final seconds = step.timerSeconds;
@@ -635,30 +661,18 @@ $cookingUiInstructions
     final isNew = !ui.timers.any((t) => t.id == id);
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
     if (isNew) _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
-    final pending = OpTimer(
-      id: timer.id,
-      label: timer.label,
-      endsAt: timer.deadline,
+    // Every timer save goes through the step queue: offline, or behind
+    // unsaved step changes, it waits with its original deadline; and a
+    // dismissal while its save is in flight is cleared afterwards (SS-072).
+    _ops.recordTimer(
+      OpTimer(id: timer.id, label: timer.label, endsAt: timer.deadline),
     );
-    // Offline, or behind unsaved step changes: the deadline is saved later,
-    // unchanged, with those changes (SS-072).
-    if (_queueTimer(pending)) return;
-    try {
-      await _save((current) => withTimer(current, pending));
-    } catch (_) {
-      if (_disposed || _queueTimer(pending)) return;
-      error = 'The timer is running here, but could not be saved for reload.';
-      _notify();
-    }
-  }
-
-  bool _queueTimer(OpTimer timer) {
-    final saved = _saved;
-    if (saved == null || (_ops.online && !_ops.hasPendingWork)) return false;
-    _ops.recordTimer(timer);
-    _setSaved(saved);
+    if (_saved case final saved?) _setSaved(saved);
     _notify();
-    return true;
+    if (!_ops.online) return;
+    // Behind a step save in flight, don't hold the caller for that save.
+    final saving = _ops.flush();
+    if (_ops.pendingSteps == 0) await saving;
   }
 
   /// Whether any watch (on-device or Live) is running.
@@ -1073,17 +1087,18 @@ $cookingUiInstructions
         alert = '${action.context['label']}: time is up. Check your food.';
       case 'timer_dismissed':
         final timerId = action.context['timerId'];
-        if (timerId is String && _ops.dismissTimer(timerId)) {
+        if (timerId is String) {
+          // A step change already sent may carry this timer: it is cleared
+          // after that change is answered, never by editing it (SS-072).
+          _ops.dismissTimer(timerId);
+          if (timerId == _saved?.timerId) {
+            if (_ops.online && !_ops.hasPendingWork) {
+              await _clearTimer(timerId);
+            } else {
+              _ops.clearTimerLater(timerId);
+            }
+          }
           if (_saved case final saved?) _setSaved(saved);
-        }
-        if (timerId == _saved?.timerId) {
-          await _save(
-            (current) => current.copyWith(
-              timerDeadline: null,
-              timerLabel: null,
-              timerId: null,
-            ),
-          );
         }
       case 'review_dinner_message':
         dinnerDraft = action.context['message'] as String;
@@ -1143,7 +1158,7 @@ $cookingUiInstructions
     _resetCoachLite();
     _disposed = true;
     _ops
-      ..removeListener(_notify)
+      ..removeListener(_onOpsChanged)
       ..dispose();
     _researchEpoch++;
     if (watchService case final service?) {
