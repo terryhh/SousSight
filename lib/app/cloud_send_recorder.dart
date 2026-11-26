@@ -2,15 +2,10 @@
 // coordinator/transport boundary (DESIGN.md §5: Live connect and each resume
 // write a leg).
 //
-// The Live hook is a decorator over any [LiveTransport]; it does not change
-// the transports themselves. It records:
-// - every connect attempt (pending until connect returns; a failure stays
-//   visible as "may have been sent");
-// - every resume, detected from the transports' own events: a
-//   `LiveConnectionNotice(reconnecting: true)` opens a leg, the next
-//   non-reconnecting notice confirms it, and a stream error fails it.
-// SS-074 (`lib/live/live_backend*`) can wrap its AI Logic transport with
-// [LedgeredLiveTransport] instead of adding a second hook.
+// Live: [LiveLegTracker] + [LedgeredLiveTransport] make each connect attempt
+// and each resume exactly one leg. The AI Logic transport (SS-074) opens the
+// leg itself through its guard, right before the socket opens; the wrapper
+// settles it. No transport file is changed here.
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -20,10 +15,8 @@ import 'package:ai_logic_hybrid/ai_logic_hybrid.dart';
 import '../ai/hybrid/hybrid_types.dart';
 import '../ai/hybrid/inference_ledger.dart';
 import '../core/cloud_send.dart';
+import '../live/live_backend_guard.dart' show kLiveFeature, kLiveLegKinds;
 import '../live/live_types.dart';
-
-/// Ledger key for Live coach legs.
-const kLiveFeature = 'live';
 
 class LedgerCloudSendRecorder implements CloudSendRecorder {
   LedgerCloudSendRecorder(this.ledger);
@@ -83,15 +76,50 @@ class _LedgerSend implements CloudSend {
       _ledger.complete(_entry, provenance: Provenance.unknown, error: code);
 }
 
-/// Records Live connect attempts and resumes around [inner].
+/// One Live transport's ledger legs. A leg opens when a socket is about to
+/// open ([admitted], the shape of `LiveLegRecorder`, so the AI Logic
+/// transport's `LiveCloudGuard.admit` can call it) and is closed by
+/// [LedgeredLiveTransport] when the connect or resume settles.
+class LiveLegTracker {
+  LiveLegTracker(this.recorder);
+  final CloudSendRecorder recorder;
+  CloudSend? _open;
+
+  bool get hasOpenLeg => _open != null;
+
+  /// A socket is about to open (connect or resume): write a pending leg.
+  void admitted(String feature, Set<DataKind> kinds) {
+    // A previous leg that never settled did not finish cleanly.
+    _open?.failed(HybridErrorCode.network);
+    _open = recorder.begin(feature, kinds);
+  }
+
+  void confirmed() {
+    _open?.confirmed();
+    _open = null;
+  }
+
+  void failed(HybridErrorCode code) {
+    _open?.failed(code);
+    _open = null;
+  }
+}
+
+/// Settles Live legs around [inner]: every connect attempt and every resume
+/// is exactly one leg. A failed one stays visible as unknown.
+///
+/// With [selfRecording] (the AI Logic transport, whose guard calls
+/// [LiveLegTracker.admitted] right before each socket opens), this wrapper
+/// only settles the legs; a connect or resume refused before its socket opened
+/// writes nothing, because nothing was sent. Otherwise (the legacy ephemeral
+/// transport) it opens the legs itself: at connect, and at the transport's
+/// `LiveConnectionNotice(reconnecting: true)`.
 class LedgeredLiveTransport implements LiveTransport {
-  LedgeredLiveTransport(this.inner, this.recorder);
+  LedgeredLiveTransport(this.inner, this.legs, {this.selfRecording = false});
 
   final LiveTransport inner;
-  final CloudSendRecorder recorder;
-
-  static const _kinds = {DataKind.text, DataKind.image, DataKind.audio};
-  CloudSend? _resume;
+  final LiveLegTracker legs;
+  final bool selfRecording;
 
   @override
   late final Stream<LiveEvent> events = inner.events.transform(
@@ -99,17 +127,17 @@ class LedgeredLiveTransport implements LiveTransport {
       handleData: (event, sink) {
         if (event case LiveConnectionNotice(:final reconnecting)) {
           if (reconnecting) {
-            _resume ??= recorder.begin(kLiveFeature, _kinds);
+            if (!selfRecording && !legs.hasOpenLeg) {
+              legs.admitted(kLiveFeature, kLiveLegKinds);
+            }
           } else {
-            _resume?.confirmed();
-            _resume = null;
+            legs.confirmed();
           }
         }
         sink.add(event);
       },
       handleError: (error, stack, sink) {
-        _resume?.failed(HybridErrorCode.network);
-        _resume = null;
+        legs.failed(HybridErrorCode.network);
         sink.addError(error, stack);
       },
     ),
@@ -117,17 +145,17 @@ class LedgeredLiveTransport implements LiveTransport {
 
   @override
   Future<void> connect({required String systemInstruction}) async {
-    final send = recorder.begin(kLiveFeature, _kinds);
+    if (!selfRecording) legs.admitted(kLiveFeature, kLiveLegKinds);
     try {
       await inner.connect(systemInstruction: systemInstruction);
     } on TimeoutException {
-      send.failed(HybridErrorCode.timeout);
+      legs.failed(HybridErrorCode.timeout);
       rethrow;
     } catch (_) {
-      send.failed(HybridErrorCode.network);
+      legs.failed(HybridErrorCode.network);
       rethrow;
     }
-    send.confirmed();
+    legs.confirmed();
   }
 
   @override
@@ -147,9 +175,8 @@ class LedgeredLiveTransport implements LiveTransport {
 
   @override
   Future<void> close() {
-    // A resume still open when the session closes did not finish.
-    _resume?.failed(HybridErrorCode.cancelled);
-    _resume = null;
+    // A connect or resume still open when the session closes did not finish.
+    legs.failed(HybridErrorCode.cancelled);
     return inner.close();
   }
 }

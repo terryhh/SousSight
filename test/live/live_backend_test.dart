@@ -8,6 +8,7 @@ import 'package:soussight/ai/hybrid/hybrid_dispatcher.dart';
 import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/app/hybrid_runtime.dart';
 import 'package:soussight/data/live_session.dart';
+import 'package:soussight/learner/cooking_app.dart' show ledgeredLiveFactory;
 import 'package:soussight/live/live_backend.dart';
 import 'package:soussight/live/live_controller.dart';
 import 'package:soussight/live/live_tools.dart';
@@ -330,7 +331,13 @@ void main() {
       );
       final h = Harness();
       final controller = LiveCookingController(
-        transportFactory: h.factory(recorder: runtime.recordCloudLeg)!,
+        // The app's path: the guard opens each leg, the wrapper settles it.
+        transportFactory: ledgeredLiveFactory(
+          isDemo: false,
+          hybrid: runtime,
+          selfRecording: true,
+          build: (record) => h.factory(recorder: record),
+        )!,
         media: _Media(),
         onToolCall: (_) async => const {},
       );
