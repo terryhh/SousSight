@@ -285,6 +285,18 @@ void main() {
     });
   });
 
+  test('a ready that does not mention the step cue keeps watching', () {
+    fakeAsync((async) {
+      final rig = Rig(async);
+      rig.fake.enqueue(verdictJson('ready', see: 'A pan on the stove.'));
+      rig.begin();
+      rig.frame();
+      async.flushMicrotasks();
+      expect(rig.watch.verdict!.state, WatchState.unsure);
+      expect(rig.watch.isActive, isTrue);
+    });
+  });
+
   test('an incomplete ready answer does not end the watch', () {
     fakeAsync((async) {
       final rig = Rig(async);

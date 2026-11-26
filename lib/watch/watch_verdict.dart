@@ -176,7 +176,11 @@ final _unsupportedClaim = RegExp(
     // Freshness and allergens.
     r'spoil', r'gone\s+off', r'allerg', r'\bgluten\b', r'\blactose\b',
     '\\b(nut|peanut|dairy|egg|soy|wheat|shellfish)$_sp?free\\b',
-    r'\bmay\s+contain\b',
+    r'\bmay\s+contain\b', r'\b(in)?edible\b', r'\bcomestible\b',
+    // Whether an ingredient is absent or present is not something a photo
+    // of the pan can establish ("there are no peanuts", "contains nuts").
+    '\\b(no|any|without|contains?|free$_sp(of|from))$_sp'
+        '(peanuts?|nuts?|dairy|milk|eggs?|soy|wheat|shellfish|sesame|fish)\\b',
     // Spanish basics: cocido/cocinado, hecho, seguro, sin gluten,
     // temperatura, grados, por dentro, listo para comer, alérgeno.
     r'\b(cocid|cocinad|segur|crud)[oa]s?\b',
@@ -192,10 +196,38 @@ final _unsupportedClaim = RegExp(
 bool claimsUnsupported(String text) =>
     _unsupportedClaim.hasMatch(text.replaceAll('\u2019', "'"));
 
+// Words that say nothing about what the cue looks like. Compared by their
+// first four letters, like the content words below.
+const _fillerStems = {
+  'with', 'that', 'this', 'thes', 'have', 'look', 'like', 'from', 'into', //
+  'they', 'them', 'ther', 'been', 'some', 'more', 'unti', 'abou', 'when',
+  'then', 'than', 'very', 'just', 'also', 'each', 'stil', 'only', 'what',
+  'your', 'will', 'step', 'food', 'appe', 'seem', 'visi', 'phot', 'imag',
+  'clea', 'show',
+};
+
+Set<String> _contentStems(String text) => {
+  for (final word in RegExp(
+    r'[a-záéíóúñü]+',
+  ).allMatches(text.toLowerCase()).map((m) => m[0]!))
+    if (word.length >= 4 && !_fillerStems.contains(word.substring(0, 4)))
+      word.substring(0, 4),
+};
+
+/// True when [observation] shares at least one content word with [cue]
+/// ("Golden edges." and "golden at the edges"), so a positive verdict
+/// points at the thing the step asked the camera to look for.
+bool relatesToCue(String observation, String cue) =>
+    _contentStems(observation).intersection(_contentStems(cue)).isNotEmpty;
+
 /// Parses the model's JSON. Anything malformed becomes `unsure` so the cook
 /// is asked for a better view rather than shown a guess. Never throws.
+///
+/// With [cue], a `ready` whose observation does not mention anything in the
+/// cue also abstains: "ready" must rest on the visible cue it was asked
+/// about.
 ({WatchState state, WatchDirection direction, String whatISee, bool redacted})
-parseWatchJson(String text) {
+parseWatchJson(String text, {String? cue}) {
   const unsure = (
     state: WatchState.unsure,
     direction: WatchDirection.none,
@@ -235,15 +267,26 @@ parseWatchJson(String text) {
   final direction = state == WatchState.notYet
       ? parsedDirection
       : WatchDirection.none;
-  if (claimsUnsupported(seen)) {
+  // Check the whole observation, not the clipped display text, so a claim
+  // past the clip (or split by it) is still caught.
+  if (claimsUnsupported(raw.replaceAll(RegExp(r'\s+'), ' '))) {
     // The sentence was the only evidence. A positive verdict resting on a
     // claim the camera cannot make abstains, so the watch keeps looking
-    // instead of stopping and telling the cook it saw the cue.
+    // instead of stopping and telling the cook it saw the cue; and a "more"
+    // or "less" resting on it is dropped, so no heat change is suggested.
     return (
       state: state == WatchState.ready ? WatchState.unsure : state,
-      direction: direction,
+      direction: WatchDirection.none,
       whatISee: 'I can describe how it looks, not how it is inside.',
       redacted: true,
+    );
+  }
+  if (state == WatchState.ready && cue != null && !relatesToCue(seen, cue)) {
+    return (
+      state: WatchState.unsure,
+      direction: WatchDirection.none,
+      whatISee: seen,
+      redacted: false,
     );
   }
   return (state: state, direction: direction, whatISee: seen, redacted: false);

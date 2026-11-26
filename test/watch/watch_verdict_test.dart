@@ -126,6 +126,12 @@ void main() {
       'Ya está hecho.',
       'Los fideos están hechos.',
       'El filete está muy hecho.',
+      // Codex, #271 review: non-visual judgements.
+      'It looks edible.',
+      'there are no peanuts',
+      'The sauce contains nuts.',
+      'Free from dairy.',
+      'Es comestible.',
       'Perfect doneness.',
       // Codex, second round (#269 follow-up), verbatim.
       'cooked to the bone',
@@ -227,6 +233,86 @@ void main() {
       final parsed = parseWatchJson(verdictJson('unsure', see: 'Safe to eat.'));
       expect(parsed.state, WatchState.unsure);
       expect(parsed.redacted, isTrue);
+    });
+
+    test('a redacted not_yet drops its heat adjustment', () {
+      for (final direction in ['more', 'less']) {
+        final parsed = parseWatchJson(
+          verdictJson(
+            'not_yet',
+            direction: direction,
+            see: 'Not cooked through yet.',
+          ),
+        );
+        expect(parsed.state, WatchState.notYet);
+        expect(parsed.direction, WatchDirection.none, reason: direction);
+        expect(parsed.redacted, isTrue);
+        final message = WatchVerdict(
+          state: parsed.state,
+          direction: parsed.direction,
+          whatISee: parsed.whatISee,
+          watchId: 'w',
+          stepId: 'a',
+          sessionId: 's',
+          frameCapturedAt: DateTime(2026),
+          source: WatchVerdictSource.onDevice,
+        ).message;
+        expect(message, isNot(contains('heat')));
+        expect(message, isNot(contains('keep going')));
+      }
+      // An unredacted not_yet keeps its direction.
+      expect(
+        parseWatchJson(
+          verdictJson('not_yet', direction: 'less', see: 'Very dark edges.'),
+        ).direction,
+        WatchDirection.less,
+      );
+    });
+
+    test('a claim past the display clip is still caught', () {
+      final long = '${'Golden edges on soft onions. ' * 12}Safe to eat.';
+      expect(long.length, greaterThan(280));
+      final parsed = parseWatchJson(verdictJson('ready', see: long));
+      expect(parsed.redacted, isTrue);
+      expect(parsed.state, WatchState.unsure);
+    });
+
+    test('ready must relate to the step cue when the cue is known', () {
+      const cue = 'Onions are soft and golden at the edges.';
+      for (final seen in [
+        'Golden edges.',
+        'The onions look soft.',
+        'Edges have turned golden brown.',
+      ]) {
+        final parsed = parseWatchJson(
+          verdictJson('ready', see: seen),
+          cue: cue,
+        );
+        expect(parsed.state, WatchState.ready, reason: seen);
+      }
+      for (final seen in [
+        'A pan on the stove.',
+        'It looks like it is there now.',
+        'Steam rising from the pot.',
+      ]) {
+        final parsed = parseWatchJson(
+          verdictJson('ready', see: seen),
+          cue: cue,
+        );
+        expect(parsed.state, WatchState.unsure, reason: seen);
+        expect(parsed.whatISee, seen);
+        expect(parsed.redacted, isFalse);
+      }
+      // not_yet and unsure are not held to the cue.
+      expect(
+        parseWatchJson(
+          verdictJson('not_yet', direction: 'more', see: 'A pan on the stove.'),
+          cue: cue,
+        ).state,
+        WatchState.notYet,
+      );
+      expect(relatesToCue('Sauce coats the spoon.', 'Coats a spoon.'), isTrue);
+      expect(relatesToCue('Looks like this.', 'Looks like that.'), isFalse);
     });
 
     test('claimsUnsupported normalises curly apostrophes', () {
