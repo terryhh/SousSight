@@ -85,67 +85,95 @@ const _claims = [
   'Es seguro para personas con alergia.',
 ];
 
-const _nearMisses = [
-  // English conditions and advice
+/// Visual-only coaching stays allowed.
+const _allowed = [
+  'Stir until golden.',
+  'Spread it in a thin, even layer.',
+  'Look for bubbling at the edges and crisp edges.',
+  'Fold from the bottom up until evenly mixed.',
+  'Cocina hasta que se vea dorado.',
+  'Revuelve hasta que salgan burbujas.',
+  'Los bordes quedan crujientes y brillantes.',
+  'Corta en cubitos parejos.',
+  'Ten a la mano la mantequilla de maní.',
+  'Unta una capa delgada.',
+];
+
+/// Harmless sentences the conservative gate blocks on purpose: they use
+/// the vocabulary, and over-blocking is the accepted cost.
+const _overBlocked = [
   'Stir until it is done.',
   "It's done when it coats a spoon.",
-  'Look for golden edges, then check with a thermometer.',
-  "Neither the camera nor this coach can confirm doneness, internal "
-      'temperature, freshness or allergens. Check with a food thermometer and '
-      'trusted guidance.',
+  'Have your peanut butter ready.',
   "The camera can't measure temperature; use a thermometer.",
   'Use dairy-free milk if you need to.',
-  'Check the label for peanuts.',
-  // Spanish conditions (subjunctive or after a condition word)
   'Cocina hasta que esté cocido.',
   'Cuando esté listo, sírvelo.',
-  'Cuando está listo, el pan suena hueco.',
-  'Si está fresco, úsalo.',
-  'Revisa si está cocido con un termómetro.',
-  'Una vez que esté hecho, retíralo.',
-  'Cocina hasta que se vea dorado y revisa con un termómetro.',
-  'Si se ve blanco por dentro, revisa la temperatura con un termómetro.',
-  // Spanish instructions and advice
-  'Usa un termómetro para revisar la temperatura interna.',
-  'Revisa que alcance 74 °C con un termómetro.',
   'Guárdalo en un lugar fresco.',
-  'Ten lista la mantequilla de maní.',
-  'La salsa queda lista para servir cuando la pruebes.',
-  'Si huele mal, está echado a perder; tíralo.',
-  'Revisa la etiqueta por si contiene maní.',
-  'Si no contiene maní, úsalo.',
   'Usa pan sin gluten si lo necesitas.',
-  'La cámara no puede medir la temperatura; usa un termómetro.',
-  'La cámara no confirma la temperatura.',
-  // other meanings
-  'Es seguro que te va a gustar.',
-  'No es seguro comerlo sin revisarlo.',
-  'No hay prisa.',
-  'No hay sal en la receta.',
-  'Ya está el agua hirviendo.',
-  'Ya puedes cortar el tomate.',
-  'Está mezclado de forma pareja.',
+  'Revisa la etiqueta por si contiene maní.',
 ];
 
 void main() {
   group('claims are caught', () {
     for (final claim in _claims) {
       test(claim, () {
-        expect(certifiesFoodSafety(claim), isTrue);
+        expect(touchesFoodSafety(claim), isTrue);
         expect(coachLiteCertifies(claim), isTrue);
       });
     }
   });
 
-  group('near misses pass', () {
-    for (final text in _nearMisses) {
-      test(text, () => expect(certifiesFoodSafety(text), isFalse));
+  group('visual-only coaching passes', () {
+    for (final text in _allowed) {
+      test(text, () => expect(touchesFoodSafety(text), isFalse));
     }
   });
 
-  test('the fallback note itself certifies nothing', () {
-    expect(certifiesFoodSafety(cookSafetyFallbackNote), isFalse);
-    expect(certifiesFoodSafety(coachLiteSafetyNotice), isFalse);
+  group('harmless but over-blocked on purpose', () {
+    for (final text in _overBlocked) {
+      test(text, () => expect(touchesFoodSafety(text), isTrue));
+    }
+  });
+
+  test('second-round Codex probes are blocked', () {
+    for (final text in [
+      'The chicken is done when the juices run clear',
+      'El pollo está a 74 °C según la cámara',
+      'The milk is fresh',
+      'Sesame-free',
+    ]) {
+      expect(touchesFoodSafety(text), isTrue, reason: text);
+    }
+  });
+
+  test('the recipe\'s own reviewed text may be quoted verbatim', () {
+    final panel = {
+      'components': [
+        {
+          'id': 'cue',
+          'component': 'stepCue',
+          'title': 'Step',
+          'body': 'Have your peanut butter ready.',
+        },
+      ],
+    };
+    expect(payloadTouchesFoodSafety(panel), isTrue);
+    expect(
+      payloadTouchesFoodSafety(
+        panel,
+        reviewed: {'Have your peanut butter ready.'},
+      ),
+      isFalse,
+    );
+    // Anything the model adds to it is still checked.
+    expect(
+      payloadTouchesFoodSafety(
+        {'body': 'Have your peanut butter ready. It is safe.'},
+        reviewed: {'Have your peanut butter ready.'},
+      ),
+      isTrue,
+    );
   });
 
   test('payload helpers read cook-facing strings only', () {
@@ -162,9 +190,9 @@ void main() {
       'timerSuggestion': {'label': 'Simmer', 'seconds': 60},
     };
     expect(cookFacingStrings(payload), ['Tip', 'Stir gently.', 'Simmer']);
-    expect(payloadCertifiesFoodSafety(payload), isFalse);
+    expect(payloadTouchesFoodSafety(payload), isFalse);
     expect(
-      payloadCertifiesFoodSafety({
+      payloadTouchesFoodSafety({
         'timerSuggestion': {'label': 'Chicken is safe to eat'},
       }),
       isTrue,

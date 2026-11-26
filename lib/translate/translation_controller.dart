@@ -23,6 +23,9 @@ class TranslationController extends ChangeNotifier {
   CookLanguage _language;
   RecipeTranslation? _translation;
   bool _busy = false;
+
+  /// What the running translation is for.
+  TranslationKey? _inflightKey;
   bool _showOriginal = false;
   bool _disposed = false;
 
@@ -81,6 +84,7 @@ class TranslationController extends ChangeNotifier {
       return;
     }
     _busy = true;
+    _inflightKey = TranslationKey.of(recipe, value);
     _notify();
 
     int? budget;
@@ -118,16 +122,27 @@ class TranslationController extends ChangeNotifier {
     _notify();
   }
 
-  /// Re-translates when the recipe (or its version) changed under a
-  /// non-source language. Does nothing when the current one still fits.
+  /// Translates [recipe] if nothing current covers it: reuses a translation
+  /// already running for the same recipe, version and language, keeps a
+  /// complete one, and retries a blocked or partial one (e.g. after the
+  /// device comes back online).
   Future<void> recipeChanged(Recipe recipe, {required String sessionId}) {
     if (_language.isSource) return Future.value();
+    final key = TranslationKey.of(recipe, _language);
+    if (_busy && _inflightKey == key) return Future.value();
     final t = _translation;
-    if (!_busy && t != null && t.key == TranslationKey.of(recipe, _language)) {
+    if (!_busy &&
+        t != null &&
+        t.key == key &&
+        t.status == TranslationStatus.complete) {
       return Future.value();
     }
     return select(_language, recipe: recipe, sessionId: sessionId);
   }
+
+  /// Tries a blocked or partial translation again.
+  Future<void> retry(Recipe recipe, {required String sessionId}) =>
+      select(_language, recipe: recipe, sessionId: sessionId);
 
   /// Stops a running translation. The language choice stays.
   void cancel() {

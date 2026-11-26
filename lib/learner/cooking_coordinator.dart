@@ -904,7 +904,7 @@ $cookingUiInstructions
           };
         }
         try {
-          ui.applyJson(a['uiJson'] as String);
+          ui.applyJson(a['uiJson'] as String, reviewed: _reviewedRecipeText);
         } on UnsafeClaimException catch (e) {
           // The coach claimed what no camera or model can know: show the
           // recipe's own step and cue with a thermometer / label note.
@@ -917,7 +917,7 @@ $cookingUiInstructions
           return _invalidUi(e.toString());
         }
       case 'start_timer':
-        if (certifiesFoodSafety(a['label'] as String)) {
+        if (touchesFoodSafety(a['label'] as String)) {
           return {
             'ok': false,
             'error': 'Timer label: ${const UnsafeClaimException().message}',
@@ -929,6 +929,10 @@ $cookingUiInstructions
           (a['seconds'] as num).toInt(),
         );
       case 'watch_cooking':
+        if (touchesFoodSafety(a['goal'] as String)) {
+          // Not ok: the Live controller stops the watch it just started.
+          return _gated('Watch goal');
+        }
         _watchPanel('watching', 'Watching your food', a['goal'] as String);
         // LiveCookingController started the watch before dispatching here.
         if (live.watchId case final id?) {
@@ -939,7 +943,7 @@ $cookingUiInstructions
           });
         }
       case 'report_readiness':
-        if (certifiesFoodSafety(a['observation'] as String)) {
+        if (touchesFoodSafety(a['observation'] as String)) {
           // Drop the claim, downgrade to uncertain and show the recipe's own
           // visible cue. Not ok, so the watch is not marked ready.
           _watchPanel(
@@ -969,6 +973,9 @@ $cookingUiInstructions
         );
         if (ready) alert = 'Check your food: ${a['observation']}';
       case 'ask_cook':
+        if (touchesFoodSafety(a['question'] as String)) {
+          return _gated('Question');
+        }
         cookQuestion = a['question'] as String;
         ui.reopenQuestion(cookQuestion!);
         ui.upsertPanel({
@@ -1003,13 +1010,44 @@ $cookingUiInstructions
       case 'next_step':
         alert = 'Ready for the next step? Confirm with the Next step button.';
       case 'dinner_ready':
-        draftDinner(a['message'] as String);
+        // "Ready" is the message's purpose, not a food claim; the cook
+        // reviews the draft before anything is sent.
+        final message = a['message'] as String;
+        if (touchesFoodSafety(message.replaceAll(_dinnerIsReady, ''))) {
+          return _gated('Dinner message');
+        }
+        draftDinner(message);
       default:
         return {'ok': false, 'error': 'Unknown cooking action.'};
     }
     _notify();
     return {'ok': true, 'currentStep': step.id, 'currentStepId': step.id};
   }
+
+  /// The recipe's own reviewed text: a panel may quote it verbatim.
+  Set<String> get _reviewedRecipeText => {
+    for (final s in [
+      recipe.title,
+      recipe.summary,
+      for (final i in recipe.ingredients) ...[i.name, i.qty],
+      for (final st in recipe.steps) ...[st.title, st.instruction, st.cue],
+      for (final c in recipe.checkpoints) ...[c.target, ...c.cues],
+    ])
+      if (s.trim().isNotEmpty) s.trim(),
+  };
+
+  /// The model's text touched food safety: nothing is shown.
+  Map<String, Object?> _gated(String what) => {
+    'ok': false,
+    'error': '$what: ${const UnsafeClaimException().message}',
+    'currentStepId': step.id,
+  };
+
+  static final _dinnerIsReady = RegExp(
+    r'(?<![\p{L}])(?:ready|list[oa]s?)(?![\p{L}])',
+    caseSensitive: false,
+    unicode: true,
+  );
 
   /// App-authored fallback for a rejected coach panel: the recipe's own step
   /// and visible cue, and where to check what the camera cannot.

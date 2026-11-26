@@ -32,14 +32,15 @@ Recipe testRecipe({String id = 'pb', int version = 1, int extraSteps = 0}) =>
         const RecipeStep(
           id: 'toast',
           title: 'Toast the bread',
-          instruction: 'Toast the bread at 350°F for 5 minutes.',
+          instruction: 'Toast the bread for 5 minutes.',
           cue: 'Golden edges.',
         ),
         const RecipeStep(
           id: 'spread',
           title: 'Spread',
           instruction: 'Spread the peanut butter on the bread.',
-          cue: '',
+          // A warning: stays in the reviewed English, never sent.
+          cue: 'Do not press hard enough to tear the bread.',
         ),
         for (var i = 0; i < extraSteps; i++)
           RecipeStep(
@@ -65,7 +66,8 @@ const spanishFor = <String, String>{
   'ingredient.pb.name': 'Mantequilla de maní',
   'ingredient.pb.qty': 'unas 2 cdas',
   'step.toast.title': 'Tuesta el pan (bread)',
-  'step.toast.instruction': 'Tuesta el pan (bread) a 350°F por 5 minutos.',
+  'step.toast.instruction': 'Tuesta el pan (bread) por 5 minutos.',
+  'ingredient.salt.name': 'Sal',
   'step.toast.cue': 'Bordes dorados.',
   'step.spread.title': 'Unta',
   'step.spread.instruction':

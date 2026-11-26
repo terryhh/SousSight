@@ -140,11 +140,9 @@ void main() {
       );
       expect(find.textContaining('Unta una capa delgada.'), findsWidgets);
 
-      // The dispatcher's language check reads the cook's language only for
-      // features that answer in it.
-      expect(cookLanguageTagFor(hybrid, 'coach_lite'), 'es');
-      expect(cookLanguageTagFor(hybrid, recipeTranslateFeature), 'es');
-      expect(cookLanguageTagFor(hybrid, 'local_watch'), isNull);
+      // Both requests carried their own language; nothing else changed.
+      expect(coach.task.outputLanguages, ['en', 'es']);
+      expect(inference.requests.first.task.outputLanguages, ['en', 'es']);
     },
   );
 
@@ -157,9 +155,7 @@ void main() {
       isOnline: () => true,
       cloudModel: 'test-cloud-model',
     );
-    expect(cookLanguageTagFor(hybrid, 'coach_lite'), isNull);
     final controller = translationFor(hybrid);
-    expect(cookLanguageTagFor(hybrid, 'coach_lite'), 'en');
     await controller.select(
       spanish,
       recipe: testRecipe(),
@@ -234,8 +230,8 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  test('the bridge is configured for every cook language', () async {
-    // Codex #6: Chrome's expectedOutputs must include Spanish.
+  test('English-only features keep the configured languages', () async {
+    // Codex #6 (second round): languages are per request, not global.
     final inference = FakeHybridInference();
     final hybrid = HybridRuntime.create(
       inference: inference,
@@ -246,8 +242,7 @@ void main() {
     );
     await hybrid.inference.capabilities();
     await Future<void>.delayed(Duration.zero);
-    expect(inference.config?.languages, containsAll(['en', 'es']));
-    expect(inference.config?.toMap()['languages'], cookLanguageCodes);
+    expect(inference.config?.languages, ['en']);
   });
 
   test('privacy switch and ledger label exist for recipe_translate', () {

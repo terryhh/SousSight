@@ -20,30 +20,63 @@ import 'translation_guard.dart';
 /// ("Translated on this device") needs an accepted translation
 /// ([translated]) and a leg whose provenance says where it ran; a failed or
 /// unknown attempt never earns it.
+///
+/// When translated, [legs] are the legs that answered the lines on screen;
+/// [otherLegs] are every other attempt (a failed retry, a malformed chunk),
+/// whose transfers are reported separately from where the text came from.
 String translationOriginSentence(
   List<InferenceLeg> legs, {
   bool translated = true,
+  List<InferenceLeg> otherLegs = const [],
 }) {
+  if (translated) {
+    final origin = _origin(legs);
+    final others = [for (final l in otherLegs) legOutcome(l)];
+    final shownCloud = legs.any((l) {
+      final o = legOutcome(l);
+      return o == LegOutcome.cloudSdk || o == LegOutcome.cloudAdapter;
+    });
+    if (!shownCloud &&
+        others.any(
+          (o) => o == LegOutcome.cloudSdk || o == LegOutcome.cloudAdapter,
+        )) {
+      return '$origin Other recipe text was also sent to the cloud.';
+    }
+    if (!shownCloud && others.contains(LegOutcome.maybeSent)) {
+      return '$origin Other recipe text may also have been sent to the cloud.';
+    }
+    return origin;
+  }
+  return _notTranslated(legs);
+}
+
+String _notTranslated(List<InferenceLeg> legs) {
   final outcomes = [for (final leg in legs) legOutcome(leg)];
   final cloud = outcomes.any(
     (o) => o == LegOutcome.cloudSdk || o == LegOutcome.cloudAdapter,
   );
   final maybe = outcomes.contains(LegOutcome.maybeSent);
-  if (!translated) {
-    if (cloud) {
-      return 'Nothing was translated. Recipe text was sent to the cloud.';
-    }
-    if (maybe) {
-      return 'Nothing was translated. Recipe text may have been sent to the '
-          'cloud.';
-    }
-    if (outcomes.contains(LegOutcome.simulated)) {
-      return 'Practice mode: nothing was translated.';
-    }
-    return legs.isEmpty
-        ? 'Nothing was translated.'
-        : 'Nothing was translated, and nothing left this device.';
+  if (cloud) {
+    return 'Nothing was translated. Recipe text was sent to the cloud.';
   }
+  if (maybe) {
+    return 'Nothing was translated. Recipe text may have been sent to the '
+        'cloud.';
+  }
+  if (outcomes.contains(LegOutcome.simulated)) {
+    return 'Practice mode: nothing was translated.';
+  }
+  return legs.isEmpty
+      ? 'Nothing was translated.'
+      : 'Nothing was translated, and nothing left this device.';
+}
+
+String _origin(List<InferenceLeg> legs) {
+  final outcomes = [for (final leg in legs) legOutcome(leg)];
+  final cloud = outcomes.any(
+    (o) => o == LegOutcome.cloudSdk || o == LegOutcome.cloudAdapter,
+  );
+  final maybe = outcomes.contains(LegOutcome.maybeSent);
   if (cloud) return 'Some or all of this was translated in the cloud.';
   if (maybe) return 'Some recipe text may have been sent to the cloud.';
   final ran = outcomes.where((o) => o != LegOutcome.notFinishedLocal).toList();
@@ -183,7 +216,11 @@ class RecipeLanguageView extends StatelessWidget {
               style: style,
             ),
             if (kept != null)
-              _KeptNote(id: id, reason: lineRejectionSentence(kept)),
+              _KeptNote(
+                id: id,
+                reason: lineRejectionSentence(kept),
+                safety: kept == LineRejection.reviewedEnglish,
+              ),
           ],
         );
       }
@@ -270,9 +307,27 @@ class RecipeLanguageView extends StatelessWidget {
                             'lines stay in English.'
                       : '${finished.keptCount} '
                             '${finished.keptCount == 1 ? 'line stays' : 'lines stay'} '
-                            'in English because a check did not pass.',
+                            'in English: safety details stay as reviewed, and '
+                            'lines that fail a check are not shown '
+                            'translated.',
                 ),
             ],
+            // A blocked or partial result can be tried again, e.g. once the
+            // device is back online.
+            if (!controller.busy &&
+                (finished.status == TranslationStatus.blocked ||
+                    finished.status == TranslationStatus.partial))
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const ValueKey('translation-retry'),
+                  onPressed: () => unawaited(
+                    controller.retry(recipe, sessionId: sessionId()),
+                  ),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Try again'),
+                ),
+              ),
           ],
           const SizedBox(height: 8),
           line(
@@ -300,6 +355,13 @@ class RecipeLanguageView extends StatelessWidget {
                           i.name,
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
+                        // From the recipe, in both views.
+                        if (i.optional)
+                          Text(
+                            'optional',
+                            key: ValueKey('optional-${i.id}'),
+                            style: theme.textTheme.bodySmall,
+                          ),
                         if (i.qty.trim().isNotEmpty)
                           line(RecipeLineIds.ingredientQty(i.id), i.qty),
                         if (i.allergens.isNotEmpty)
@@ -380,10 +442,18 @@ class _AiLabel extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              translationOriginSentence(
-                translation.legs,
-                translated: translation.translatedCount > 0,
-              ),
+              translation.translatedCount > 0
+                  ? translationOriginSentence(
+                      translation.answeringLegs,
+                      otherLegs: [
+                        for (final l in translation.legs)
+                          if (!translation.answeringLegs.contains(l)) l,
+                      ],
+                    )
+                  : translationOriginSentence(
+                      translation.legs,
+                      translated: false,
+                    ),
             ),
           ),
         ],
@@ -398,15 +468,20 @@ class _AiLabel extends StatelessWidget {
 }
 
 class _KeptNote extends StatelessWidget {
-  const _KeptNote({required this.id, required this.reason});
+  const _KeptNote({
+    required this.id,
+    required this.reason,
+    required this.safety,
+  });
   final String id;
   final String reason;
+  final bool safety;
 
   @override
   Widget build(BuildContext context) => Tooltip(
     message: reason,
     child: Text(
-      'kept in English',
+      safety ? 'kept in English for safety' : 'kept in English',
       key: ValueKey('kept-$id'),
       style: Theme.of(context).textTheme.bodySmall
           ?.copyWith(fontStyle: FontStyle.italic),

@@ -190,6 +190,7 @@ class HybridTask {
     this.jsonSchema,
     required this.maxOutputTokens,
     required this.timeout,
+    this.outputLanguages,
   });
 
   /// Ledger key, e.g. 'pantry_scan', 'local_watch'.
@@ -204,6 +205,13 @@ class HybridTask {
   final Map<String, Object?>? jsonSchema;
   final int maxOutputTokens;
   final Duration timeout;
+
+  /// BCP 47 languages this request reads and answers in, the answer's
+  /// language last (e.g. `['en', 'es']` for an English prompt answered in
+  /// Spanish). Null uses the configured [HybridConfig.languages]. The app
+  /// routes on the last one, and the web bridge passes them to Chrome's
+  /// `expectedInputs` / `expectedOutputs` for this request only.
+  final List<String>? outputLanguages;
 
   /// True when an attachment is an image (by MIME type), not any attachment.
   bool get hasImage => parts.any(
@@ -237,6 +245,7 @@ class HybridRequest {
     'jsonSchema': task.jsonSchema,
     'maxOutputTokens': task.maxOutputTokens,
     'timeoutMs': task.timeout.inMilliseconds,
+    'languages': ?task.outputLanguages,
   };
 }
 

@@ -330,28 +330,23 @@ class HybridRuntime {
     final prefs = privacy ?? InMemoryPrivacyPreferences();
     final compiledRoutes = cloudRoutes ?? CloudRoutes.fromEnvironment();
     final routes = remote?.gate(compiledRoutes) ?? compiledRoutes;
+    final online = isOnline ?? deviceOnline;
+    // The same checks the dispatcher made, read again after the wait:
+    // privacy, route approval and connectivity.
     final configured = ConfiguredHybridInference(
       inference ?? defaultHybridInference(),
-      HybridConfig(
-        cloudModel: cloudModel,
-        // SS-106: the on-device model may be asked for any cook language,
-        // so Chrome's expectedInputs/expectedOutputs must list them all.
-        languages: cookLanguageCodes,
-      ),
-      // The same checks the dispatcher made, read again after the wait.
+      HybridConfig(cloudModel: cloudModel),
       mayForward: (request) =>
           routes.allows(CloudRoute.hybridFallback) &&
-          !localOnlyFor(prefs, request.task.feature),
+          !localOnlyFor(prefs, request.task.feature) &&
+          online(),
     );
-    final online = isOnline ?? deviceOnline;
     final ledger = InferenceLedger(sessionId: _newRunId());
     final consent = DialogConsentGate(
       navigatorKey: key,
       cloudModel: cloudModel,
     );
-    // Read by the dispatcher at each decision, after it is assigned.
-    late final HybridRuntime runtime;
-    return runtime = HybridRuntime(
+    return HybridRuntime(
       inference: configured,
       privacy: prefs,
       cloudRoutes: routes,
@@ -370,8 +365,6 @@ class HybridRuntime {
             cloudFallback ?? FirebaseAiCloudSender(model: cloudModel),
         isOnline: online,
         remoteRouting: remote?.routing,
-        // SS-106: translations and Coach Lite answer in the cook's language.
-        featureLanguageTag: (feature) => cookLanguageTagFor(runtime, feature),
       ),
     );
   }
@@ -413,6 +406,9 @@ class HybridRuntime {
   /// starts an empty ledger.
   void bindCookingSession(String id) {
     final previous = _cookingSessionId;
+    // SS-106: a translation started for the previous cook stops now, before
+    // any of its sends can reach this session's ledger.
+    if (previous != id) cancelCookLanguageWork(this);
     _cookingSessionId = id;
     if (previous != null && previous != id) ledger.startSession(id);
   }

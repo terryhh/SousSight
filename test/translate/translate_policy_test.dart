@@ -9,6 +9,7 @@ import 'package:soussight/ai/hybrid/hybrid_types.dart';
 import 'package:soussight/ai/hybrid/inference_ledger.dart';
 import 'package:soussight/ai/hybrid/inference_policy.dart';
 import 'package:soussight/translate/cook_language.dart';
+import 'package:soussight/translate/language_dispatcher.dart';
 import 'package:soussight/translate/recipe_language_view.dart';
 import 'package:soussight/translate/recipe_translator.dart';
 
@@ -90,7 +91,6 @@ class _Harness {
     HybridCapabilities caps = fakeWebCapabilities,
     String routes = 'hybridFallback',
     String language = 'es',
-    String? Function(String feature)? featureLanguage,
   }) : bridge = _CapsHook(capabilities: caps) {
     var seq = 0;
     dispatcher = DefaultHybridDispatcher(
@@ -101,7 +101,6 @@ class _Harness {
       ledger: ledger,
       cloudFallback: adapter,
       languageTag: () => language,
-      featureLanguageTag: featureLanguage,
       isOnline: () => online,
       newId: () => 'id-${++seq}',
     );
@@ -363,12 +362,8 @@ void main() {
       expect(h.ledger.legs, hasLength(1));
     });
 
-    test('the per-feature language tag drives the language check', () async {
-      final h = _Harness(
-        caps: fakeIosCapabilities,
-        language: 'en',
-        featureLanguage: (f) => f == _f ? 'es' : null,
-      );
+    test("the task's own language drives the language check", () async {
+      final h = _Harness(caps: fakeIosCapabilities, language: 'en');
       h.answer(source: InferenceSource.cloud);
       final t = await h.translator.translate(
         testRecipe(),
@@ -393,6 +388,33 @@ void main() {
           .result;
       expect(other.text, 'ok');
       expect(h.bridge.requests.last.mode, _local);
+      expect(h.bridge.requests.first.task.outputLanguages, ['en', 'es']);
+    });
+
+    test('the language is the one captured when the task started', () async {
+      // Codex #5 (second round): a language change during the awaits does
+      // not change where an already-started request goes.
+      final h = _Harness(caps: fakeIosCapabilities, language: 'en');
+      var chosen = spanish;
+      final dispatcher = LanguageAwareDispatcher(
+        h.dispatcher,
+        language: () => chosen,
+      );
+      final op = dispatcher.start(
+        const HybridTask(
+          feature: 'coach_lite',
+          parts: [HybridText('q')],
+          maxOutputTokens: 10,
+          timeout: Duration(seconds: 5),
+        ),
+        sessionId: 's1',
+      );
+      chosen = sourceLanguage;
+      final result = await op.result;
+      // Spanish is not validated on this device and Coach Lite is on-device
+      // only: blocked, nothing sent.
+      expect(result.blocked, RouteReason.languageNotSupported);
+      expect(h.bridge.requests, isEmpty);
     });
 
     test('connectivity is re-read before the retry is sent', () async {

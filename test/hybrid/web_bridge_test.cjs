@@ -460,3 +460,14 @@ test('work abandoned by cancel or timeout never goes on to call the SDK', async 
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(sdk.calls.length, 0, 'the late import does not trigger a send');
 });
+
+test('a request\'s own languages reach only its model; others keep the configured ones (SS-106)', async () => {
+  const h = await configured();
+  await h.bridge.generate(request({ systemInstruction: 'Translate.', languages: ['en', 'es'] }));
+  await h.bridge.generate(request({ systemInstruction: 'Translate.' }));
+  assert.equal(h.sdk.models.length, 2, 'languages are part of the model key');
+  const [spanish, english] = h.sdk.models;
+  assert.deepEqual(spanish.params.onDeviceParams.createOptions.expectedInputs, [{ type: 'text', languages: ['en', 'es'] }]);
+  assert.deepEqual(spanish.params.onDeviceParams.createOptions.expectedOutputs, [{ type: 'text', languages: ['en', 'es'] }]);
+  assert.deepEqual(english.params.onDeviceParams.createOptions.expectedOutputs, [{ type: 'text', languages: ['en'] }]);
+});

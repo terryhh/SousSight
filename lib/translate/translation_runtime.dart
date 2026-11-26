@@ -4,7 +4,6 @@
 
 import '../ai/hybrid/hybrid_types.dart';
 import '../app/hybrid_runtime.dart';
-import 'cook_language.dart';
 import 'language_dispatcher.dart';
 import 'recipe_translator.dart';
 import 'translation_controller.dart';
@@ -32,19 +31,8 @@ HybridDispatcher languageAwareDispatcherFor(HybridRuntime hybrid) =>
       language: () => translationFor(hybrid).language,
     );
 
-/// Features whose answers are written in the cook's language, so the
-/// dispatcher's on-device language check must use it. Everything else (the
-/// watch, the label check, the pantry scan) keeps the app's own language.
-const cookLanguageFeatures = {recipeTranslateFeature, ...languageAwareFeatures};
-
-/// For `DefaultHybridDispatcher(featureLanguageTag: ...)`: the cook's
-/// language for [feature], or null to use the default. Never creates a
-/// controller.
-String? cookLanguageTagFor(HybridRuntime hybrid, String feature) =>
-    cookLanguageFeatures.contains(feature)
-    ? _controllers[hybrid]?.language.code
-    : null;
-
-/// Every cook language, for `HybridConfig.languages` (Chrome's
-/// `expectedInputs` / `expectedOutputs`).
-List<String> get cookLanguageCodes => [for (final l in cookLanguages) l.code];
+/// Stops any translation running for [hybrid] at once, so none of its sends
+/// reaches the next cooking session. Called when the runtime binds a new
+/// session.
+void cancelCookLanguageWork(HybridRuntime hybrid) =>
+    _controllers[hybrid]?.cancel();

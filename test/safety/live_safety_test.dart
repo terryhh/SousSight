@@ -244,6 +244,62 @@ void main() {
       );
     }
 
+    test('ask_cook, watch goals and dinner drafts pass the gate', () async {
+      final ask = await call('ask_cook', {
+        'question': 'The chicken is safe to eat. Shall we serve it?',
+        'reason': 'checking',
+      });
+      expect(ask['ok'], isFalse);
+      expect(cook.cookQuestion, isNull);
+      expect(jsonEncode(cook.ui.components), isNot(contains('safe to eat')));
+
+      final askEs = await call('ask_cook', {
+        'question': '¿Ya está cocido? ¿Lo servimos?',
+        'reason': 'checking',
+      });
+      expect(askEs['ok'], isFalse);
+
+      final plainAsk = await call('ask_cook', {
+        'question': 'Do you have a lid for the pan?',
+        'reason': 'technique',
+      });
+      expect(plainAsk['ok'], isTrue);
+      expect(cook.cookQuestion, 'Do you have a lid for the pan?');
+
+      final watch = await call('watch_cooking', {
+        'goal': 'Watch until the chicken is cooked through',
+      });
+      expect(watch['ok'], isFalse);
+      expect(cook.live.watchId, isNull, reason: 'the watch is stopped');
+
+      final dinner = await call('dinner_ready', {
+        'message': 'Dinner is ready! The chicken is safe to eat.',
+      });
+      expect(dinner['ok'], isFalse);
+      expect(cook.dinnerDraft, isNull);
+      final okDinner = await call('dinner_ready', {
+        'message': 'Dinner is ready! Come join me.',
+      });
+      expect(okDinner['ok'], isTrue);
+      expect(cook.dinnerDraft, 'Dinner is ready! Come join me.');
+    });
+
+    test('second-round probes are blocked at the panel boundary', () async {
+      for (final claim in [
+        'The chicken is done when the juices run clear.',
+        'El pollo está a 74 °C según la cámara.',
+        'The milk is fresh.',
+        'Sesame-free',
+      ]) {
+        final r = await call('show_cooking_ui', {
+          'stepId': 'sear',
+          'uiJson': _panel(claim),
+        });
+        expect(r['ok'], isFalse, reason: claim);
+        expect(jsonEncode(cook.ui.components), isNot(contains(claim)));
+      }
+    });
+
     test('a plain readiness observation still works', () async {
       await call('watch_cooking', {'goal': 'Golden on both sides'});
       final watchId = cook.live.watchId!;

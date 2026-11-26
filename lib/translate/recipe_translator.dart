@@ -253,11 +253,13 @@ HybridTask translationTask(
   jsonSchema: translationResponseSchema,
   maxOutputTokens: outputTokensFor(lines),
   timeout: timeout,
+  outputLanguages: [sourceLanguage.code, language.code],
 );
 
 /// Parses one answer. Throws [FormatException] when it is not exactly
-/// `{"lines":[{"id":String,"text":String}, ...]}`. Ids outside [expected]
-/// are ignored; an id given twice is dropped (neither text is trusted).
+/// `{"lines":[{"id":String,"text":String}, ...]}` with exactly the ids in
+/// [expected], each once. An invented, repeated or missing id makes the
+/// whole answer malformed: no line from it is shown.
 Map<String, String> parseTranslationResponse(
   String text,
   Set<String> expected,
@@ -282,7 +284,6 @@ Map<String, String> parseTranslationResponse(
     throw const FormatException('Translation lines must be a list.');
   }
   final out = <String, String>{};
-  final duplicated = <String>{};
   for (final item in lines) {
     if (item is! Map) {
       throw const FormatException('Each translated line must be an object.');
@@ -292,11 +293,17 @@ Map<String, String> parseTranslationResponse(
     if (id is! String || value is! String) {
       throw const FormatException('Each line needs a string id and text.');
     }
-    if (!expected.contains(id)) continue;
-    if (out.containsKey(id)) duplicated.add(id);
+    if (!expected.contains(id)) {
+      throw const FormatException('Translation has an unknown line id.');
+    }
+    if (out.containsKey(id)) {
+      throw const FormatException('Translation repeats a line id.');
+    }
     out[id] = value;
   }
-  out.removeWhere((id, _) => duplicated.contains(id));
+  if (out.length != expected.length) {
+    throw const FormatException('Translation is missing lines.');
+  }
   return out;
 }
 
@@ -305,10 +312,7 @@ Map<String, String> parseTranslationResponse(
 /// single cloud retry. Per-line problems are handled by the app instead.
 ResultValidator translationValidator(Set<String> expected) => (text) {
   try {
-    final parsed = parseTranslationResponse(text, expected);
-    if (!parsed.keys.toSet().containsAll(expected)) {
-      return 'Translation is missing lines.';
-    }
+    parseTranslationResponse(text, expected);
     return null;
   } on FormatException catch (e) {
     return e.message;
@@ -322,6 +326,7 @@ class TranslatedLine {
     required this.original,
     this.translated,
     this.rejection,
+    this.leg,
   }) : assert((translated == null) != (rejection == null));
 
   final String id;
@@ -330,6 +335,9 @@ class TranslatedLine {
   /// Null when the line keeps its English original.
   final String? translated;
   final LineRejection? rejection;
+
+  /// The leg whose answer this translation came from.
+  final InferenceLeg? leg;
 
   bool get kept => translated == null;
   String get text => translated ?? original;
@@ -407,6 +415,15 @@ class RecipeTranslation {
 
   int get translatedCount => lines.values.where((l) => !l.kept).length;
   int get keptCount => lines.values.where((l) => l.kept).length;
+
+  /// The legs that answered the lines on screen, once each: where the shown
+  /// translation actually came from.
+  List<InferenceLeg> get answeringLegs => [
+    ...{
+      for (final l in lines.values)
+        if (!l.kept && l.leg != null) l.leg!,
+    },
+  ];
 }
 
 /// Small in-memory LRU cache of finished translations.
@@ -485,10 +502,20 @@ class RecipeTranslator {
 
     final generation = _generation;
     final source = recipeSourceLines(recipe);
+    // Safety, allergen, temperature and timing warnings stay in the reviewed
+    // English and are never sent.
+    final reviewed = [
+      for (final l in source)
+        if (needsReviewedEnglish(l.text)) l,
+    ];
+    final toSend = [
+      for (final l in source)
+        if (!reviewed.contains(l)) l,
+    ];
     final allergens = allergenIngredients(recipe);
     final allergenNames = allergenIngredientNames(recipe);
     final chunks = chunkSourceLines(
-      source,
+      toSend,
       language: language,
       allergenNames: allergenNames,
       maxTotalTokens: maxTotalTokens.clamp(1000, translateMaxTotalTokens),
@@ -497,6 +524,14 @@ class RecipeTranslator {
     final legs = <InferenceLeg>[];
     RouteReason? blocked;
     var incomplete = false;
+
+    for (final l in reviewed) {
+      lines[l.id] = TranslatedLine(
+        id: l.id,
+        original: l.text,
+        rejection: LineRejection.reviewedEnglish,
+      );
+    }
 
     RecipeTranslation finish(TranslationStatus status) {
       for (final s in source) {
@@ -564,6 +599,7 @@ class RecipeTranslator {
       }
       final Map<String, String> parsed;
       try {
+        // Exactly the expected ids, each once, or nothing from this chunk.
         parsed = parseTranslationResponse(text, expected);
       } on FormatException {
         // Malformed output abstains: the whole chunk keeps its originals.
@@ -571,10 +607,14 @@ class RecipeTranslator {
         continue;
       }
       for (final line in chunk) {
-        lines[line.id] = _checked(line, parsed[line.id], language, allergens);
+        lines[line.id] = _checked(
+          line,
+          parsed[line.id],
+          language,
+          allergens,
+          result.finalLeg,
+        );
       }
-      // A chunk counts as answered only when every line came back.
-      if (!parsed.keys.toSet().containsAll(expected)) incomplete = true;
     }
 
     if (blocked != null) {
@@ -598,6 +638,7 @@ TranslatedLine _checked(
   String? candidate,
   CookLanguage language,
   List<AllergenIngredient> allergens,
+  InferenceLeg? leg,
 ) {
   if (candidate == null) {
     return TranslatedLine(
@@ -620,6 +661,11 @@ TranslatedLine _checked(
     allergens: allergens,
   );
   return rejection == null
-      ? TranslatedLine(id: line.id, original: line.text, translated: text)
+      ? TranslatedLine(
+          id: line.id,
+          original: line.text,
+          translated: text,
+          leg: leg,
+        )
       : TranslatedLine(id: line.id, original: line.text, rejection: rejection);
 }

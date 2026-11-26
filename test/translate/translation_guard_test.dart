@@ -91,10 +91,16 @@ void main() {
     test('accepts a faithful translation', () {
       expect(
         _check(
-          'Simmer for 10 minutes at 350°F with 1/2 cup water.',
-          'Cocina a fuego lento 10 minutos a 350°F con 1/2 taza de agua.',
+          'Simmer for 10 minutes with 1/2 cup water.',
+          'Cocina a fuego lento 10 minutos con 1/2 taza de agua.',
         ),
         isNull,
+      );
+      // A temperature in a translation is gated, whatever the source says
+      // (such lines stay in the reviewed English before translation).
+      expect(
+        _check('Bake at 350°F.', 'Hornea a 350°F.'),
+        LineRejection.certifies,
       );
       expect(_check('about 2 tbsp', 'unas 2 cdas'), isNull);
       expect(_check('2 slices', '2 rebanadas'), isNull);
@@ -201,10 +207,10 @@ void main() {
         _check('Serve.', "Serve, it's safe to eat."),
         LineRejection.certifies,
       );
-      // Conditions in the subjunctive are instructions, not claims.
+      // The gate over-blocks: even a condition using the vocabulary.
       expect(
         _check('Cook until done.', 'Cocina hasta que esté cocido.'),
-        isNull,
+        LineRejection.certifies,
       );
     });
 
@@ -225,17 +231,24 @@ void main() {
           'La cámara no puede saber si es seguro para comer. Usa un '
               'termómetro.',
         ),
-        isNull,
+        LineRejection.certifies,
+      );
+      // In the translator such a source line is never sent at all.
+      expect(
+        needsReviewedEnglish(
+          'The camera cannot tell whether this is safe to eat.',
+        ),
+        isTrue,
       );
     });
 
     test('signs are kept, and a range is not a sign', () {
       expect(
-        _check('Freeze at -18°C', 'Congela a 18°C'),
+        _check('Set the dial to -2.', 'Pon el selector en 2.'),
         LineRejection.numbersChanged,
       );
-      expect(_check('Freeze at -18°C', 'Congela a −18°C'), isNull);
-      expect(_check('Freeze at −18°C', 'Congela a -18 °C'), isNull);
+      expect(_check('Set the dial to -2.', 'Pon el selector en −2.'), isNull);
+      expect(_check('Set the dial to −2.', 'Pon el selector en -2.'), isNull);
       expect(_check('Bake 3-4 minutes', 'Hornea 3-4 minutos'), isNull);
       expect(_check('Bake 3-4 minutes', 'Hornea 3 a 4 minutos'), isNull);
       expect(
@@ -277,7 +290,7 @@ void main() {
       expect(_check('Place two slices.', 'Pon dos rebanadas.'), isNull);
       expect(_check('Place two slices.', 'Pon 2 rebanadas.'), isNull);
       // "Ten" is Spanish for "have", not 10.
-      expect(_check('Have it ready.', 'Ten todo listo a la mano.'), isNull);
+      expect(_check('Keep it close.', 'Ten todo a la mano.'), isNull);
       expect(
         extractQuantities(
           'dos tazas',
@@ -346,7 +359,73 @@ void main() {
       expect(certifiesIn('it is safe to eat', plain), isTrue);
       // The shared check covers English and Spanish for every language.
       expect(certifiesIn('está cocido', plain), isTrue);
-      expect(certifiesIn('zz cocido', plain), isFalse);
+      expect(certifiesIn('zz zz', plain), isFalse);
+    });
+  });
+
+  group('second Codex round', () {
+    test('safety, allergen, warning and multi-timing lines stay reviewed', () {
+      for (final line in [
+        // P1 #1: the bundled tortilla wheat warning.
+        'Tortilla chips or tortillas, for serving (flour tortillas contain '
+            'wheat; check labels)',
+        'Bake at 350°F.',
+        'Do not press hard enough to tear the bread.',
+        'Check the label for allergens.',
+        'Cool for 20 minutes, then bake for 5 minutes.',
+        'The chicken is done when the juices run clear.',
+      ]) {
+        expect(needsReviewedEnglish(line), isTrue, reason: line);
+      }
+      for (final line in [
+        'Toast the bread for 5 minutes.',
+        'Warm the tortilla 15–20 seconds in a dry pan.',
+        'Spread the peanut butter on the bread.',
+      ]) {
+        expect(needsReviewedEnglish(line), isFalse, reason: line);
+      }
+    });
+
+    test('leading decimals and written quantities are compared', () {
+      expect(
+        _check('Add .5 cups', 'Agrega .9 tazas'),
+        LineRejection.numbersChanged,
+      );
+      expect(_check('Add .5 cups', 'Agrega .5 tazas'), isNull);
+      expect(
+        _check('Cook for thirty minutes', 'Cocina durante veinte horas'),
+        LineRejection.numbersChanged,
+      );
+      expect(
+        _check('Cook for twenty minutes', 'Cocina durante veinte minutos'),
+        isNull,
+      );
+    });
+
+    test('allergen English must sit in parentheses after the word', () {
+      const ingredients = ['Mayonnaise', 'Dijon mustard'];
+      // "En mayo" is "in May": the mayonnaise was dropped.
+      expect(
+        _check(
+          'Add mayo and mustard.',
+          'En mayo añade mostaza (mustard).',
+          allergens: ingredients,
+        ),
+        LineRejection.allergenNameMissing,
+      );
+      expect(
+        _check(
+          'Add mayo and mustard.',
+          'Agrega mayonesa (mayo) y mostaza (mustard).',
+          allergens: ingredients,
+        ),
+        isNull,
+      );
+      // A parenthesis with nothing before it explains nothing.
+      expect(
+        _check('Add mayo.', '(mayo) agrega.', allergens: ['Mayonnaise']),
+        LineRejection.allergenNameMissing,
+      );
     });
   });
 

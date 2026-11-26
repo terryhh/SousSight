@@ -59,12 +59,16 @@ String coachLiteSpokenText(CoachLiteAnswer answer, {int maxChars = 1500}) {
   final order = root?['children'];
   if (order is! List) return '';
   final parts = <String>[];
+  // App-authored cards (ids starting with app_) are read as written; model
+  // sentences that touch food safety are skipped.
+  var appAuthored = false;
   void add(Object? value, [String prefix = '']) {
     if (value is! String) return;
     final clean = value.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (clean.isEmpty) return;
     for (final sentence in clean.split(RegExp(r'(?<=[.!?])\s+'))) {
-      if (sentence.isEmpty || coachLiteCertifies(sentence)) continue;
+      if (sentence.isEmpty) continue;
+      if (!appAuthored && coachLiteCertifies(sentence)) continue;
       final s = '$prefix$sentence';
       parts.add(RegExp(r'[.!?…:]$').hasMatch(s) ? s : '$s.');
     }
@@ -73,6 +77,7 @@ String coachLiteSpokenText(CoachLiteAnswer answer, {int maxChars = 1500}) {
   for (final id in order) {
     final c = byId[id];
     if (c == null) continue;
+    appAuthored = '${c['id']}'.startsWith('app_');
     switch (c['component']) {
       case 'stepCue':
         add(c['title']);

@@ -54,13 +54,27 @@ const englishNumberWords = <String, int>{
   'eleven': 11,
   'twelve': 12,
   'dozen': 12,
+  'thirteen': 13,
+  'fourteen': 14,
+  'fifteen': 15,
+  'sixteen': 16,
+  'seventeen': 17,
+  'eighteen': 18,
+  'nineteen': 19,
+  'twenty': 20,
+  'thirty': 30,
+  'forty': 40,
+  'fifty': 50,
+  'sixty': 60,
+  'ninety': 90,
+  'hundred': 100,
 };
 
 /// A unary sign: a minus (ASCII or Unicode) not preceded by a digit or
 /// letter, so "3-4" is a range and "-18" is negative.
 final _number = RegExp(
   r'(?<![\p{L}\p{N}.,/])(?:(?<![\p{N}]\s?)([-−‒–]))?'
-  r'(\d+(?:[.,]\d+)*(?:/\d+)?)|'
+  r'(\d+(?:[.,]\d+)*(?:/\d+)?|[.,]\d+)|'
   r'([¼½¾⅓⅔⅛⅜⅝⅞])|'
   r'(?<![\p{L}])([\p{L}]+)(?![\p{L}])',
   unicode: true,
@@ -149,8 +163,33 @@ Map<String, List<String>> unitWordsFor(CookLanguage language) => {
 Map<String, int> numberWordsFor(CookLanguage language) =>
     language.numberWords.isEmpty ? englishNumberWords : language.numberWords;
 
+final _warning = RegExp(
+  r"(?<![\p{L}])(?:warning|caution|careful|never|do\s+not|don['\u2019]t|"
+  r'avoid|labels?)(?![\p{L}])',
+  caseSensitive: false,
+  unicode: true,
+);
+
+const _criticalUnits = {'minute', 'hour', 'second', 'temp', 'temp_f', 'temp_c'};
+
+/// True when [source] must stay in the reviewed English and never be sent
+/// for translation: it touches food safety, allergen status or temperature
+/// (the shared gate's vocabulary), carries a warning or label instruction,
+/// or ties more than one time or temperature to its actions, where a
+/// translation could reassign them.
+bool needsReviewedEnglish(String source) {
+  if (touchesFoodSafety(source) || _warning.hasMatch(source)) return true;
+  final critical = extractQuantities(source)
+      .where((q) => _criticalUnits.contains(q.unit));
+  return critical.length > 1;
+}
+
 /// Why a translated line cannot be shown, or null when it can.
 enum LineRejection {
+  /// The source carries a safety, allergen, temperature or timing warning:
+  /// it is kept in the reviewed English and was never sent.
+  reviewedEnglish,
+
   empty,
   tooLong,
   numbersChanged,
@@ -164,6 +203,9 @@ enum LineRejection {
 
 /// One cook-facing phrase per [LineRejection], for the "kept in English" note.
 String lineRejectionSentence(LineRejection reason) => switch (reason) {
+  LineRejection.reviewedEnglish =>
+    'Safety, allergen, temperature or timing details stay in the '
+        'reviewed English.',
   LineRejection.empty => 'The translation was empty.',
   LineRejection.tooLong ||
   LineRejection.markup => "The translation didn't match the original.",
@@ -193,6 +235,10 @@ const allergenAliases = <String, List<String>>{
   'dijon mustard': ['mustard', 'dijon'],
   'flour tortillas': ['tortillas', 'tortilla'],
 };
+
+/// English food words Spanish writes the same way, reviewed: a translation
+/// that keeps one of these as a word already shows the English name.
+const sharedIngredientWords = {'tortilla', 'tortillas'};
 
 /// [name]'s English aliases: the name, the alternatives in an "A or B" name,
 /// the singular or plural, and [allergenAliases].
@@ -251,15 +297,14 @@ LineRejection? checkTranslatedLine({
   }
   // The translation is judged on its own: a disclaimer in the source never
   // exempts a claim in the translation.
-  if (certifiesFoodSafety(text)) return LineRejection.certifies;
+  if (touchesFoodSafety(text)) return LineRejection.certifies;
   return null;
 }
 
 /// True when [text] would certify doneness, temperature, freshness or
 /// allergen safety. [language] is accepted for call sites that have one;
 /// the shared gate covers every supported language.
-bool certifiesIn(String text, CookLanguage language) =>
-    certifiesFoodSafety(text);
+bool certifiesIn(String text, CookLanguage language) => touchesFoodSafety(text);
 
 bool _mentions(String text, String word) => RegExp(
   '(?<![\\p{L}])${RegExp.escape(word.trim())}(?![\\p{L}])',
@@ -289,10 +334,23 @@ bool hasEnglishInParentheses(String text, String name) => RegExp(
   unicode: true,
 ).hasMatch(text);
 
-/// True when one of [ingredient]'s English names stays visible in [text].
-bool keepsEnglishName(String text, AllergenIngredient ingredient) => ingredient
-    .aliases
-    .any((a) => hasEnglishInParentheses(text, a) || _mentions(text, a));
+/// True when one of [ingredient]'s English names stays visible in [text]:
+/// in parentheses right after a word (the translated name it explains), or
+/// as a reviewed shared word ("tortilla"). A bare English word elsewhere
+/// does not count: "mayo" is a month in Spanish.
+bool keepsEnglishName(String text, AllergenIngredient ingredient) =>
+    ingredient.aliases.any(
+      (a) =>
+          _parenthesizedAfterWord(text, a) ||
+          (sharedIngredientWords.contains(a.toLowerCase()) &&
+              _mentions(text, a)),
+    );
+
+bool _parenthesizedAfterWord(String text, String name) => RegExp(
+  '\\p{L}\\s*\\(\\s*${RegExp.escape(name)}\\s*\\)',
+  caseSensitive: false,
+  unicode: true,
+).hasMatch(text);
 
 /// An ingredient name with its English name in parentheses, added by the app
 /// when the translation does not already carry it.

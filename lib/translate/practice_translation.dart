@@ -241,8 +241,7 @@ const practiceSpanish = <String, String>{
 };
 
 /// Answers `recipe_translate` tasks from [table] (English line → Spanish)
-/// without any model. Lines it has no text for are left out of the answer,
-/// so they stay in English. Other features are blocked: practice mode has
+/// without any model. A line it has no text for comes back as written. Other features are blocked: practice mode has
 /// no model for them here.
 class PracticeTranslationDispatcher implements HybridDispatcher {
   PracticeTranslationDispatcher({
@@ -306,8 +305,9 @@ class PracticeTranslationDispatcher implements HybridDispatcher {
     return jsonEncode({
       'lines': [
         for (final line in lines.cast<Map>())
-          if (table[line['text']] case final es?)
-            {'id': line['id'], 'text': es},
+          // Every line is answered (the translator accepts only complete
+          // answers); one with no canned Spanish comes back as written.
+          {'id': line['id'], 'text': table[line['text']] ?? line['text']},
       ],
     });
   }

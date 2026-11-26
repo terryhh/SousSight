@@ -64,6 +64,7 @@ void main() {
           RecipeLineIds.stepCue('toast'),
           RecipeLineIds.stepTitle('spread'),
           RecipeLineIds.stepInstruction('spread'),
+          RecipeLineIds.stepCue('spread'),
         ],
       );
       expect(lines[2].kind, RecipeLineKind.ingredientName);
@@ -152,22 +153,30 @@ void main() {
       );
       expect(
         parseTranslationResponse(
-          '```json\n{"lines":[{"id":"a","text":"uno"}]}\n```',
+          '```json\n{"lines":[{"id":"a","text":"uno"},'
+          '{"id":"b","text":"dos"}]}\n```',
           ids,
         ),
-        {'a': 'uno'},
+        {'a': 'uno', 'b': 'dos'},
       );
     });
 
-    test('ignores unknown ids and drops an id given twice', () {
-      expect(
-        parseTranslationResponse(
-          '{"lines":[{"id":"a","text":"uno"},{"id":"a","text":"otro"},'
-          '{"id":"zzz","text":"x"},{"id":"b","text":"dos"}]}',
-          ids,
-        ),
-        {'b': 'dos'},
-      );
+    test('exact ids only: invented, repeated or missing ids are malformed', () {
+      // Codex #14.
+      for (final bad in [
+        '{"lines":[{"id":"a","text":"uno"},{"id":"b","text":"dos"},'
+            '{"id":"zzz","text":"x"}]}',
+        '{"lines":[{"id":"a","text":"uno"},{"id":"a","text":"otro"},'
+            '{"id":"b","text":"dos"}]}',
+        '{"lines":[{"id":"a","text":"uno"}]}',
+      ]) {
+        expect(
+          () => parseTranslationResponse(bad, ids),
+          throwsFormatException,
+          reason: bad,
+        );
+        expect(translationValidator(ids)(bad), isNotNull);
+      }
     });
 
     test('rejects anything else', () {
@@ -229,20 +238,23 @@ void main() {
         spanish,
         sessionId: 's1',
       );
-      // Salt was left out of the answer: the chunk is not fully answered,
-      // so the result is partial and never cached (Codex #10).
-      expect(t.status, TranslationStatus.partial);
-      expect(translator.cache.length, 0);
+      expect(t.status, TranslationStatus.complete);
+      expect(translator.cache.length, 1);
       expect(t.key, const TranslationKey('pb', 1, 'es'));
+      // The warning was never sent and stays in the reviewed English.
+      final warning = RecipeLineIds.stepCue('spread');
+      expect(t.lines[warning]!.rejection, LineRejection.reviewedEnglish);
+      expect(
+        taskLines(dispatcher.tasks.single).map((l) => l.id),
+        isNot(contains(warning)),
+      );
       expect(t.keptCount, 1);
       expect(
-        t.lines[RecipeLineIds.ingredientName('salt')]!.rejection,
-        LineRejection.noTranslation,
-      );
-      expect(
         t.text(RecipeLineIds.stepInstruction('toast'), 'x'),
-        'Tuesta el pan (bread) a 350°F por 5 minutos.',
+        'Tuesta el pan (bread) por 5 minutos.',
       );
+      // Each shown line remembers the leg that answered it.
+      expect(t.answeringLegs.single.provenance, Provenance.sdkOnDevice);
       // The app adds the English name to an allergen ingredient's name.
       expect(
         t.text(RecipeLineIds.ingredientName('pb'), 'x'),
@@ -260,7 +272,7 @@ void main() {
           answerFor(
             task,
             (id, text) => id == RecipeLineIds.stepInstruction('toast')
-                ? 'Tuesta el pan (bread) a 180 °C por 5 minutos.'
+                ? 'Tuesta el pan (bread) por 6 minutos.'
                 : spanishFor[id],
           ),
         ),
@@ -274,7 +286,7 @@ void main() {
       expect(t.isKept(id), isTrue);
       expect(t.lines[id]!.rejection, LineRejection.numbersChanged);
       expect(t.text(id, 'orig'), 'orig');
-      expect(t.lines[id]!.text, 'Toast the bread at 350°F for 5 minutes.');
+      expect(t.lines[id]!.text, 'Toast the bread for 5 minutes.');
       expect(t.isKept(RecipeLineIds.stepTitle('toast')), isFalse);
     });
 
@@ -288,7 +300,11 @@ void main() {
       expect(t.status, TranslationStatus.partial);
       expect(t.translatedCount, 0);
       expect(
-        t.lines.values.every((l) => l.rejection == LineRejection.noTranslation),
+        t.lines.values.every(
+          (l) =>
+              l.rejection == LineRejection.noTranslation ||
+              l.rejection == LineRejection.reviewedEnglish,
+        ),
         isTrue,
       );
       expect(t.legs, hasLength(1));

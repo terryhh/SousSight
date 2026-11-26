@@ -269,6 +269,9 @@ JSObject _request(HybridRequest r) {
   if (instruction != null) js['systemInstruction'] = instruction.toJS;
   final schema = task.jsonSchema;
   if (schema != null) js['jsonSchema'] = schema.jsify();
+  if (task.outputLanguages case final languages?) {
+    js['languages'] = [for (final l in languages) l.toJS].toJS;
+  }
   return js;
 }
 

@@ -145,7 +145,7 @@ void main() {
           answerFor(
             task,
             (id, text) => id == RecipeLineIds.stepInstruction('toast')
-                ? 'Tuesta el pan (bread) a 400°F por 5 minutos.'
+                ? 'Tuesta el pan (bread) por 6 minutos.'
                 : spanishFor[id] ?? 'Sal',
           ),
         ),
@@ -175,19 +175,23 @@ void main() {
         lineText(tester, RecipeLineIds.ingredientName('pb')),
         'Mantequilla de maní (Peanut butter)',
       );
-      // The changed temperature keeps the English line, with a note.
+      // The changed time keeps the English line, with a note.
       final kept = RecipeLineIds.stepInstruction('toast');
-      expect(lineText(tester, kept), 'Toast the bread at 350°F for 5 minutes.');
+      expect(lineText(tester, kept), 'Toast the bread for 5 minutes.');
       expect(find.byKey(ValueKey('kept-$kept')), findsOneWidget);
       expect(find.text('kept in English'), findsOneWidget);
+      // The warning was never sent: kept for safety.
+      final warning = RecipeLineIds.stepCue('spread');
+      expect(
+        lineText(tester, warning),
+        'Do not press hard enough to tear the bread.',
+      );
+      expect(find.text('kept in English for safety'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('translation-kept-count')),
         findsOneWidget,
       );
-      expect(
-        find.text('1 line stays in English because a check did not pass.'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('2 lines stay in English'), findsOneWidget);
       expect(find.text(translationSafetyNote), findsOneWidget);
 
       // Show original: everything English, no kept notes.

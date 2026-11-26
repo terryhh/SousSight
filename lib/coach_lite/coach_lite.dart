@@ -124,14 +124,26 @@ final _safetyPattern = RegExp(
   r'expired|spoil\w*|gone bad|go bad|mou?ldy?|smells? off|'
   r'leftovers?|room temperature|how long can|refrigerat\w*|fridge|reheat\w*|'
   r'pregnan\w*|infant|baby)\b|°|'
-  // Spanish (SS-106): the cook may ask in their language.
-  r'(?<![\p{L}])(segur[oa]s?|peligro\w*|bacterias?|crud[oa]s?|'
-  r'cocid[oa]s?|list[oa]s?|hech[oa]s?|temperatura|termómetro|termometro|'
-  r'grados|alerg\w*|alérg\w*|gluten|celíac\w*|celiac\w*|maní|mani|'
-  r'cacahuates?|nueces|lácteos|lacteos|huevos?|trigo|ajonjolí|sésamo|'
-  r'contiene\w*|caducad\w*|vencid\w*|echad[oa]s?\s+a\s+perder|podrid\w*|'
-  r'huele\s+mal|moho|sobras|refri\w*|nevera|recalent\w*|embarazada|'
-  r'bebés?|bebes?)(?![\p{L}])',
+  // Spanish (SS-106): what the cook is asking, not which food they name:
+  // "¿Cómo bato los huevos?" is technique; "¿Está fresca la leche?" and
+  // "¿Contiene maní?" are safety.
+  r'(?<![\p{L}])(?:'
+  r'(?:est[áa]n?|es|son|estar[áa]n?|queda|qued[óo]|siguen?)\s+'
+  r'(?:(?:ya|bien|todav[íi]a|a[úu]n|muy)\s+)*'
+  r'(?:list|cocid|cocinad|hech|crud|segur|fresc|buen|mal|podrid|caducad|'
+  r'vencid|rosad)\w*|'
+  r'ya\s+est[áa]n?(?![\p{L}])|'
+  r'(?:contienen?|tienen?|llevan?)\s+(?:\w+\s+)?(?:gluten|man[íi]|nueces|'
+  r'l[áa]cteos|leche|huevos?|trigo|soya|soja|al[ée]rgenos?|mariscos|'
+  r's[ée]samo|ajonjol[íi]|cacahuates?|frutos\s+secos)|'
+  r'contienen?|alerg\w*|al[ée]rg\w*|cel[íi]ac\w*|sin\s+gluten|libres?\s+de|'
+  r'apt[oa]s?\s+para|temperatura|grados|term[óo]metro|crud[oa]s?|'
+  r'segur[oa]s?|peligr\w*|intoxic\w*|bacterias?|salmonela|'
+  r'echad[oa]s?\s+a\s+perder|podrid\w*|caducad\w*|vencid\w*|moho|'
+  r'huele\s+(?:mal|raro|feo|agrio)|sobras|'
+  r'cu[áa]nto\s+(?:tiempo\s+)?(?:dura|duran|aguanta|aguantan)|'
+  r'refrigera\w*|nevera|refri|congel\w*|recalent\w*|embarazada|beb[ée]s?'
+  r')(?![\p{L}])',
   caseSensitive: false,
   unicode: true,
 );
@@ -342,7 +354,7 @@ action is ask_cook. Suggest a timer only if this step needs one.
 /// shared cook-facing safety gate (lib/safety/cook_safety.dart) that every
 /// model answer must pass. The read-aloud path (SS-077) applies it again to
 /// each sentence it speaks.
-bool coachLiteCertifies(String text) => certifiesFoodSafety(text);
+bool coachLiteCertifies(String text) => touchesFoodSafety(text);
 
 /// Parses and validates model output. Throws [FormatException].
 ({List<Map<String, dynamic>> components, CoachLiteTimerSuggestion? timer})
@@ -388,24 +400,17 @@ parseCoachLiteResponse(String text) {
     }
   }
   // Every cook-facing string, the timer label included.
-  if (payloadCertifiesFoodSafety({
+  if (payloadTouchesFoodSafety({
     'components': cleaned,
     'timerSuggestion': decoded['timerSuggestion'],
   })) {
-    throw const FormatException(
-      'Coach Lite must not certify doneness, temperature or safety.',
-    );
+    throw const UnsafeClaimException();
   }
   final components = validateLiteCookingUi({'components': cleaned});
-  // An empty root, or one whose children name no card, says nothing: treat
-  // it as malformed so the retry or the recipe-step fallback runs.
-  final cards = {
-    for (final c in components)
-      if (c['id'] != 'root' && c['component'] != 'CookingColumn') c['id'],
-  };
-  final root = components.where((c) => c['id'] == 'root').firstOrNull;
-  final children = root?['children'];
-  if (children is! List || !children.any(cards.contains)) {
+  // A tree of columns with no card says nothing: treat it as malformed so
+  // the retry or the recipe-step fallback runs. The validator has already
+  // checked that every component is reachable from the root.
+  if (!components.any((c) => c['component'] != 'CookingColumn')) {
     throw const FormatException('Coach Lite answer has no content card.');
   }
   return (
@@ -595,7 +600,14 @@ class CoachLite {
     } on Object catch (e) {
       return finish(
         CoachLiteStatus.invalid,
-        _fallback(step, "The on-device coach's answer could not be shown."),
+        _fallback(
+          step,
+          // A safety-gated answer is replaced by the recipe step, its cue
+          // and where to check what the coach cannot know.
+          e is UnsafeClaimException
+              ? cookSafetyFallbackNote
+              : "The on-device coach's answer could not be shown.",
+        ),
         legs: result.legs,
         error: e is FormatException ? e.message : '$e',
       );

@@ -83,7 +83,9 @@ class CookingUiController extends ChangeNotifier {
       (jsonDecode(jsonEncode(_components)) as List)
           .cast<Map<String, dynamic>>();
 
-  void applyJson(String json) {
+  /// Applies model-written UI (the Live coach). [reviewed] is the recipe's
+  /// own text, which may be quoted verbatim.
+  void applyJson(String json, {Set<String> reviewed = const {}}) {
     _assertActive();
     if (json.length > 24000) {
       throw const FormatException('Cooking UI exceeds 24 KB.');
@@ -94,7 +96,7 @@ class CookingUiController extends ChangeNotifier {
     }
     // Model-written panels (the Live coach) pass the shared safety gate, in
     // every cook language, before anything is replaced.
-    if (payloadCertifiesFoodSafety(decoded)) {
+    if (payloadTouchesFoodSafety(decoded, reviewed: reviewed)) {
       throw const UnsafeClaimException();
     }
     applyToolPayload(decoded);

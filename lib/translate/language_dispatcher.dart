@@ -66,6 +66,9 @@ class LanguageAwareDispatcher implements HybridDispatcher {
         jsonSchema: task.jsonSchema,
         maxOutputTokens: task.maxOutputTokens,
         timeout: task.timeout,
+        // Captured now: routing and the web bridge use this snapshot even if
+        // the cook switches language while the request is in flight.
+        outputLanguages: [sourceLanguage.code, chosen.code],
       ),
       sessionId: sessionId,
       validate: check,

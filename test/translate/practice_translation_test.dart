@@ -11,6 +11,7 @@ import 'package:soussight/core/models.dart';
 import 'package:soussight/translate/cook_language.dart';
 import 'package:soussight/translate/practice_translation.dart';
 import 'package:soussight/translate/recipe_translator.dart';
+import 'package:soussight/translate/translation_guard.dart';
 
 import 'translate_fixtures.dart';
 
@@ -28,15 +29,23 @@ void main() {
   });
 
   for (final recipe in bundled) {
-    test('${recipe.id}: every line translated and checked', () async {
+    test('${recipe.id}: every sent line translated and checked', () async {
       final t = await RecipeTranslator(
         dispatcher: PracticeTranslationDispatcher(delay: Duration.zero),
       ).translate(recipe, spanish, sessionId: 'practice');
+      // Only the reviewed safety/allergen/timing lines stay in English;
+      // every other line has canned Spanish that passes the checks.
       final kept = [
         for (final l in t.lines.values)
-          if (l.kept) '${l.id}: ${l.rejection}',
+          if (l.kept && l.rejection != LineRejection.reviewedEnglish)
+            '${l.id}: ${l.rejection}',
       ];
       expect(kept, isEmpty);
+      final untranslated = [
+        for (final l in t.lines.values)
+          if (!l.kept && !practiceSpanish.containsKey(l.original)) l.id,
+      ];
+      expect(untranslated, isEmpty, reason: 'every sent line is canned');
       expect(t.status, TranslationStatus.complete);
       expect(t.legs, isNotEmpty);
       for (final leg in t.legs) {
@@ -50,7 +59,8 @@ void main() {
     final t = await RecipeTranslator(
       dispatcher: PracticeTranslationDispatcher(delay: Duration.zero),
     ).translate(testRecipe(), spanish, sessionId: 'practice');
-    // "Bread" and "2 slices" are canned; "Toast the bread" is not.
+    // "Bread" is canned; "Toast the bread" is not, so the practice answer
+    // gives it back as written, and the allergen check keeps the original.
     expect(t.text(RecipeLineIds.ingredientName('bread'), 'x'), 'Pan (Bread)');
     expect(t.isKept(RecipeLineIds.stepTitle('toast')), isTrue);
   });
