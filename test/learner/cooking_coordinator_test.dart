@@ -172,6 +172,7 @@ class _Fixture {
       research: research,
       transportFactory: () => transport,
       media: media,
+      stepSaveRetryDelay: const Duration(milliseconds: 20),
     );
   }
   final sessions = _Sessions();
@@ -685,7 +686,8 @@ void main() {
     await fixture.cook.advanceStep();
     expect(fixture.sessions.updateCalls, 1);
     expect(fixture.cook.advancing, isTrue);
-    expect(fixture.cook.step.id, 'prep');
+    // SS-072: the step changes on screen at once; the save follows.
+    expect(fixture.cook.step.id, 'mash');
     fixture.sessions.updateGate!.complete();
     await first;
     expect(fixture.cook.step.id, 'mash');
@@ -694,25 +696,32 @@ void main() {
   });
 
   test(
-    'failed step save leaves step, completion, and active watch unchanged',
+    'a failed step save keeps the step on screen and saves it on retry',
     () async {
+      // SS-072 replaced "a failed save leaves the step unchanged": the step
+      // change applies on this device at once and is retried until saved.
       await fixture.initialize();
       await fixture.cook.connect();
       fixture.cook.startWatch();
-      final watchId = fixture.cook.live.watchId;
       fixture.sessions.failNext = true;
       await fixture.cook.advanceStep();
-      expect(fixture.cook.step.id, 'prep');
-      expect(fixture.cook.session!.completedStepIds, isEmpty);
-      expect(fixture.cook.live.watchId, watchId);
+      expect(fixture.cook.step.id, 'mash');
+      expect(fixture.cook.session!.completedStepIds, ['prep']);
+      expect(fixture.cook.live.watchId, isNull);
       expect(fixture.cook.advancing, isFalse);
-      expect(fixture.cook.error, contains('Could not save the next step'));
-      expect(
-        fixture.transport.texts.where(
-          (text) => text.contains('previous step is finished'),
-        ),
-        isEmpty,
-      );
+      expect(fixture.cook.pendingStepSaves, 1);
+      expect(fixture.cook.error, CookingCoordinator.unsavedStepError);
+      final saved = await fixture.sessions.watch(fixture.cook.session!.id).first;
+      expect(saved.currentStepId, 'prep');
+      // The retry (after the fixture's 20 ms retry delay) saves it once.
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      await _flush();
+      expect(fixture.cook.pendingStepSaves, 0);
+      expect(fixture.cook.error, isNull);
+      final after = await fixture.sessions.watch(fixture.cook.session!.id).first;
+      expect(after.currentStepId, 'mash');
+      expect(after.completedStepIds, ['prep']);
+      expect(after.revision, 1);
     },
   );
 
