@@ -114,12 +114,15 @@ class DefaultHybridDispatcher implements HybridDispatcher {
       status: status,
       remote: _remote(),
     );
-    // When the payload itself rules out a local run (audio, too large, ...),
-    // the local model's status cannot change the route: don't wait for it
-    // (on Android a cold check can take seconds).
-    const notChecked = OnDeviceStatus.unavailable;
-    final status = localHardLimit(input(notChecked)) != null
-        ? notChecked
+    // When the route is the same whatever the local model's status (audio,
+    // too large, a cloud-only feature after defaults and remote routing,
+    // ...), don't wait for that status: on Android a cold check can take
+    // seconds. Either way the decision uses settings read after any wait.
+    final byStatus = {
+      for (final s in OnDeviceStatus.values) _routeKey(decideRoute(input(s))),
+    };
+    final status = byStatus.length == 1
+        ? OnDeviceStatus.unavailable
         : (await _safe(
             () => _inference.availability(withImage: run.hasImage),
             const HybridAvailability(status: OnDeviceStatus.unavailable),
@@ -542,3 +545,7 @@ Object? _deepCopy(Object? value) => switch (value) {
   List() => List<Object?>.unmodifiable([for (final v in value) _deepCopy(v)]),
   _ => value,
 };
+
+/// What a route decision does, for comparing decisions.
+(HybridMode?, RouteReason, bool, bool) _routeKey(RouteDecision d) =>
+    (d.mode, d.reason, d.mayUpload, d.needsConsent);

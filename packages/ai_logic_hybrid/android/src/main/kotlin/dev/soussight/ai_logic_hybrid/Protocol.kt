@@ -279,12 +279,13 @@ object InputRules {
     }
 
     /** Same formula as the Dart policy's estimateLocalTokens (DESIGN §4). */
-    fun estimateLocalTokens(request: GenerateRequest): Int {
-        var chars = request.systemInstruction?.length ?: 0
+    fun estimateLocalTokens(request: GenerateRequest): Long {
+        // Long: a huge maxOutputTokens must not wrap negative and pass the budget.
+        var chars = (request.systemInstruction?.length ?: 0).toLong()
         for (part in request.parts) if (part is HybridPart.Text) chars += part.text.length
         request.jsonSchema?.let { chars += JsonText.encode(it).length }
         val textTokens = (chars + 3) / 4
-        return textTokens + request.images.size * IMAGE_TOKEN_ESTIMATE + request.maxOutputTokens
+        return textTokens + request.images.size.toLong() * IMAGE_TOKEN_ESTIMATE + request.maxOutputTokens
     }
 
     private fun unsupported(message: String): Nothing =

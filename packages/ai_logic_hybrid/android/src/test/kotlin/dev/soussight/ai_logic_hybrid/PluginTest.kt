@@ -206,10 +206,38 @@ internal class PluginTest {
         val config = HybridConfig("m", AndroidModelOption.AUTO, listOf("en"))
         assertNull(plain.modelOption(config), "auto is never reported as a model")
         assertEquals(AndroidModelOption.PREVIEW_FAST, plain.modelOption(config.copy(androidModel = AndroidModelOption.PREVIEW_FAST)))
-        // The default validation is the decode-free input rules.
-        fun req(vararg parts: HybridPart) = GenerateRequest("r", HybridMode.ONLY_ON_DEVICE, "f", null, parts.toList(), null, 8, 1_000)
-        plain.validate(req(HybridPart.Text("hi")))
-        val audio = kotlin.test.assertFailsWith<HybridError> { plain.validate(req(HybridPart.InlineData(ByteArray(1), "audio/wav"))) }
-        assertEquals(HybridErrorCode.UNSUPPORTED_INPUT, audio.code)
+        plain.configured(config) // default: nothing to start
+    }
+
+    @Test
+    fun configureTellsTheEngine() {
+        val seen = CopyOnWriteArrayList<HybridConfig>()
+        val plugin = attached({ _, _ ->
+            object : HybridEngine by StubEngine(null) {
+                override fun configured(config: HybridConfig) { seen += config }
+            }
+        })
+        plugin.call("configure", mapOf("cloudModel" to "m"))
+        assertEquals(listOf(AndroidModelOption.AUTO), seen.map { it.androidModel })
+    }
+
+    @Test
+    fun detachForgetsTheConfigurationSoAReattachMustConfigureAgain() {
+        val plugin = attached({ _, _ -> StubEngine(AndroidModelOption.STABLE) })
+        plugin.call("configure", mapOf("cloudModel" to "m"))
+        plugin.detach()
+        plugin.attach(FakeMessenger(), false, Dispatchers.Default)
+        val (code, message) = plugin.call(
+            "generate",
+            mapOf(
+                "requestId" to "r1", "mode" to "onlyOnDevice", "feature" to "f",
+                "parts" to listOf(mapOf("type" to "text", "text" to "hi")),
+                "maxOutputTokens" to 8, "timeoutMs" to 1_000,
+            ),
+        )
+        assertEquals(HybridErrorCode.UNAVAILABLE.wire, code)
+        assertEquals(Reasons.NOT_CONFIGURED, message)
+        assertNull(local(plugin.call("capabilities").second)["modelOption"])
+        plugin.detach()
     }
 }

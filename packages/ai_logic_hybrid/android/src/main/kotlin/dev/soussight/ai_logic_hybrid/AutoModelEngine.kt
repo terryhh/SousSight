@@ -3,8 +3,6 @@ package dev.soussight.ai_logic_hybrid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -22,91 +20,76 @@ import kotlinx.coroutines.withTimeout
  *
  * A preview model's status alone cannot be trusted: on a Pixel 9 the Nano 4 preview
  * (`nano-v4-full`) reports `available`, yet every generate fails with ML Kit NOT_AVAILABLE (8).
- * So, once per engine (one app run):
- * 1. Check the preview's status (and name) within [statusTimeoutMs]. An error or no answer in
- *    time means STABLE; a late answer is discarded.
- * 2. If it is available, send a tiny `onlyOnDevice` probe ([PROBE_PROMPT], [PROBE_MAX_TOKENS]).
- *    Only a nonblank on-device answer within [probeTimeoutMs] selects PREVIEW; anything else
- *    selects STABLE.
- * 3. If it is not available, compare it with STABLE: a ready STABLE is selected; otherwise the
- *    obtainable one (STABLE first, then a downloadable PREVIEW) is selected provisionally, so the
- *    app can see and prepare it. A provisional selection is not cached: once a model is ready the
- *    next call decides again, and a downloaded PREVIEW must still pass the probe.
- * 4. A final decision is cached. The check runs in [scope] (the plugin's lifetime) on [work]
- *    (off the main thread, so a blocking native call cannot hold its own deadline), not in
- *    whichever call started it: a caller that times out or is cancelled stops waiting without
- *    abandoning the check, every caller shares the one answer, and detaching the plugin
- *    cancels it.
  *
- * Later, PREVIEW gives way to STABLE (never the reverse) when:
- * - an availability check finds PREVIEW not `available` while STABLE is `available`;
- * - a `preferOnDevice` generate on PREVIEW comes back from the cloud (the SDK swallows the local
- *   NOT_AVAILABLE), and a background fixed-prompt probe confirms PREVIEW cannot answer while
- *   STABLE is `available`. That answer keeps its cloud provenance; later requests use STABLE; or
- * - a generate on PREVIEW fails with NOT_AVAILABLE. That request is then retried once on STABLE
- *   with `onlyOnDevice`, unless its caller was cancelled meanwhile. The retry never reaches the
- *   cloud (the SDK builds no cloud client for ONLY_ON_DEVICE) and never widens the mode.
- * `onlyInCloud` never runs on-device, never waits for the local check and is never retried.
- * Requests are fully validated first (attachment rules, image decodability and pixel size via
- * [HybridEngine.validate]), so invalid input makes no backend call at all.
- * Explicit `preview`, `previewFast` and `stable` pass through untouched: no probe, no retry.
+ * **Selection happens at startup only, never inside a request.** STABLE is in use until a
+ * background check, started by `configure` and again after `prepare`, proves PREVIEW: its status
+ * is `available` (within [statusTimeoutMs]) and a fixed-prompt `onlyOnDevice` probe
+ * ([PROBE_PROMPT], [PROBE_MAX_TOKENS]) returns nonblank text from the device within
+ * [probeTimeoutMs]. A preview that fails its probe is not tried again this run. `generate` never
+ * waits for the check: it uses whatever is selected when it is called.
  *
- * Privacy: the probe sends only the fixed [PROBE_PROMPT]. The retry replays the cook's own
- * request (text and image) on this device only. [log] gets options, status, model name, error
- * class and code, and latency; never prompt or response text.
+ * PREVIEW gives way to STABLE (never the reverse) when a generate on it fails with
+ * NOT_AVAILABLE (that request is retried once on STABLE, `onlyOnDevice`, unless its caller was
+ * cancelled), when a `preferOnDevice` answer on it came from the cloud and a background probe
+ * confirms it cannot answer (that answer keeps its cloud provenance), or when availability finds
+ * it gone while STABLE is ready.
+ *
+ * Availability reports the selected model when it is ready; otherwise the best recoverable state
+ * of either model (downloading, then downloadable), so setup is never hidden, and `prepare`
+ * downloads that model. Every status lookup and probe runs in [scope] (the plugin's lifetime,
+ * cancelled on detach) on [work] (off the main thread) under its own deadline.
+ *
+ * `onlyInCloud` is never retried. Explicit `preview`, `previewFast` and `stable` pass through.
+ *
+ * Privacy: probes send only [PROBE_PROMPT]. The retry replays the cook's request (text and
+ * image) on this device only. [log] gets options, status, model name, error class and code, and
+ * latency; never prompt or response text.
  */
 class AutoModelEngine(
     private val inner: HybridEngine,
-    /** Owns the shared check and probes; cancelled when the plugin detaches. */
+    /** Owns the check and probes; cancelled when the plugin detaches. */
     private val scope: CoroutineScope,
     private val probeTimeoutMs: Long = PROBE_TIMEOUT_MS,
     private val statusTimeoutMs: Long = STATUS_TIMEOUT_MS,
-    /** Where the check and probes run; never the main thread in production. */
+    /** Where status lookups and probes run; never the main thread in production. */
     private val work: CoroutineDispatcher = Dispatchers.IO,
-    /** Debug builds only: also probe STABLE when it is chosen, so logcat shows it answering. */
+    /** Debug builds only: probe STABLE too when the check keeps it, so logcat shows it answering. */
     internal val verifyChoice: Boolean = false,
     private val log: (String) -> Unit = {},
     private val nanoTime: () -> Long = System::nanoTime,
 ) : HybridEngine {
 
     private val lock = Any()
-    @Volatile private var chosen: AndroidModelOption? = null
-    private var pending: Deferred<Selection>? = null
+    @Volatile private var selected = AndroidModelOption.STABLE
+    @Volatile private var previewBroken = false
+    private var check: Job? = null
     private var recheck: Job? = null
 
-    /** What one check found; only a [final] one is cached. */
-    private data class Selection(val option: AndroidModelOption, val final: Boolean)
+    /** The option `auto` uses right now. */
+    val decision: AndroidModelOption get() = selected
 
-    /** The background check after a cloud answer on PREVIEW, if one is running (tests). */
+    /** The startup check, if one was started (tests). */
+    internal val checkJob: Job? get() = synchronized(lock) { check }
+
+    /** The background probe after a cloud answer on PREVIEW, if one was started (tests). */
     internal val recheckJob: Job? get() = synchronized(lock) { recheck }
 
-    /** The cached decision; null until `auto` has been resolved. */
-    val decision: AndroidModelOption? get() = chosen
+    override fun modelOption(config: HybridConfig): AndroidModelOption =
+        if (config.androidModel == AndroidModelOption.AUTO) selected else config.androidModel
 
-    override fun modelOption(config: HybridConfig): AndroidModelOption? =
-        if (config.androidModel == AndroidModelOption.AUTO) chosen else config.androidModel
+    override fun configured(config: HybridConfig) {
+        if (config.androidModel == AndroidModelOption.AUTO) startCheck(config)
+    }
 
     override suspend fun availability(config: HybridConfig, withImage: Boolean): AvailabilityResult {
         if (config.androidModel != AndroidModelOption.AUTO) {
             return inner.availability(config, withImage).copy(modelOption = config.androidModel)
         }
-        var option = resolve(config)
-        // The selection only moves PREVIEW -> STABLE, so this settles within two rounds; a third
-        // covers a downgrade racing the stable check.
+        // Report only what is still selected after the lookups (a downgrade may land meanwhile).
         repeat(3) {
-            var answer = inner.availability(config.copy(androidModel = option), withImage)
-            if (option == AndroidModelOption.PREVIEW && answer.status != OnDeviceStatus.AVAILABLE) {
-                val stable = inner.availability(config.copy(androidModel = AndroidModelOption.STABLE), withImage)
-                if (stable.status == OnDeviceStatus.AVAILABLE) {
-                    downgrade("preview became ${answer.status.wire} (${answer.reason}) while stable is available")
-                    option = AndroidModelOption.STABLE
-                    answer = stable
-                }
-            }
-            // Report only what is still selected: a downgrade may have landed during the await.
-            val now = chosen ?: option
-            if (now == option) return answer.copy(modelOption = option)
-            option = now
+            val option = selected
+            val answer = report(config, option, withImage)
+            if (selected == option || answer.modelOption == selected) return answer
         }
         return AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.MODEL_NOT_READY)
     }
@@ -116,24 +99,17 @@ class AutoModelEngine(
             inner.prepare(config, withImage)
         } else {
             flow {
-                val option = resolve(config)
-                log("auto: preparing ${option.wire}")
-                emitAll(inner.prepare(config.copy(androidModel = option), withImage))
+                val target = availability(config, withImage).modelOption ?: AndroidModelOption.STABLE
+                log("auto: preparing ${target.wire}")
+                emitAll(inner.prepare(config.copy(androidModel = target), withImage))
+                // A freshly downloaded preview must pass the probe before it is used.
+                startCheck(config)
             }
         }
 
-    override fun validate(request: GenerateRequest) = inner.validate(request)
-
     override suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult {
         if (config.androidModel != AndroidModelOption.AUTO) return inner.generate(config, request)
-        // Before the check: invalid input fails with no backend call (DESIGN §4).
-        inner.validate(request)
-        if (request.mode == HybridMode.ONLY_IN_CLOUD) {
-            // Never runs on-device, so it must not wait for the local check or its probe. The SDK
-            // builds only a cloud provider for this mode; the option just has to be concrete.
-            return inner.generate(config.copy(androidModel = chosen ?: AndroidModelOption.STABLE), request)
-        }
-        val option = resolve(config)
+        val option = selected // never waits for selection
         try {
             val result = inner.generate(config.copy(androidModel = option), request)
             if (option == AndroidModelOption.PREVIEW &&
@@ -146,77 +122,117 @@ class AutoModelEngine(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
-            if (option != AndroidModelOption.PREVIEW || !ErrorMapping.isModelNotAvailable(e)) throw e
+            if (option != AndroidModelOption.PREVIEW ||
+                request.mode == HybridMode.ONLY_IN_CLOUD ||
+                !ErrorMapping.isModelNotAvailable(e)
+            ) {
+                throw e
+            }
             // A native call that ignored cancellation may fail late; a caller that was cancelled
             // or timed out meanwhile must not start another generation.
             currentCoroutineContext().ensureActive()
-            downgrade("preview failed mid-session (${describe(e)})")
-            log("auto: retrying once on stable, on-device only")
+            previewUnusable("preview failed mid-session (${describe(e)}); retrying once on stable, on-device only")
             val retry = request.copy(mode = HybridMode.ONLY_ON_DEVICE)
             return inner.generate(config.copy(androidModel = AndroidModelOption.STABLE), retry)
         }
     }
 
-    private fun downgrade(why: String) {
-        val changed = synchronized(lock) {
-            (chosen == AndroidModelOption.PREVIEW).also { if (it) chosen = AndroidModelOption.STABLE }
+    /** Starts the background check unless PREVIEW is in use, known broken, or being checked. */
+    internal fun startCheck(config: HybridConfig): Job? = synchronized(lock) {
+        if (selected == AndroidModelOption.PREVIEW || previewBroken || check?.isActive == true) {
+            return@synchronized check
         }
-        if (changed) log("auto: $why; using stable for this run")
+        scope.launch(work) { runCheck(config) }.also { check = it }
+    }
+
+    private suspend fun runCheck(config: HybridConfig) {
+        val preview = config.copy(androidModel = AndroidModelOption.PREVIEW)
+        val status = status(preview)
+        if (status?.status != OnDeviceStatus.AVAILABLE) {
+            log("auto: preview is ${status?.status?.wire ?: "unknown"}; stable stays in use")
+            verify(config)
+            return
+        }
+        val name = status.modelLabel ?: "(unnamed)"
+        val outcome = probe(preview)
+        if (outcome == null) {
+            val used = synchronized(lock) {
+                (!previewBroken).also { if (it) selected = AndroidModelOption.PREVIEW }
+            }
+            if (used) log("auto: preview $name answered on-device; using preview")
+        } else {
+            previewUnusable("preview $name is available but cannot answer ($outcome)")
+            verify(config)
+        }
+    }
+
+    /** After a `preferOnDevice` answer on PREVIEW came from the cloud: one background probe. */
+    private fun recheckPreview(config: HybridConfig) = synchronized(lock) {
+        if (selected != AndroidModelOption.PREVIEW || recheck?.isActive == true) return@synchronized
+        recheck = scope.launch(work) {
+            val outcome = probe(config.copy(androidModel = AndroidModelOption.PREVIEW))
+            if (outcome != null) {
+                previewUnusable("a preferOnDevice answer came from the cloud and preview cannot answer ($outcome)")
+            } else {
+                log("auto: a preferOnDevice answer came from the cloud, but preview answers on-device; keeping it")
+            }
+        }
+    }
+
+    private fun previewUnusable(why: String) {
+        synchronized(lock) {
+            previewBroken = true
+            selected = AndroidModelOption.STABLE
+        }
+        log("auto: $why; using stable for this run")
     }
 
     /**
-     * After a `preferOnDevice` answer on PREVIEW came from the cloud: one background probe of
-     * PREVIEW (fixed prompt, on-device only). If it cannot answer and STABLE is ready, later
-     * requests use STABLE. Single-flight; never touches the request that triggered it.
+     * The selected model's state when it is ready, else the best recoverable state of either
+     * (downloading, then downloadable; ties keep the selected one), never a broken preview.
      */
-    private fun recheckPreview(config: HybridConfig) = synchronized(lock) {
-        if (chosen != AndroidModelOption.PREVIEW || recheck?.isActive == true) return@synchronized
-        recheck = scope.launch(work) {
-            val outcome = probe(config.copy(androidModel = AndroidModelOption.PREVIEW))
-            if (outcome == null) {
-                log("auto: a preferOnDevice answer came from the cloud, but preview answers the probe; keeping preview")
-                return@launch
+    private suspend fun report(config: HybridConfig, option: AndroidModelOption, withImage: Boolean): AvailabilityResult {
+        val mine = status(config.copy(androidModel = option), withImage)
+            ?: AvailabilityResult(OnDeviceStatus.UNAVAILABLE, Reasons.MODEL_NOT_READY)
+        if (mine.status == OnDeviceStatus.AVAILABLE) return mine.copy(modelOption = option)
+        val other = if (option == AndroidModelOption.PREVIEW) {
+            AndroidModelOption.STABLE
+        } else {
+            AndroidModelOption.PREVIEW.takeUnless { previewBroken }
+        } ?: return mine.copy(modelOption = option)
+        val theirs = status(config.copy(androidModel = other), withImage)
+            ?: return mine.copy(modelOption = option)
+        if (theirs.status == OnDeviceStatus.AVAILABLE) {
+            if (other == AndroidModelOption.STABLE) {
+                // The selected preview is gone and stable is ready.
+                synchronized(lock) { if (selected == AndroidModelOption.PREVIEW) selected = AndroidModelOption.STABLE }
+                log("auto: preview is ${mine.status.wire}; stable is ready; using stable")
+                return theirs.copy(modelOption = AndroidModelOption.STABLE)
             }
-            val stable = status(config.copy(androidModel = AndroidModelOption.STABLE))
-            if (stable?.status == OnDeviceStatus.AVAILABLE) {
-                downgrade("preview fell back to the cloud and cannot answer on-device ($outcome)")
-            } else {
-                log("auto: preview cannot answer ($outcome) but stable is ${stable?.status?.wire ?: "unknown"}; keeping preview")
-            }
+            // An unproven preview is never reported ready; make sure it gets its probe.
+            startCheck(config)
+            return mine.copy(modelOption = option)
         }
+        return if (rank(theirs.status) > rank(mine.status)) theirs.copy(modelOption = other)
+        else mine.copy(modelOption = option)
     }
 
-    /** Single-flight: concurrent callers wait for one check and share its answer. */
-    internal suspend fun resolve(config: HybridConfig): AndroidModelOption {
-        chosen?.let { return it }
-        val job = synchronized(lock) {
-            chosen?.let { return it }
-            pending?.takeUnless { it.isCancelled } ?: newCheck(config).also { pending = it }
-        }
-        job.start() // no-op once started
-        val selection = job.await()
-        return chosen ?: selection.option
+    private fun rank(status: OnDeviceStatus) = when (status) {
+        OnDeviceStatus.DOWNLOADING -> 2
+        OnDeviceStatus.DOWNLOADABLE -> 1
+        else -> 0
     }
 
-    /** Called under [lock]. Started by the caller once [pending] holds it. */
-    private fun newCheck(config: HybridConfig): Deferred<Selection> {
-        lateinit var self: Deferred<Selection>
-        self = scope.async(work, start = CoroutineStart.LAZY) {
-            try {
-                decide(config).also { found ->
-                    synchronized(lock) { if (found.final && chosen == null) chosen = found.option }
-                }
-            } finally {
-                // A provisional answer is not cached: the next caller checks again.
-                synchronized(lock) { if (pending === self) pending = null }
-            }
-        }
-        return self
+    /** In debug builds, shows in logcat whether STABLE answers; never changes the selection. */
+    private suspend fun verify(config: HybridConfig) {
+        if (!verifyChoice) return
+        val outcome = probe(config.copy(androidModel = AndroidModelOption.STABLE))
+        if (outcome != null) log("auto: stable did not answer the debug probe ($outcome)")
     }
 
-    /** One bounded status lookup; null on error or timeout (logged). Cancellation propagates. */
-    private suspend fun status(config: HybridConfig): AvailabilityResult? = try {
-        bounded(statusTimeoutMs) { inner.availability(config, withImage = false) }
+    /** One bounded status lookup; null on error or timeout (logged). */
+    private suspend fun status(config: HybridConfig, withImage: Boolean = false): AvailabilityResult? = try {
+        bounded(statusTimeoutMs) { inner.availability(config, withImage) }
     } catch (e: TimeoutCancellationException) {
         log("auto: ${config.androidModel.wire} status gave no answer within $statusTimeoutMs ms")
         null
@@ -227,52 +243,7 @@ class AutoModelEngine(
         null
     }
 
-    private suspend fun decide(config: HybridConfig): Selection {
-        val preview = status(config.copy(androidModel = AndroidModelOption.PREVIEW))
-            ?: return Selection(verified(config, AndroidModelOption.STABLE), final = true)
-        if (preview.status == OnDeviceStatus.AVAILABLE) {
-            val outcome = probe(config.copy(androidModel = AndroidModelOption.PREVIEW))
-            return if (outcome == null) {
-                log("auto: preview ${preview.modelLabel ?: "(unnamed)"} answered on-device; using preview")
-                Selection(AndroidModelOption.PREVIEW, final = true)
-            } else {
-                log("auto: preview ${preview.modelLabel ?: "(unnamed)"} is available but cannot answer ($outcome); using stable")
-                Selection(verified(config, AndroidModelOption.STABLE), final = true)
-            }
-        }
-        // Preview is not ready: never hide the one model this device could still get.
-        val stable = status(config.copy(androidModel = AndroidModelOption.STABLE))?.status
-        val obtainable = setOf(OnDeviceStatus.DOWNLOADABLE, OnDeviceStatus.DOWNLOADING)
-        return when {
-            stable == OnDeviceStatus.AVAILABLE -> {
-                log("auto: preview is ${preview.status.wire} (${preview.reason}); using stable")
-                Selection(verified(config, AndroidModelOption.STABLE), final = true)
-            }
-            stable in obtainable -> {
-                log("auto: preview is ${preview.status.wire}, stable is ${stable?.wire}; stable for now")
-                Selection(AndroidModelOption.STABLE, final = false)
-            }
-            preview.status in obtainable -> {
-                log("auto: preview is ${preview.status.wire}, stable is ${stable?.wire ?: "unknown"}; preview for now, probed once ready")
-                Selection(AndroidModelOption.PREVIEW, final = false)
-            }
-            else -> {
-                log("auto: neither model is obtainable (preview ${preview.status.wire}, stable ${stable?.wire ?: "unknown"})")
-                Selection(AndroidModelOption.STABLE, final = false)
-            }
-        }
-    }
-
-    /** In debug builds, shows in logcat whether the chosen option answers; never changes it. */
-    private suspend fun verified(config: HybridConfig, option: AndroidModelOption): AndroidModelOption {
-        if (verifyChoice) {
-            val outcome = probe(config.copy(androidModel = option))
-            if (outcome != null) log("auto: ${option.wire} did not answer the debug probe ($outcome)")
-        }
-        return option
-    }
-
-    /** Null when [config]'s model answered on-device; otherwise why not. Cancellation propagates. */
+    /** Null when [config]'s model answered on-device with text; otherwise why not. */
     private suspend fun probe(config: HybridConfig): String? {
         val start = nanoTime()
         fun ms() = (nanoTime() - start) / 1_000_000
@@ -299,7 +270,7 @@ class AutoModelEngine(
     }
 
     /**
-     * [block] in [scope] under a deadline that holds even if the native call ignores
+     * [block] in [scope] on [work] under a deadline that holds even if the native call ignores
      * cancellation; whatever it returns after the deadline is discarded.
      */
     private suspend fun <T> bounded(timeoutMs: Long, block: suspend () -> T): T {

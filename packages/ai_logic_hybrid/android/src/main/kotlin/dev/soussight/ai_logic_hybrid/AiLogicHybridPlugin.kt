@@ -81,13 +81,17 @@ class AiLogicHybridPlugin internal constructor(
         preparer = null
         engine = null
         scope = null
+        // A later attachment must configure again; nothing runs under this one's settings.
+        config = null
     }
 
     override fun onMethodCall(call: MethodCall, result: Result) {
         val reply = result.asReply()
         when (call.method) {
             "configure" -> try {
-                config = Protocol.parseConfig(call.arguments)
+                val parsed = Protocol.parseConfig(call.arguments)
+                config = parsed
+                engine?.configured(parsed)
                 reply.success(null)
             } catch (e: HybridError) {
                 reply.error(e.code.wire, e.message)

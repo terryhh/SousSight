@@ -20,11 +20,8 @@ interface HybridEngine {
 
     suspend fun generate(config: HybridConfig, request: GenerateRequest): GenerateResult
 
-    /**
-     * Every input check that needs no model: attachment rules, the local budget and, where the
-     * engine can decode images, decodability and pixel dimensions. Throws `unsupportedInput`.
-     */
-    fun validate(request: GenerateRequest) = InputRules.validate(request)
+    /** Called after each `configure`; `auto` starts its background model check here. */
+    fun configured(config: HybridConfig) {}
 
     /** The concrete option [config] runs on, or null while `auto` has not chosen one. */
     fun modelOption(config: HybridConfig): AndroidModelOption? =

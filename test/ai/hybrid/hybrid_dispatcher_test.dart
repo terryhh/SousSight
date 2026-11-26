@@ -959,22 +959,36 @@ void main() {
       });
     });
 
-    test('localHardLimit matches the policy', () {
-      RouteInput input({bool audio = false}) => RouteInput(
-        feature: 'pantry_voice',
-        hasImage: false,
-        hasAudio: audio,
-        estimatedTokens: 10,
-        languageTag: 'en',
-        localOnly: false,
-        online: true,
-        cloudApproved: true,
-        capabilities: fakeIosCapabilities,
-        status: OnDeviceStatus.available,
+    test('a cloud-only feature does not wait either', () async {
+      final bridge = _StalledAvailability(
+        FakeHybridInference(capabilities: fakeWebCapabilities)
+          ..enqueueText('{"changed":false}'),
       );
-      expect(localHardLimit(input(audio: true)), RouteReason.audioNeedsCloud);
-      expect(localHardLimit(input()), isNull);
+      final r = await dispatcher(bridge)
+          .start(_photo('local_watch_cloud_check'), sessionId: 's1')
+          .result
+          .timeout(const Duration(seconds: 2));
+      expect(bridge.asked, 0);
+      expect(r.text, '{"changed":false}');
+      expect(bridge.inner.requests.single.mode, HybridMode.onlyInCloud);
     });
+
+    test(
+      'the parent local-only setting still blocks the cloud check',
+      () async {
+        final bridge = _StalledAvailability(
+          FakeHybridInference(capabilities: fakeWebCapabilities),
+        );
+        final privacy = _Privacy()..localOnlyFeatures.add('local_watch');
+        final r = await dispatcher(bridge, privacy: privacy)
+            .start(_photo('local_watch_cloud_check'), sessionId: 's1')
+            .result
+            .timeout(const Duration(seconds: 2));
+        expect(bridge.asked, 0);
+        expect(r.blocked, isNotNull);
+        expect(bridge.inner.requests, isEmpty);
+      },
+    );
   });
 }
 
