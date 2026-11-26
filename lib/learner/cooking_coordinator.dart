@@ -20,6 +20,7 @@ import '../watch/watch_verdict.dart';
 import 'ingredient_label.dart';
 import 'recipe_allergens.dart';
 import 'research_panel_client.dart';
+import 'step_timers.dart';
 
 /// Added to the coach context for AI-drafted, unreviewed recipes (SS-053).
 const String draftRecipeContextLine =
@@ -236,11 +237,12 @@ $cookingUiInstructions
       ]);
       _restoreIngredients();
       if (saved.timerDeadline case final deadline?) {
-        ui.restoreTimer(
+        final restored = ui.restoreTimer(
           id: saved.timerId ?? 'step-${saved.currentStepId}',
           label: saved.timerLabel ?? 'Cooking timer',
           deadline: deadline,
         );
+        _timerDeadlines[restored.id] = restored.deadline;
       }
       showIngredients();
       loading = false;
@@ -598,6 +600,47 @@ $cookingUiInstructions
       _save((current) => withTimer(current, timer));
 
   /// Clears the saved timer only if it is still [timerId].
+  /// When a step timer that had already run out is dismissed, save its step
+  /// as finished with the session (SS-100), so the household message's
+  /// estimate does not count that step's time again, even after a reload. A
+  /// timer cancelled with time left is not a finished step.
+  Future<void> _rememberFinishedStep(String timerId) async {
+    final deadline = _timerDeadlines.remove(timerId);
+    if (deadline == null || deadline.isAfter(services.clock())) return;
+    // Offline or behind unsaved step changes, the step queue owns saving
+    // (SS-072); this screen's DinnerTimerMemory still knows the step is done.
+    if (!_ops.online || _ops.hasPendingWork) return;
+    String? stepId;
+    for (final candidate in recipe.steps) {
+      if (isStepTimerFor(timerId, candidate.id)) stepId = candidate.id;
+    }
+    final finished = stepId;
+    if (finished == null ||
+        (session?.finishedTimerStepIds.contains(finished) ?? true)) {
+      return;
+    }
+    try {
+      await _save(
+        (current) => current.finishedTimerStepIds.contains(finished)
+            ? current
+            : current.copyWith(
+                finishedTimerStepIds: [
+                  ...current.finishedTimerStepIds,
+                  finished,
+                ].reversed.take(100).toList().reversed.toList(),
+              ),
+      );
+    } catch (error) {
+      // Offline or unsaved: this screen's memory still knows; a reload may
+      // count the step again, which only lengthens the estimate.
+      debugPrint('Finished step not saved (${error.runtimeType})');
+    }
+  }
+
+  /// Deadlines of timers this session started or restored, by ID, so a
+  /// dismissal can tell a finished timer from a cancelled one.
+  final Map<String, DateTime> _timerDeadlines = {};
+
   Future<void> _clearTimer(String timerId) => _save(
     (current) => current.timerId == timerId ? withoutTimer(current) : current,
   );
@@ -606,8 +649,9 @@ $cookingUiInstructions
     final seconds = step.timerSeconds;
     if (seconds == null || seconds <= 0) return Future<void>.value();
     final prefix = 'step-${step.id}';
+    // Exact step match: step `prep` never reuses step `prep-sauce`'s timer.
     for (final timer in ui.timers) {
-      if (timer.id == prefix || timer.id.startsWith('$prefix-')) {
+      if (isStepTimerFor(timer.id, step.id)) {
         return startTimer(timer.id, timer.label, seconds);
       }
     }
@@ -622,6 +666,7 @@ $cookingUiInstructions
     // ui.startTimer returns an existing timer unchanged for a reused ID.
     final isNew = !ui.timers.any((t) => t.id == id);
     final timer = ui.startTimer(id: id, label: label, seconds: seconds);
+    _timerDeadlines[timer.id] = timer.deadline;
     if (isNew) {
       _timersStarted++;
       _track(AnalyticsEvents.timerStarted, {'seconds': seconds});
@@ -1048,6 +1093,7 @@ $cookingUiInstructions
             }
           }
           if (_saved case final saved?) _setSaved(saved);
+          await _rememberFinishedStep(timerId);
         }
       case 'review_dinner_message':
         dinnerDraft = action.context['message'] as String;
