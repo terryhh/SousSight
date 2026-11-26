@@ -240,7 +240,10 @@ class OfflineStepQueue extends ChangeNotifier {
     this._connectivityChanges,
     this.retryDelay = const Duration(seconds: 5),
     String Function()? newOpId,
-  }) : _newOpId = newOpId ?? const Uuid().v4;
+  }) : _newOpId = newOpId ?? _uuidOpId;
+
+  /// `op-<uuid>`: the form firestore.rules accepts in [appliedOpIdsField].
+  static String _uuidOpId() => 'op-${const Uuid().v4()}';
 
   final StepOpStore _store;
   final bool Function() _isOnline;

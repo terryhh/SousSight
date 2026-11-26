@@ -429,6 +429,29 @@ void main() {
       expect(partly.revision, 2);
     });
 
+    test('default op ids have the form firestore.rules accepts', () {
+      final queue = OfflineStepQueue(
+        store: RepositoryStepOpStore(FakeSessionRepository()),
+        isOnline: () => false,
+      )..bind('s1');
+      addTearDown(queue.dispose);
+      final a = queue.enqueue(
+        kind: StepOpKind.advance,
+        expectedStepId: 'prep',
+        toStepId: 'mash',
+      );
+      final b = queue.enqueue(
+        kind: StepOpKind.complete,
+        expectedStepId: 'mash',
+        toStepId: 'mash',
+      );
+      // Mirrors validOpIds in firestore.rules.
+      final rule = RegExp(r'^op-[A-Za-z0-9_-]{1,61}$');
+      expect(a.opId, matches(rule));
+      expect(b.opId, matches(rule));
+      expect(a.opId, isNot(b.opId));
+    });
+
     test('a timer joins the unsent step change and can be dismissed', () {
       final queue = OfflineStepQueue(
         store: RepositoryStepOpStore(FakeSessionRepository()),
